@@ -1,9 +1,10 @@
-import { useState, useMemo } from "react";
-import { Plus, X, Trash2 } from "lucide-react";
+import { useState, useMemo, useRef } from "react";
+import { Plus, X, Trash2, Download, Upload, Link2 } from "lucide-react";
 import { SKILL_LIST, HAND_MOTIONS } from "../scoring/constants";
 import {
   computeTeamScore,
   initialTeamState,
+  normalizeTeamState,
   emptySeries,
   emptyCell,
   emptyLane,
@@ -12,16 +13,93 @@ import {
   type TeamSeries,
   type TeamState,
 } from "../scoring/team";
+import { buildShareUrl } from "../scoring/share";
+import { JsonModal, type JsonModalMode } from "./JsonModal";
 
 const newId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `g${Date.now()}${Math.random()}`;
 
 type GroupKind = "cross" | "union";
 
-export function TeamScorer() {
-  const [team, setTeam] = useState<TeamState>(initialTeamState);
+interface Props {
+  /** URL共有から復元する初期構成（任意） */
+  initialData?: { team?: unknown; series?: unknown };
+}
+
+export function TeamScorer({ initialData }: Props = {}) {
+  const [team, setTeam] = useState<TeamState>(
+    () => (initialData ? normalizeTeamState(initialData.team ?? initialData) : null) ?? initialTeamState(),
+  );
   // グループ編集中の対象 { シリーズ, グループid, 種別 }。アクティブ時はセルクリックで所属を切替。
   const [pick, setPick] = useState<{ sIdx: number; gid: string; kind: GroupKind } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
+  const [jsonText, setJsonText] = useState("");
+
+  // ---- インポート / エクスポート ----
+  const saveData = () => ({ version: 1, kind: "team", team });
+  const applyImported = (raw: string): boolean => {
+    const data = JSON.parse(raw);
+    if (data?.kind && data.kind !== "team") return false; // 個人モードのファイル等を弾く
+    const normalized = normalizeTeamState(data?.team ?? data);
+    if (!normalized) return false;
+    setTeam(normalized);
+    setPick(null);
+    return true;
+  };
+  const handleExport = () => {
+    const blob = new Blob([JSON.stringify(saveData(), null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    a.download = `team-routine-${stamp}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        if (!applyImported(reader.result as string)) alert("団体の構成が見つかりませんでした");
+      } catch {
+        alert("ファイルの読み込みに失敗しました");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+  const openExportText = () => {
+    setJsonText(JSON.stringify(saveData(), null, 2));
+    setJsonModalMode("export");
+  };
+  const handleCopyJson = async () => {
+    try {
+      await navigator.clipboard.writeText(jsonText);
+      alert("コピーしました");
+    } catch {
+      alert("コピーに失敗しました。手動で選択してコピーしてください");
+    }
+  };
+  const handleImportText = () => {
+    try {
+      if (applyImported(jsonText)) setJsonModalMode(null);
+      else alert("団体の構成が見つかりませんでした");
+    } catch {
+      alert("JSONの読み込みに失敗しました（形式を確認してください）");
+    }
+  };
+  const handleCopyShareUrl = async () => {
+    const url = buildShareUrl(saveData());
+    try {
+      await navigator.clipboard.writeText(url);
+      alert("共有URLをコピーしました。このURLを開くと構成が復元されます。");
+    } catch {
+      window.prompt("以下のURLをコピーしてください", url);
+    }
+  };
 
   const updateCell = (sIdx: number, lane: number, slot: number, patch: Record<string, unknown>) =>
     setTeam((p) => {
@@ -32,6 +110,7 @@ export function TeamScorer() {
   const setCellType = (sIdx: number, lane: number, slot: number, type: CellType) => {
     if (type === "skill") updateCell(sIdx, lane, slot, { type: "skill", skillId: "" });
     else if (type === "motion") updateCell(sIdx, lane, slot, { type: "motion", motionId: "" });
+    else if (type === "union") updateCell(sIdx, lane, slot, { type: "union" });
     else {
       // 空にするセルは交差・組運動グループから外す
       setTeam((p) => {
@@ -148,8 +227,7 @@ export function TeamScorer() {
   const {
     analysis,
     emptyColumnWarnings,
-    required,
-    missing,
+    aDeductions,
     seriesDiffScore,
     bonus,
     dScore,
@@ -162,6 +240,40 @@ export function TeamScorer() {
 
   return (
     <>
+      <JsonModal
+        mode={jsonModalMode}
+        text={jsonText}
+        onTextChange={setJsonText}
+        onClose={() => setJsonModalMode(null)}
+        onCopy={handleCopyJson}
+        onImport={handleImportText}
+      />
+
+      <div className="io-wrap">
+        <button className="io-btn" onClick={handleExport}>
+          <Download size={14} /> エクスポート
+        </button>
+        <button className="io-btn" onClick={() => fileInputRef.current?.click()}>
+          <Upload size={14} /> インポート
+        </button>
+        <button className="io-btn" onClick={openExportText}>
+          テキスト出力
+        </button>
+        <button className="io-btn" onClick={() => setJsonModalMode("import")}>
+          テキスト読込
+        </button>
+        <button className="io-btn" onClick={handleCopyShareUrl}>
+          <Link2 size={14} /> 共有URLをコピー
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          onChange={handleImport}
+          style={{ display: "none" }}
+        />
+      </div>
+
       <p className="note">
         5人×3シリーズの構成です。各セルにタンブリング技列か徒手動作を入れます。縦に並ぶセルは同時実施として扱われます。
       </p>
@@ -246,6 +358,23 @@ export function TeamScorer() {
                                   onClick={() => setCellType(sIdx, laneIdx, slot, "motion")}
                                 >
                                   徒手
+                                </button>
+                                <button
+                                  className="cell-btn"
+                                  onClick={() => setCellType(sIdx, laneIdx, slot, "union")}
+                                >
+                                  組
+                                </button>
+                              </div>
+                            )}
+                            {cell.type === "union" && (
+                              <div className="cell-edit">
+                                <span className="union-badge">組（組運動に参加）</span>
+                                <button
+                                  className="remove-btn-xs"
+                                  onClick={() => setCellType(sIdx, laneIdx, slot, "empty")}
+                                >
+                                  <X size={10} />
                                 </button>
                               </div>
                             )}
@@ -343,6 +472,16 @@ export function TeamScorer() {
               <span className="diff-breakdown-final">採用：{a.seriesDiff ?? "—"}</span>
             </div>
 
+            {bonus.perSeries[sIdx] && bonus.perSeries[sIdx].total > 0 && (
+              <div className="diff-breakdown">
+                <span className="diff-breakdown-final">このシリーズの加点 +{bonus.perSeries[sIdx].total.toFixed(1)}</span>
+                {bonus.perSeries[sIdx].rotation > 0 && <span>同転回 +{bonus.perSeries[sIdx].rotation.toFixed(1)}</span>}
+                {bonus.perSeries[sIdx].landing > 0 && <span>着地 +{bonus.perSeries[sIdx].landing.toFixed(1)}</span>}
+                {bonus.perSeries[sIdx].cross > 0 && <span>交差 +{bonus.perSeries[sIdx].cross.toFixed(1)}</span>}
+                {bonus.perSeries[sIdx].sameDiff > 0 && <span>同一難度 +{bonus.perSeries[sIdx].sameDiff.toFixed(1)}</span>}
+              </div>
+            )}
+
             {(["cross", "union"] as GroupKind[]).map((kind) => {
               const groups = kind === "cross" ? ser.crossGroups : ser.unionGroups;
               const infos = kind === "cross" ? a.crosses : a.unions;
@@ -406,16 +545,18 @@ export function TeamScorer() {
       </button>
 
       <section className="card">
-        <div className="line-head">必須要素チェック</div>
+        <div className="line-head">A 減点項目（必須要素）</div>
         <ul className="check-list">
-          {required.map((r) => (
-            <li key={r.key} className="check-item">
-              <span className={`mark ${r.passed ? "ok" : "ng"}`}>{r.passed ? "✓" : "×"}</span>
-              <span className={r.passed ? "ok-text" : "ng-text"}>{r.label}</span>
+          {aDeductions.map((d) => (
+            <li key={d.key} className="check-item">
+              <span className={`mark ${d.deduct === 0 ? "ok" : "ng"}`}>{d.deduct === 0 ? "✓" : "×"}</span>
+              <span className={d.deduct === 0 ? "ok-text" : "ng-text"}>{d.label}</span>
+              <span className="check-detail">{d.detail}</span>
+              {d.deduct > 0 && <span className="ng-text">-{d.deduct.toFixed(1)}</span>}
             </li>
           ))}
         </ul>
-        {missing.length > 0 && <div className="missing-box">不足要素 {missing.length} 件</div>}
+        {aDeduction > 0 && <div className="missing-box">A減点合計 -{aDeduction.toFixed(1)} 点</div>}
       </section>
 
       <section className="card card-total">
@@ -426,19 +567,19 @@ export function TeamScorer() {
           <span>{seriesDiffScore.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
-          <span>同じ転回技の加点（最大0.3）</span>
+          <span>同じ転回技の加点（各シリーズ最大0.3の合計）</span>
           <span>+{bonus.rotation.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
-          <span>着地の加点（最大0.2）</span>
+          <span>着地の加点（各シリーズ最大0.2の合計）</span>
           <span>+{bonus.landing.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
-          <span>交差の加点（最大0.3）</span>
+          <span>交差の加点（各シリーズ最大0.3の合計）</span>
           <span>+{bonus.cross.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
-          <span>同一難度の加点（最大0.2）</span>
+          <span>同一難度の加点（各シリーズ最大0.2の合計）</span>
           <span>+{bonus.sameDiff.toFixed(1)} 点</span>
         </div>
         <div className="subtotal-row">
@@ -446,13 +587,23 @@ export function TeamScorer() {
           <span>{dScore.toFixed(1)} 点</span>
         </div>
 
-        <div className="category-head">A（芸術と多様性）— 10点満点から減点（暫定）</div>
-        <div className="total-row">
-          <span>必須要素不足（{missing.length}件）</span>
-          <span>-{aDeduction.toFixed(1)} 点</span>
-        </div>
+        <div className="category-head">A（芸術と多様性）— 10点満点から減点</div>
+        {aDeductions
+          .filter((d) => d.deduct > 0)
+          .map((d) => (
+            <div className="total-row" key={d.key}>
+              <span>{d.label}</span>
+              <span>-{d.deduct.toFixed(1)} 点</span>
+            </div>
+          ))}
+        {aDeduction === 0 && (
+          <div className="total-row">
+            <span>減点なし</span>
+            <span>-0.0 点</span>
+          </div>
+        )}
         <div className="subtotal-row">
-          <span>A 残点</span>
+          <span>A 残点（10 - {aDeduction.toFixed(1)}）</span>
           <span>{aScore.toFixed(1)} 点</span>
         </div>
 

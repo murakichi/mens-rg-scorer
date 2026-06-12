@@ -1,8 +1,9 @@
 import { useState, useMemo, useRef } from "react";
-import { Download, Upload, Plus } from "lucide-react";
+import { Download, Upload, Plus, Link2 } from "lucide-react";
 import { APPARATUS } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
 import type { ApparatusKey, Item, Series } from "../scoring/types";
+import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
 import { SeriesCard } from "./SeriesCard";
 import { ScoreSummary } from "./ScoreSummary";
@@ -27,10 +28,23 @@ const isPristine = (items: Item[]) =>
   !items[0].hasApparatus &&
   !items[0].isThrow;
 
-export function IndividualScorer() {
-  const [apparatus, setApparatus] = useState<ApparatusKey>("stick");
-  const [series, setSeries] = useState<Series[]>([emptySeries()]);
-  const [overallExecution, setOverallExecution] = useState(0);
+interface Props {
+  /** URL共有から復元する初期構成（任意） */
+  initialData?: { apparatus?: string; executionDeduction?: unknown; series?: unknown };
+}
+
+export function IndividualScorer({ initialData }: Props = {}) {
+  const [apparatus, setApparatus] = useState<ApparatusKey>(() =>
+    initialData?.apparatus && APPARATUS[initialData.apparatus as ApparatusKey]
+      ? (initialData.apparatus as ApparatusKey)
+      : "stick",
+  );
+  const [series, setSeries] = useState<Series[]>(() =>
+    Array.isArray(initialData?.series) && initialData!.series.length > 0
+      ? (initialData!.series as Series[])
+      : [emptySeries()],
+  );
+  const [overallExecution, setOverallExecution] = useState(() => Number(initialData?.executionDeduction) || 0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
   const [jsonText, setJsonText] = useState("");
@@ -102,6 +116,16 @@ export function IndividualScorer() {
     }
   };
 
+  const handleCopyShareUrl = async () => {
+    const url = buildShareUrl({ version: 1, apparatus, executionDeduction: overallExecution, series });
+    try {
+      await navigator.clipboard.writeText(url);
+      alert("共有URLをコピーしました。このURLを開くと構成が復元されます。");
+    } catch {
+      window.prompt("以下のURLをコピーしてください", url);
+    }
+  };
+
   // ---- 編集アクション ----
   const addItem = (sIdx: number, kind: Item["kind"]) =>
     setSeries((p) => {
@@ -155,6 +179,9 @@ export function IndividualScorer() {
         </button>
         <button className="io-btn" onClick={() => setJsonModalMode("import")}>
           テキスト読込
+        </button>
+        <button className="io-btn" onClick={handleCopyShareUrl}>
+          <Link2 size={14} /> 共有URLをコピー
         </button>
         <input
           ref={fileInputRef}

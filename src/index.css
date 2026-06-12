@@ -477,6 +477,12 @@ input[type="checkbox"] {
   gap: 12px;
   font-size: 14px;
 }
+.check-detail {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
 .mark {
   display: inline-flex;
   align-items: center;
@@ -861,6 +867,15 @@ input[type="checkbox"] {
 }
 .union-ink {
   color: #047857;
+}
+.union-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.16);
+  border-radius: 8px;
+  padding: 4px 8px;
 }
 .cross-pick.union {
   border-color: rgba(16, 185, 129, 0.6);

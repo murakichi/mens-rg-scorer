@@ -1,11 +1,17 @@
 import { useState } from "react";
 import { IndividualScorer } from "./components/IndividualScorer";
 import { TeamScorer } from "./components/TeamScorer";
+import { consumeShareHash } from "./scoring/share";
 
 type Mode = "individual" | "team";
 
 export default function App() {
-  const [mode, setMode] = useState<Mode>("individual");
+  // 起動時にURLハッシュから構成を復元（あれば）。一度だけ評価。
+  const [shared] = useState(consumeShareHash);
+  const [mode, setMode] = useState<Mode>(shared?.mode ?? "individual");
+
+  const individualInit = shared?.mode === "individual" ? shared.data : undefined;
+  const teamInit = shared?.mode === "team" ? shared.data : undefined;
 
   return (
     <div className="page">
@@ -24,7 +30,11 @@ export default function App() {
         </div>
       </header>
 
-      {mode === "individual" ? <IndividualScorer /> : <TeamScorer />}
+      {mode === "individual" ? (
+        <IndividualScorer initialData={individualInit} />
+      ) : (
+        <TeamScorer initialData={teamInit} />
+      )}
     </div>
   );
 }

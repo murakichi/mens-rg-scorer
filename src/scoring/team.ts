@@ -34,7 +34,7 @@ import type { Difficulty } from "./types";
 export const NUM_PLAYERS = 5;
 export const NUM_SERIES = 3;
 
-export type CellType = "empty" | "skill" | "motion";
+export type CellType = "empty" | "skill" | "motion" | "union";
 export interface Cell {
   type: CellType;
   skillId?: string;
@@ -127,25 +127,30 @@ export interface TeamSeriesAnalysis {
   chunkLastSkill: Record<string, boolean>;
 }
 
-export interface TeamBonus {
-  rotation: number; // 同じ転回技に関わる加点（最大0.3）
-  landing: number; // 着地に関する加点（最大0.2）
-  cross: number; // 交差に関する加点（最大0.3）
-  sameDiff: number; // 同一難度に関する加点（最大0.2）
+export interface TeamSeriesBonus {
+  rotation: number; // 同じ転回技に関わる加点（シリーズ最大0.3）
+  landing: number; // 着地に関する加点（シリーズ最大0.2）
+  cross: number; // 交差に関する加点（シリーズ最大0.3）
+  sameDiff: number; // 同一難度に関する加点（シリーズ最大0.2）
   total: number;
 }
+export interface TeamBonus extends TeamSeriesBonus {
+  /** シリーズごとの加点内訳（合算前） */
+  perSeries: TeamSeriesBonus[];
+}
 
-export interface TeamRequiredCheck {
+/** A（芸術と多様性）の減点項目 */
+export interface TeamADeduction {
   key: string;
   label: string;
-  passed: boolean;
+  detail: string;
+  deduct: number;
 }
 
 export interface TeamScoreResult {
   analysis: TeamSeriesAnalysis[];
   emptyColumnWarnings: number[][];
-  required: TeamRequiredCheck[];
-  missing: TeamRequiredCheck[];
+  aDeductions: TeamADeduction[];
   seriesDiffScore: number;
   bonus: TeamBonus;
   dScore: number;
@@ -183,14 +188,16 @@ function calcChunkDifficulty(skillIds: string[]): Difficulty | null {
   return VALUE_DIFF[Math.min(v, MAX_DIFF)];
 }
 
-/** セル単体の難度値（交差の段の値）。技=難度値、徒手=1、空=0。 */
+/** セル単体の難度値（交差の段の値）。技=難度値、徒手=1、組/空=0。 */
 function cellValue(cell: Cell | undefined): number {
-  if (!cell || cell.type === "empty") return 0;
+  if (!cell) return 0;
   if (cell.type === "skill") return cell.skillId ? DIFF_VALUE[skillDef(cell.skillId)?.difficulty ?? "A"] : 0;
-  return 1; // 徒手
+  if (cell.type === "motion") return 1;
+  return 0; // union / empty
 }
 function cellLabel(cell: Cell): string {
   if (cell.type === "skill") return cell.skillId ? skillDef(cell.skillId)?.name ?? "技" : "技（未選択）";
+  if (cell.type === "union") return "組";
   return "徒手";
 }
 
@@ -203,7 +210,8 @@ function analyzeTeamSeries(ser: TeamSeries): TeamSeriesAnalysis {
       buf = null;
     };
     lane.forEach((cell, slot) => {
-      if (cell.type === "empty") {
+      // 組(union)セルは参加マーカー。タンブリング塊には含めず区切りとして扱う。
+      if (cell.type === "empty" || cell.type === "union") {
         flush();
         return;
       }
@@ -482,34 +490,76 @@ function sameDiffBonusForSeries(ser: TeamSeries, a: TeamSeriesAnalysis): number 
   return 0;
 }
 
-function computeTeamBonus(team: TeamState, analysis: TeamSeriesAnalysis[]): TeamBonus {
-  let rotation = 0;
-  let landing = 0;
-  let cross = 0;
-  let sameDiff = 0;
-  team.series.forEach((ser, i) => {
-    const a = analysis[i];
-    rotation = Math.max(rotation, rotationBonusForSeries(ser, a));
-    landing = Math.max(landing, landingBonusForSeries(ser, a));
-    sameDiff = Math.max(sameDiff, sameDiffBonusForSeries(ser, a));
-    a.crosses.forEach((c) => (cross = Math.max(cross, crossBonusForCross(c, ser))));
+// ---- A減点の検出ヘルパー ----
+
+/** 宙返り→A難度(つなぎ)→宙返り の並びがあるか（つなぎ技） */
+function hasConnectSeq(skillIds: string[]): boolean {
+  for (let i = 1; i < skillIds.length - 1; i++) {
+    const prev = skillDef(skillIds[i - 1]);
+    const cur = skillDef(skillIds[i]);
+    const next = skillDef(skillIds[i + 1]);
+    if (prev?.isSalto && cur?.isConnectA && next?.isSalto) return true;
+  }
+  return false;
+}
+
+/** skillIds 内の最大連続宙返り数 */
+function maxSaltoChainOf(skillIds: string[]): number {
+  let max = 0;
+  let run = 0;
+  skillIds.forEach((id) => {
+    if (skillDef(id)?.isSalto) {
+      run += 1;
+      max = Math.max(max, run);
+    } else {
+      run = 0;
+    }
   });
-  const total = rotation + landing + cross + sameDiff;
-  return { rotation, landing, cross, sameDiff, total };
+  return max;
+}
+
+/** 各レーン（選手）が条件を満たすか集計。同時実施シリーズは1レーン＝全員。 */
+function countPlayers(
+  team: TeamState,
+  analysis: TeamSeriesAnalysis[],
+  laneQualifies: (chunks: Chunk[]) => boolean,
+): number {
+  const players = new Set<number>();
+  team.series.forEach((ser, i) => {
+    analysis[i].lanes.forEach((chunks, laneIdx) => {
+      if (!laneQualifies(chunks)) return;
+      if (ser.mode === "allTogether") for (let p = 0; p < NUM_PLAYERS; p++) players.add(p);
+      else players.add(laneIdx);
+    });
+  });
+  return players.size;
+}
+
+/** 1シリーズ分の加点。各カテゴリはそのシリーズ内で最高ティアのみ採用。 */
+function seriesBonus(ser: TeamSeries, a: TeamSeriesAnalysis): TeamSeriesBonus {
+  const rotation = rotationBonusForSeries(ser, a);
+  const landing = landingBonusForSeries(ser, a);
+  const sameDiff = sameDiffBonusForSeries(ser, a);
+  const cross = a.crosses.reduce((m, c) => Math.max(m, crossBonusForCross(c, ser)), 0);
+  return { rotation, landing, cross, sameDiff, total: rotation + landing + cross + sameDiff };
+}
+
+/** 加点は各シリーズごとに算出し、全シリーズを合算する。 */
+function computeTeamBonus(team: TeamState, analysis: TeamSeriesAnalysis[]): TeamBonus {
+  const perSeries = team.series.map((ser, i) => seriesBonus(ser, analysis[i]));
+  const sum = (pick: (b: TeamSeriesBonus) => number) => perSeries.reduce((s, b) => s + pick(b), 0);
+  return {
+    perSeries,
+    rotation: sum((b) => b.rotation),
+    landing: sum((b) => b.landing),
+    cross: sum((b) => b.cross),
+    sameDiff: sum((b) => b.sameDiff),
+    total: sum((b) => b.total),
+  };
 }
 
 export function computeTeamScore(team: TeamState): TeamScoreResult {
   const analysis = team.series.map(analyzeTeamSeries);
-
-  const crossCount = analysis.reduce((s, a) => s + a.crosses.filter((c) => c.diff).length, 0);
-  const unionCount = team.series.reduce(
-    (s, ser) => s + ser.unionGroups.filter((g) => g.cells.length > 0).length,
-    0,
-  );
-  const hasAnyAllTogether = team.series.some((ser) => ser.mode === "allTogether");
-  const allLanesFilled = team.series.every((ser) =>
-    ser.lanes.every((lane) => lane.some((cell) => cell.type !== "empty")),
-  );
 
   const emptyColumnWarnings = team.series.map((ser) => {
     if (ser.mode === "allTogether") return [];
@@ -520,24 +570,87 @@ export function computeTeamScore(team: TeamState): TeamScoreResult {
     return warns;
   });
 
-  const motionChunkCount = analysis.reduce(
-    (s, a) => s + a.lanes.reduce((ss, chunks) => ss + chunks.filter((c) => c.hasMotion && !c.hasSkill).length, 0),
-    0,
-  );
+  // ---- A減点 ----
+  // ① 3人以上がつなぎ技を実施（不足 -0.1）
+  const connectPlayers = countPlayers(team, analysis, (chunks) => chunks.some((c) => hasConnectSeq(c.skillIds)));
+  // ② 2人以上が宙返り連続技を実施（不足 -0.1）
+  const chainPlayers = countPlayers(team, analysis, (chunks) => chunks.some((c) => maxSaltoChainOf(c.skillIds) >= 2));
+  // ③ 組運動が無い（-0.5）
+  const hasUnion = team.series.some((ser) => ser.unionGroups.some((g) => g.cells.length > 0));
+  // ④ 全員同時のタンブリングが無い（-0.3）：同時実施シリーズに技 or 縦1列で全員技
+  const hasAllTogetherTumbling = team.series.some((ser, i) => {
+    if (ser.mode === "allTogether") return analysis[i].lanes[0]?.some((c) => c.hasSkill) ?? false;
+    if (ser.lanes.length < NUM_PLAYERS) return false;
+    for (let s = 0; s < ser.slots; s++) {
+      if (ser.lanes.every((l) => l[s]?.type === "skill" && l[s]?.skillId)) return true;
+    }
+    return false;
+  });
+  // ⑤ 複雑な同調性タンブリング（演技全体）：同一スロットで2〜4人が同時に宙返り＝1回。0回 -0.2 / 1回 -0.1 / 2回以上 0
+  let syncCount = 0;
+  team.series.forEach((ser) => {
+    if (ser.mode === "allTogether" || ser.lanes.length < NUM_PLAYERS) return;
+    for (let s = 0; s < ser.slots; s++) {
+      let saltos = 0;
+      for (let l = 0; l < NUM_PLAYERS; l++) {
+        const cell = ser.lanes[l][s];
+        if (cell?.type === "skill" && cell.skillId && skillDef(cell.skillId)?.isSalto) saltos++;
+      }
+      if (saltos >= 2 && saltos <= 4) syncCount++;
+    }
+  });
+  const syncDeduct = syncCount >= 2 ? 0 : syncCount === 1 ? 0.1 : 0.2;
+  // ⑥ 後半の難度：タンブリングを含むシリーズの3つ目が D未満 -0.1 / C未満 -0.2
+  const tumblingSeries = team.series
+    .map((_, i) => ({ value: analysis[i].seriesValue, hasTumbling: analysis[i].lanes.some((ch) => ch.some((c) => c.hasSkill)) }))
+    .filter((x) => x.hasTumbling);
+  let backDiffDeduct = 0;
+  let backDiffDetail = "対象なし（タンブリングシリーズ3つ未満）";
+  if (tumblingSeries.length >= 3) {
+    const v = tumblingSeries[2].value;
+    backDiffDetail = v > 0 ? VALUE_DIFF[v] : "—";
+    if (v < DIFF_VALUE.C) backDiffDeduct = 0.2;
+    else if (v < DIFF_VALUE.D) backDiffDeduct = 0.1;
+  }
 
-  const required: TeamRequiredCheck[] = [
-    { key: "cross", label: "交差を1回以上実施", passed: crossCount >= 1 },
-    { key: "union", label: "組技を1回以上実施", passed: unionCount >= 1 },
-    { key: "allTog", label: "全員同時実施を1回以上", passed: hasAnyAllTogether },
-    { key: "allLanes", label: "各シリーズで全レーンに塊（通常は5人全員）", passed: allLanesFilled },
-    { key: "motion3", label: "徒手塊を3つ以上", passed: motionChunkCount >= 3 },
+  const aDeductions: TeamADeduction[] = [
+    {
+      key: "connect",
+      label: "3人以上がつなぎ技を実施（不足 -0.1）",
+      detail: `${connectPlayers}人`,
+      deduct: connectPlayers >= 3 ? 0 : 0.1,
+    },
+    {
+      key: "saltoChain",
+      label: "2人以上が宙返り連続技を実施（不足 -0.1）",
+      detail: `${chainPlayers}人`,
+      deduct: chainPlayers >= 2 ? 0 : 0.1,
+    },
+    { key: "union", label: "組運動を実施（無 -0.5）", detail: hasUnion ? "あり" : "なし", deduct: hasUnion ? 0 : 0.5 },
+    {
+      key: "allTogetherTumbling",
+      label: "全員同時のタンブリング（無 -0.3）",
+      detail: hasAllTogetherTumbling ? "あり" : "なし",
+      deduct: hasAllTogetherTumbling ? 0 : 0.3,
+    },
+    {
+      key: "sync",
+      label: "複雑な同調性タンブリング（0回 -0.2 / 1回 -0.1）",
+      detail: `${syncCount}回`,
+      deduct: syncDeduct,
+    },
+    {
+      key: "backDiff",
+      label: "後半（3つ目のタンブリングシリーズ）の難度（D未満 -0.1 / C未満 -0.2）",
+      detail: backDiffDetail,
+      deduct: backDiffDeduct,
+    },
   ];
-  const missing = required.filter((r) => !r.passed);
 
   const seriesDiffScore = analysis.reduce((s, a) => s + (a.seriesDiff ? DIFF_SCORE[a.seriesDiff] : 0), 0);
   const bonus = computeTeamBonus(team, analysis);
   const dScore = seriesDiffScore + bonus.total;
-  const aDeduction = missing.length * 0.3; // 暫定：要件不足を一律 -0.3/件
+  const aDeduction = aDeductions.reduce((s, d) => s + d.deduct, 0);
   const executionDeduction = 0; // 後で各シリーズに入力欄を追加
   const aScore = Math.max(0, AE_FULL - aDeduction);
   const eScore = Math.max(0, AE_FULL - executionDeduction);
@@ -546,8 +659,7 @@ export function computeTeamScore(team: TeamState): TeamScoreResult {
   return {
     analysis,
     emptyColumnWarnings,
-    required,
-    missing,
+    aDeductions,
     seriesDiffScore,
     bonus,
     dScore,
@@ -557,4 +669,47 @@ export function computeTeamScore(team: TeamState): TeamScoreResult {
     eScore,
     grandTotal,
   };
+}
+
+// ---- インポート用：任意JSONを現行 TeamState 形に正規化 ----
+export function normalizeTeamState(data: unknown): TeamState | null {
+  const d = data as { series?: unknown[] };
+  if (!d || !Array.isArray(d.series) || d.series.length === 0) return null;
+  const series: TeamSeries[] = d.series.map((rawS, si) => {
+    const s = rawS as Partial<TeamSeries> & { lanes?: unknown[] };
+    const mode: SeriesMode = s.mode === "allTogether" ? "allTogether" : "normal";
+    const srcLanes = Array.isArray(s.lanes) ? (s.lanes as unknown[][]) : [];
+    const slots = Math.max(1, Number(s.slots) || (Array.isArray(srcLanes[0]) ? srcLanes[0].length : 1));
+    const laneCount = mode === "allTogether" ? 1 : NUM_PLAYERS;
+    const lanes: Cell[][] = Array.from({ length: laneCount }, (_, li) => {
+      const src = Array.isArray(srcLanes[li]) ? (srcLanes[li] as unknown[]) : [];
+      return Array.from({ length: slots }, (_, sj) => {
+        const c = src[sj] as Cell | undefined;
+        if (c && (c.type === "skill" || c.type === "motion" || c.type === "union")) {
+          return { type: c.type, skillId: c.skillId, motionId: c.motionId, stuck: !!c.stuck } as Cell;
+        }
+        return { type: "empty" } as Cell;
+      });
+    });
+    const mapGroups = (arr: unknown, kind: string): CellGroup[] =>
+      Array.isArray(arr)
+        ? arr.map((rawG, gi) => {
+            const g = rawG as Partial<CellGroup>;
+            const cells = Array.isArray(g.cells)
+              ? g.cells
+                  .filter((c) => typeof c?.lane === "number" && typeof c?.slot === "number")
+                  .map((c) => ({ lane: c.lane, slot: c.slot }))
+              : [];
+            return { id: typeof g.id === "string" ? g.id : `imp-${kind}-${si}-${gi}`, cells };
+          })
+        : [];
+    return {
+      mode,
+      slots,
+      lanes,
+      crossGroups: mapGroups(s.crossGroups, "cross"),
+      unionGroups: mapGroups(s.unionGroups, "union"),
+    };
+  });
+  return { series };
 }
