@@ -85,6 +85,19 @@ export const VARIETY_CAP = 0.5; // 投げ方+受け方の合算上限
 export const ADOPT_COUNT = 3;
 export const AE_FULL = 10;
 
+// ---- 団体（5人）モード ----
+export const UNION_MAX_VALUE = DIFF_VALUE.C; // 組運動の空中転回は最大C
+export const ROT_CHAIN_REQUIRED = 4; // 加点対象の連続転回数
+
+// 同じ転回技に関わる加点（最大0.3）：5人4連続/同時/D以上
+export const TEAM_ROTATION_BONUS = { all5: 0.1, sim: 0.2, simD: 0.3 } as const;
+// 着地に関する加点（最大0.2）：5人着ピタ/同時(縦並び)
+export const TEAM_LANDING_BONUS = { all5: 0.1, sim: 0.2 } as const;
+// 交差に関する加点（最大0.3）：全C3段以上/D以上1つ/D以上2つ
+export const TEAM_CROSS_BONUS = { base: 0.1, oneD: 0.2, twoD: 0.3 } as const;
+// 同一難度に関する加点（最大0.2）：全員D以上/全員E
+export const TEAM_SAMEDIFF_BONUS = { d: 0.1, e: 0.2 } as const;
+
 export const HAND_MOTIONS: HandMotion[] = [
   { id: "m1", name: "1動作", motions: 1 },
   { id: "m2", name: "2動作", motions: 2 },
