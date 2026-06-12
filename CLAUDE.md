@@ -4,40 +4,45 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A single-file React component (`mens-rg-scorer.tsx`) that calculates competition scores for Japanese **men's rhythmic gymnastics** (男子新体操), individual mode. The entire app — definition tables, scoring logic, and UI — lives in one file with a `default export App`. The UI language is Japanese; domain terms below keep the Japanese names since they appear throughout the code.
+A Vite + React + TypeScript single-page app that calculates competition scores for Japanese **men's rhythmic gymnastics** (男子新体操), individual mode. The UI language is Japanese; domain terms below keep the Japanese names since they appear throughout the code. The authoritative rules spec lives in `mens-rg-rules.md` — keep it and the definition tables in `src/scoring/constants.ts` in sync.
 
-## Project setup
+## Commands
 
-There is no build config, `package.json`, test suite, or git here — the file is meant to be dropped into a host React project (or a Claude artifact). Dependencies it expects from the host: `react` (hooks) and `lucide-react` (icons). Styling is inline via the `S` style object at the bottom of the file; there is no CSS framework.
+- `npm run dev` — Vite dev server (hot reload).
+- `npm run build` — `tsc -b` typecheck (strict) then `vite build` to `dist/`.
+- `npm run typecheck` — types only, no emit.
+- `npm run preview` — serve the production build locally.
 
-When asked to "run" or "test", there is no command to invoke — verify changes by reasoning through the scoring functions or by having the user drop the file into their React environment.
+There is no test runner yet. After changing scoring logic, run `npm run build` (strict TS) and reason through the pure functions in `src/scoring/`.
+
+## Deployment
+
+GitHub Pages via `.github/workflows/deploy.yml` (builds on push to `main`, uploads `dist/`). The Pages source must be set to **GitHub Actions**. `vite.config.ts` sets `base: "/mens-rg-scorer/"` — this must match the repo name or assets 404 on Pages.
 
 ## Architecture
 
-The data model is a flat **list of series**, each series an ordered list of `items`. Everything else is derived. There are four item `kind`s:
+The codebase splits cleanly into **pure scoring logic** (`src/scoring/`) and **UI** (`src/App.tsx` + `src/components/`). The UI holds state and renders; it contains no scoring math.
+
+The data model is a flat **list of `Series`**, each an ordered list of `items` (`src/scoring/types.ts`). Everything else is derived. Four item `kind`s (a discriminated union on `kind`):
 
 - `throw` (投げ) / `catch` (キャッチ) — bracket an apparatus throw; `reqTypes` holds required throws (e.g. `twothrow`, `lefthand`), `throwTypes`/`catchTypes` hold optional technique tags.
 - `skill` (タンブリング技) — a tumbling element referencing `SKILL_LIST` by `skillId`, with `hasApparatus` and `isThrow` (throw executed mid-skill) flags.
 - `motion` (徒手動作) — empty-hand body motions referencing `HAND_MOTIONS`.
 
-### The core pipeline
+### The scoring pipeline (`src/scoring/`)
 
-`analyzeSeries(series)` is the heart of the model. It walks `items` left-to-right and groups them into **units** by flushing a buffer whenever a `catch` is seen:
-
-- A run of skills/motions with **no throw** → a `tumbling` unit; difficulty from `calcTumblingDifficulty` (first skill's value, +1 per additional non-A skill, +1 if any throw, capped at E).
-- A run that **contains a throw** → a `throw` unit. Its difficulty is `max(handDiff, tumblingDiff)`; `calcHandDifficulty` derives hand difficulty from accumulated motion count (縦3動作 → forced E). A throw unit that also contains a skill is a **投げタン** (`isThrowTumbling`) and counts toward tumbling, not hand.
-
-Downstream, `App` computes the score from `analysis` (the per-series result of `analyzeSeries`) plus the raw `series`. Final score = **D (難度, additive) + A (10 − deductions) + E (10 − manual execution deductions)**:
-
-- **D adds:** top-3 tumbling difficulties + top-3 hand difficulties (`ADOPT_COUNT`/`DIFF_SCORE`), series-throw bonus, technique-tag bonus, apparatus-operation bonus, two-throw-4-motion bonus.
-- **A deducts:** missing-apparatus, missing-direction (前方系/側方系/後方系 must all appear), too-few-throws, salto-chain-too-short, throw/catch variety shortage — each capped per the `*_CAP`/`*_DEDUCTION` constants near the top.
+- **`constants.ts`** — all definition tables and tunable rule values (`SKILL_LIST`, `HAND_MOTIONS`, `DIFF_SCORE`, `*_BONUS`, `*_DEDUCTION`, `*_CAP`, `ADOPT_COUNT`, …). Change scoring values **here only**.
+- **`analysis.ts`** — per-series functions. `analyzeSeries(series)` is the heart: it walks `items` left-to-right and flushes a buffer into **units** whenever a `catch` is seen.
+  - A run with **no throw** → a `tumbling` unit; `calcTumblingDifficulty` = first skill's value, +1 per additional non-A skill, +1 if any throw, capped at E.
+  - A run **containing a throw** → a `throw` unit; difficulty is `max(handDiff, tumblingDiff)`. `calcHandDifficulty` derives hand difficulty from accumulated motion count (縦3動作 → forced E). A throw unit that also contains a skill is a **投げタン** (`isThrowTumbling`) and counts toward tumbling, not hand.
+  - Also: `maxSaltoChain`, `hasConnect`/`hasConnectWithoutApparatus` (つなぎ技 detection), `checkApparatusFlow` (in-hand/in-air validator, warnings only — no score effect), `seriesSignature` (dup detection).
+- **`score.ts`** — `computeScore(series, apparatus): ScoreResult` is the single source of truth for the whole-routine score. The UI calls it once (memoized in `App`) and renders the returned object. Final score = **D (難度, additive) + A (10 − deductions) + E (10 − manual execution deductions)**, both A and E floored at 0.
 
 ### Conventions and gotchas
 
-- **All scoring rules are tunable constants** declared at the top of the file (`DIFF_SCORE`, `*_BONUS`, `*_DEDUCTION`, `*_CAP`, `VARIETY_REQUIRED`, `ADOPT_COUNT`). Change scoring there, not inline in `App`.
-- **Duplicate-series suppression:** `seriesSignature` + `dupFlags` detect identical series. Duplicates are excluded from counts/most bonuses but their difficulty still competes for the top-3 adopted slots. Many reductions in `App` start with `if (dupFlags[i]) return;` — preserve that guard when adding per-series logic.
-- **The per-series breakdown** (`seriesBreakdowns` in `App`) deliberately **re-implements** the global bonus/deduction logic locally for display. If you change a scoring rule, update both the global computation and the matching branch in `seriesBreakdowns` or the UI breakdown will disagree with the totals.
-- `checkApparatusFlow` is an independent validator simulating in-hand vs in-air apparatus counts (`APPARATUS_COUNT`) to surface throw/catch imbalance warnings; it does not affect the score.
-- `NO_APPARATUS_DEDUCTION` is a legacy constant kept for compatibility — the live logic uses `NO_APP_SALTO_DEDUCTION` / `NO_APP_ALL_DEDUCTION` / `NO_APP_CAP`.
-- State edits use `structuredClone` for immutable updates. Import/export round-trips the `{ version: 1, apparatus, series }` shape via both file download and a copy/paste JSON modal.
-- Team mode (団体モード, 5-person) is shown as a disabled "準備中" placeholder — not implemented.
+- **`computeScore` returns everything the UI needs**, including `seriesBreakdowns` (per-series contribution rows) and `required`/`missing` (必須要素 checks). Add new derived values to `ScoreResult`, not as ad-hoc calculations in components.
+- **Single source of truth for sums:** `computeScore` computes `seriesBreakdowns` first, then the literal-sum globals (`techniqueBonus`, `apparatusOpBonus`, `twoThrowMotionBonus`, and the base of `noApparatusDeduction`) are derived by summing those breakdowns — so per-series rows and grand totals cannot drift apart. The genuinely-global values that can't be derived per-series (top-3 adopted `tumblingScore`/`handScore`, the single `seriesBonus`, direction/throwCount/saltoChain/variety deductions) are computed across all series. When adding a rule, decide which category it is.
+- **Duplicate-series suppression:** `seriesSignature` + `dupFlags` detect identical series. Duplicates are excluded from counts/most bonuses but their difficulty still competes for the top-3 adopted slots. Per-series logic guarded by `if (isDup)`/`if (dupFlags[i])` — preserve that guard when adding rules.
+- **`other` (その他) throws/catches count every time**, even in duplicate series — note the `throwOtherCount`/`catchOtherCount` paths sit *before* the `if (isDup) return` guard in the variety counting.
+- State edits use `structuredClone` for immutable updates. Import/export round-trips the `{ version: 1, apparatus, series }` shape (`SaveData`) via file download and a copy/paste JSON modal (`JsonModal`).
+- Team mode (団体モード, 5-person) is a disabled "準備中" placeholder — not implemented.
