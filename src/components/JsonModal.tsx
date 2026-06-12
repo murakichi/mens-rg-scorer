@@ -1,5 +1,4 @@
 import { X } from "lucide-react";
-import { S } from "../styles";
 
 export type JsonModalMode = "export" | "import" | null;
 
@@ -16,32 +15,32 @@ interface Props {
 export function JsonModal({ mode, text, onTextChange, onClose, onCopy, onImport }: Props) {
   if (!mode) return null;
   return (
-    <div style={S.modalOverlay} onClick={onClose}>
-      <div style={S.modal} onClick={(e) => e.stopPropagation()}>
-        <div style={S.modalHead}>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
           <span>{mode === "export" ? "テキスト出力（JSON）" : "テキスト読込（JSON）"}</span>
-          <button style={S.removeBtnXs} onClick={onClose}>
+          <button className="remove-btn-xs" onClick={onClose}>
             <X size={16} />
           </button>
         </div>
         <textarea
-          style={S.modalTextarea}
+          className="modal-textarea"
           value={text}
           readOnly={mode === "export"}
           onChange={(e) => onTextChange(e.target.value)}
           placeholder={mode === "import" ? "JSONを貼り付けてください" : ""}
         />
-        <div style={S.modalActions}>
+        <div className="modal-actions">
           {mode === "export" ? (
-            <button style={S.ioBtn} onClick={onCopy}>
+            <button className="io-btn" onClick={onCopy}>
               クリップボードにコピー
             </button>
           ) : (
-            <button style={S.ioBtn} onClick={onImport}>
+            <button className="io-btn" onClick={onImport}>
               読み込む
             </button>
           )}
-          <button style={S.ioBtn} onClick={onClose}>
+          <button className="io-btn" onClick={onClose}>
             閉じる
           </button>
         </div>

@@ -23,6 +23,8 @@ GitHub Pages via `.github/workflows/deploy.yml` (builds on push to `main`, uploa
 
 The codebase splits cleanly into **pure scoring logic** (`src/scoring/`) and **UI** (`src/App.tsx` + `src/components/`). The UI holds state and renders; it contains no scoring math.
 
+`App.tsx` is a thin shell holding a `mode` toggle and rendering either `IndividualScorer` (個人) or `TeamScorer` (団体, 5-person). Each scorer owns its own state. Styling is a **glassmorphism design system in `src/index.css`** (CSS custom properties + class names + hover/transition states) — components use `className`, not inline styles. Change visual tokens in the `:root` block.
+
 The data model is a flat **list of `Series`**, each an ordered list of `items` (`src/scoring/types.ts`). Everything else is derived. Four item `kind`s (a discriminated union on `kind`):
 
 - `throw` (投げ) / `catch` (キャッチ) — bracket an apparatus throw; `reqTypes` holds required throws (e.g. `twothrow`, `lefthand`), `throwTypes`/`catchTypes` hold optional technique tags.
@@ -36,7 +38,8 @@ The data model is a flat **list of `Series`**, each an ordered list of `items` (
   - A run with **no throw** → a `tumbling` unit; `calcTumblingDifficulty` = first skill's value, +1 per additional non-A skill, +1 if any throw, capped at E.
   - A run **containing a throw** → a `throw` unit; difficulty is `max(handDiff, tumblingDiff)`. `calcHandDifficulty` derives hand difficulty from accumulated motion count (縦3動作 → forced E). A throw unit that also contains a skill is a **投げタン** (`isThrowTumbling`) and counts toward tumbling, not hand.
   - Also: `maxSaltoChain`, `hasConnect`/`hasConnectWithoutApparatus` (つなぎ技 detection), `checkApparatusFlow` (in-hand/in-air validator, warnings only — no score effect), `seriesSignature` (dup detection).
-- **`score.ts`** — `computeScore(series, apparatus): ScoreResult` is the single source of truth for the whole-routine score. The UI calls it once (memoized in `App`) and renders the returned object. Final score = **D (難度, additive) + A (10 − deductions) + E (10 − manual execution deductions)**, both A and E floored at 0.
+- **`score.ts`** — `computeScore(series, apparatus): ScoreResult` is the single source of truth for the whole-routine **individual** score. The UI calls it once (memoized) and renders the returned object. Final score = **D (難度, additive) + A (10 − deductions) + E (10 − manual execution deductions)**, both A and E floored at 0.
+- **`team.ts`** — the 団体 (5-person) model and `computeTeamScore(team): TeamScoreResult`. Different data shape: a grid of `Series` × player `lanes` × `slots` of `Cell`s; horizontally-adjacent non-empty cells form a **chunk** whose difficulty reuses `SKILL_LIST`/`DIFF_*` (no throw +1, unlike individual). A/E scoring here is **provisional** (`aDeduction = missing.length * 0.3`, execution not yet wired) — see the `※今後対応` note in `TeamScorer`.
 
 ### Conventions and gotchas
 
@@ -44,5 +47,5 @@ The data model is a flat **list of `Series`**, each an ordered list of `items` (
 - **Single source of truth for sums:** `computeScore` computes `seriesBreakdowns` first, then the literal-sum globals (`techniqueBonus`, `apparatusOpBonus`, `twoThrowMotionBonus`, and the base of `noApparatusDeduction`) are derived by summing those breakdowns — so per-series rows and grand totals cannot drift apart. The genuinely-global values that can't be derived per-series (top-3 adopted `tumblingScore`/`handScore`, the single `seriesBonus`, direction/throwCount/saltoChain/variety deductions) are computed across all series. When adding a rule, decide which category it is.
 - **Duplicate-series suppression:** `seriesSignature` + `dupFlags` detect identical series. Duplicates are excluded from counts/most bonuses but their difficulty still competes for the top-3 adopted slots. Per-series logic guarded by `if (isDup)`/`if (dupFlags[i])` — preserve that guard when adding rules.
 - **`other` (その他) throws/catches count every time**, even in duplicate series — note the `throwOtherCount`/`catchOtherCount` paths sit *before* the `if (isDup) return` guard in the variety counting.
-- State edits use `structuredClone` for immutable updates. Import/export round-trips the `{ version: 1, apparatus, series }` shape (`SaveData`) via file download and a copy/paste JSON modal (`JsonModal`).
-- Team mode (団体モード, 5-person) is a disabled "準備中" placeholder — not implemented.
+- State edits use `structuredClone` for immutable updates. Import/export (individual only) round-trips the `{ version: 1, apparatus, series }` shape (`SaveData`) via file download and a copy/paste JSON modal (`JsonModal`).
+- Team mode (団体モード) is implemented but its A/E scoring is provisional (see `team.ts`); crossing-group detail, union-skill difficulty, and execution input are TODO.

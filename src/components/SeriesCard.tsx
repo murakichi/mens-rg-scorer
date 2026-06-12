@@ -1,5 +1,4 @@
 import { Trash2, X } from "lucide-react";
-import { S } from "../styles";
 import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
@@ -49,9 +48,9 @@ function ItemEditor({
   if (item.kind === "throw") {
     return (
       <>
-        <div style={S.throwTag}>投げ</div>
+        <div className="throw-tag">投げ</div>
         {[...THROW_OPTIONS_COMMON, ...(APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map((opt) => (
-          <label key={opt.id} style={S.check}>
+          <label key={opt.id} className="check">
             <input
               type="checkbox"
               checked={(item.throwTypes || []).includes(opt.id)}
@@ -61,7 +60,7 @@ function ItemEditor({
           </label>
         ))}
         {REQUIRED_THROW_OPTIONS[apparatus].map((opt) => (
-          <label key={opt.id} style={S.checkReq}>
+          <label key={opt.id} className="check-req">
             <input
               type="checkbox"
               checked={(item.reqTypes || []).includes(opt.id)}
@@ -76,9 +75,9 @@ function ItemEditor({
   if (item.kind === "catch") {
     return (
       <>
-        <div style={S.catchTag}>キャッチ</div>
+        <div className="catch-tag">キャッチ</div>
         {[...CATCH_OPTIONS_COMMON, ...(APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])].map((opt) => (
-          <label key={opt.id} style={S.check}>
+          <label key={opt.id} className="check">
             <input
               type="checkbox"
               checked={(item.catchTypes || []).includes(opt.id)}
@@ -88,7 +87,7 @@ function ItemEditor({
           </label>
         ))}
         {APPARATUS_USE[apparatus] && (
-          <label style={S.checkReq}>
+          <label className="check-req">
             <input
               type="checkbox"
               checked={item.catchTwo || false}
@@ -103,8 +102,12 @@ function ItemEditor({
   if (item.kind === "skill") {
     return (
       <>
-        <div style={S.selWrap}>
-          <select value={item.skillId} onChange={(e) => onUpdate({ skillId: e.target.value })} style={S.select}>
+        <div className="sel-wrap">
+          <select
+            className="select"
+            value={item.skillId}
+            onChange={(e) => onUpdate({ skillId: e.target.value })}
+          >
             <option value="">タンブリング技</option>
             {SKILL_LIST.map((s) => (
               <option key={s.id} value={s.id}>
@@ -113,7 +116,7 @@ function ItemEditor({
             ))}
           </select>
         </div>
-        <label style={S.check}>
+        <label className="check">
           <input
             type="checkbox"
             checked={item.hasApparatus || false}
@@ -121,7 +124,7 @@ function ItemEditor({
           />
           手具操作
         </label>
-        <label style={S.check}>
+        <label className="check">
           <input
             type="checkbox"
             checked={item.isThrow || false}
@@ -134,7 +137,7 @@ function ItemEditor({
   }
   // motion
   return (
-    <select value={item.motionId} onChange={(e) => onUpdate({ motionId: e.target.value })} style={S.select}>
+    <select className="select" value={item.motionId} onChange={(e) => onUpdate({ motionId: e.target.value })}>
       <option value="">徒手動作</option>
       {HAND_MOTIONS.map((m) => (
         <option key={m.id} value={m.id}>
@@ -163,57 +166,57 @@ export function SeriesCard({
   const flowErrors = checkApparatusFlow(ser, apparatus);
 
   return (
-    <section style={S.card}>
-      <div style={S.lineHead}>
+    <section className="card">
+      <div className="line-head">
         <span>
           シリーズ {sIdx + 1}
           {isDup ? "（重複：本数・投げ回数に不算入）" : ""}
         </span>
         {canRemove && (
-          <button style={S.removeBtnSm} onClick={onRemoveSeries}>
+          <button className="remove-btn-sm" onClick={onRemoveSeries}>
             <Trash2 size={13} /> 削除
           </button>
         )}
       </div>
-      <label style={S.execLabel}>
+      <label className="exec-label">
         実施減点(E)：
         <input
+          className="exec-input"
           type="number"
           step="0.1"
           min="0"
           value={ser.executionDeduction || 0}
           onChange={(e) => onUpdateField({ executionDeduction: parseFloat(e.target.value) || 0 })}
-          style={S.execInput}
         />
         点
       </label>
-      <div style={S.skillRow}>
+      <div className="skill-row">
         {ser.items.map((item, iIdx) => (
-          <div key={iIdx} style={S.skillBlock}>
+          <div key={iIdx} className="skill-block">
             <ItemEditor item={item} apparatus={apparatus} onUpdate={(patch) => onUpdateItem(iIdx, patch)} />
-            <button style={S.removeBtnXs} onClick={() => onRemoveItem(iIdx)} aria-label="削除">
+            <button className="remove-btn-xs" onClick={() => onRemoveItem(iIdx)} aria-label="削除">
               <X size={12} />
             </button>
-            {iIdx < ser.items.length - 1 && <div style={S.arrow}>→</div>}
+            {iIdx < ser.items.length - 1 && <div className="arrow">→</div>}
           </div>
         ))}
       </div>
-      <div style={S.addRow}>
-        <button style={S.addBtnSm} onClick={() => onAddItem("throw")}>
-          + 投げ
+      <div className="add-row">
+        <button className="add-btn-sm" onClick={() => onAddItem("throw")}>
+          ＋ 投げ
         </button>
-        <button style={S.addBtnSm} onClick={() => onAddItem("skill")}>
-          + タンブリング技
+        <button className="add-btn-sm" onClick={() => onAddItem("skill")}>
+          ＋ タンブリング技
         </button>
-        <button style={S.addBtnSm} onClick={() => onAddItem("motion")}>
-          + 徒手動作
+        <button className="add-btn-sm" onClick={() => onAddItem("motion")}>
+          ＋ 徒手動作
         </button>
-        <button style={S.addBtnSm} onClick={() => onAddItem("catch")}>
-          + キャッチ
+        <button className="add-btn-sm" onClick={() => onAddItem("catch")}>
+          ＋ キャッチ
         </button>
       </div>
       {a.units.map((u, ui) => (
-        <div key={ui} style={S.unitResult}>
+        <div key={ui} className="unit-result">
           {u.type === "tumbling"
             ? `タンブリング塊：難度 ${u.finalDiff}`
             : `投げ：難度 ${u.finalDiff}（${
@@ -224,52 +227,52 @@ export function SeriesCard({
           {`　／ 最大連続宙返り ${maxSaltoChain(u.skills.map((s) => s.skillId))} 回`}
         </div>
       ))}
-      {seriesQualifies && <div style={S.bonusNote}>連続投げ加点の対象（投げ2回以上＋D難度以上）</div>}
+      {seriesQualifies && <div className="bonus-note">連続投げ加点の対象（投げ2回以上＋D難度以上）</div>}
       {flowErrors.map((err, ei) => (
-        <div key={ei} style={S.flowError}>
+        <div key={ei} className="flow-error">
           ⚠ {err}
         </div>
       ))}
-      <div style={S.seriesBreakdown}>
-        <div style={S.breakdownTitle}>シリーズの加点・減点</div>
-        <div style={S.breakdownRow}>
+      <div className="series-breakdown">
+        <div className="breakdown-title">シリーズの加点・減点</div>
+        <div className="breakdown-row">
           <span>D：タンブリング難度点</span>
           <span>{b.tumDiff.toFixed(1)}</span>
         </div>
-        <div style={S.breakdownRow}>
+        <div className="breakdown-row">
           <span>D：徒手難度点</span>
           <span>{b.handDiff.toFixed(1)}</span>
         </div>
-        <div style={S.breakdownRow}>
+        <div className="breakdown-row">
           <span>D：連続投げ加点</span>
           <span>{b.sBonus.toFixed(1)}</span>
         </div>
-        <div style={S.breakdownRow}>
+        <div className="breakdown-row">
           <span>D：技術加点</span>
           <span>{b.tech.toFixed(1)}</span>
         </div>
-        <div style={S.breakdownRow}>
+        <div className="breakdown-row">
           <span>D：手具操作加点</span>
           <span>{b.appOp.toFixed(1)}</span>
         </div>
-        <div style={S.breakdownRow}>
+        <div className="breakdown-row">
           <span>D：二つ投げ4動作加点</span>
           <span>{b.twoMot.toFixed(1)}</span>
         </div>
-        <div style={S.breakdownRow}>
+        <div className="breakdown-row">
           <span>A：手具操作不足減点</span>
           <span>-{b.noApp.toFixed(1)}</span>
         </div>
-        <div style={S.breakdownRow}>
+        <div className="breakdown-row">
           <span>E：実施減点</span>
           <span>-{b.exec.toFixed(1)}</span>
         </div>
-        <div style={S.breakdownTotal}>
+        <div className="breakdown-total">
           <span>D寄与</span>
           <span>{b.dPart.toFixed(1)} 点</span>
         </div>
         {isDup && (
-          <p style={S.hint}>※重複シリーズのため、難度点は採用候補に含まれますが、本数・投げ回数・一部加点には不算入</p>
+          <p className="hint">※重複シリーズのため、難度点は採用候補に含まれますが、本数・投げ回数・一部加点には不算入</p>
         )}
       </div>
     </section>
