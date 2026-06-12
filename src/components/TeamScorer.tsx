@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Trash2 } from "lucide-react";
 import { SKILL_LIST, HAND_MOTIONS } from "../scoring/constants";
 import {
   computeTeamScore,
   initialTeamState,
+  emptySeries,
   emptyCell,
   emptyLane,
   NUM_PLAYERS,
@@ -46,6 +47,19 @@ export function TeamScorer() {
     setTeam((p) => {
       const n = structuredClone(p);
       n.series[sIdx] = { ...n.series[sIdx], ...patch };
+      return n;
+    });
+  const addSeries = () =>
+    setTeam((p) => {
+      const n = structuredClone(p);
+      n.series.push(emptySeries(3));
+      return n;
+    });
+  const removeSeries = (sIdx: number) =>
+    setTeam((p) => {
+      if (p.series.length <= 1) return p;
+      const n = structuredClone(p);
+      n.series.splice(sIdx, 1);
       return n;
     });
 
@@ -95,7 +109,14 @@ export function TeamScorer() {
                 シリーズ {sIdx + 1}
                 {ser.mode === "allTogether" ? "（同時実施）" : ""}
               </span>
-              <span className="diff-badge">{a.seriesDiff ? `最高難度 ${a.seriesDiff}` : "難度 —"}</span>
+              <span className="line-head-right">
+                <span className="diff-badge">{a.seriesDiff ? `最高難度 ${a.seriesDiff}` : "難度 —"}</span>
+                {team.series.length > 1 && (
+                  <button className="remove-btn-sm" onClick={() => removeSeries(sIdx)}>
+                    <Trash2 size={13} /> 削除
+                  </button>
+                )}
+              </span>
             </div>
             <div className="opts-row">
               <button
@@ -231,6 +252,10 @@ export function TeamScorer() {
           </section>
         );
       })}
+
+      <button className="add-btn" onClick={addSeries}>
+        <Plus size={14} /> シリーズを追加
+      </button>
 
       <section className="card">
         <div className="line-head">必須要素チェック</div>

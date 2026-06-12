@@ -173,6 +173,12 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
+}
+.line-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 /* ---- ボタン共通 ---- */
@@ -251,6 +257,9 @@ button {
 .add-btn:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.7);
+}
+.add-btn + .card {
+  margin-top: 16px;
 }
 .add-row {
   display: flex;
