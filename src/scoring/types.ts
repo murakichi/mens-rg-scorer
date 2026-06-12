@@ -91,5 +91,7 @@ export interface SeriesAnalysis {
 export interface SaveData {
   version: number;
   apparatus: ApparatusKey;
+  /** 演技全体の実施減点（シリーズ非依存）。未指定は0扱い。 */
+  executionDeduction?: number;
   series: Series[];
 }

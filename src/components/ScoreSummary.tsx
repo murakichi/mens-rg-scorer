@@ -26,6 +26,8 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
     varietyDeduction,
     aDeduction,
     aScore,
+    seriesExecutionDeduction,
+    overallExecutionDeduction,
     executionDeduction,
     eScore,
     grandTotal,
@@ -113,7 +115,11 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
         <div className="category-head">E（実施）— 10点満点から減点</div>
         <div className="total-row">
           <span>各シリーズの実施減点合計</span>
-          <span>-{executionDeduction.toFixed(1)} 点</span>
+          <span>-{seriesExecutionDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>演技全体の実施減点</span>
+          <span>-{overallExecutionDeduction.toFixed(1)} 点</span>
         </div>
         <div className="subtotal-row">
           <span>E 残点（10 − {executionDeduction.toFixed(1)}）</span>

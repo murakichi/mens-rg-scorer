@@ -30,16 +30,20 @@ const isPristine = (items: Item[]) =>
 export function IndividualScorer() {
   const [apparatus, setApparatus] = useState<ApparatusKey>("stick");
   const [series, setSeries] = useState<Series[]>([emptySeries()]);
+  const [overallExecution, setOverallExecution] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
   const [jsonText, setJsonText] = useState("");
 
   // ---- 採点（純粋関数に委譲）----
-  const result = useMemo(() => computeScore(series, apparatus), [series, apparatus]);
+  const result = useMemo(
+    () => computeScore(series, apparatus, overallExecution),
+    [series, apparatus, overallExecution],
+  );
 
   // ---- ファイル入出力 ----
   const handleExport = () => {
-    const data = { version: 1, apparatus, series };
+    const data = { version: 1, apparatus, executionDeduction: overallExecution, series };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -53,6 +57,7 @@ export function IndividualScorer() {
   const applyImportedData = (raw: string): boolean => {
     const data = JSON.parse(raw);
     if (data.apparatus && APPARATUS[data.apparatus as ApparatusKey]) setApparatus(data.apparatus);
+    setOverallExecution(Number(data.executionDeduction) || 0);
     if (Array.isArray(data.series) && data.series.length > 0) {
       setSeries(data.series);
       return true;
@@ -77,7 +82,7 @@ export function IndividualScorer() {
 
   // ---- テキスト方式（モーダル）----
   const openExportText = () => {
-    setJsonText(JSON.stringify({ version: 1, apparatus, series }, null, 2));
+    setJsonText(JSON.stringify({ version: 1, apparatus, executionDeduction: overallExecution, series }, null, 2));
     setJsonModalMode("export");
   };
   const handleCopyJson = async () => {
@@ -202,6 +207,25 @@ export function IndividualScorer() {
       <button className="add-btn" onClick={addSeries}>
         <Plus size={14} /> シリーズを追加
       </button>
+
+      <section className="card">
+        <div className="line-head">実施減点（演技全体）</div>
+        <label className="exec-label">
+          演技全体の実施減点(E)：
+          <input
+            className="exec-input"
+            type="number"
+            step="0.1"
+            min="0"
+            value={overallExecution || 0}
+            onChange={(e) => setOverallExecution(parseFloat(e.target.value) || 0)}
+          />
+          点
+        </label>
+        <p className="hint">
+          各シリーズの実施減点とは別に、演技全体に対する実施減点を入力します（E残点は両方を合算して算出）。
+        </p>
+      </section>
 
       <ScoreSummary result={result} />
     </>

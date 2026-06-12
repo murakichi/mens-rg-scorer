@@ -92,7 +92,9 @@ export interface ScoreResult {
   aScore: number;
 
   // E
-  executionDeduction: number;
+  seriesExecutionDeduction: number; // 各シリーズの実施減点合計
+  overallExecutionDeduction: number; // 演技全体の実施減点（シリーズ非依存）
+  executionDeduction: number; // 上記2つの合計
   eScore: number;
 
   grandTotal: number;
@@ -105,7 +107,11 @@ export interface ScoreResult {
 
 const isTumblingUnit = (u: Unit) => u.type === "tumbling" || (u.type === "throw" && u.isThrowTumbling);
 
-export function computeScore(series: Series[], apparatus: ApparatusKey): ScoreResult {
+export function computeScore(
+  series: Series[],
+  apparatus: ApparatusKey,
+  overallExecutionDeduction = 0,
+): ScoreResult {
   const analysis = series.map(analyzeSeries);
   const allUnits = analysis.flatMap((a) => a.units);
 
@@ -329,7 +335,9 @@ export function computeScore(series: Series[], apparatus: ApparatusKey): ScoreRe
   const missing = required.filter((r) => r.passed === false);
 
   // ---- 合計 ----
-  const executionDeduction = series.reduce((s, ser) => s + (Number(ser.executionDeduction) || 0), 0);
+  const seriesExecutionDeduction = series.reduce((s, ser) => s + (Number(ser.executionDeduction) || 0), 0);
+  const overallExec = Number(overallExecutionDeduction) || 0;
+  const executionDeduction = seriesExecutionDeduction + overallExec;
   const dScore =
     tumblingScore + handScore + seriesBonus + techniqueBonus + apparatusOpBonus + twoThrowMotionBonus;
   const aDeduction =
@@ -363,6 +371,8 @@ export function computeScore(series: Series[], apparatus: ApparatusKey): ScoreRe
     varietyDeduction,
     aDeduction,
     aScore,
+    seriesExecutionDeduction,
+    overallExecutionDeduction: overallExec,
     executionDeduction,
     eScore,
     grandTotal,
