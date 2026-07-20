@@ -9,8 +9,9 @@
 //   seriesValue = max(三人以上が到達した難度, 各交差グループの合計難度)
 //   - 各レーン（選手）の最高塊難度を降順に並べ、3番目の値を「三人以上が
 //     到達した難度」とする（同時実施シリーズは全員同一なのでレーン0の値）。
-//   - 5人が同時に同じ技を実施した塊は難度を一つ上げる。ただし連続塊の途中
-//     なら「塊の連続難度」と「その技+1」の高い方を採用する。
+//   - 5人が同時に同じ技を実施した技は難度を+1する（上限E）。連続塊の途中でも
+//     格上げした実効難度で塊の連続難度を再計算し、生の連続難度と高い方を採用。
+//     格上げでB以上になったA難度は連続難度に算入する（同時実施の連続技を評価）。
 //   - 交差グループは選択セルの難度を連続加算（合計 −(段数−1)、上限E）。
 //     順序は無関係。徒手段は値1（＝+0で飛んだ転回の難度を採用）。
 // =====================================================================
@@ -271,20 +272,32 @@ function analyzeTeamSeries(ser: TeamSeries): TeamSeriesAnalysis {
   }
 
   // ---- 各塊に5人同時の格上げを反映 ----
+  // §6.2：5人が同時に同じ技を実施した技は難度を+1（上限E）。連続技の途中でも、
+  // 格上げした実効難度で塊全体の連続難度を再計算し、生の連続難度と高い方を採る。
+  // 格上げでB以上になったA難度は連続難度に算入する（同時実施の連続技を正しく評価）。
   lanes.forEach((chunks) =>
     chunks.forEach((c) => {
       const contVal = c.diff ? DIFF_VALUE[c.diff] : 0;
-      let adj = contVal;
       let hadFive = false;
-      c.cells.forEach((cell) => {
-        if (cell.type !== "skill" || !cell.skillId) return;
-        // 同時実施シリーズは常に5人同時扱い。通常は全員同技スロットのみ。
-        const isFive = ser.mode === "allTogether" || fivePerson.has(cell.slot);
-        if (!isFive) return;
-        hadFive = true;
-        const cand = Math.min(DIFF_VALUE[skillDef(cell.skillId)?.difficulty ?? "A"] + 1, MAX_DIFF);
-        if (cand > adj) adj = cand;
-      });
+      const effVals = c.cells
+        .filter((cell) => cell.type === "skill" && cell.skillId)
+        .map((cell) => {
+          const base = DIFF_VALUE[skillDef(cell.skillId!)?.difficulty ?? "A"];
+          // 同時実施シリーズは常に5人同時扱い。通常は全員同技スロットのみ。
+          const isFive = ser.mode === "allTogether" || fivePerson.has(cell.slot);
+          if (isFive) hadFive = true;
+          return isFive ? Math.min(base + 1, MAX_DIFF) : base;
+        })
+        // A難度(値1)は連続難度に算入しない。格上げでB以上になったものは算入する。
+        .filter((v) => v >= DIFF_VALUE.B);
+      // 格上げ後の実効難度で塊の連続難度を再計算
+      let bumpedVal = 0;
+      if (effVals.length > 0) {
+        bumpedVal = effVals[0];
+        for (let i = 1; i < effVals.length; i++) bumpedVal += effVals[i] - 1;
+        bumpedVal = Math.min(bumpedVal, MAX_DIFF);
+      }
+      const adj = Math.max(contVal, bumpedVal);
       c.adjValue = adj;
       c.adjDiff = adj > 0 ? VALUE_DIFF[adj] : null;
       c.bumped = hadFive && adj > contVal;

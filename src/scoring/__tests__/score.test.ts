@@ -9,11 +9,14 @@ describe("computeScore — 空の演技（回帰アンカー）", () => {
     const r = computeScore([], "stick");
     expect(r.dScore).toBe(0);
     expect(r.eScore).toBe(10);
-    // 方向系3不足(0.9) + 投げ不足(0.3) + 宙返り連続なし(0.2) + 多様性上限(0.5) = 1.9
-    expect(r.aDeduction).toBeCloseTo(1.9, 5);
-    expect(r.aScore).toBeCloseTo(8.1, 5);
-    expect(r.grandTotal).toBeCloseTo(18.1, 5);
+    // 方向系3不足(0.9) + 投げ不足(0.3) + 宙返り連続なし(0.2) + 多様性上限(0.5)
+    //  + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 3.1
+    expect(r.aDeduction).toBeCloseTo(3.1, 5);
+    expect(r.aScore).toBeCloseTo(6.9, 5);
+    expect(r.grandTotal).toBeCloseTo(16.9, 5);
     expect(r.missing.length).toBeGreaterThan(0);
+    // 手具別必須要素は未実施4項目で −1.2
+    expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
   });
 });
 
