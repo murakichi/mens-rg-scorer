@@ -16,6 +16,7 @@ import {
   SERIES_BONUS,
   TECHNIQUE_BONUS,
   APPARATUS_OP_BONUS,
+  ropeJumpDef,
   TWOTHROW_MOTION_BONUS,
   NO_APP_SALTO_DEDUCTION,
   NO_APP_ALL_DEDUCTION,
@@ -332,6 +333,27 @@ export function computeScore(
       passed: requiredThrowPassed,
     },
   ];
+
+  // ロープ固有の要求要素（§3.2(3) ③〜⑥）
+  if (apparatus === "rope") {
+    const allJumps = series.flatMap((ser) =>
+      ser.items.filter((item): item is Extract<typeof item, { kind: "ropeJump" }> => item.kind === "ropeJump" && !!item.jumpId)
+        .map((item) => ({ def: ropeJumpDef(item.jumpId)!, moving: !!item.isMoving6m }))
+        .filter((j) => !!j.def),
+    );
+    const hasTripleJump = allJumps.some((j) => j.def.rotations >= 3);
+    const movingCount = allJumps.filter((j) => j.moving).length;
+    const frontInPlace = allJumps.filter((j) => !j.moving && j.def.direction === "front").length;
+    const backInPlace = allJumps.filter((j) => !j.moving && j.def.direction === "back").length;
+
+    required.push(
+      { key: "ropeTriple", label: "3重跳び", passed: hasTripleJump },
+      { key: "ropeMoving", label: "6m以上移動の3回以上連続跳び", passed: movingCount >= 3 },
+      { key: "ropeFront", label: "前回し跳び2回以上連続", passed: frontInPlace >= 2 },
+      { key: "ropeBack", label: "後ろ回し跳び2回以上連続", passed: backInPlace >= 2 },
+    );
+  }
+
   const missing = required.filter((r) => r.passed === false);
 
   // ---- 合計 ----

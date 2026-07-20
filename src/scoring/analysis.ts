@@ -9,6 +9,7 @@ import {
   HAND_MOTIONS,
   APPARATUS_COUNT,
   skillDef,
+  ropeJumpDef,
 } from "./constants";
 import type {
   Difficulty,
@@ -158,6 +159,32 @@ export function analyzeSeries(series: Series): SeriesAnalysis {
     }
   });
   flush();
+
+  // ロープ跳び：シリーズ内の最高難度の跳びを独立した徒手系難度ユニットとして追加
+  let ropeMax = 0;
+  series.items.forEach((item) => {
+    if (item.kind === "ropeJump") {
+      const j = ropeJumpDef(item.jumpId);
+      if (j) ropeMax = Math.max(ropeMax, DIFF_VALUE[j.difficulty]);
+    }
+  });
+  if (ropeMax > 0) {
+    const diff = VALUE_DIFF[Math.min(ropeMax, MAX_DIFF)];
+    units.push({
+      type: "throw",
+      isThrow: true,
+      skillThrow: false,
+      isThrowTumbling: false,
+      skills: [],
+      handDiff: diff,
+      tumblingDiff: null,
+      finalDiff: diff,
+      diffFromHand: true,
+      hasApparatus: true,
+      hasDPlus: ropeMax >= DIFF_VALUE.D,
+    });
+  }
+
   return { units, throwCount };
 }
 
@@ -202,6 +229,7 @@ export function seriesSignature(series: Series): string {
         return { k: "catch", types: [...(item.catchTypes || [])].sort(), two: !!item.catchTwo };
       if (item.kind === "skill") return { k: "skill", id: item.skillId, thr: !!item.isThrow };
       if (item.kind === "motion") return { k: "motion", id: item.motionId };
+      if (item.kind === "ropeJump") return { k: "ropeJump", id: item.jumpId };
       return { k: "?" };
     }),
   );

@@ -8,6 +8,7 @@ import {
   APPARATUS_USE,
   SKILL_LIST,
   HAND_MOTIONS,
+  ROPE_JUMPS,
 } from "../scoring/constants";
 import { checkApparatusFlow, maxSaltoChain } from "../scoring/analysis";
 import type { ApparatusKey, Item, Series, SeriesAnalysis } from "../scoring/types";
@@ -135,6 +136,28 @@ function ItemEditor({
       </>
     );
   }
+  if (item.kind === "ropeJump") {
+    return (
+      <>
+        <select className="select" value={item.jumpId} onChange={(e) => onUpdate({ jumpId: e.target.value })}>
+          <option value="">ロープ跳び</option>
+          {ROPE_JUMPS.map((j) => (
+            <option key={j.id} value={j.id}>
+              {j.name}（{j.difficulty}）
+            </option>
+          ))}
+        </select>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={item.isMoving6m || false}
+            onChange={(e) => onUpdate({ isMoving6m: e.target.checked })}
+          />
+          6m以上移動
+        </label>
+      </>
+    );
+  }
   // motion
   return (
     <select className="select" value={item.motionId} onChange={(e) => onUpdate({ motionId: e.target.value })}>
@@ -211,6 +234,11 @@ export function SeriesCard({
         <button className="add-btn-sm" onClick={() => onAddItem("motion")}>
           ＋ 徒手動作
         </button>
+        {apparatus === "rope" && (
+          <button className="add-btn-sm" onClick={() => onAddItem("ropeJump")}>
+            ＋ ロープ跳び
+          </button>
+        )}
         <button className="add-btn-sm" onClick={() => onAddItem("catch")}>
           ＋ キャッチ
         </button>

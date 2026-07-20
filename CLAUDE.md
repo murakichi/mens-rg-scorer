@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Vite + React + TypeScript single-page app that calculates competition scores for Japanese **men's rhythmic gymnastics** (男子新体操), individual mode. The UI language is Japanese; domain terms below keep the Japanese names since they appear throughout the code. The authoritative rules spec lives in `mens-rg-rules.md` — keep it and the definition tables in `src/scoring/constants.ts` in sync.
+A Vite + React + TypeScript single-page app that calculates competition scores for Japanese **men's rhythmic gymnastics** (男子新体操), individual mode. The UI language is Japanese; domain terms below keep the Japanese names since they appear throughout the code.
+
+Two rule documents live at the repo root — keep both and `src/scoring/constants.ts` in sync:
+- **`mens-rg-rules.md`** — official scoring rules (2025 edition) translated from the PDF. Pure rules, no code references.
+- **`app-scoring-spec.md`** — maps rules to app code: constant names, pipeline description, implementation status, TODOs.
 
 ## Commands
 

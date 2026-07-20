@@ -10,7 +10,8 @@ export type Item =
   | ThrowItem
   | CatchItem
   | SkillItem
-  | MotionItem;
+  | MotionItem
+  | RopeJumpItem;
 
 export interface ThrowItem {
   kind: "throw";
@@ -41,6 +42,14 @@ export interface MotionItem {
   kind: "motion";
   /** HAND_MOTIONS の id */
   motionId: string;
+}
+
+export interface RopeJumpItem {
+  kind: "ropeJump";
+  /** ROPE_JUMPS の id */
+  jumpId: string;
+  /** 6m以上の移動を伴う跳びか */
+  isMoving6m?: boolean;
 }
 
 export interface Series {

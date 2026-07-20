@@ -17,6 +17,7 @@ const newItem = (kind: Item["kind"]): Item => {
   if (kind === "throw") return { kind: "throw", throwTypes: [], reqTypes: [] };
   if (kind === "catch") return { kind: "catch", catchTypes: [], catchTwo: false };
   if (kind === "skill") return { kind: "skill", skillId: "", hasApparatus: false, isThrow: false };
+  if (kind === "ropeJump") return { kind: "ropeJump", jumpId: "", isMoving6m: false };
   return { kind: "motion", motionId: "" };
 };
 

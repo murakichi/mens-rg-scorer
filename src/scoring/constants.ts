@@ -98,6 +98,38 @@ export const TEAM_CROSS_BONUS = { base: 0.1, oneD: 0.2, twoD: 0.3 } as const;
 // 同一難度に関する加点（最大0.2）：全員D以上/全員E
 export const TEAM_SAMEDIFF_BONUS = { d: 0.1, e: 0.2 } as const;
 
+export interface RopeJump {
+  id: string;
+  name: string;
+  difficulty: Difficulty;
+  rotations: number;
+  direction: "front" | "back";
+}
+
+export const ROPE_JUMPS: RopeJump[] = [
+  { id: "1f", name: "1重跳び（前）", difficulty: "A", rotations: 1, direction: "front" },
+  { id: "1b", name: "1重跳び（後ろ）", difficulty: "A", rotations: 1, direction: "back" },
+  { id: "2f", name: "2重跳び（前）", difficulty: "A", rotations: 2, direction: "front" },
+  { id: "2fc", name: "2重跳び（前・クロス）", difficulty: "B", rotations: 2, direction: "front" },
+  { id: "2b", name: "2重跳び（後ろ）", difficulty: "B", rotations: 2, direction: "back" },
+  { id: "2bc", name: "2重跳び（後ろ・クロス）", difficulty: "C", rotations: 2, direction: "back" },
+  { id: "3f", name: "3重跳び（前）", difficulty: "B", rotations: 3, direction: "front" },
+  { id: "3fc", name: "3重跳び（前・クロス）", difficulty: "C", rotations: 3, direction: "front" },
+  { id: "3b", name: "3重跳び（後ろ）", difficulty: "C", rotations: 3, direction: "back" },
+  { id: "3bc", name: "3重跳び（後ろ・クロス）", difficulty: "D", rotations: 3, direction: "back" },
+  { id: "3x2f", name: "3重跳び2回（前）", difficulty: "C", rotations: 3, direction: "front" },
+  { id: "3x2fc", name: "3重跳び2回（前・クロス）", difficulty: "C", rotations: 3, direction: "front" },
+  { id: "3x2b", name: "3重跳び2回（後ろ）", difficulty: "D", rotations: 3, direction: "back" },
+  { id: "3x2bc", name: "3重跳び2回（後ろ・クロス）", difficulty: "D", rotations: 3, direction: "back" },
+  { id: "3x3b", name: "3重跳び連続3回以上（後ろ）", difficulty: "D", rotations: 3, direction: "back" },
+  { id: "4b", name: "4重跳び（後ろ）", difficulty: "D", rotations: 4, direction: "back" },
+  { id: "4x2b", name: "4重跳び連続2回以上（後ろ）", difficulty: "E", rotations: 4, direction: "back" },
+];
+
+export function ropeJumpDef(id: string): RopeJump | undefined {
+  return ROPE_JUMPS.find((x) => x.id === id);
+}
+
 export const HAND_MOTIONS: HandMotion[] = [
   { id: "m1", name: "1動作", motions: 1 },
   { id: "m2", name: "2動作", motions: 2 },
