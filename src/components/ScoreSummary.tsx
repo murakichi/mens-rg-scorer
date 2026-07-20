@@ -5,6 +5,10 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
   const {
     required,
     missing,
+    apparatusElementChecks,
+    apparatusElementDeduction,
+    violationChecks,
+    violationDeduction,
     connectNoApparatus,
     tumblingScore,
     handScore,
@@ -13,6 +17,7 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
     techniqueBonus,
     apparatusOpBonus,
     twoThrowMotionBonus,
+    jumpVarietyBonus,
     dScore,
     noApparatusDeduction,
     missingDirCount,
@@ -49,6 +54,35 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
         </ul>
         {missing.length > 0 && <div className="missing-box">不足要素 {missing.length} 件</div>}
         {connectNoApparatus && <div className="warn-box">つなぎ技のA難度に手具操作がありません（減点対象）</div>}
+
+        {apparatusElementChecks.length > 0 && (
+          <>
+            <div className="line-head" style={{ marginTop: 12 }}>手具別必須要素（§3.2）</div>
+            <ul className="check-list">
+              {apparatusElementChecks.map((r) => (
+                <li key={r.key} className="check-item">
+                  <span className={`mark ${r.passed ? "ok" : "ng"}`}>{r.passed ? "✓" : "×"}</span>
+                  <span className={r.passed ? "ok-text" : "ng-text"}>{r.label}</span>
+                  {!r.passed && <span className="ng-text">-0.3</span>}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        <div className="line-head" style={{ marginTop: 12 }}>違反・欠如（§3.5.6.3）</div>
+        <ul className="check-list">
+          {violationChecks.map((r) => (
+            <li key={r.key} className="check-item">
+              <span className={`mark ${r.passed ? "ok" : "ng"}`}>{r.passed ? "✓" : "×"}</span>
+              <span className={r.passed ? "ok-text" : "ng-text"}>
+                {r.label}
+                {r.passed ? "：なし" : "：該当"}
+              </span>
+              {!r.passed && <span className="ng-text">-0.3</span>}
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="card card-total">
@@ -79,6 +113,10 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
           <span>二つ投げ4動作加点</span>
           <span>{twoThrowMotionBonus.toFixed(1)} 点</span>
         </div>
+        <div className="total-row">
+          <span>様々な跳び加点（6m移動連続跳びに2重跳び3回以上）</span>
+          <span>{jumpVarietyBonus.toFixed(1)} 点</span>
+        </div>
         <div className="subtotal-row">
           <span>D 小計</span>
           <span>{dScore.toFixed(1)} 点</span>
@@ -106,6 +144,14 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
             投げ方・受け方の種類不足減点（投げ{throwKindCount}/3・受け{catchKindCount}/3｜上限0.5）
           </span>
           <span>-{varietyDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>手具別必須要素の欠如減点（§3.2／1つにつき0.3）</span>
+          <span>-{apparatusElementDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>違反・欠如減点（§3.5.6.3／開始・終了・音楽・徒手系群）</span>
+          <span>-{violationDeduction.toFixed(1)} 点</span>
         </div>
         <div className="subtotal-row">
           <span>A 残点（10 − {aDeduction.toFixed(1)}）</span>

@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { Download, Upload, Plus, Link2 } from "lucide-react";
-import { APPARATUS } from "../scoring/constants";
+import { APPARATUS, APPARATUS_REQUIRED_ELEMENTS, VIOLATION_OPTIONS } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
 import type { ApparatusKey, Item, Series } from "../scoring/types";
 import { buildShareUrl } from "../scoring/share";
@@ -31,8 +31,16 @@ const isPristine = (items: Item[]) =>
 
 interface Props {
   /** URL共有から復元する初期構成（任意） */
-  initialData?: { apparatus?: string; executionDeduction?: unknown; series?: unknown };
+  initialData?: {
+    apparatus?: string;
+    executionDeduction?: unknown;
+    apparatusElements?: unknown;
+    violations?: unknown;
+    series?: unknown;
+  };
 }
+
+const asStringArray = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
 export function IndividualScorer({ initialData }: Props = {}) {
   const [apparatus, setApparatus] = useState<ApparatusKey>(() =>
@@ -46,19 +54,24 @@ export function IndividualScorer({ initialData }: Props = {}) {
       : [emptySeries()],
   );
   const [overallExecution, setOverallExecution] = useState(() => Number(initialData?.executionDeduction) || 0);
+  const [apparatusElements, setApparatusElements] = useState<string[]>(() => asStringArray(initialData?.apparatusElements));
+  const [violations, setViolations] = useState<string[]>(() => asStringArray(initialData?.violations));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
   const [jsonText, setJsonText] = useState("");
 
   // ---- 採点（純粋関数に委譲）----
   const result = useMemo(
-    () => computeScore(series, apparatus, overallExecution),
-    [series, apparatus, overallExecution],
+    () => computeScore(series, apparatus, { overallExecutionDeduction: overallExecution, apparatusElements, violations }),
+    [series, apparatus, overallExecution, apparatusElements, violations],
   );
 
+  const toggleId = (list: string[], id: string, on: boolean) => (on ? [...list, id] : list.filter((x) => x !== id));
+
   // ---- ファイル入出力 ----
+  const saveData = () => ({ version: 1, apparatus, executionDeduction: overallExecution, apparatusElements, violations, series });
   const handleExport = () => {
-    const data = { version: 1, apparatus, executionDeduction: overallExecution, series };
+    const data = saveData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -73,6 +86,8 @@ export function IndividualScorer({ initialData }: Props = {}) {
     const data = JSON.parse(raw);
     if (data.apparatus && APPARATUS[data.apparatus as ApparatusKey]) setApparatus(data.apparatus);
     setOverallExecution(Number(data.executionDeduction) || 0);
+    setApparatusElements(asStringArray(data.apparatusElements));
+    setViolations(asStringArray(data.violations));
     if (Array.isArray(data.series) && data.series.length > 0) {
       setSeries(data.series);
       return true;
@@ -97,7 +112,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
 
   // ---- テキスト方式（モーダル）----
   const openExportText = () => {
-    setJsonText(JSON.stringify({ version: 1, apparatus, executionDeduction: overallExecution, series }, null, 2));
+    setJsonText(JSON.stringify(saveData(), null, 2));
     setJsonModalMode("export");
   };
   const handleCopyJson = async () => {
@@ -118,7 +133,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
   };
 
   const handleCopyShareUrl = async () => {
-    const url = buildShareUrl({ version: 1, apparatus, executionDeduction: overallExecution, series });
+    const url = buildShareUrl(saveData());
     try {
       await navigator.clipboard.writeText(url);
       alert("共有URLをコピーしました。このURLを開くと構成が復元されます。");
@@ -253,6 +268,45 @@ export function IndividualScorer({ initialData }: Props = {}) {
         <p className="hint">
           各シリーズの実施減点とは別に、演技全体に対する実施減点を入力します（E残点は両方を合算して算出）。
         </p>
+      </section>
+
+      <section className="card">
+        <div className="line-head">手具別必須要素（{APPARATUS[apparatus].name}）</div>
+        {APPARATUS_REQUIRED_ELEMENTS[apparatus].length === 0 ? (
+          <p className="hint">この手具に手動チェックの必須要素はありません。</p>
+        ) : (
+          <>
+            {APPARATUS_REQUIRED_ELEMENTS[apparatus].map((el) => (
+              <label key={el.id} className="check">
+                <input
+                  type="checkbox"
+                  checked={apparatusElements.includes(el.id)}
+                  onChange={(e) => setApparatusElements((p) => toggleId(p, el.id, e.target.checked))}
+                />
+                {el.name}
+              </label>
+            ))}
+            <p className="hint">
+              実施した要素にチェックします。未チェックの要素は §3.5.6.3 により1つにつき −0.30点（A減点）。
+              左手投げ／二つ投げ・3回以上の投げ上げは各シリーズの入力から自動判定します。
+            </p>
+          </>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="line-head">違反・欠如（§3.5.6.3）</div>
+        {VIOLATION_OPTIONS.map((v) => (
+          <label key={v.id} className="check">
+            <input
+              type="checkbox"
+              checked={violations.includes(v.id)}
+              onChange={(e) => setViolations((p) => toggleId(p, v.id, e.target.checked))}
+            />
+            {v.name}
+          </label>
+        ))}
+        <p className="hint">該当する違反・欠如にチェックします。各1つにつき −0.30点（A減点）。</p>
       </section>
 
       <ScoreSummary result={result} />

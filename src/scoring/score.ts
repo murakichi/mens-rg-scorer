@@ -18,6 +18,7 @@ import {
   APPARATUS_OP_BONUS,
   ropeJumpDef,
   TWOTHROW_MOTION_BONUS,
+  JUMP_VARIETY_BONUS,
   NO_APP_SALTO_DEDUCTION,
   NO_APP_ALL_DEDUCTION,
   NO_APP_CAP,
@@ -32,6 +33,10 @@ import {
   ADOPT_COUNT,
   AE_FULL,
   REQUIRED_THROW_OPTIONS,
+  REQUIRED_ELEMENT_DEDUCTION,
+  VIOLATION_DEDUCTION,
+  APPARATUS_REQUIRED_ELEMENTS,
+  VIOLATION_OPTIONS,
   skillDef,
 } from "./constants";
 import {
@@ -75,9 +80,14 @@ export interface ScoreResult {
   techniqueBonus: number;
   apparatusOpBonus: number;
   twoThrowMotionBonus: number;
+  jumpVarietyBonus: number;
   dScore: number;
 
   // A
+  apparatusElementChecks: RequiredCheck[];
+  apparatusElementDeduction: number;
+  violationChecks: RequiredCheck[];
+  violationDeduction: number;
   noApparatusDeduction: number;
   connectNoApparatus: boolean;
   missingDirCount: number;
@@ -108,11 +118,20 @@ export interface ScoreResult {
 
 const isTumblingUnit = (u: Unit) => u.type === "tumbling" || (u.type === "throw" && u.isThrowTumbling);
 
+export interface ComputeOptions {
+  overallExecutionDeduction?: number;
+  /** §3.2 実施した手具別必須要素のid */
+  apparatusElements?: string[];
+  /** §3.5.6.3 該当した違反・欠如のid */
+  violations?: string[];
+}
+
 export function computeScore(
   series: Series[],
   apparatus: ApparatusKey,
-  overallExecutionDeduction = 0,
+  opts: ComputeOptions = {},
 ): ScoreResult {
+  const { overallExecutionDeduction = 0, apparatusElements = [], violations = [] } = opts;
   const analysis = series.map(analyzeSeries);
   const allUnits = analysis.flatMap((a) => a.units);
 
@@ -143,6 +162,7 @@ export function computeScore(
     ser.items.forEach((item) => {
       if (item.kind === "throw") techCount += (item.throwTypes || []).length;
       else if (item.kind === "catch") techCount += (item.catchTypes || []).length;
+      else if (item.kind === "skill" && item.isThrow) techCount += (item.throwTypes || []).length;
     });
     const tech = techCount * TECHNIQUE_BONUS;
 
@@ -276,8 +296,12 @@ export function computeScore(
           catchKinds.add("lefthand"); // 左手投げは左手キャッチも同時カウント
         }
       } else if (item.kind === "skill" && item.isThrow) {
+        const types = item.throwTypes || [];
         if (isDup) return;
         throwKinds.add("tumthrow");
+        if (types.includes("noview")) throwKinds.add("noview");
+        if (types.includes("nonhand")) throwKinds.add("nonhand");
+        if (types.includes("useapp")) throwKinds.add("useapp");
       } else if (item.kind === "catch") {
         const types = item.catchTypes || [];
         if (types.includes("other")) catchOtherCount += 1;
@@ -335,6 +359,7 @@ export function computeScore(
   ];
 
   // ロープ固有の要求要素（§3.2(3) ③〜⑥）
+  let jumpVarietyBonus = 0;
   if (apparatus === "rope") {
     const allJumps = series.flatMap((ser) =>
       ser.items.filter((item): item is Extract<typeof item, { kind: "ropeJump" }> => item.kind === "ropeJump" && !!item.jumpId)
@@ -352,18 +377,47 @@ export function computeScore(
       { key: "ropeFront", label: "前回し跳び2回以上連続", passed: frontInPlace >= 2 },
       { key: "ropeBack", label: "後ろ回し跳び2回以上連続", passed: backInPlace >= 2 },
     );
+
+    // §3.5.5.5(4)① 6m以上移動の連続跳びに2重跳び（rotations≧2）が3回以上 → 加点
+    // ②③（跳びの形の多様性 / その場回転跳び2回転）は入力未対応のため今後対応。
+    const movingDoubles = allJumps.filter((j) => j.moving && j.def.rotations >= 2).length;
+    if (movingDoubles >= 3) jumpVarietyBonus = JUMP_VARIETY_BONUS;
   }
 
   const missing = required.filter((r) => r.passed === false);
+
+  // ---- §3.2 手具別必須要素（手動チェック）と §3.5.6.3 要求要素の欠如による A減点 ----
+  const apparatusElementChecks: RequiredCheck[] = APPARATUS_REQUIRED_ELEMENTS[apparatus].map((el) => ({
+    key: `appEl_${el.id}`,
+    label: el.name,
+    passed: apparatusElements.includes(el.id),
+  }));
+  const apparatusElementDeduction =
+    apparatusElementChecks.filter((c) => !c.passed).length * REQUIRED_ELEMENT_DEDUCTION;
+
+  // passed = 違反・欠如が「ない」状態
+  const violationChecks: RequiredCheck[] = VIOLATION_OPTIONS.map((v) => ({
+    key: `viol_${v.id}`,
+    label: v.name,
+    passed: !violations.includes(v.id),
+  }));
+  const violationDeduction =
+    VIOLATION_OPTIONS.filter((v) => violations.includes(v.id)).length * VIOLATION_DEDUCTION;
 
   // ---- 合計 ----
   const seriesExecutionDeduction = series.reduce((s, ser) => s + (Number(ser.executionDeduction) || 0), 0);
   const overallExec = Number(overallExecutionDeduction) || 0;
   const executionDeduction = seriesExecutionDeduction + overallExec;
   const dScore =
-    tumblingScore + handScore + seriesBonus + techniqueBonus + apparatusOpBonus + twoThrowMotionBonus;
+    tumblingScore + handScore + seriesBonus + techniqueBonus + apparatusOpBonus + twoThrowMotionBonus + jumpVarietyBonus;
   const aDeduction =
-    noApparatusDeduction + directionDeduction + throwCountDeduction + saltoChainDeduction + varietyDeduction;
+    noApparatusDeduction +
+    directionDeduction +
+    throwCountDeduction +
+    saltoChainDeduction +
+    varietyDeduction +
+    apparatusElementDeduction +
+    violationDeduction;
   const aScore = Math.max(0, AE_FULL - aDeduction);
   const eScore = Math.max(0, AE_FULL - executionDeduction);
   const grandTotal = dScore + aScore + eScore;
@@ -379,7 +433,12 @@ export function computeScore(
     techniqueBonus,
     apparatusOpBonus,
     twoThrowMotionBonus,
+    jumpVarietyBonus,
     dScore,
+    apparatusElementChecks,
+    apparatusElementDeduction,
+    violationChecks,
+    violationDeduction,
     noApparatusDeduction,
     connectNoApparatus,
     missingDirCount,
