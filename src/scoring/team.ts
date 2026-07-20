@@ -67,9 +67,13 @@ export interface TeamSeries {
   crossGroups: CellGroup[];
   /** グリッドのセルを選んで作る組運動グループ（複数可・独立） */
   unionGroups: CellGroup[];
+  /** このシリーズの実施減点(E)。未指定は0扱い。 */
+  executionDeduction?: number;
 }
 export interface TeamState {
   series: TeamSeries[];
+  /** 演技全体の実施減点(E)。シリーズ非依存。未指定は0扱い。 */
+  executionDeduction?: number;
 }
 
 /** 横方向に連続する非空セルの塊 */
@@ -156,7 +160,9 @@ export interface TeamScoreResult {
   dScore: number;
   aDeduction: number;
   aScore: number;
-  executionDeduction: number;
+  seriesExecutionDeduction: number; // 各シリーズの実施減点合計
+  overallExecutionDeduction: number; // 演技全体の実施減点（シリーズ非依存）
+  executionDeduction: number; // 上記2つの合計
   eScore: number;
   grandTotal: number;
 }
@@ -171,6 +177,7 @@ export const emptySeries = (slots = 4): TeamSeries => ({
   lanes: Array.from({ length: NUM_PLAYERS }, () => emptyLane(slots)),
   crossGroups: [],
   unionGroups: [],
+  executionDeduction: 0,
 });
 
 export const initialTeamState = (): TeamState => ({
@@ -651,7 +658,9 @@ export function computeTeamScore(team: TeamState): TeamScoreResult {
   const bonus = computeTeamBonus(team, analysis);
   const dScore = seriesDiffScore + bonus.total;
   const aDeduction = aDeductions.reduce((s, d) => s + d.deduct, 0);
-  const executionDeduction = 0; // 後で各シリーズに入力欄を追加
+  const seriesExecutionDeduction = team.series.reduce((s, ser) => s + (Number(ser.executionDeduction) || 0), 0);
+  const overallExecutionDeduction = Number(team.executionDeduction) || 0;
+  const executionDeduction = seriesExecutionDeduction + overallExecutionDeduction;
   const aScore = Math.max(0, AE_FULL - aDeduction);
   const eScore = Math.max(0, AE_FULL - executionDeduction);
   const grandTotal = dScore + aScore + eScore;
@@ -665,6 +674,8 @@ export function computeTeamScore(team: TeamState): TeamScoreResult {
     dScore,
     aDeduction,
     aScore,
+    seriesExecutionDeduction,
+    overallExecutionDeduction,
     executionDeduction,
     eScore,
     grandTotal,
@@ -709,7 +720,8 @@ export function normalizeTeamState(data: unknown): TeamState | null {
       lanes,
       crossGroups: mapGroups(s.crossGroups, "cross"),
       unionGroups: mapGroups(s.unionGroups, "union"),
+      executionDeduction: Number(s.executionDeduction) || 0,
     };
   });
-  return { series };
+  return { series, executionDeduction: Number((d as { executionDeduction?: unknown }).executionDeduction) || 0 };
 }

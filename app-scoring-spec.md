@@ -10,7 +10,7 @@
 | モード | 規則セクション | 状態 | 備考 |
 |--------|---------------|------|------|
 | 個人（個人競技） | §3.5 | 実装済み | D/A/E すべて |
-| 団体（自由演技） | §3.4 | D・A実装済み | E実施減点は今後 |
+| 団体（自由演技） | §3.4 | D・A・E実装済み | E実施減点は各シリーズ／演技全体で手入力。A減点は暫定精度 |
 | 個人選手 | §3.8 | 未実装 | 団体内個人の別採点方式（A=3.00満点） |
 
 ---
@@ -54,6 +54,7 @@
 | 技術加点（投げ/受け1つにつき） | `TECHNIQUE_BONUS` | 0.1 | 視野外/手以外/手具使用の投げ・受け |
 | 手具操作加点 | `APPARATUS_OP_BONUS` | 0.1 | 手具操作2回以上 & 最高難度E |
 | 二つ投げ4動作加点 | `TWOTHROW_MOTION_BONUS` | 0.1 | 二つ投げ中に徒手4動作以上 |
+| 様々な跳び加点 | `JUMP_VARIETY_BONUS` | 0.1 | ロープ：6m移動連続跳びに2重跳び3回以上（§3.5.5.5(4)①）。②③は入力未対応 |
 
 ---
 
@@ -72,6 +73,13 @@
 | 投げ方/受け方の多様性不足 | `VARIETY_DEDUCTION_PER` | 0.1 | 1種類不足につき |
 | 多様性不足の上限 | `VARIETY_CAP` | 0.5 | 投げ方+受け方の合算上限 |
 | 必要種類数 | `VARIETY_REQUIRED` | 3 | 投げ方・受け方それぞれ |
+| 手具別必須要素の欠如 | `REQUIRED_ELEMENT_DEDUCTION` | 0.3 | §3.2 手具操作要求要素の未実施1つにつき（§3.5.6.3） |
+| 違反・欠如 | `VIOLATION_DEDUCTION` | 0.3 | 開始/終了/音楽違反・徒手系基礎要素群欠如の各該当（§3.5.6.3） |
+
+`REQUIRED_ELEMENT_DEDUCTION` の対象要素は `APPARATUS_REQUIRED_ELEMENTS`（手具別、手動チェック）。
+左手投げ/二つ投げ・3回以上の投げ上げは既存判定（必須投げ・投げ回数）と重複するため対象外。
+`VIOLATION_DEDUCTION` の対象は `VIOLATION_OPTIONS`（審判判断による手動チェック）。
+どちらも個人モードの routine レベル state（`apparatusElements` / `violations`）で保持し、`SaveData`・共有URLに含める。
 
 ---
 
@@ -126,6 +134,10 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 | `tumCount` | タンブリング3本以上 | `nonDupTumblingCount >= 3` |
 | `appThrow` | 手具別必須投げ | `REQUIRED_THROW_OPTIONS` の全IDが実施済みか |
 
+`required[]` とは別に、`computeScore` は §3.2/§3.5.6.3 用の表示リストも返す：
+- `apparatusElementChecks[]`：`APPARATUS_REQUIRED_ELEMENTS[apparatus]` の手動チェック状況（未実施は `apparatusElementDeduction` に −0.3）。
+- `violationChecks[]`：`VIOLATION_OPTIONS` の該当状況（passed=違反なし。該当は `violationDeduction` に −0.3）。
+
 ---
 
 ## 8. 団体モードの定数
@@ -168,8 +180,12 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 ## 10. 未実装・要確認事項
 
 - [ ] §3.8 個人選手モード（団体内個人、A=3.00満点の別採点方式）
-- [ ] 団体のE実施減点の詳細実装
-- [ ] 手具ごとの要求要素チェックの詳細実装（要求要素はmens-rg-rules.md §3.2に記載済み）
+- [x] 団体のE実施減点（各シリーズ／演技全体の手入力・合算）
+- [x] 手具ごとの要求要素チェック（§3.2、`APPARATUS_REQUIRED_ELEMENTS` の手動チェック＋§3.5.6.3 減点）
+- [x] §3.5.5.5(4)① 様々な跳び加点（ロープ）
+- [x] §3.5.6.3 違反・欠如のA減点（開始/終了/音楽/徒手系群）
+- [ ] §3.5.5.5(4)②③ 様々な跳び加点（跳びの形の多様性 / その場回転跳び2回転）— 跳びに形フラグの入力追加が必要
+- [ ] 手具別必須要素の自動判定化（ころがし・プロペラ回旋・まわし等は現状手動チェック）
 - [ ] A減点の芸術性スコアリング（主観評価部分）の実装検討
 - [ ] ジュニア適用規則への対応
 - [ ] 団体のA減点ロジックの精緻化（暫定 `missing.length * 0.3`）

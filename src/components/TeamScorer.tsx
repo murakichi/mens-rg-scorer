@@ -123,6 +123,14 @@ export function TeamScorer({ initialData }: Props = {}) {
       });
     }
   };
+  const setSeriesExecution = (sIdx: number, value: number) =>
+    setTeam((p) => {
+      const n = structuredClone(p);
+      n.series[sIdx].executionDeduction = value;
+      return n;
+    });
+  const setOverallExecution = (value: number) =>
+    setTeam((p) => ({ ...structuredClone(p), executionDeduction: value }));
   const toggleStuck = (sIdx: number, lane: number, slot: number) =>
     setTeam((p) => {
       const n = structuredClone(p);
@@ -233,6 +241,8 @@ export function TeamScorer({ initialData }: Props = {}) {
     dScore,
     aDeduction,
     aScore,
+    seriesExecutionDeduction,
+    overallExecutionDeduction,
     executionDeduction,
     eScore,
     grandTotal,
@@ -536,6 +546,18 @@ export function TeamScorer({ initialData }: Props = {}) {
                 全員が空のスロット：{emptyColumnWarnings[sIdx].map((s) => s + 1).join(", ")}
               </div>
             )}
+            <label className="exec-label">
+              実施減点(E)：
+              <input
+                className="exec-input"
+                type="number"
+                step="0.1"
+                min="0"
+                value={ser.executionDeduction || 0}
+                onChange={(e) => setSeriesExecution(sIdx, parseFloat(e.target.value) || 0)}
+              />
+              点
+            </label>
           </section>
         );
       })}
@@ -543,6 +565,25 @@ export function TeamScorer({ initialData }: Props = {}) {
       <button className="add-btn" onClick={addSeries}>
         <Plus size={14} /> シリーズを追加
       </button>
+
+      <section className="card">
+        <div className="line-head">実施減点（演技全体）</div>
+        <label className="exec-label">
+          演技全体の実施減点(E)：
+          <input
+            className="exec-input"
+            type="number"
+            step="0.1"
+            min="0"
+            value={team.executionDeduction || 0}
+            onChange={(e) => setOverallExecution(parseFloat(e.target.value) || 0)}
+          />
+          点
+        </label>
+        <p className="hint">
+          各シリーズの実施減点とは別に、演技全体に対する実施減点を入力します（E残点は両方を合算して算出）。
+        </p>
+      </section>
 
       <section className="card">
         <div className="line-head">A 減点項目（必須要素）</div>
@@ -609,11 +650,15 @@ export function TeamScorer({ initialData }: Props = {}) {
 
         <div className="category-head">E（実施）— 10点満点から減点</div>
         <div className="total-row">
-          <span>実施減点合計（未実装）</span>
-          <span>-{executionDeduction.toFixed(1)} 点</span>
+          <span>各シリーズの実施減点合計</span>
+          <span>-{seriesExecutionDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>演技全体の実施減点</span>
+          <span>-{overallExecutionDeduction.toFixed(1)} 点</span>
         </div>
         <div className="subtotal-row">
-          <span>E 残点</span>
+          <span>E 残点（10 − {executionDeduction.toFixed(1)}）</span>
           <span>{eScore.toFixed(1)} 点</span>
         </div>
 
@@ -622,7 +667,7 @@ export function TeamScorer({ initialData }: Props = {}) {
           <span className="grand-score">{grandTotal.toFixed(1)}</span>
         </div>
         <p className="hint">
-          ※ シリーズ難度 = max(3人以上が到達した難度, 各交差の合計難度)。5人同時の同技は格上げ済み。組技難度（空中転回・最大C）とA/E実施減点の入力は今後対応。
+          ※ シリーズ難度 = max(3人以上が到達した難度, 各交差の合計難度)。5人同時の同技は格上げ済み。E実施減点は各シリーズ／演技全体で入力可能。A減点ロジックの精緻化は今後対応。
         </p>
       </section>
     </>

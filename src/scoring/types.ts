@@ -36,6 +36,8 @@ export interface SkillItem {
   hasApparatus?: boolean;
   /** この技の最中に投げを行うか */
   isThrow?: boolean;
+  /** 技の最中の投げの技術タグ（noview / nonhand / useapp）。isThrow 時のみ有効。 */
+  throwTypes?: string[];
 }
 
 export interface MotionItem {
@@ -102,5 +104,9 @@ export interface SaveData {
   apparatus: ApparatusKey;
   /** 演技全体の実施減点（シリーズ非依存）。未指定は0扱い。 */
   executionDeduction?: number;
+  /** §3.2 手具別必須要素のうち実施した項目のid（APPARATUS_REQUIRED_ELEMENTS）。 */
+  apparatusElements?: string[];
+  /** §3.5.6.3 該当した違反・欠如のid（VIOLATION_OPTIONS）。 */
+  violations?: string[];
   series: Series[];
 }

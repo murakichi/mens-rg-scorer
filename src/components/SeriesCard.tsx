@@ -2,6 +2,7 @@ import { Trash2, X } from "lucide-react";
 import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
+  SKILL_THROW_OPTIONS_COMMON,
   CATCH_OPTIONS_COMMON,
   CATCH_OPTIONS_APPARATUS,
   REQUIRED_THROW_OPTIONS,
@@ -129,10 +130,25 @@ function ItemEditor({
           <input
             type="checkbox"
             checked={item.isThrow || false}
-            onChange={(e) => onUpdate({ isThrow: e.target.checked })}
+            onChange={(e) =>
+              onUpdate(e.target.checked ? { isThrow: true } : { isThrow: false, throwTypes: [] })
+            }
           />
           この技の最中に投げ
         </label>
+        {item.isThrow &&
+          [...SKILL_THROW_OPTIONS_COMMON, ...(APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map(
+            (opt) => (
+              <label key={opt.id} className="check">
+                <input
+                  type="checkbox"
+                  checked={(item.throwTypes || []).includes(opt.id)}
+                  onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
+                />
+                {opt.name}
+              </label>
+            ),
+          )}
       </>
     );
   }

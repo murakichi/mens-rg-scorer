@@ -32,6 +32,11 @@ export const THROW_OPTIONS_COMMON = [
   { id: "other", name: "その他の投げ" },
 ];
 export const THROW_OPTIONS_APPARATUS = [{ id: "useapp", name: "手具を使った投げ" }];
+/** タンブリング中の投げ（投げタン）に付けられる技術タグ。技術加点対象のみ（その他は除外）。 */
+export const SKILL_THROW_OPTIONS_COMMON = [
+  { id: "noview", name: "視野外の投げ" },
+  { id: "nonhand", name: "手以外の投げ" },
+];
 export const CATCH_OPTIONS_COMMON = [
   { id: "noview", name: "視野外のキャッチ" },
   { id: "nonhand", name: "手以外のキャッチ" },
@@ -69,6 +74,7 @@ export const SERIES_BONUS = 0.1;
 export const TECHNIQUE_BONUS = 0.1;
 export const APPARATUS_OP_BONUS = 0.1;
 export const TWOTHROW_MOTION_BONUS = 0.1;
+export const JUMP_VARIETY_BONUS = 0.1; // §3.5.5.5(4) 様々な跳びに対する加点（最大0.10）
 
 export const NO_APP_SALTO_DEDUCTION = 0.1; // 宙返り系すべてに手具操作なし
 export const NO_APP_ALL_DEDUCTION = 0.2; // シリーズ全体に手具操作なし
@@ -84,6 +90,43 @@ export const VARIETY_DEDUCTION_PER = 0.1; // 不足1種類につき
 export const VARIETY_CAP = 0.5; // 投げ方+受け方の合算上限
 export const ADOPT_COUNT = 3;
 export const AE_FULL = 10;
+
+// §3.5.6.3 要求要素の欠如（A減点、各 −0.30）
+export const REQUIRED_ELEMENT_DEDUCTION = 0.3; // 手具操作の要求要素がない場合（1つにつき）
+export const VIOLATION_DEDUCTION = 0.3; // 開始/終了/音楽違反・徒手系基礎要素群欠如（各）
+
+/**
+ * §3.2 手具別の必須要素のうち、自動判定できない「手具操作」要素の手動チェック項目。
+ * 左手投げ/二つ投げ（→必須投げ）と3回以上の投げ上げ（→投げ回数）は別途判定するため除外。
+ * 未実施（未チェック）の項目は §3.5.6.3 により1つにつき −0.30。
+ */
+export const APPARATUS_REQUIRED_ELEMENTS: Record<ApparatusKey, { id: string; name: string }[]> = {
+  stick: [
+    { id: "stick_right", name: "右投げ右受け1回以上" },
+    { id: "stick_rotthrow", name: "転回系の投げ受け" },
+    { id: "stick_roll", name: "1m以上のころがし" },
+    { id: "stick_propeller", name: "プロペラ回旋2回以上" },
+  ],
+  ring: [
+    { id: "ring_rotthrow", name: "転回系の投げ受け" },
+    { id: "ring_roll", name: "1m以上のころがし" },
+    { id: "ring_turn", name: "まわし2回以上" },
+  ],
+  rope: [{ id: "rope_rotthrow", name: "転回系の投げ受け" }],
+  clubs: [
+    { id: "clubs_rotthrow", name: "転回系の投げ受け" },
+    { id: "clubs_roll", name: "50cm以上のころがし" },
+    { id: "clubs_propeller", name: "プロペラ回旋2回以上" },
+  ],
+};
+
+/** §3.5.6.3 審判判断による違反・欠如（各 −0.30）。実施＝該当あり。 */
+export const VIOLATION_OPTIONS = [
+  { id: "handBasic", name: "徒手系基礎要素1群が全くない" },
+  { id: "start", name: "演技の開始違反" },
+  { id: "end", name: "演技の終了違反" },
+  { id: "music", name: "伴奏音楽の違反（リズムに欠け演技を妨害）" },
+];
 
 // ---- 団体（5人）モード ----
 export const UNION_MAX_VALUE = DIFF_VALUE.C; // 組運動の空中転回は最大C
