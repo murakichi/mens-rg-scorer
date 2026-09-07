@@ -263,6 +263,16 @@ describe("computeScore — 連続投げで両方徒手のときA難度は採用�
     expect(r.handScore).toBeCloseTo(0.1, 5);
   });
 
+  it("連続投げが全てA難度なら最高難度のA1つだけ採用する", () => {
+    const r = computeScore(
+      [S({ kind: "throw" }, { kind: "catch" }, { kind: "throw" }, { kind: "catch" })],
+      "clubs",
+    );
+    expect(r.analysis[0].units).toHaveLength(2);
+    expect(r.handScore).toBeCloseTo(0.1, 5);
+    expect(r.seriesBreakdowns[0].handDiff).toBeCloseTo(0.1, 5);
+  });
+
   it("ロープ跳び由来のA難度（1重跳び）は投げ受けの連続とみなさない", () => {
     const r = computeScore(
       [S({ kind: "ropeJump", jumpId: "1f" }, { kind: "throw" }, { kind: "catch" })],

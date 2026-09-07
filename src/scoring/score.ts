@@ -130,13 +130,17 @@ const isHandUnit = (u: Unit) => u.type === "throw" && !u.isThrowTumbling;
  * シリーズ内で徒手難度点に採用する徒手系ユニット。
  * 連続投げ（実際の投げ受けが2つ以上）で、そのすべてが徒手系（投げタンでない）の場合、
  * その中のA難度＝間に徒手動作0の投げ受けは採用しない。
+ * ただし全てがA難度なら最高難度＝A を1つだけ採用する（0にはしない）。
  * ロープ跳び由来のユニットは投げ受けではないため対象外（1重跳びのA難度は従来どおり採用）。
  */
 function adoptedHandUnits(units: Unit[]): Unit[] {
   const handUnits = units.filter(isHandUnit);
+  const ropeUnits = handUnits.filter((u) => u.fromRopeJump);
   const throwUnits = handUnits.filter((u) => !u.fromRopeJump);
-  const dropA = throwUnits.length >= 2;
-  return handUnits.filter((u) => !(dropA && !u.fromRopeJump && u.finalDiff === "A"));
+  if (throwUnits.length < 2) return handUnits;
+  const nonA = throwUnits.filter((u) => u.finalDiff !== "A");
+  const adoptedThrows = nonA.length > 0 ? nonA : throwUnits.slice(0, 1);
+  return [...ropeUnits, ...adoptedThrows];
 }
 
 export interface ComputeOptions {
