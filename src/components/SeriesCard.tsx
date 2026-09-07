@@ -26,7 +26,10 @@ interface Props {
   junior: boolean;
   analysis: SeriesAnalysis;
   breakdown: SeriesBreakdown;
+  /** 採点上の重複扱いか（「重複ではない」チェックで解除された場合 false） */
   isDup: boolean;
+  /** 構成が既出のシリーズと一致したか（解除チェックの表示条件） */
+  isDupSignature: boolean;
   canRemove: boolean;
   onUpdateField: (patch: Partial<Series>) => void;
   onAddItem: (kind: ItemKind) => void;
@@ -200,6 +203,7 @@ export function SeriesCard({
   analysis: a,
   breakdown: b,
   isDup,
+  isDupSignature,
   canRemove,
   onUpdateField,
   onAddItem,
@@ -215,7 +219,7 @@ export function SeriesCard({
       <div className="line-head">
         <span>
           シリーズ {sIdx + 1}
-          {isDup ? "（重複：本数・投げ回数に不算入）" : ""}
+          {isDup ? "（重複：D・本数・投げ回数に不算入）" : isDupSignature ? "（重複扱いを解除中）" : ""}
         </span>
         {canRemove && (
           <button className="remove-btn-sm" onClick={onRemoveSeries}>
@@ -235,6 +239,22 @@ export function SeriesCard({
         />
         点
       </label>
+      {isDupSignature && (
+        <div className="dup-override">
+          <label className="check-req">
+            <input
+              type="checkbox"
+              checked={ser.notDuplicate || false}
+              onChange={(e) => onUpdateField({ notDuplicate: e.target.checked })}
+            />
+            前のシリーズと同じ構成だが、実際は別の内容（重複として扱わない）
+          </label>
+          <p className="hint">
+            シェネで腕の使い方を変える、動作の内訳を変える（4シェネ→3シェネ＋前転 など）といった、
+            入力項目に現れない違いがある場合にチェックします。チェックすると難度点・加点・本数・投げ回数に算入されます。
+          </p>
+        </div>
+      )}
       <div className="skill-row">
         {ser.items.map((item, iIdx) => (
           <div key={iIdx} className="skill-block">
@@ -327,7 +347,10 @@ export function SeriesCard({
           <span>{b.dPart.toFixed(1)} 点</span>
         </div>
         {isDup && (
-          <p className="hint">※重複シリーズのため、難度点は採用候補に含まれますが、本数・投げ回数・一部加点には不算入</p>
+          <p className="hint">※重複シリーズのため、難度点・加点ともにDに不算入（本数・投げ回数にも不算入）</p>
+        )}
+        {!isDup && isDupSignature && (
+          <p className="hint">※同一構成ですが「別の内容」として重複扱いを解除中（通常のシリーズとして算入）</p>
         )}
       </div>
     </section>

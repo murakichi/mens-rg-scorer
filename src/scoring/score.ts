@@ -71,7 +71,10 @@ export interface RequiredCheck {
 
 export interface ScoreResult {
   analysis: SeriesAnalysis[];
+  /** 採点に用いる重複フラグ（notDuplicate で解除されたものは false） */
   dupFlags: boolean[];
+  /** 構成が既出のシリーズと一致したか（notDuplicate による解除を反映しない生の判定） */
+  dupSignatureFlags: boolean[];
   seriesBreakdowns: SeriesBreakdown[];
 
   // D
@@ -142,35 +145,42 @@ export function computeScore(
   const requiredThrowCount = throwCountRequired(junior);
   const allUnits = analysis.flatMap((a) => a.units);
 
-  // 重複シリーズ判定
+  // 重複シリーズ判定。構成が既出でも notDuplicate が立っていれば重複として扱わない
+  // （入力項目に現れない差異＝シェネの腕の使い方・動作の内訳違いなどをユーザーが宣言する）。
   const seen = new Set<string>();
-  const dupFlags = series.map((ser) => {
+  const dupSignatureFlags = series.map((ser) => {
     const sig = seriesSignature(ser);
     if (seen.has(sig)) return true;
     seen.add(sig);
     return false;
   });
+  const dupFlags = dupSignatureFlags.map((dup, i) => dup && !series[i].notDuplicate);
 
   // ---- 各シリーズ内訳（先に算出し、総和系グローバル値はこれを再利用）----
   const seriesBreakdowns: SeriesBreakdown[] = series.map((ser, i) => {
     const a = analysis[i];
     const isDup = dupFlags[i];
-    const tumU = a.units.filter(isTumblingUnit);
+    // 重複シリーズは D（難度点・加点）に一切算入しない（§3.5.5「全く同じ技は難度として数えない」）
+    const tumU = isDup ? [] : a.units.filter(isTumblingUnit);
     const tumDiff = tumU.reduce(
       (s, u) => s + DIFF_SCORE[u.finalDiff] + (u.finalDiff === "E" && u.skillThrow ? E_BONUS : 0),
       0,
     );
-    const hU = a.units.filter((u) => u.type === "throw" && !u.isThrowTumbling);
+    const hU = isDup ? [] : a.units.filter((u) => u.type === "throw" && !u.isThrowTumbling);
     const handDiff = hU.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
     const sBonus =
-      a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus) ? SERIES_BONUS : 0;
+      !isDup && a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus)
+        ? SERIES_BONUS
+        : 0;
 
     let techCount = 0;
-    ser.items.forEach((item) => {
-      if (item.kind === "throw") techCount += (item.throwTypes || []).length;
-      else if (item.kind === "catch") techCount += (item.catchTypes || []).length;
-      else if (item.kind === "skill" && item.isThrow) techCount += (item.throwTypes || []).length;
-    });
+    if (!isDup) {
+      ser.items.forEach((item) => {
+        if (item.kind === "throw") techCount += (item.throwTypes || []).length;
+        else if (item.kind === "catch") techCount += (item.catchTypes || []).length;
+        else if (item.kind === "skill" && item.isThrow) techCount += (item.throwTypes || []).length;
+      });
+    }
     const tech = techCount * TECHNIQUE_BONUS;
 
     let appOp = 0;
@@ -233,11 +243,15 @@ export function computeScore(
   });
 
   // ---- D（難度）----
+  // A側の判定（方向系・連続宙返り・必須要素）は全ユニットを見るが、
+  // 難度点の採用候補からは重複シリーズのユニットを除外する。
   const tumblingUnits = allUnits.filter(isTumblingUnit);
-  const handUnits = allUnits.filter((u) => u.type === "throw" && !u.isThrowTumbling);
+  const adoptUnits = analysis.flatMap((a, i) => (dupFlags[i] ? [] : a.units));
+  const adoptTumblingUnits = adoptUnits.filter(isTumblingUnit);
+  const adoptHandUnits = adoptUnits.filter((u) => u.type === "throw" && !u.isThrowTumbling);
   const sortByDiff = (arr: Unit[]) => [...arr].sort((a, b) => DIFF_VALUE[b.finalDiff] - DIFF_VALUE[a.finalDiff]);
-  const topTumbling = sortByDiff(tumblingUnits).slice(0, ADOPT_COUNT);
-  const topHand = sortByDiff(handUnits).slice(0, ADOPT_COUNT);
+  const topTumbling = sortByDiff(adoptTumblingUnits).slice(0, ADOPT_COUNT);
+  const topHand = sortByDiff(adoptHandUnits).slice(0, ADOPT_COUNT);
 
   const tumblingScore = topTumbling.reduce((s, u) => {
     const base = DIFF_SCORE[u.finalDiff];
@@ -246,7 +260,7 @@ export function computeScore(
   }, 0);
   const handScore = topHand.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
   const seriesBonus = analysis.some(
-    (a) => a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus),
+    (a, i) => !dupFlags[i] && a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus),
   )
     ? SERIES_BONUS
     : 0;
@@ -447,6 +461,7 @@ export function computeScore(
   return {
     analysis,
     dupFlags,
+    dupSignatureFlags,
     seriesBreakdowns,
     tumblingScore,
     handScore,

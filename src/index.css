@@ -583,6 +583,18 @@ input[type="checkbox"] {
   margin-top: 12px;
 }
 
+/* 重複扱いの解除チェック */
+.dup-override {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--glass-border);
+  border-radius: 12px;
+  background: var(--glass-soft);
+}
+.dup-override .hint {
+  margin-top: 6px;
+}
+
 /* トグルスイッチ（ジュニアモード等の ON/OFF） */
 .switch-row {
   display: flex;

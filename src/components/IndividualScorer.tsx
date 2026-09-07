@@ -280,6 +280,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
           analysis={result.analysis[sIdx]}
           breakdown={result.seriesBreakdowns[sIdx]}
           isDup={result.dupFlags[sIdx]}
+          isDupSignature={result.dupSignatureFlags[sIdx]}
           canRemove={series.length > 1}
           onUpdateField={(patch) => updateSeriesField(sIdx, patch)}
           onAddItem={(kind) => addItem(sIdx, kind)}
