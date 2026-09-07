@@ -71,6 +71,8 @@ export interface RequiredCheck {
 
 export interface ScoreResult {
   analysis: SeriesAnalysis[];
+  /** analysis[i].units と同じ並びで、そのユニットが難度点に採用されたか */
+  unitAdopted: boolean[][];
   /** 採点に用いる重複フラグ（notDuplicate で解除されたものは false） */
   dupFlags: boolean[];
   /** 構成が既出のシリーズと一致したか（notDuplicate による解除を反映しない生の判定） */
@@ -174,17 +176,40 @@ export function computeScore(
   });
   const dupFlags = dupSignatureFlags.map((dup, i) => dup && !series[i].notDuplicate);
 
+  // ---- 難度点に採用するユニットをシリーズ順に確定する ----
+  // 重複シリーズは全除外、A難度の投げ受けは adoptedHandUnits() で間引き、
+  // さらに演技全体で同じ内容の難度は1回しか数えない（§3.4.4）。
+  // 不採用でも本数・投げ回数・加点・A側の判定には従来どおり算入する。
+  const seenUnitSig = new Set<string>();
+  const adoptedUnits: Unit[][] = analysis.map((a, i) => {
+    if (dupFlags[i]) return [];
+    // 「重複ではない」と宣言されたシリーズは別内容として扱い、他シリーズと内容キーを共有しない
+    const scope = series[i].notDuplicate ? `${i}#` : "";
+    const candidates = [...a.units.filter(isTumblingUnit), ...adoptedHandUnits(a.units)];
+    return candidates.filter((u) => {
+      const key = scope + u.signature;
+      if (seenUnitSig.has(key)) return false;
+      seenUnitSig.add(key);
+      return true;
+    });
+  });
+
+  const unitAdopted = analysis.map((a, i) => {
+    const adopted = new Set(adoptedUnits[i]);
+    return a.units.map((u) => adopted.has(u));
+  });
+
   // ---- 各シリーズ内訳（先に算出し、総和系グローバル値はこれを再利用）----
   const seriesBreakdowns: SeriesBreakdown[] = series.map((ser, i) => {
     const a = analysis[i];
     const isDup = dupFlags[i];
     // 重複シリーズは D（難度点・加点）に一切算入しない（§3.5.5「全く同じ技は難度として数えない」）
-    const tumU = isDup ? [] : a.units.filter(isTumblingUnit);
+    const tumU = adoptedUnits[i].filter(isTumblingUnit);
     const tumDiff = tumU.reduce(
       (s, u) => s + DIFF_SCORE[u.finalDiff] + (u.finalDiff === "E" && u.skillThrow ? E_BONUS : 0),
       0,
     );
-    const hU = isDup ? [] : adoptedHandUnits(a.units);
+    const hU = adoptedUnits[i].filter(isHandUnit);
     const handDiff = hU.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
     const sBonus =
       !isDup && a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus)
@@ -264,9 +289,9 @@ export function computeScore(
   // A側の判定（方向系・連続宙返り・必須要素）は全ユニットを見るが、
   // 難度点の採用候補からは重複シリーズのユニットを除外する。
   const tumblingUnits = allUnits.filter(isTumblingUnit);
-  const adoptUnits = analysis.flatMap((a, i) => (dupFlags[i] ? [] : a.units));
+  const adoptUnits = adoptedUnits.flat();
   const adoptTumblingUnits = adoptUnits.filter(isTumblingUnit);
-  const adoptHandUnits = analysis.flatMap((a, i) => (dupFlags[i] ? [] : adoptedHandUnits(a.units)));
+  const adoptHandUnits = adoptUnits.filter(isHandUnit);
   const sortByDiff = (arr: Unit[]) => [...arr].sort((a, b) => DIFF_VALUE[b.finalDiff] - DIFF_VALUE[a.finalDiff]);
   const topTumbling = sortByDiff(adoptTumblingUnits).slice(0, ADOPT_COUNT);
   const topHand = sortByDiff(adoptHandUnits).slice(0, ADOPT_COUNT);
@@ -478,6 +503,7 @@ export function computeScore(
 
   return {
     analysis,
+    unitAdopted,
     dupFlags,
     dupSignatureFlags,
     seriesBreakdowns,

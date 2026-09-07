@@ -278,6 +278,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
           apparatus={apparatus}
           junior={junior}
           analysis={result.analysis[sIdx]}
+          unitAdopted={result.unitAdopted[sIdx]}
           breakdown={result.seriesBreakdowns[sIdx]}
           isDup={result.dupFlags[sIdx]}
           isDupSignature={result.dupSignatureFlags[sIdx]}

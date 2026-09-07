@@ -85,6 +85,16 @@ interface UnitBuffer {
   throwItems: number;
 }
 
+/**
+ * 難度の内容キー。転回系は技の並び、徒手系は投げ受けの間の動作数で決まる。
+ * 技術タグ（視野外・手以外・背面投げ等）は難度の内容ではないので含めない。
+ */
+function unitSignature(buf: UnitBuffer, isThrow: boolean): string {
+  const skillSig = buf.skills.map((s) => `${s.skillId}${s.isThrow ? "!" : ""}`).join(">");
+  const motionSig = `m${buf.motionCount}${buf.verticalThree ? "v" : ""}`;
+  return isThrow ? `throw:${skillSig}:${motionSig}` : `tum:${skillSig}`;
+}
+
 function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   const hasSkill = buf.skills.length > 0;
   const skillThrow = buf.skills.some((s) => s.isThrow);
@@ -96,11 +106,14 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
     : null;
   const handDiff = isThrow ? calcHandDifficulty(buf.motionCount, buf.verticalThree) : null;
 
+  const signature = unitSignature(buf, isThrow);
+
   if (!isThrow) {
     return {
       type: "tumbling",
       isThrow: false,
       skillThrow: false,
+      signature,
       skills: buf.skills,
       finalDiff: tumblingDiff as Difficulty,
       hasApparatus,
@@ -118,6 +131,7 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
     isThrow: true,
     skillThrow,
     isThrowTumbling: hasSkill,
+    signature,
     skills: buf.skills,
     handDiff,
     tumblingDiff,
@@ -170,10 +184,14 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
 
   // ロープ跳び：シリーズ内の最高難度の跳びを独立した徒手系難度ユニットとして追加
   let ropeMax = 0;
+  let ropeMaxId = "";
   series.items.forEach((item) => {
     if (item.kind === "ropeJump") {
       const j = ropeJumpDef(item.jumpId);
-      if (j) ropeMax = Math.max(ropeMax, DIFF_VALUE[j.difficulty]);
+      if (j && DIFF_VALUE[j.difficulty] > ropeMax) {
+        ropeMax = DIFF_VALUE[j.difficulty];
+        ropeMaxId = j.id;
+      }
     }
   });
   if (ropeMax > 0) {
@@ -184,6 +202,7 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
       skillThrow: false,
       isThrowTumbling: false,
       fromRopeJump: true,
+      signature: `rope:${ropeMaxId}`,
       skills: [],
       handDiff: diff,
       tumblingDiff: null,

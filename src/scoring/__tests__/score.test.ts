@@ -229,7 +229,7 @@ describe("computeScore — 連続投げで両方徒手のときA難度は採用�
     expect(r.handScore).toBeCloseTo(0.1, 5);
   });
 
-  it("A難度以外は連続投げでもそれぞれ採用する", () => {
+  it("A難度以外で内容が違えば連続投げでもそれぞれ採用する", () => {
     const r = computeScore(
       [
         S(
@@ -237,13 +237,13 @@ describe("computeScore — 連続投げで両方徒手のときA難度は採用�
           { kind: "motion", motionId: "m3" },
           { kind: "catch" },
           { kind: "throw" },
-          { kind: "motion", motionId: "m3" },
+          { kind: "motion", motionId: "m2" },
           { kind: "catch" },
         ),
       ],
       "clubs",
     );
-    expect(r.handScore).toBeCloseTo(1.0, 5); // D + D
+    expect(r.handScore).toBeCloseTo(0.8, 5); // D(3動作) + C(2動作)
   });
 
   it("相手が投げタンならA難度の投げ受けは採用される（両方徒手ではない）", () => {
@@ -280,5 +280,67 @@ describe("computeScore — 連続投げで両方徒手のときA難度は採用�
     );
     // 1重跳び A=0.1 と 動作0の投げ受け A=0.1（投げ受けは1つなので採用）
     expect(r.handScore).toBeCloseTo(0.2, 5);
+  });
+});
+
+describe("computeScore — 同じ内容の難度は演技全体で1回しか数えない（§3.4.4 / Q20）", () => {
+  it("同じ3動作の投げ受けを2回：難度は1つ分、技術加点と連続投げ加点は付く", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw" },
+          { kind: "motion", motionId: "m3" },
+          { kind: "catch" },
+          { kind: "throw", throwTypes: ["noview"] }, // 背面投げ相当の技術タグ
+          { kind: "motion", motionId: "m3" },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    expect(r.handScore).toBeCloseTo(0.5, 5); // D 1つ分のみ
+    expect(r.techniqueBonus).toBeCloseTo(0.1, 5); // 不採用でも技術加点は付く
+    expect(r.seriesBonus).toBeCloseTo(0.1, 5); // 連続投げ加点も付く
+    expect(r.totalThrowCount).toBe(2); // 投げ回数も2回のまま
+    expect(r.dScore).toBeCloseTo(0.7, 5);
+  });
+
+  it("シリーズをまたいでも同じ内容なら1回だけ採用する", () => {
+    const tum = (): Series => S({ kind: "skill", skillId: "d_doubleback" }, { kind: "catch" });
+    // 2本目は技術タグの有無で構成が違うのでシリーズ重複にはならないが、転回系の内容は同じ
+    const withThrow = S(
+      { kind: "skill", skillId: "d_doubleback" },
+      { kind: "catch" },
+      { kind: "throw" },
+      { kind: "catch" },
+    );
+    const r = computeScore([tum(), withThrow], "clubs");
+    expect(r.dupFlags).toEqual([false, false]);
+    expect(r.tumblingScore).toBeCloseTo(0.5, 5);
+    expect(r.nonDupTumblingCount).toBe(2); // 本数は2本のまま
+  });
+
+  it("内容が違えばそれぞれ採用する", () => {
+    const tum = (skillId: string): Series => S({ kind: "skill", skillId }, { kind: "catch" });
+    const r = computeScore([tum("d_doubleback"), tum("c_back15")], "clubs");
+    expect(r.tumblingScore).toBeCloseTo(0.8, 5);
+  });
+
+  it("「重複ではない」宣言のシリーズは内容が同じでも採用される", () => {
+    const tum = (): Series => S({ kind: "skill", skillId: "d_doubleback" }, { kind: "catch" });
+    const r = computeScore([tum(), { ...tum(), notDuplicate: true }], "clubs");
+    expect(r.tumblingScore).toBeCloseTo(1.0, 5);
+  });
+
+  it("ロープ跳びも同じ跳びなら1回だけ採用する", () => {
+    // 2本目は投げの技術タグでシリーズ構成を変え、シリーズ重複ではなくユニット重複にする
+    const jump = (id: string, tag?: string): Series =>
+      S({ kind: "ropeJump", jumpId: id }, { kind: "throw", throwTypes: tag ? [tag] : [] }, { kind: "catch" });
+    const same = computeScore([jump("3b"), jump("3b", "noview")], "rope");
+    expect(same.dupFlags).toEqual([false, false]);
+    // 3重跳び(C) 1つ + 投げ受け(A) 1つ（跳び・投げ受けとも内容が同じなので各1回）
+    expect(same.handScore).toBeCloseTo(0.3 + 0.1, 5);
+    const diff = computeScore([jump("3b"), jump("3bc", "noview")], "rope");
+    expect(diff.handScore).toBeCloseTo(0.3 + 0.5 + 0.1, 5); // C + D + 投げ受け(A)
   });
 });

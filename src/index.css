@@ -583,6 +583,16 @@ input[type="checkbox"] {
   margin-top: 12px;
 }
 
+.unit-unadopted {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(120, 120, 150, 0.16);
+  color: var(--ink-mute);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 /* 重複扱いの解除チェック */
 .dup-override {
   margin: 0 0 12px;
