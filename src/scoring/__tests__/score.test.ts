@@ -473,3 +473,60 @@ describe("computeScore — 徒手難度点の投げごとの内訳（handRows）
     expect(r.seriesBreakdowns[0].handRows.map((x) => x.label)).toEqual(["ロープ跳び"]);
   });
 });
+
+describe("computeScore — 手具を持っての前宙と投げての前宙は同じ技（Q22）", () => {
+  /** 手具を持って前宙（投げなし） */
+  const hold = (): Series => S({ kind: "skill", skillId: "b_front", hasApparatus: true }, { kind: "catch" });
+  /** 投げ前宙（投げ→前宙→キャッチ）＝B+1 で C難度 */
+  const thrown = (): Series =>
+    S({ kind: "throw" }, { kind: "skill", skillId: "b_front" }, { kind: "catch" });
+  /** 投げ前宙前転（前転はA難度なので難度には効かない）＝C難度 */
+  const thrownRoll = (): Series =>
+    S(
+      { kind: "throw" },
+      { kind: "skill", skillId: "b_front" },
+      { kind: "skill", skillId: "a_frontroll" },
+      { kind: "catch" },
+    );
+
+  const tum = (r: ReturnType<typeof computeScore>) => r.tumblingScore;
+
+  it("前宙 → 前宙：採用B・不採用", () => {
+    const r = computeScore([hold(), hold()], "clubs");
+    expect(tum(r)).toBeCloseTo(0.2, 5);
+  });
+
+  it("投げ前宙 → 前宙：採用C・不採用", () => {
+    const r = computeScore([thrown(), hold()], "clubs");
+    expect(tum(r)).toBeCloseTo(0.3, 5);
+    expect(r.unitAdopted[0][0]).toBe(true);
+    expect(r.unitAdopted[1][0]).toBe(false);
+  });
+
+  it("前宙 → 投げ前宙：不採用・採用C（後の方が高難度でも採用される）", () => {
+    const r = computeScore([hold(), thrown()], "clubs");
+    expect(tum(r)).toBeCloseTo(0.3, 5);
+    expect(r.unitAdopted[0][0]).toBe(false);
+    expect(r.unitAdopted[1][0]).toBe(true);
+  });
+
+  it("前宙 → 投げ前宙前転：不採用・採用C", () => {
+    const r = computeScore([hold(), thrownRoll()], "clubs");
+    expect(tum(r)).toBeCloseTo(0.3, 5);
+    expect(r.unitAdopted[0][0]).toBe(false);
+    expect(r.unitAdopted[1][0]).toBe(true);
+  });
+
+  it("投げ前宙前転 → 前宙：採用C・不採用", () => {
+    const r = computeScore([thrownRoll(), hold()], "clubs");
+    expect(tum(r)).toBeCloseTo(0.3, 5);
+    expect(r.unitAdopted[0][0]).toBe(true);
+    expect(r.unitAdopted[1][0]).toBe(false);
+  });
+
+  it("違う宙返りなら別の技として両方採用する", () => {
+    const back = S({ kind: "skill", skillId: "b_backsalto", hasApparatus: true }, { kind: "catch" });
+    const r = computeScore([hold(), back], "clubs");
+    expect(tum(r)).toBeCloseTo(0.4, 5);
+  });
+});

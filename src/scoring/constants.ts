@@ -89,6 +89,9 @@ export const THROW_COUNT_DEDUCTION = 0.3;
 /** 投げ上げの最低回数。不足で THROW_COUNT_DEDUCTION（一般 / ジュニア）。 */
 export const THROW_COUNT_REQUIRED = 3;
 export const JUNIOR_THROW_COUNT_REQUIRED = 2;
+/** 投げ上げの上限回数。ジュニアのみ5回までで、超過すると THROW_COUNT_OVER_DEDUCTION。 */
+export const JUNIOR_THROW_COUNT_MAX = 5;
+export const THROW_COUNT_OVER_DEDUCTION = 0.3;
 // つなぎ技のA難度に手具操作がない場合の減点（Q&A Q10 より 0.2）。
 // 操作は回しに限らず持ち替え・足やわきに挟むなども含み、1つでもあれば減点しない。
 export const CONNECT_NO_APP_DEDUCTION = 0.2;
@@ -268,4 +271,9 @@ export function skillDifficulty(id: string, junior = false): Difficulty | undefi
 /** 適用規則に応じた投げ上げの最低回数 */
 export function throwCountRequired(junior = false): number {
   return junior ? JUNIOR_THROW_COUNT_REQUIRED : THROW_COUNT_REQUIRED;
+}
+
+/** 適用規則に応じた投げ上げの上限回数。一般は上限なし（null）。 */
+export function throwCountMax(junior = false): number | null {
+  return junior ? JUNIOR_THROW_COUNT_MAX : null;
 }

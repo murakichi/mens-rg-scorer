@@ -86,6 +86,8 @@ export interface HandMotion {
 export interface Unit {
   type: "tumbling" | "throw";
   isThrow: boolean;
+  /** このユニットに含まれる投げ上げの回数（タンブリング塊・ロープ跳びは0） */
+  throwCount: number;
   skillThrow: boolean;
   /** 投げ単位かつ技を含む＝投げタン */
   isThrowTumbling?: boolean;

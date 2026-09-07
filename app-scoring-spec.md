@@ -70,6 +70,7 @@
 |--------------|--------|-----|------|
 | 方向系不足 | `DIRECTION_DEDUCTION` | 0.3 | 前方/側方/後方の不足1方向につき |
 | 投げ回数不足 | `THROW_COUNT_DEDUCTION` | 0.3 | 投げが `THROW_COUNT_REQUIRED`（一般3／ジュニア2）未満 |
+| 投げ回数超過 | `THROW_COUNT_OVER_DEDUCTION` | 0.3 | ジュニアのみ。`JUNIOR_THROW_COUNT_MAX`（5回）を超えた1回につき |
 | つなぎ技手具操作なし | `CONNECT_NO_APP_DEDUCTION` | 0.2 | つなぎ技のA難度で手具操作なし（投げなしタンブリング塊のみ・Q&A Q10） |
 | 宙返り2連続止まり | `SALTO_CHAIN_2_DEDUCTION` | 0.1 | 最大連続宙返りが2 |
 | 宙返り連続なし | `SALTO_CHAIN_LOW_DEDUCTION` | 0.2 | 連続宙返りなし |
@@ -153,9 +154,14 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
   - ロープ跳び由来のユニット（`Unit.fromRopeJump`）は投げ受けではないため上記の対象外。
     1重跳びのA難度は従来どおり採用される
 - **同じ内容の難度は演技全体で1回しか数えない**（§3.4.4「全く同じ技は難度として数えない」）
-  - 各ユニットは `Unit.signature`（転回系＝技の並び、徒手系＝投げ受けの間の動作数、ロープ＝跳びのid）で
-    内容を表す。技術タグ（視野外・手以外・背面投げ等）は難度の内容ではないので含めない
-  - シリーズ順に走査し、既出の `signature` と一致するユニットは難度点に採用しない。
+  - 各ユニットは `Unit.signature` で内容を表す
+    - 技を含むユニット（タンブリング塊・投げタン）＝転回系：**難度に効く非A難度技の並び**。
+      手具を持っての前宙と投げての前宙は「同じ前宙」なので、投げの有無やA難度技は含めない（Q&A Q22）
+    - 技を含まない投げ受け＝徒手系：投げとキャッチの間の動作数
+    - ロープ跳び：跳びのid
+    - 技術タグ（視野外・手以外・背面投げ等）はいずれも含めない
+  - 同じ `signature` が複数あるときは**難度点の高いものだけを採用**する（同点なら先に実施した方）。
+    例：前宙(B) → 投げ前宙(C) なら後者が採用（Q22）
     **不採用でも「実施しなかった」扱いにはしない**：技術加点・連続投げ加点・投げ回数・タンブリング本数・
     A側の判定（方向系・連続宙返り・つなぎ技・必須要素）には従来どおり算入する
   - `notDuplicate` を立てたシリーズのユニットは内容キーをシリーズ単位に閉じ、他シリーズと重複しない
@@ -178,6 +184,7 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 | `triple` | 1本以上が宙返り3回以上連続 | `maxSaltoChain >= 3` |
 | `connect` | 1本以上がつなぎ技 | `hasConnect()` で宙返り→A難度→宙返り パターン検出 |
 | `count3` | 投げをN回以上実施 | `totalThrowCount >= requiredThrowCount`（一般3／ジュニア2。ラベルもNに追従） |
+| `countMax` | 投げはN回以内（ジュニアのみ） | `performedThrowCount <= maxThrowCount`（5） |
 | `tumCount` | タンブリング3本以上 | `nonDupTumblingCount >= 3` |
 | `appThrow` | 手具別必須投げ | `REQUIRED_THROW_OPTIONS` の全IDが実施済みか |
 
@@ -219,6 +226,12 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 | ダイビング前宙（`b_divefront`）の難度 | B | C | `JUNIOR_SKILL_DIFFICULTY` |
 | 後方宙返り半ひねり（`b_backhalf`）の難度 | B | C | `JUNIOR_SKILL_DIFFICULTY` |
 | 投げ上げの最低回数 | 3（`THROW_COUNT_REQUIRED`） | 2（`JUNIOR_THROW_COUNT_REQUIRED`） | `throwCountRequired(junior)` |
+| 投げ上げの上限回数 | なし | 5（`JUNIOR_THROW_COUNT_MAX`） | `throwCountMax(junior)` |
+
+上限を超えた6回目以降の投げは**要素・難度ともにカウントしない**（難度点の採用候補から外し、
+投げ回数・投げ方/受け方の多様性・必須投げ・技術加点にも算入しない）。そのうえで
+**超過1回につき −0.30**（`THROW_COUNT_OVER_DEDUCTION`）。`ScoreResult` は実施回数を
+`performedThrowCount`、要素として数えた回数を `totalThrowCount`、超過数を `overThrowCount` で返す。
 
 - 難度参照は `skillDifficulty(id, junior)` に集約。`junior` は `computeScore` → `analyzeSeries` →
   `calcTumblingDifficulty` へ引き渡す（既定 `false` なので既存の呼び出しは無変更）。
