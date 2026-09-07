@@ -344,3 +344,71 @@ describe("computeScore — 同じ内容の難度は演技全体で1回しか数�
     expect(diff.handScore).toBeCloseTo(0.3 + 0.5 + 0.1, 5); // C + D + 投げ受け(A)
   });
 });
+
+describe("computeScore — つなぎ技のA難度に手具操作なし（Q10）", () => {
+  it("後方一回半ひねり(操作なし)〜ロンダート(操作なし)〜ダイビング前宙(操作あり)で −0.2", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "skill", skillId: "c_back15", hasApparatus: false },
+          { kind: "skill", skillId: "a_roundoff", hasApparatus: false },
+          { kind: "skill", skillId: "b_divefront", hasApparatus: true },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    expect(r.connectNoApparatus).toBe(true);
+    expect(r.noApparatusDeduction).toBeCloseTo(0.2, 5);
+  });
+
+  it("つなぎのA難度に手具操作があれば減点なし", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "skill", skillId: "c_back15", hasApparatus: true },
+          { kind: "skill", skillId: "a_roundoff", hasApparatus: true },
+          { kind: "skill", skillId: "b_divefront", hasApparatus: true },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    expect(r.connectNoApparatus).toBe(false);
+    expect(r.noApparatusDeduction).toBe(0);
+  });
+
+  it("投げを含む塊（投げタン）のつなぎ技は対象外", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw" },
+          { kind: "skill", skillId: "c_back15", hasApparatus: false },
+          { kind: "skill", skillId: "a_roundoff", hasApparatus: false },
+          { kind: "skill", skillId: "b_divefront", hasApparatus: true },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    expect(r.connectNoApparatus).toBe(false);
+    expect(r.noApparatusDeduction).toBe(0);
+  });
+
+  it("手具操作不足減点の上限0.4は維持される", () => {
+    // つなぎ技操作なし(0.2) + 投げなしタンブリング全体に操作なしのシリーズ2本(0.2×2) → 上限0.4
+    const noApp = (): Series =>
+      S(
+        { kind: "skill", skillId: "c_back15", hasApparatus: false },
+        { kind: "skill", skillId: "a_roundoff", hasApparatus: false },
+        { kind: "skill", skillId: "b_backsalto", hasApparatus: false },
+        { kind: "catch" },
+      );
+    const other = S(
+      { kind: "skill", skillId: "b_front", hasApparatus: false },
+      { kind: "catch" },
+    );
+    const r = computeScore([noApp(), other], "clubs");
+    expect(r.noApparatusDeduction).toBeCloseTo(0.4, 5);
+  });
+});

@@ -70,7 +70,7 @@
 |--------------|--------|-----|------|
 | 方向系不足 | `DIRECTION_DEDUCTION` | 0.3 | 前方/側方/後方の不足1方向につき |
 | 投げ回数不足 | `THROW_COUNT_DEDUCTION` | 0.3 | 投げが `THROW_COUNT_REQUIRED`（一般3／ジュニア2）未満 |
-| つなぎ技手具操作なし | `CONNECT_NO_APP_DEDUCTION` | 0.1 | つなぎ技のA難度で手具操作なし |
+| つなぎ技手具操作なし | `CONNECT_NO_APP_DEDUCTION` | 0.2 | つなぎ技のA難度で手具操作なし（投げなしタンブリング塊のみ・Q&A Q10） |
 | 宙返り2連続止まり | `SALTO_CHAIN_2_DEDUCTION` | 0.1 | 最大連続宙返りが2 |
 | 宙返り連続なし | `SALTO_CHAIN_LOW_DEDUCTION` | 0.2 | 連続宙返りなし |
 | 投げなしタンブリング（宙返り系のみ） | `NO_APP_SALTO_DEDUCTION` | 0.1 | 宙返り系すべてに手具操作なし |
@@ -91,6 +91,10 @@
 | スティック `stick_right`（右投げ右受け1回以上） | `rightThrow` | 左手投げ（`reqTypes: lefthand`）でも手以外の投げ（`throwTypes: nonhand`）でもない投げが1回以上あるか。技の最中の投げ（投げタン）も対象 |
 
 `VIOLATION_DEDUCTION` の対象は `VIOLATION_OPTIONS`（審判判断による手動チェック）。
+
+つなぎ技の手具操作なし減点（Q&A Q10）：後方一回半ひねり(操作なし)〜ロンダート(操作なし)〜ダイビング前宙(操作あり)
+＝ A審判 −0.20（E審判の −0.10 は実施減点なのでユーザー入力）。操作は回しに限らず持ち替え・足やわきに挟むなども
+含み、1つでもあれば減点しない（`hasApparatus` のチェック1つで表現）。対象は投げを含まないタンブリング塊のみ。
 どちらも個人モードの routine レベル state（`apparatusElements` / `violations`）で保持し、`SaveData`・共有URLに含める。
 
 ---

@@ -89,7 +89,9 @@ export const THROW_COUNT_DEDUCTION = 0.3;
 /** 投げ上げの最低回数。不足で THROW_COUNT_DEDUCTION（一般 / ジュニア）。 */
 export const THROW_COUNT_REQUIRED = 3;
 export const JUNIOR_THROW_COUNT_REQUIRED = 2;
-export const CONNECT_NO_APP_DEDUCTION = 0.1;
+// つなぎ技のA難度に手具操作がない場合の減点（Q&A Q10 より 0.2）。
+// 操作は回しに限らず持ち替え・足やわきに挟むなども含み、1つでもあれば減点しない。
+export const CONNECT_NO_APP_DEDUCTION = 0.2;
 export const SALTO_CHAIN_2_DEDUCTION = 0.1;
 export const SALTO_CHAIN_LOW_DEDUCTION = 0.2;
 

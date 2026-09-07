@@ -317,7 +317,10 @@ export function computeScore(
 
   // ---- A（芸術と多様性）----
   // 手具操作不足：各シリーズ内訳の noApp 総和 + つなぎ技A難度の手具操作なし、上限 NO_APP_CAP
-  const connectNoApparatus = allUnits.some((u) => hasConnectWithoutApparatus(u.skills || []));
+  // 手具操作なしの減点は投げなしタンブリング塊のみが対象
+  const connectNoApparatus = allUnits.some(
+    (u) => u.type === "tumbling" && hasConnectWithoutApparatus(u.skills || []),
+  );
   let noApparatusDeduction = seriesBreakdowns.reduce((s, b) => s + b.noApp, 0);
   if (connectNoApparatus) noApparatusDeduction += CONNECT_NO_APP_DEDUCTION;
   noApparatusDeduction = Math.min(noApparatusDeduction, NO_APP_CAP);
