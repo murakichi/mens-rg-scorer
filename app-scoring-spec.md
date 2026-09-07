@@ -203,6 +203,10 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 | `TeamScorer` | 団体モードの全UI・state管理 |
 | `JsonModal` | インポート/エクスポート（個人のみ） |
 
+手具に無関係な加点行は表示しない：二つ投げ4動作加点は `hasTwoThrow(apparatus)`（＝リング・クラブ）のとき、
+様々な跳び加点は `apparatus === "rope"` のときだけ表示する（`ScoreSummary` の集計と `SeriesCard` の内訳の両方）。
+値の計算自体は手具に関係なく行われるため、非表示でも 0 のまま `dScore` に含まれる。
+
 トグルスイッチは `.switch` / `.switch-knob` / `.switch-row` / `.switch-label`（`src/index.css`）。
 `role="switch"` + `aria-checked` を持つ `button` で実装する。
 

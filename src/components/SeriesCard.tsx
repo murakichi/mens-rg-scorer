@@ -9,6 +9,7 @@ import {
   APPARATUS_USE,
   SKILL_LIST,
   skillDifficulty,
+  hasTwoThrow,
   HAND_MOTIONS,
   ROPE_JUMPS,
 } from "../scoring/constants";
@@ -330,10 +331,12 @@ export function SeriesCard({
           <span>D：手具操作加点</span>
           <span>{b.appOp.toFixed(1)}</span>
         </div>
-        <div className="breakdown-row">
-          <span>D：二つ投げ4動作加点</span>
-          <span>{b.twoMot.toFixed(1)}</span>
-        </div>
+        {hasTwoThrow(apparatus) && (
+          <div className="breakdown-row">
+            <span>D：二つ投げ4動作加点</span>
+            <span>{b.twoMot.toFixed(1)}</span>
+          </div>
+        )}
         <div className="breakdown-row">
           <span>A：手具操作不足減点</span>
           <span>-{b.noApp.toFixed(1)}</span>

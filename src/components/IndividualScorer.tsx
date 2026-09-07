@@ -353,7 +353,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         <p className="hint">該当する違反・欠如にチェックします。各1つにつき −0.30点（A減点）。</p>
       </section>
 
-      <ScoreSummary result={result} />
+      <ScoreSummary result={result} apparatus={apparatus} />
     </>
   );
 }

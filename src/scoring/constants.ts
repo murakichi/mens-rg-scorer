@@ -64,6 +64,11 @@ export const REQUIRED_THROW_OPTIONS: Record<ApparatusKey, { id: string; name: st
   rope: [],
 };
 
+/** 二つ投げが必須投げの手具（リング・クラブ）か。二つ投げ関連の表示条件に使う。 */
+export function hasTwoThrow(apparatus: ApparatusKey): boolean {
+  return REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === "twothrow");
+}
+
 export const DIFF_VALUE: Record<Difficulty, number> = { A: 1, B: 2, C: 3, D: 4, E: 5 };
 export const VALUE_DIFF: Record<number, Difficulty> = { 1: "A", 2: "B", 3: "C", 4: "D", 5: "E" };
 export const MAX_DIFF = 5;
