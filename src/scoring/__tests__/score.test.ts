@@ -200,3 +200,75 @@ describe("computeScore — 重複シリーズはDスコアからも除外", () =
     expect(r.seriesBreakdowns[1].tumDiff).toBeCloseTo(0.5, 5);
   });
 });
+
+describe("computeScore — 連続投げで両方徒手のときA難度は採用しない", () => {
+  it("二つ投げ→4動作→キャッチ→視野外投げ→視野外キャッチ（クラブ）", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw", reqTypes: ["twothrow"] },
+          { kind: "motion", motionId: "m4" },
+          { kind: "catch" },
+          { kind: "throw", throwTypes: ["noview"] },
+          { kind: "catch", catchTypes: ["noview"] },
+        ),
+      ],
+      "clubs",
+    );
+    // 4動作の投げ受け E=0.7 のみ採用。動作0の投げ受け A=0.1 は不採用
+    expect(r.handScore).toBeCloseTo(0.7, 5);
+    expect(r.seriesBreakdowns[0].handDiff).toBeCloseTo(0.7, 5);
+    expect(r.twoThrowMotionBonus).toBeCloseTo(0.1, 5);
+    expect(r.seriesBonus).toBeCloseTo(0.1, 5);
+    expect(r.techniqueBonus).toBeCloseTo(0.2, 5);
+    expect(r.dScore).toBeCloseTo(1.1, 5);
+  });
+
+  it("投げ受けが1つだけならA難度でも採用する", () => {
+    const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
+    expect(r.handScore).toBeCloseTo(0.1, 5);
+  });
+
+  it("A難度以外は連続投げでもそれぞれ採用する", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw" },
+          { kind: "motion", motionId: "m3" },
+          { kind: "catch" },
+          { kind: "throw" },
+          { kind: "motion", motionId: "m3" },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    expect(r.handScore).toBeCloseTo(1.0, 5); // D + D
+  });
+
+  it("相手が投げタンならA難度の投げ受けは採用される（両方徒手ではない）", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw" },
+          { kind: "skill", skillId: "b_backsalto" },
+          { kind: "catch" },
+          { kind: "throw" },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    // 1つ目は投げタン（転回系側）、2つ目の徒手系はA=0.1 として採用
+    expect(r.handScore).toBeCloseTo(0.1, 5);
+  });
+
+  it("ロープ跳び由来のA難度（1重跳び）は投げ受けの連続とみなさない", () => {
+    const r = computeScore(
+      [S({ kind: "ropeJump", jumpId: "1f" }, { kind: "throw" }, { kind: "catch" })],
+      "rope",
+    );
+    // 1重跳び A=0.1 と 動作0の投げ受け A=0.1（投げ受けは1つなので採用）
+    expect(r.handScore).toBeCloseTo(0.2, 5);
+  });
+});

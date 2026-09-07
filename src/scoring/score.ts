@@ -124,6 +124,20 @@ export interface ScoreResult {
 }
 
 const isTumblingUnit = (u: Unit) => u.type === "tumbling" || (u.type === "throw" && u.isThrowTumbling);
+const isHandUnit = (u: Unit) => u.type === "throw" && !u.isThrowTumbling;
+
+/**
+ * シリーズ内で徒手難度点に採用する徒手系ユニット。
+ * 連続投げ（実際の投げ受けが2つ以上）で、そのすべてが徒手系（投げタンでない）の場合、
+ * その中のA難度＝間に徒手動作0の投げ受けは採用しない。
+ * ロープ跳び由来のユニットは投げ受けではないため対象外（1重跳びのA難度は従来どおり採用）。
+ */
+function adoptedHandUnits(units: Unit[]): Unit[] {
+  const handUnits = units.filter(isHandUnit);
+  const throwUnits = handUnits.filter((u) => !u.fromRopeJump);
+  const dropA = throwUnits.length >= 2;
+  return handUnits.filter((u) => !(dropA && !u.fromRopeJump && u.finalDiff === "A"));
+}
 
 export interface ComputeOptions {
   overallExecutionDeduction?: number;
@@ -166,7 +180,7 @@ export function computeScore(
       (s, u) => s + DIFF_SCORE[u.finalDiff] + (u.finalDiff === "E" && u.skillThrow ? E_BONUS : 0),
       0,
     );
-    const hU = isDup ? [] : a.units.filter((u) => u.type === "throw" && !u.isThrowTumbling);
+    const hU = isDup ? [] : adoptedHandUnits(a.units);
     const handDiff = hU.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
     const sBonus =
       !isDup && a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus)
@@ -248,7 +262,7 @@ export function computeScore(
   const tumblingUnits = allUnits.filter(isTumblingUnit);
   const adoptUnits = analysis.flatMap((a, i) => (dupFlags[i] ? [] : a.units));
   const adoptTumblingUnits = adoptUnits.filter(isTumblingUnit);
-  const adoptHandUnits = adoptUnits.filter((u) => u.type === "throw" && !u.isThrowTumbling);
+  const adoptHandUnits = analysis.flatMap((a, i) => (dupFlags[i] ? [] : adoptedHandUnits(a.units)));
   const sortByDiff = (arr: Unit[]) => [...arr].sort((a, b) => DIFF_VALUE[b.finalDiff] - DIFF_VALUE[a.finalDiff]);
   const topTumbling = sortByDiff(adoptTumblingUnits).slice(0, ADOPT_COUNT);
   const topHand = sortByDiff(adoptHandUnits).slice(0, ADOPT_COUNT);

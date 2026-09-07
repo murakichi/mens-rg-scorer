@@ -89,6 +89,8 @@ export interface Unit {
   skillThrow: boolean;
   /** 投げ単位かつ技を含む＝投げタン */
   isThrowTumbling?: boolean;
+  /** ロープ跳びから生成した徒手系ユニット（実際の投げ受けではない） */
+  fromRopeJump?: boolean;
   skills: { skillId: string; hasApparatus: boolean; isThrow: boolean }[];
   handDiff?: Difficulty | null;
   tumblingDiff?: Difficulty | null;

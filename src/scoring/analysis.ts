@@ -183,6 +183,7 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
       isThrow: true,
       skillThrow: false,
       isThrowTumbling: false,
+      fromRopeJump: true,
       skills: [],
       handDiff: diff,
       tumblingDiff: null,
