@@ -134,6 +134,14 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 - A側の判定（方向系・連続宙返り・つなぎ技・必須要素チェック）は重複シリーズのユニットも見る
 - `throwOtherCount` / `catchOtherCount`（「その他」の投げ/受け）は重複でもカウント
 
+### 6.3.1 シリーズ内訳の表示
+
+- `SeriesBreakdown.handRows` は徒手系ユニット1つ分の行（`label` / `diff` / `score` / `adopted` / `inTop`）。
+  連続投げでも投げごとに1行出す。`adopted && inTop` の行だけが `handDiff` に合計される
+- 採用されなかった行は `SeriesCard` が斜線＋「難度不採用」「上位3つ外」バッジで表示する
+- `tumDiff` / `handDiff` は**上位3つに入ったユニットのみ**の合計なので、
+  Σ各シリーズの `tumDiff` = `tumblingScore`、Σ`handDiff` = `handScore` になる（`dPart` も実際のDと一致）
+
 ### 6.4 採用数
 
 - タンブリング難度：上位**3つ**を採用（`ADOPT_COUNT = 3`）
@@ -152,6 +160,7 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
     A側の判定（方向系・連続宙返り・つなぎ技・必須要素）には従来どおり算入する
   - `notDuplicate` を立てたシリーズのユニットは内容キーをシリーズ単位に閉じ、他シリーズと重複しない
   - 採用可否は `ScoreResult.unitAdopted[series][unit]` で返し、`SeriesCard` が「難度不採用」バッジを出す
+  - 上位3つに入ったかは `ScoreResult.unitInTop[series][unit]`
   - 例（Q20）：3動作の投げ受け → 同じ3動作から背面投げで連続投げ
     ＝ 徒手難度点は D 1つ分（0.5）、背面投げの技術加点 0.1 と連続投げ加点 0.1 は付く
 - A/E の満点：各**10点**（`AE_FULL = 10`）

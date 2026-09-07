@@ -48,11 +48,25 @@ import {
   hasConnect,
   hasConnectWithoutApparatus,
 } from "./analysis";
-import type { ApparatusKey, Series, SeriesAnalysis, Unit } from "./types";
+import type { ApparatusKey, Difficulty, Series, SeriesAnalysis, Unit } from "./types";
+
+/** シリーズ内の徒手系ユニット1つ分の難度点の内訳（投げごとの表示用） */
+export interface HandDiffRow {
+  /** 表示用ラベル（投げ1／ロープ跳び など） */
+  label: string;
+  diff: Difficulty;
+  score: number;
+  /** 難度として採用されたか（重複・同一内容・連続投げのA難度は false） */
+  adopted: boolean;
+  /** 徒手難度点の上位3つに入ったか */
+  inTop: boolean;
+}
 
 export interface SeriesBreakdown {
   tumDiff: number;
   handDiff: number;
+  /** 徒手難度点の投げごとの内訳（不採用・上位3外も含む） */
+  handRows: HandDiffRow[];
   sBonus: number;
   tech: number;
   appOp: number;
@@ -73,6 +87,8 @@ export interface ScoreResult {
   analysis: SeriesAnalysis[];
   /** analysis[i].units と同じ並びで、そのユニットが難度点に採用されたか */
   unitAdopted: boolean[][];
+  /** analysis[i].units と同じ並びで、そのユニットが上位3つの採用に入ったか */
+  unitInTop: boolean[][];
   /** 採点に用いる重複フラグ（notDuplicate で解除されたものは false） */
   dupFlags: boolean[];
   /** 構成が既出のシリーズと一致したか（notDuplicate による解除を反映しない生の判定） */
@@ -199,18 +215,37 @@ export function computeScore(
     return a.units.map((u) => adopted.has(u));
   });
 
+  // ---- 難度点の採用は上位3つまで。内訳表示でも使うのでここで確定する ----
+  const adoptUnits = adoptedUnits.flat();
+  const sortByDiff = (arr: Unit[]) => [...arr].sort((a, b) => DIFF_VALUE[b.finalDiff] - DIFF_VALUE[a.finalDiff]);
+  const topTumbling = sortByDiff(adoptUnits.filter(isTumblingUnit)).slice(0, ADOPT_COUNT);
+  const topHand = sortByDiff(adoptUnits.filter(isHandUnit)).slice(0, ADOPT_COUNT);
+  const inTop = new Set<Unit>([...topTumbling, ...topHand]);
+  const unitInTop = analysis.map((a) => a.units.map((u) => inTop.has(u)));
+
   // ---- 各シリーズ内訳（先に算出し、総和系グローバル値はこれを再利用）----
   const seriesBreakdowns: SeriesBreakdown[] = series.map((ser, i) => {
     const a = analysis[i];
     const isDup = dupFlags[i];
     // 重複シリーズは D（難度点・加点）に一切算入しない（§3.5.5「全く同じ技は難度として数えない」）
-    const tumU = adoptedUnits[i].filter(isTumblingUnit);
+    const tumU = adoptedUnits[i].filter((u) => isTumblingUnit(u) && inTop.has(u));
     const tumDiff = tumU.reduce(
       (s, u) => s + DIFF_SCORE[u.finalDiff] + (u.finalDiff === "E" && u.skillThrow ? E_BONUS : 0),
       0,
     );
-    const hU = adoptedUnits[i].filter(isHandUnit);
-    const handDiff = hU.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
+    const adoptedSet = new Set(adoptedUnits[i]);
+    let throwNo = 0;
+    const handRows: HandDiffRow[] = a.units.filter(isHandUnit).map((u) => {
+      const label = u.fromRopeJump ? "ロープ跳び" : `投げ${++throwNo}`;
+      return {
+        label,
+        diff: u.finalDiff,
+        score: DIFF_SCORE[u.finalDiff],
+        adopted: adoptedSet.has(u),
+        inTop: inTop.has(u),
+      };
+    });
+    const handDiff = handRows.reduce((s, r) => s + (r.adopted && r.inTop ? r.score : 0), 0);
     const sBonus =
       !isDup && a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus)
         ? SERIES_BONUS
@@ -282,19 +317,12 @@ export function computeScore(
     const exec = Number(ser.executionDeduction) || 0;
     const dPart = tumDiff + handDiff + sBonus + tech + appOp + twoMot;
     const aPart = noApp;
-    return { tumDiff, handDiff, sBonus, tech, appOp, twoMot, noApp, exec, dPart, aPart };
+    return { tumDiff, handDiff, handRows, sBonus, tech, appOp, twoMot, noApp, exec, dPart, aPart };
   });
 
   // ---- D（難度）----
-  // A側の判定（方向系・連続宙返り・必須要素）は全ユニットを見るが、
-  // 難度点の採用候補からは重複シリーズのユニットを除外する。
+  // A側の判定（方向系・連続宙返り・必須要素）は全ユニットを見る。
   const tumblingUnits = allUnits.filter(isTumblingUnit);
-  const adoptUnits = adoptedUnits.flat();
-  const adoptTumblingUnits = adoptUnits.filter(isTumblingUnit);
-  const adoptHandUnits = adoptUnits.filter(isHandUnit);
-  const sortByDiff = (arr: Unit[]) => [...arr].sort((a, b) => DIFF_VALUE[b.finalDiff] - DIFF_VALUE[a.finalDiff]);
-  const topTumbling = sortByDiff(adoptTumblingUnits).slice(0, ADOPT_COUNT);
-  const topHand = sortByDiff(adoptHandUnits).slice(0, ADOPT_COUNT);
 
   const tumblingScore = topTumbling.reduce((s, u) => {
     const base = DIFF_SCORE[u.finalDiff];
@@ -507,6 +535,7 @@ export function computeScore(
   return {
     analysis,
     unitAdopted,
+    unitInTop,
     dupFlags,
     dupSignatureFlags,
     seriesBreakdowns,

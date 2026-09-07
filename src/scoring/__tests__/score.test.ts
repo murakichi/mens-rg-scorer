@@ -412,3 +412,64 @@ describe("computeScore — つなぎ技のA難度に手具操作なし（Q10）"
     expect(r.noApparatusDeduction).toBeCloseTo(0.4, 5);
   });
 });
+
+describe("computeScore — 徒手難度点の投げごとの内訳（handRows）", () => {
+  it("投げごとに行が出て、上位3つ外は inTop=false になる", () => {
+    const thr = (motionId: string) => [
+      { kind: "throw" as const },
+      { kind: "motion" as const, motionId },
+      { kind: "catch" as const },
+    ];
+    const r = computeScore(
+      [S(...thr("m4"), ...thr("m3"), ...thr("m2"), ...thr("m1"))],
+      "clubs",
+    );
+    const rows = r.seriesBreakdowns[0].handRows;
+    expect(rows.map((x) => x.label)).toEqual(["投げ1", "投げ2", "投げ3", "投げ4"]);
+    expect(rows.map((x) => x.diff)).toEqual(["E", "D", "C", "B"]);
+    expect(rows.map((x) => x.inTop)).toEqual([true, true, true, false]);
+    expect(rows.every((x) => x.adopted)).toBe(true);
+    // 上位3つ（E+D+C）のみがシリーズの徒手難度点に入る
+    expect(r.seriesBreakdowns[0].handDiff).toBeCloseTo(1.5, 5);
+    expect(r.handScore).toBeCloseTo(1.5, 5);
+  });
+
+  it("難度不採用のユニットも行として出る（adopted=false）", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw" },
+          { kind: "motion", motionId: "m3" },
+          { kind: "catch" },
+          { kind: "throw", throwTypes: ["noview"] },
+          { kind: "motion", motionId: "m3" },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    const rows = r.seriesBreakdowns[0].handRows;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((x) => x.adopted)).toEqual([true, false]);
+    expect(r.seriesBreakdowns[0].handDiff).toBeCloseTo(0.5, 5);
+  });
+
+  it("シリーズごとの徒手難度点の合計は全体の徒手難度点と一致する", () => {
+    const tum = (skillId: string) => S({ kind: "skill", skillId }, { kind: "catch" });
+    const thr = (motionId: string, tag?: string) =>
+      S({ kind: "throw", throwTypes: tag ? [tag] : [] }, { kind: "motion", motionId }, { kind: "catch" });
+    const r = computeScore(
+      [thr("m4"), thr("m3"), thr("m2"), thr("m1", "noview"), tum("e_doublelay")],
+      "clubs",
+    );
+    const sumHand = r.seriesBreakdowns.reduce((s, b) => s + b.handDiff, 0);
+    const sumTum = r.seriesBreakdowns.reduce((s, b) => s + b.tumDiff, 0);
+    expect(sumHand).toBeCloseTo(r.handScore, 5);
+    expect(sumTum).toBeCloseTo(r.tumblingScore, 5);
+  });
+
+  it("ロープ跳び由来の行はラベルが「ロープ跳び」", () => {
+    const r = computeScore([S({ kind: "ropeJump", jumpId: "3b" })], "rope");
+    expect(r.seriesBreakdowns[0].handRows.map((x) => x.label)).toEqual(["ロープ跳び"]);
+  });
+});
