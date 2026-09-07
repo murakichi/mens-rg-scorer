@@ -1,7 +1,9 @@
+import { hasTwoThrow } from "../scoring/constants";
 import type { ScoreResult } from "../scoring/score";
+import type { ApparatusKey } from "../scoring/types";
 
 /** 必須要素チェック + 点数集計の表示 */
-export function ScoreSummary({ result }: { result: ScoreResult }) {
+export function ScoreSummary({ result, apparatus }: { result: ScoreResult; apparatus: ApparatusKey }) {
   const {
     required,
     missing,
@@ -23,6 +25,7 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
     missingDirCount,
     directionDeduction,
     totalThrowCount,
+    requiredThrowCount,
     throwCountDeduction,
     maxChainAll,
     saltoChainDeduction,
@@ -109,14 +112,18 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
           <span>手具操作加点（シリーズ最終難度E＋手具操作2回以上）</span>
           <span>{apparatusOpBonus.toFixed(1)} 点</span>
         </div>
-        <div className="total-row">
-          <span>二つ投げ4動作加点</span>
-          <span>{twoThrowMotionBonus.toFixed(1)} 点</span>
-        </div>
-        <div className="total-row">
-          <span>様々な跳び加点（6m移動連続跳びに2重跳び3回以上）</span>
-          <span>{jumpVarietyBonus.toFixed(1)} 点</span>
-        </div>
+        {hasTwoThrow(apparatus) && (
+          <div className="total-row">
+            <span>二つ投げ4動作加点</span>
+            <span>{twoThrowMotionBonus.toFixed(1)} 点</span>
+          </div>
+        )}
+        {apparatus === "rope" && (
+          <div className="total-row">
+            <span>様々な跳び加点（6m移動連続跳びに2重跳び3回以上）</span>
+            <span>{jumpVarietyBonus.toFixed(1)} 点</span>
+          </div>
+        )}
         <div className="subtotal-row">
           <span>D 小計</span>
           <span>{dScore.toFixed(1)} 点</span>
@@ -132,7 +139,9 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
           <span>-{directionDeduction.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
-          <span>投げ回数不足減点（投げ {totalThrowCount} 回）</span>
+          <span>
+            投げ回数不足減点（投げ {totalThrowCount} 回／必要 {requiredThrowCount} 回）
+          </span>
           <span>-{throwCountDeduction.toFixed(1)} 点</span>
         </div>
         <div className="total-row">

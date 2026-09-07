@@ -36,6 +36,7 @@ interface Props {
     executionDeduction?: unknown;
     apparatusElements?: unknown;
     violations?: unknown;
+    junior?: unknown;
     series?: unknown;
   };
 }
@@ -56,20 +57,38 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [overallExecution, setOverallExecution] = useState(() => Number(initialData?.executionDeduction) || 0);
   const [apparatusElements, setApparatusElements] = useState<string[]>(() => asStringArray(initialData?.apparatusElements));
   const [violations, setViolations] = useState<string[]>(() => asStringArray(initialData?.violations));
+  const [junior, setJunior] = useState<boolean>(() => !!initialData?.junior);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
   const [jsonText, setJsonText] = useState("");
 
   // ---- 採点（純粋関数に委譲）----
   const result = useMemo(
-    () => computeScore(series, apparatus, { overallExecutionDeduction: overallExecution, apparatusElements, violations }),
-    [series, apparatus, overallExecution, apparatusElements, violations],
+    () =>
+      computeScore(series, apparatus, {
+        overallExecutionDeduction: overallExecution,
+        apparatusElements,
+        violations,
+        junior,
+      }),
+    [series, apparatus, overallExecution, apparatusElements, violations, junior],
   );
+
+  // 自動判定の要素（auto付き）は手動チェック欄に出さない
+  const manualElements = APPARATUS_REQUIRED_ELEMENTS[apparatus].filter((el) => !el.auto);
 
   const toggleId = (list: string[], id: string, on: boolean) => (on ? [...list, id] : list.filter((x) => x !== id));
 
   // ---- ファイル入出力 ----
-  const saveData = () => ({ version: 1, apparatus, executionDeduction: overallExecution, apparatusElements, violations, series });
+  const saveData = () => ({
+    version: 1,
+    apparatus,
+    executionDeduction: overallExecution,
+    apparatusElements,
+    violations,
+    junior,
+    series,
+  });
   const handleExport = () => {
     const data = saveData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -88,6 +107,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setOverallExecution(Number(data.executionDeduction) || 0);
     setApparatusElements(asStringArray(data.apparatusElements));
     setViolations(asStringArray(data.violations));
+    setJunior(!!data.junior);
     if (Array.isArray(data.series) && data.series.length > 0) {
       setSeries(data.series);
       return true;
@@ -209,6 +229,26 @@ export function IndividualScorer({ initialData }: Props = {}) {
       </div>
 
       <section className="card">
+        <div className="line-head">適用規則</div>
+        <div className="switch-row">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={junior}
+            className={junior ? "switch is-on" : "switch"}
+            onClick={() => setJunior((p) => !p)}
+          >
+            <span className="switch-knob" />
+          </button>
+          <span className="switch-label">ジュニアモード{junior ? "：ON" : "：OFF"}</span>
+        </div>
+        <p className="hint">
+          ジュニア適用規則（§10 変更規則1）で採点します。ダイビング前宙・後方宙返り半ひねりをC難度で認定し、
+          投げ上げの最低回数を2回とします。
+        </p>
+      </section>
+
+      <section className="card">
         <div className="line-head">手具</div>
         <div className="app-wrap">
           {(Object.entries(APPARATUS) as [ApparatusKey, { name: string }][]).map(([k, v]) => (
@@ -236,9 +276,11 @@ export function IndividualScorer({ initialData }: Props = {}) {
           series={ser}
           sIdx={sIdx}
           apparatus={apparatus}
+          junior={junior}
           analysis={result.analysis[sIdx]}
           breakdown={result.seriesBreakdowns[sIdx]}
           isDup={result.dupFlags[sIdx]}
+          isDupSignature={result.dupSignatureFlags[sIdx]}
           canRemove={series.length > 1}
           onUpdateField={(patch) => updateSeriesField(sIdx, patch)}
           onAddItem={(kind) => addItem(sIdx, kind)}
@@ -272,11 +314,13 @@ export function IndividualScorer({ initialData }: Props = {}) {
 
       <section className="card">
         <div className="line-head">手具別必須要素（{APPARATUS[apparatus].name}）</div>
-        {APPARATUS_REQUIRED_ELEMENTS[apparatus].length === 0 ? (
-          <p className="hint">この手具に手動チェックの必須要素はありません。</p>
+        {manualElements.length === 0 ? (
+          <p className="hint">
+            この手具に手動チェックの必須要素はありません（各シリーズの入力から自動判定します）。
+          </p>
         ) : (
           <>
-            {APPARATUS_REQUIRED_ELEMENTS[apparatus].map((el) => (
+            {manualElements.map((el) => (
               <label key={el.id} className="check">
                 <input
                   type="checkbox"
@@ -288,7 +332,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
             ))}
             <p className="hint">
               実施した要素にチェックします。未チェックの要素は §3.5.6.3 により1つにつき −0.30点（A減点）。
-              左手投げ／二つ投げ・3回以上の投げ上げは各シリーズの入力から自動判定します。
+              左手投げ／二つ投げ・3回以上の投げ上げ・右投げ右受けは各シリーズの入力から自動判定します。
             </p>
           </>
         )}
@@ -309,7 +353,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         <p className="hint">該当する違反・欠如にチェックします。各1つにつき −0.30点（A減点）。</p>
       </section>
 
-      <ScoreSummary result={result} />
+      <ScoreSummary result={result} apparatus={apparatus} />
     </>
   );
 }

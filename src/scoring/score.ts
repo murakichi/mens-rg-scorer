@@ -24,6 +24,7 @@ import {
   NO_APP_CAP,
   DIRECTION_DEDUCTION,
   THROW_COUNT_DEDUCTION,
+  throwCountRequired,
   CONNECT_NO_APP_DEDUCTION,
   SALTO_CHAIN_2_DEDUCTION,
   SALTO_CHAIN_LOW_DEDUCTION,
@@ -36,6 +37,7 @@ import {
   REQUIRED_ELEMENT_DEDUCTION,
   VIOLATION_DEDUCTION,
   APPARATUS_REQUIRED_ELEMENTS,
+  type RequiredElementAuto,
   VIOLATION_OPTIONS,
   skillDef,
 } from "./constants";
@@ -69,7 +71,10 @@ export interface RequiredCheck {
 
 export interface ScoreResult {
   analysis: SeriesAnalysis[];
+  /** 採点に用いる重複フラグ（notDuplicate で解除されたものは false） */
   dupFlags: boolean[];
+  /** 構成が既出のシリーズと一致したか（notDuplicate による解除を反映しない生の判定） */
+  dupSignatureFlags: boolean[];
   seriesBreakdowns: SeriesBreakdown[];
 
   // D
@@ -93,6 +98,8 @@ export interface ScoreResult {
   missingDirCount: number;
   directionDeduction: number;
   totalThrowCount: number;
+  /** 適用規則上必要な投げ上げ回数（一般3 / ジュニア2） */
+  requiredThrowCount: number;
   throwCountDeduction: number;
   maxChainAll: number;
   saltoChainDeduction: number;
@@ -124,6 +131,8 @@ export interface ComputeOptions {
   apparatusElements?: string[];
   /** §3.5.6.3 該当した違反・欠如のid */
   violations?: string[];
+  /** ジュニア適用規則（変更規則1）で採点するか */
+  junior?: boolean;
 }
 
 export function computeScore(
@@ -131,39 +140,47 @@ export function computeScore(
   apparatus: ApparatusKey,
   opts: ComputeOptions = {},
 ): ScoreResult {
-  const { overallExecutionDeduction = 0, apparatusElements = [], violations = [] } = opts;
-  const analysis = series.map(analyzeSeries);
+  const { overallExecutionDeduction = 0, apparatusElements = [], violations = [], junior = false } = opts;
+  const analysis = series.map((ser) => analyzeSeries(ser, junior));
+  const requiredThrowCount = throwCountRequired(junior);
   const allUnits = analysis.flatMap((a) => a.units);
 
-  // 重複シリーズ判定
+  // 重複シリーズ判定。構成が既出でも notDuplicate が立っていれば重複として扱わない
+  // （入力項目に現れない差異＝シェネの腕の使い方・動作の内訳違いなどをユーザーが宣言する）。
   const seen = new Set<string>();
-  const dupFlags = series.map((ser) => {
+  const dupSignatureFlags = series.map((ser) => {
     const sig = seriesSignature(ser);
     if (seen.has(sig)) return true;
     seen.add(sig);
     return false;
   });
+  const dupFlags = dupSignatureFlags.map((dup, i) => dup && !series[i].notDuplicate);
 
   // ---- 各シリーズ内訳（先に算出し、総和系グローバル値はこれを再利用）----
   const seriesBreakdowns: SeriesBreakdown[] = series.map((ser, i) => {
     const a = analysis[i];
     const isDup = dupFlags[i];
-    const tumU = a.units.filter(isTumblingUnit);
+    // 重複シリーズは D（難度点・加点）に一切算入しない（§3.5.5「全く同じ技は難度として数えない」）
+    const tumU = isDup ? [] : a.units.filter(isTumblingUnit);
     const tumDiff = tumU.reduce(
       (s, u) => s + DIFF_SCORE[u.finalDiff] + (u.finalDiff === "E" && u.skillThrow ? E_BONUS : 0),
       0,
     );
-    const hU = a.units.filter((u) => u.type === "throw" && !u.isThrowTumbling);
+    const hU = isDup ? [] : a.units.filter((u) => u.type === "throw" && !u.isThrowTumbling);
     const handDiff = hU.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
     const sBonus =
-      a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus) ? SERIES_BONUS : 0;
+      !isDup && a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus)
+        ? SERIES_BONUS
+        : 0;
 
     let techCount = 0;
-    ser.items.forEach((item) => {
-      if (item.kind === "throw") techCount += (item.throwTypes || []).length;
-      else if (item.kind === "catch") techCount += (item.catchTypes || []).length;
-      else if (item.kind === "skill" && item.isThrow) techCount += (item.throwTypes || []).length;
-    });
+    if (!isDup) {
+      ser.items.forEach((item) => {
+        if (item.kind === "throw") techCount += (item.throwTypes || []).length;
+        else if (item.kind === "catch") techCount += (item.catchTypes || []).length;
+        else if (item.kind === "skill" && item.isThrow) techCount += (item.throwTypes || []).length;
+      });
+    }
     const tech = techCount * TECHNIQUE_BONUS;
 
     let appOp = 0;
@@ -226,11 +243,15 @@ export function computeScore(
   });
 
   // ---- D（難度）----
+  // A側の判定（方向系・連続宙返り・必須要素）は全ユニットを見るが、
+  // 難度点の採用候補からは重複シリーズのユニットを除外する。
   const tumblingUnits = allUnits.filter(isTumblingUnit);
-  const handUnits = allUnits.filter((u) => u.type === "throw" && !u.isThrowTumbling);
+  const adoptUnits = analysis.flatMap((a, i) => (dupFlags[i] ? [] : a.units));
+  const adoptTumblingUnits = adoptUnits.filter(isTumblingUnit);
+  const adoptHandUnits = adoptUnits.filter((u) => u.type === "throw" && !u.isThrowTumbling);
   const sortByDiff = (arr: Unit[]) => [...arr].sort((a, b) => DIFF_VALUE[b.finalDiff] - DIFF_VALUE[a.finalDiff]);
-  const topTumbling = sortByDiff(tumblingUnits).slice(0, ADOPT_COUNT);
-  const topHand = sortByDiff(handUnits).slice(0, ADOPT_COUNT);
+  const topTumbling = sortByDiff(adoptTumblingUnits).slice(0, ADOPT_COUNT);
+  const topHand = sortByDiff(adoptHandUnits).slice(0, ADOPT_COUNT);
 
   const tumblingScore = topTumbling.reduce((s, u) => {
     const base = DIFF_SCORE[u.finalDiff];
@@ -239,7 +260,7 @@ export function computeScore(
   }, 0);
   const handScore = topHand.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
   const seriesBonus = analysis.some(
-    (a) => a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus),
+    (a, i) => !dupFlags[i] && a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus),
   )
     ? SERIES_BONUS
     : 0;
@@ -265,7 +286,7 @@ export function computeScore(
     (cats.has(CATEGORY.SIDE) ? 0 : 1) +
     (cats.has(CATEGORY.BACKWARD) ? 0 : 1);
   const directionDeduction = missingDirCount * DIRECTION_DEDUCTION;
-  const throwCountDeduction = totalThrowCount < 3 ? THROW_COUNT_DEDUCTION : 0;
+  const throwCountDeduction = totalThrowCount < requiredThrowCount ? THROW_COUNT_DEDUCTION : 0;
 
   const maxChainAll = tumblingUnits.reduce(
     (m, u) => Math.max(m, maxSaltoChain(u.skills.map((s) => s.skillId))),
@@ -347,7 +368,11 @@ export function computeScore(
     { key: "throwTum", label: "1本以上が投げタン", passed: hasThrowTumbling },
     { key: "triple", label: "1本以上が宙返り3回以上連続", passed: hasTriple },
     { key: "connect", label: "1本以上がつなぎ技（宙返り間にA難度を挟む）", passed: hasConn },
-    { key: "count3", label: "投げを3回以上実施", passed: totalThrowCount >= 3 },
+    {
+      key: "count3",
+      label: `投げを${requiredThrowCount}回以上実施`,
+      passed: totalThrowCount >= requiredThrowCount,
+    },
     { key: "tumCount", label: "タンブリング3本以上", passed: nonDupTumblingCount >= 3 },
     {
       key: "appThrow",
@@ -386,11 +411,22 @@ export function computeScore(
 
   const missing = required.filter((r) => r.passed === false);
 
-  // ---- §3.2 手具別必須要素（手動チェック）と §3.5.6.3 要求要素の欠如による A減点 ----
+  // ---- §3.2 手具別必須要素（自動判定＋手動チェック）と §3.5.6.3 要求要素の欠如による A減点 ----
+  // 右投げ右受け：左手投げでも手以外の投げでもない通常の投げが1回以上あれば実施とみなす。
+  const hasRightThrow = series.some((ser) =>
+    ser.items.some((item) => {
+      if (item.kind === "throw")
+        return !(item.reqTypes || []).includes("lefthand") && !(item.throwTypes || []).includes("nonhand");
+      if (item.kind === "skill" && item.isThrow) return !(item.throwTypes || []).includes("nonhand");
+      return false;
+    }),
+  );
+  const autoPassed: Record<RequiredElementAuto, boolean> = { rightThrow: hasRightThrow };
+
   const apparatusElementChecks: RequiredCheck[] = APPARATUS_REQUIRED_ELEMENTS[apparatus].map((el) => ({
     key: `appEl_${el.id}`,
-    label: el.name,
-    passed: apparatusElements.includes(el.id),
+    label: el.auto ? `${el.name}（自動判定）` : el.name,
+    passed: el.auto ? autoPassed[el.auto] : apparatusElements.includes(el.id),
   }));
   const apparatusElementDeduction =
     apparatusElementChecks.filter((c) => !c.passed).length * REQUIRED_ELEMENT_DEDUCTION;
@@ -425,6 +461,7 @@ export function computeScore(
   return {
     analysis,
     dupFlags,
+    dupSignatureFlags,
     seriesBreakdowns,
     tumblingScore,
     handScore,
@@ -444,6 +481,7 @@ export function computeScore(
     missingDirCount,
     directionDeduction,
     totalThrowCount,
+    requiredThrowCount,
     throwCountDeduction,
     maxChainAll,
     saltoChainDeduction,

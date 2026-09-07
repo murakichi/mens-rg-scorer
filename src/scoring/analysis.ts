@@ -9,6 +9,7 @@ import {
   HAND_MOTIONS,
   APPARATUS_COUNT,
   skillDef,
+  skillDifficulty,
   ropeJumpDef,
 } from "./constants";
 import type {
@@ -19,9 +20,13 @@ import type {
 } from "./types";
 
 /** タンブリング塊の難度を算出。先頭技の値 + 以降の非A技ごとに +1、投げ含みで +1、E止め。 */
-export function calcTumblingDifficulty(skillIds: string[], hasThrow: boolean): Difficulty | null {
+export function calcTumblingDifficulty(
+  skillIds: string[],
+  hasThrow: boolean,
+  junior = false,
+): Difficulty | null {
   const diffs = skillIds
-    .map((id) => skillDef(id)?.difficulty)
+    .map((id) => skillDifficulty(id, junior))
     .filter((d): d is Difficulty => !!d && d !== "A");
   if (diffs.length === 0) return null;
   let v = DIFF_VALUE[diffs[0]];
@@ -80,13 +85,15 @@ interface UnitBuffer {
   throwItems: number;
 }
 
-function finalizeUnit(buf: UnitBuffer): Unit {
+function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   const hasSkill = buf.skills.length > 0;
   const skillThrow = buf.skills.some((s) => s.isThrow);
   const isThrow = buf.throwItems > 0 || skillThrow;
   const hasApparatus = buf.skills.some((s) => s.hasApparatus);
 
-  const tumblingDiff = hasSkill ? calcTumblingDifficulty(buf.skills.map((s) => s.skillId), isThrow) : null;
+  const tumblingDiff = hasSkill
+    ? calcTumblingDifficulty(buf.skills.map((s) => s.skillId), isThrow, junior)
+    : null;
   const handDiff = isThrow ? calcHandDifficulty(buf.motionCount, buf.verticalThree) : null;
 
   if (!isThrow) {
@@ -124,15 +131,16 @@ function finalizeUnit(buf: UnitBuffer): Unit {
 /**
  * items を左から走査し、catch を区切りに unit へ分類する中核関数。
  * 投げを含まない連続技 → tumbling、投げを含む塊 → throw。
+ * junior＝ジュニア適用規則（変更規則1）での難度認定を使う。
  */
-export function analyzeSeries(series: Series): SeriesAnalysis {
+export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
   const units: Unit[] = [];
   let throwCount = 0;
   let buf: UnitBuffer | null = null;
   const newBuf = (): UnitBuffer => ({ skills: [], motionCount: 0, verticalThree: false, throwItems: 0 });
   const flush = () => {
     if (buf && (buf.skills.length || buf.motionCount > 0 || buf.throwItems > 0)) {
-      const u = finalizeUnit(buf);
+      const u = finalizeUnit(buf, junior);
       if (u.finalDiff) units.push(u);
       const skillThrows = buf.skills.filter((s) => s.isThrow).length;
       throwCount += buf.throwItems + skillThrows;

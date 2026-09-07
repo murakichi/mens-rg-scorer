@@ -63,7 +63,7 @@
 | 規則の減点項目 | 定数名 | 値 | 条件 |
 |--------------|--------|-----|------|
 | 方向系不足 | `DIRECTION_DEDUCTION` | 0.3 | 前方/側方/後方の不足1方向につき |
-| 投げ回数不足 | `THROW_COUNT_DEDUCTION` | 0.3 | 投げ3回未満 |
+| 投げ回数不足 | `THROW_COUNT_DEDUCTION` | 0.3 | 投げが `THROW_COUNT_REQUIRED`（一般3／ジュニア2）未満 |
 | つなぎ技手具操作なし | `CONNECT_NO_APP_DEDUCTION` | 0.1 | つなぎ技のA難度で手具操作なし |
 | 宙返り2連続止まり | `SALTO_CHAIN_2_DEDUCTION` | 0.1 | 最大連続宙返りが2 |
 | 宙返り連続なし | `SALTO_CHAIN_LOW_DEDUCTION` | 0.2 | 連続宙返りなし |
@@ -76,8 +76,14 @@
 | 手具別必須要素の欠如 | `REQUIRED_ELEMENT_DEDUCTION` | 0.3 | §3.2 手具操作要求要素の未実施1つにつき（§3.5.6.3） |
 | 違反・欠如 | `VIOLATION_DEDUCTION` | 0.3 | 開始/終了/音楽違反・徒手系基礎要素群欠如の各該当（§3.5.6.3） |
 
-`REQUIRED_ELEMENT_DEDUCTION` の対象要素は `APPARATUS_REQUIRED_ELEMENTS`（手具別、手動チェック）。
+`REQUIRED_ELEMENT_DEDUCTION` の対象要素は `APPARATUS_REQUIRED_ELEMENTS`（手具別）。
 左手投げ/二つ投げ・3回以上の投げ上げは既存判定（必須投げ・投げ回数）と重複するため対象外。
+要素に `auto` が付いているものはシリーズ入力から自動判定し、手動チェック欄には出さない（手動チェックでは上書きできない）。
+
+| 要素 | `auto` | 判定 |
+|------|--------|------|
+| スティック `stick_right`（右投げ右受け1回以上） | `rightThrow` | 左手投げ（`reqTypes: lefthand`）でも手以外の投げ（`throwTypes: nonhand`）でもない投げが1回以上あるか。技の最中の投げ（投げタン）も対象 |
+
 `VIOLATION_DEDUCTION` の対象は `VIOLATION_OPTIONS`（審判判断による手動チェック）。
 どちらも個人モードの routine レベル state（`apparatusElements` / `violations`）で保持し、`SaveData`・共有URLに含める。
 
@@ -107,9 +113,15 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 
 ### 6.3 重複シリーズの扱い
 
-- `seriesSignature` でシリーズの構成を文字列化し、重複を検出
-- 重複シリーズは大半のカウント・ボーナスから**除外**
-- ただし難度は top-3 採用の競合対象に含まれる
+- `seriesSignature` でシリーズの構成を文字列化し、既出と一致するものを検出（`dupSignatureFlags`）
+- `Series.notDuplicate` が true のシリーズは重複扱いを解除（`dupFlags = dupSignatureFlags && !notDuplicate`）
+  - シェネの腕の使い方・動作の内訳（4シェネ／3シェネ＋前転 など）といった入力項目に現れない差異を
+    ユーザーが宣言するためのフラグ。`SeriesCard` は `dupSignatureFlags` が立っている間だけ
+    チェックボックスを出す（チェック後も消えないよう、表示条件は解除前の生の判定を使う）
+- 重複シリーズ（`dupFlags`）はカウント・ボーナスに加えて **D にも一切算入しない**
+  （難度点・連続投げ加点・技術加点・手具操作加点・二つ投げ4動作加点すべて0。
+  §3.5.5「全く同じ技は難度として数えない」）。難度点の採用候補（top-3）からも除外する
+- A側の判定（方向系・連続宙返り・つなぎ技・必須要素チェック）は重複シリーズのユニットも見る
 - `throwOtherCount` / `catchOtherCount`（「その他」の投げ/受け）は重複でもカウント
 
 ### 6.4 採用数
@@ -130,7 +142,7 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 | `throwTum` | 1本以上が投げタン | `isThrowTumbling` なユニットの存在 |
 | `triple` | 1本以上が宙返り3回以上連続 | `maxSaltoChain >= 3` |
 | `connect` | 1本以上がつなぎ技 | `hasConnect()` で宙返り→A難度→宙返り パターン検出 |
-| `count3` | 投げを3回以上実施 | `totalThrowCount >= 3` |
+| `count3` | 投げをN回以上実施 | `totalThrowCount >= requiredThrowCount`（一般3／ジュニア2。ラベルもNに追従） |
 | `tumCount` | タンブリング3本以上 | `nonDupTumblingCount >= 3` |
 | `appThrow` | 手具別必須投げ | `REQUIRED_THROW_OPTIONS` の全IDが実施済みか |
 
@@ -162,6 +174,26 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 
 ---
 
+## 8.5 ジュニア適用規則（個人モード）
+
+`§10 変更規則1`。個人モードのトグルスイッチ（`IndividualScorer` の「適用規則」カード）で ON/OFF する。
+ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ、以下が変わる。
+
+| 項目 | 一般 | ジュニア | 実装 |
+|------|------|---------|------|
+| ダイビング前宙（`b_divefront`）の難度 | B | C | `JUNIOR_SKILL_DIFFICULTY` |
+| 後方宙返り半ひねり（`b_backhalf`）の難度 | B | C | `JUNIOR_SKILL_DIFFICULTY` |
+| 投げ上げの最低回数 | 3（`THROW_COUNT_REQUIRED`） | 2（`JUNIOR_THROW_COUNT_REQUIRED`） | `throwCountRequired(junior)` |
+
+- 難度参照は `skillDifficulty(id, junior)` に集約。`junior` は `computeScore` → `analyzeSeries` →
+  `calcTumblingDifficulty` へ引き渡す（既定 `false` なので既存の呼び出しは無変更）。
+  `skillDef()` を直接見ている `isSalto` / `category` / `isConnectA` は適用規則で変わらないため据え置き。
+- `SaveData.junior`（任意・既定 false）としてファイル/テキスト/共有URLに往復する。
+- 団体モードは対象外（`team.ts` は `skillDef().difficulty` を参照したまま）。
+- **未対応**：変更規則1-1〜1-2（手具1つのみ）と 1-4（転回系はD難度まで、E難度実施で1つにつき −0.30）。
+
+---
+
 ## 9. UI構成
 
 | コンポーネント | 役割 |
@@ -171,9 +203,16 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 | `TeamScorer` | 団体モードの全UI・state管理 |
 | `JsonModal` | インポート/エクスポート（個人のみ） |
 
+手具に無関係な加点行は表示しない：二つ投げ4動作加点は `hasTwoThrow(apparatus)`（＝リング・クラブ）のとき、
+様々な跳び加点は `apparatus === "rope"` のときだけ表示する（`ScoreSummary` の集計と `SeriesCard` の内訳の両方）。
+値の計算自体は手具に関係なく行われるため、非表示でも 0 のまま `dScore` に含まれる。
+
+トグルスイッチは `.switch` / `.switch-knob` / `.switch-row` / `.switch-label`（`src/index.css`）。
+`role="switch"` + `aria-checked` を持つ `button` で実装する。
+
 - スタイリングは **glassmorphism デザインシステム**（`src/index.css`）
 - State 更新は `structuredClone` でイミュータブル
-- `SaveData` 型（`{ version: 1, apparatus, series }`）でファイル/JSON保存
+- `SaveData` 型（`{ version: 1, apparatus, junior, series, ... }`）でファイル/JSON保存
 
 ---
 
@@ -185,7 +224,10 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 - [x] §3.5.5.5(4)① 様々な跳び加点（ロープ）
 - [x] §3.5.6.3 違反・欠如のA減点（開始/終了/音楽/徒手系群）
 - [ ] §3.5.5.5(4)②③ 様々な跳び加点（跳びの形の多様性 / その場回転跳び2回転）— 跳びに形フラグの入力追加が必要
-- [ ] 手具別必須要素の自動判定化（ころがし・プロペラ回旋・まわし等は現状手動チェック）
+- [x] 手具別必須要素の自動判定化：スティックの右投げ右受け（`auto: "rightThrow"`）
+- [ ] 手具別必須要素の自動判定化（ころがし・プロペラ回旋・まわし・転回系の投げ受けは現状手動チェック）
 - [ ] A減点の芸術性スコアリング（主観評価部分）の実装検討
-- [ ] ジュニア適用規則への対応
+- [x] ジュニア適用規則（§10 変更規則1）の難度認定と投げ回数（→ §8.5）
+- [ ] ジュニア適用規則 1-4（転回系はD難度まで、E難度実施で1つにつき −0.30）
+- [ ] ジュニア適用規則 1-1〜1-2（使用手具を1つに限定するUI制約）
 - [ ] 団体のA減点ロジックの精緻化（暫定 `missing.length * 0.3`）

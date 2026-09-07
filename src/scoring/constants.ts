@@ -64,6 +64,11 @@ export const REQUIRED_THROW_OPTIONS: Record<ApparatusKey, { id: string; name: st
   rope: [],
 };
 
+/** 二つ投げが必須投げの手具（リング・クラブ）か。二つ投げ関連の表示条件に使う。 */
+export function hasTwoThrow(apparatus: ApparatusKey): boolean {
+  return REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === "twothrow");
+}
+
 export const DIFF_VALUE: Record<Difficulty, number> = { A: 1, B: 2, C: 3, D: 4, E: 5 };
 export const VALUE_DIFF: Record<number, Difficulty> = { 1: "A", 2: "B", 3: "C", 4: "D", 5: "E" };
 export const MAX_DIFF = 5;
@@ -81,6 +86,9 @@ export const NO_APP_ALL_DEDUCTION = 0.2; // シリーズ全体に手具操作な
 export const NO_APP_CAP = 0.4; // 演技全体での上限
 export const DIRECTION_DEDUCTION = 0.3;
 export const THROW_COUNT_DEDUCTION = 0.3;
+/** 投げ上げの最低回数。不足で THROW_COUNT_DEDUCTION（一般 / ジュニア）。 */
+export const THROW_COUNT_REQUIRED = 3;
+export const JUNIOR_THROW_COUNT_REQUIRED = 2;
 export const CONNECT_NO_APP_DEDUCTION = 0.1;
 export const SALTO_CHAIN_2_DEDUCTION = 0.1;
 export const SALTO_CHAIN_LOW_DEDUCTION = 0.2;
@@ -96,13 +104,21 @@ export const REQUIRED_ELEMENT_DEDUCTION = 0.3; // 手具操作の要求要素が
 export const VIOLATION_DEDUCTION = 0.3; // 開始/終了/音楽違反・徒手系基礎要素群欠如（各）
 
 /**
- * §3.2 手具別の必須要素のうち、自動判定できない「手具操作」要素の手動チェック項目。
+ * §3.2 手具別の必須要素のうち「手具操作」要素のチェック項目。
  * 左手投げ/二つ投げ（→必須投げ）と3回以上の投げ上げ（→投げ回数）は別途判定するため除外。
- * 未実施（未チェック）の項目は §3.5.6.3 により1つにつき −0.30。
+ * 未実施の項目は §3.5.6.3 により1つにつき −0.30。
+ *
+ * `auto` が付いた項目はシリーズ入力から自動判定し、手動チェックの対象外にする。
+ * - `rightThrow`：左手投げ・手以外の投げ以外の投げ（＝通常の右投げ右受け）が1回以上あるか。
  */
-export const APPARATUS_REQUIRED_ELEMENTS: Record<ApparatusKey, { id: string; name: string }[]> = {
+export type RequiredElementAuto = "rightThrow";
+
+export const APPARATUS_REQUIRED_ELEMENTS: Record<
+  ApparatusKey,
+  { id: string; name: string; auto?: RequiredElementAuto }[]
+> = {
   stick: [
-    { id: "stick_right", name: "右投げ右受け1回以上" },
+    { id: "stick_right", name: "右投げ右受け1回以上", auto: "rightThrow" },
     { id: "stick_rotthrow", name: "転回系の投げ受け" },
     { id: "stick_roll", name: "1m以上のころがし" },
     { id: "stick_propeller", name: "プロペラ回旋2回以上" },
@@ -220,4 +236,29 @@ export const SKILL_LIST: Skill[] = [
 
 export function skillDef(id: string): Skill | undefined {
   return SKILL_LIST.find((x) => x.id === id);
+}
+
+// ---- ジュニア適用規則（変更規則1）----
+
+/**
+ * ジュニアで難度認定が変わる転回系（§10 変更規則1-5）。
+ * ダイビング前宙・後方宙返り半ひねりは一般ではB難度だが、ジュニアではC難度。
+ */
+export const JUNIOR_SKILL_DIFFICULTY: Record<string, Difficulty> = {
+  b_divefront: "C", // ダイビング前宙
+  b_backhalf: "C", // 後方宙返り半ひねり
+};
+
+/** 適用規則に応じた転回系の難度。ジュニアは JUNIOR_SKILL_DIFFICULTY で上書きする。 */
+export function skillDifficulty(id: string, junior = false): Difficulty | undefined {
+  if (junior) {
+    const j = JUNIOR_SKILL_DIFFICULTY[id];
+    if (j) return j;
+  }
+  return skillDef(id)?.difficulty;
+}
+
+/** 適用規則に応じた投げ上げの最低回数 */
+export function throwCountRequired(junior = false): number {
+  return junior ? JUNIOR_THROW_COUNT_REQUIRED : THROW_COUNT_REQUIRED;
 }

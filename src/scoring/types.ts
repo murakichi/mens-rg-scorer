@@ -57,6 +57,11 @@ export interface RopeJumpItem {
 export interface Series {
   /** ユーザーが手入力する実施減点(E) */
   executionDeduction: number;
+  /**
+   * 直前までのシリーズと構成が一致していても「実際は別内容」とユーザーが宣言した場合 true。
+   * シェネの腕の使い方や動作の内訳など、入力項目に現れない差異を手動で救済するためのフラグ。
+   */
+  notDuplicate?: boolean;
   items: Item[];
 }
 
@@ -108,5 +113,7 @@ export interface SaveData {
   apparatusElements?: string[];
   /** §3.5.6.3 該当した違反・欠如のid（VIOLATION_OPTIONS）。 */
   violations?: string[];
+  /** ジュニア適用規則（§10 変更規則1）で採点するか。未指定は false 扱い。 */
+  junior?: boolean;
   series: Series[];
 }
