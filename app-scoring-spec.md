@@ -42,6 +42,12 @@
 | 受けオプション | `CATCH_OPTIONS_COMMON` / `CATCH_OPTIONS_APPARATUS` | `constants.ts` |
 | 手具が二つあるか | `APPARATUS_USE` / `APPARATUS_COUNT` | `constants.ts` |
 | 徒手動作（1〜4動作 + 縦3動作） | `HAND_MOTIONS` | `constants.ts` |
+| ロープ跳びの難度表 | `ROPE_JUMPS` | `constants.ts` |
+
+`ROPE_JUMPS` は §3.5.5.3 の跳び難度表と1対1。1重跳びは全パターンA固定のためクロスの区別を持たない。
+3重跳び連続3回以上（D）・4重跳び（D）・4重跳び連続2回以上（E）は**難度判定で前後を区別しない**ため、
+前後で同じ難度のエントリを両方持つ（`3x3f`/`3x3b`、`4f`/`4b`、`4x2f`/`4x2b`）。
+`direction` は §3.2(3) の前回し／後ろ回し跳び2回以上連続の要求要素判定にのみ使う。
 
 ---
 

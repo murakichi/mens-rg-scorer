@@ -8,6 +8,7 @@ import {
   analyzeSeries,
   seriesSignature,
 } from "../analysis";
+import { ropeJumpDef } from "../constants";
 import type { Series, Item } from "../types";
 
 // テストヘルパー：items から Series を組む
@@ -119,5 +120,32 @@ describe("seriesSignature", () => {
     const s1 = S({ kind: "skill", skillId: "b_backsalto" }, { kind: "catch" });
     const s2 = S({ kind: "skill", skillId: "b_front" }, { kind: "catch" });
     expect(seriesSignature(s1)).not.toBe(seriesSignature(s2));
+  });
+});
+
+describe("ロープ跳び — 3重連続3回以上・4重跳びは前後で難度が同じ", () => {
+  const diff = (id: string) => ropeJumpDef(id)?.difficulty;
+
+  it("3重跳び連続3回以上は前後ともD", () => {
+    expect(diff("3x3f")).toBe("D");
+    expect(diff("3x3b")).toBe("D");
+  });
+
+  it("4重跳びは前後ともD、連続2回以上は前後ともE", () => {
+    expect(diff("4f")).toBe("D");
+    expect(diff("4b")).toBe("D");
+    expect(diff("4x2f")).toBe("E");
+    expect(diff("4x2b")).toBe("E");
+  });
+
+  it("前後の別は要求要素（前回し／後ろ回し）の判定用に保持される", () => {
+    expect(ropeJumpDef("4f")?.direction).toBe("front");
+    expect(ropeJumpDef("4b")?.direction).toBe("back");
+  });
+
+  it("前の4重跳びも徒手系難度Dのユニットになる", () => {
+    const a = analyzeSeries(S({ kind: "ropeJump", jumpId: "4f" }));
+    expect(a.units).toHaveLength(1);
+    expect(a.units[0].finalDiff).toBe("D");
   });
 });
