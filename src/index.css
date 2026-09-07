@@ -583,6 +583,52 @@ input[type="checkbox"] {
   margin-top: 12px;
 }
 
+/* トグルスイッチ（ジュニアモード等の ON/OFF） */
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.switch {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: var(--glass-soft);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+.switch:hover {
+  box-shadow: var(--shadow-soft);
+}
+.switch.is-on {
+  background: var(--accent-grad);
+  border-color: transparent;
+}
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.16s ease;
+}
+.switch.is-on .switch-knob {
+  transform: translateX(20px);
+}
+.switch-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
 .exec-label {
   display: inline-flex;
   align-items: center;

@@ -8,6 +8,7 @@ import {
   REQUIRED_THROW_OPTIONS,
   APPARATUS_USE,
   SKILL_LIST,
+  skillDifficulty,
   HAND_MOTIONS,
   ROPE_JUMPS,
 } from "../scoring/constants";
@@ -21,6 +22,8 @@ interface Props {
   series: Series;
   sIdx: number;
   apparatus: ApparatusKey;
+  /** ジュニア適用規則で採点中か（技の難度表示に反映） */
+  junior: boolean;
   analysis: SeriesAnalysis;
   breakdown: SeriesBreakdown;
   isDup: boolean;
@@ -41,10 +44,12 @@ function toggle(list: string[] | undefined, id: string, checked: boolean): strin
 function ItemEditor({
   item,
   apparatus,
+  junior,
   onUpdate,
 }: {
   item: Item;
   apparatus: ApparatusKey;
+  junior: boolean;
   onUpdate: (patch: Partial<Item>) => void;
 }) {
   if (item.kind === "throw") {
@@ -113,7 +118,7 @@ function ItemEditor({
             <option value="">タンブリング技</option>
             {SKILL_LIST.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name}
+                {s.name}（{skillDifficulty(s.id, junior)}）
               </option>
             ))}
           </select>
@@ -191,6 +196,7 @@ export function SeriesCard({
   series: ser,
   sIdx,
   apparatus,
+  junior,
   analysis: a,
   breakdown: b,
   isDup,
@@ -232,7 +238,12 @@ export function SeriesCard({
       <div className="skill-row">
         {ser.items.map((item, iIdx) => (
           <div key={iIdx} className="skill-block">
-            <ItemEditor item={item} apparatus={apparatus} onUpdate={(patch) => onUpdateItem(iIdx, patch)} />
+            <ItemEditor
+              item={item}
+              apparatus={apparatus}
+              junior={junior}
+              onUpdate={(patch) => onUpdateItem(iIdx, patch)}
+            />
             <button className="remove-btn-xs" onClick={() => onRemoveItem(iIdx)} aria-label="削除">
               <X size={12} />
             </button>

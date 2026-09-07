@@ -47,3 +47,52 @@ describe("computeScore — スティックの必須投げ（左手投げ）", ()
     expect(appThrow?.passed).toBe(true);
   });
 });
+
+describe("computeScore — 右投げ右受けの自動判定（§3.2 スティック）", () => {
+  const check = (r: ReturnType<typeof computeScore>) =>
+    r.apparatusElementChecks.find((c) => c.key === "appEl_stick_right");
+
+  it("投げが無ければ不足のまま（−0.3）", () => {
+    const r = computeScore([S({ kind: "skill", skillId: "b_backsalto" }, { kind: "catch" })], "stick");
+    expect(check(r)?.passed).toBe(false);
+    expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
+  });
+
+  it("通常の投げが1回でもあれば自動でOK", () => {
+    const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "stick");
+    expect(check(r)?.passed).toBe(true);
+    // 4項目中1つ自動OK → 残り3項目未チェックで −0.9
+    expect(r.apparatusElementDeduction).toBeCloseTo(0.9, 5);
+  });
+
+  it("左手投げ・手以外の投げだけでは右投げとみなさない", () => {
+    const r = computeScore(
+      [
+        S({ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" }),
+        S({ kind: "throw", throwTypes: ["nonhand"] }, { kind: "catch" }),
+      ],
+      "stick",
+    );
+    expect(check(r)?.passed).toBe(false);
+  });
+
+  it("視野外など他の技術タグ付きの投げは右投げとみなす", () => {
+    const r = computeScore([S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch" })], "stick");
+    expect(check(r)?.passed).toBe(true);
+  });
+
+  it("技の最中の投げ（投げタン）も右投げとみなす", () => {
+    const r = computeScore(
+      [S({ kind: "skill", skillId: "b_backsalto", isThrow: true }, { kind: "catch" })],
+      "stick",
+    );
+    expect(check(r)?.passed).toBe(true);
+  });
+
+  it("手動チェックでは自動判定を上書きできない（チェックしても投げが無ければ不足）", () => {
+    const r = computeScore([S({ kind: "skill", skillId: "b_backsalto" }, { kind: "catch" })], "stick", {
+      apparatusElements: ["stick_right"],
+    });
+    expect(check(r)?.passed).toBe(false);
+  });
+});

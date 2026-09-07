@@ -24,6 +24,7 @@ import {
   NO_APP_CAP,
   DIRECTION_DEDUCTION,
   THROW_COUNT_DEDUCTION,
+  throwCountRequired,
   CONNECT_NO_APP_DEDUCTION,
   SALTO_CHAIN_2_DEDUCTION,
   SALTO_CHAIN_LOW_DEDUCTION,
@@ -36,6 +37,7 @@ import {
   REQUIRED_ELEMENT_DEDUCTION,
   VIOLATION_DEDUCTION,
   APPARATUS_REQUIRED_ELEMENTS,
+  type RequiredElementAuto,
   VIOLATION_OPTIONS,
   skillDef,
 } from "./constants";
@@ -93,6 +95,8 @@ export interface ScoreResult {
   missingDirCount: number;
   directionDeduction: number;
   totalThrowCount: number;
+  /** 適用規則上必要な投げ上げ回数（一般3 / ジュニア2） */
+  requiredThrowCount: number;
   throwCountDeduction: number;
   maxChainAll: number;
   saltoChainDeduction: number;
@@ -124,6 +128,8 @@ export interface ComputeOptions {
   apparatusElements?: string[];
   /** §3.5.6.3 該当した違反・欠如のid */
   violations?: string[];
+  /** ジュニア適用規則（変更規則1）で採点するか */
+  junior?: boolean;
 }
 
 export function computeScore(
@@ -131,8 +137,9 @@ export function computeScore(
   apparatus: ApparatusKey,
   opts: ComputeOptions = {},
 ): ScoreResult {
-  const { overallExecutionDeduction = 0, apparatusElements = [], violations = [] } = opts;
-  const analysis = series.map(analyzeSeries);
+  const { overallExecutionDeduction = 0, apparatusElements = [], violations = [], junior = false } = opts;
+  const analysis = series.map((ser) => analyzeSeries(ser, junior));
+  const requiredThrowCount = throwCountRequired(junior);
   const allUnits = analysis.flatMap((a) => a.units);
 
   // 重複シリーズ判定
@@ -265,7 +272,7 @@ export function computeScore(
     (cats.has(CATEGORY.SIDE) ? 0 : 1) +
     (cats.has(CATEGORY.BACKWARD) ? 0 : 1);
   const directionDeduction = missingDirCount * DIRECTION_DEDUCTION;
-  const throwCountDeduction = totalThrowCount < 3 ? THROW_COUNT_DEDUCTION : 0;
+  const throwCountDeduction = totalThrowCount < requiredThrowCount ? THROW_COUNT_DEDUCTION : 0;
 
   const maxChainAll = tumblingUnits.reduce(
     (m, u) => Math.max(m, maxSaltoChain(u.skills.map((s) => s.skillId))),
@@ -347,7 +354,11 @@ export function computeScore(
     { key: "throwTum", label: "1本以上が投げタン", passed: hasThrowTumbling },
     { key: "triple", label: "1本以上が宙返り3回以上連続", passed: hasTriple },
     { key: "connect", label: "1本以上がつなぎ技（宙返り間にA難度を挟む）", passed: hasConn },
-    { key: "count3", label: "投げを3回以上実施", passed: totalThrowCount >= 3 },
+    {
+      key: "count3",
+      label: `投げを${requiredThrowCount}回以上実施`,
+      passed: totalThrowCount >= requiredThrowCount,
+    },
     { key: "tumCount", label: "タンブリング3本以上", passed: nonDupTumblingCount >= 3 },
     {
       key: "appThrow",
@@ -386,11 +397,22 @@ export function computeScore(
 
   const missing = required.filter((r) => r.passed === false);
 
-  // ---- §3.2 手具別必須要素（手動チェック）と §3.5.6.3 要求要素の欠如による A減点 ----
+  // ---- §3.2 手具別必須要素（自動判定＋手動チェック）と §3.5.6.3 要求要素の欠如による A減点 ----
+  // 右投げ右受け：左手投げでも手以外の投げでもない通常の投げが1回以上あれば実施とみなす。
+  const hasRightThrow = series.some((ser) =>
+    ser.items.some((item) => {
+      if (item.kind === "throw")
+        return !(item.reqTypes || []).includes("lefthand") && !(item.throwTypes || []).includes("nonhand");
+      if (item.kind === "skill" && item.isThrow) return !(item.throwTypes || []).includes("nonhand");
+      return false;
+    }),
+  );
+  const autoPassed: Record<RequiredElementAuto, boolean> = { rightThrow: hasRightThrow };
+
   const apparatusElementChecks: RequiredCheck[] = APPARATUS_REQUIRED_ELEMENTS[apparatus].map((el) => ({
     key: `appEl_${el.id}`,
-    label: el.name,
-    passed: apparatusElements.includes(el.id),
+    label: el.auto ? `${el.name}（自動判定）` : el.name,
+    passed: el.auto ? autoPassed[el.auto] : apparatusElements.includes(el.id),
   }));
   const apparatusElementDeduction =
     apparatusElementChecks.filter((c) => !c.passed).length * REQUIRED_ELEMENT_DEDUCTION;
@@ -444,6 +466,7 @@ export function computeScore(
     missingDirCount,
     directionDeduction,
     totalThrowCount,
+    requiredThrowCount,
     throwCountDeduction,
     maxChainAll,
     saltoChainDeduction,

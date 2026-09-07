@@ -108,5 +108,7 @@ export interface SaveData {
   apparatusElements?: string[];
   /** §3.5.6.3 該当した違反・欠如のid（VIOLATION_OPTIONS）。 */
   violations?: string[];
+  /** ジュニア適用規則（§10 変更規則1）で採点するか。未指定は false 扱い。 */
+  junior?: boolean;
   series: Series[];
 }

@@ -23,6 +23,7 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
     missingDirCount,
     directionDeduction,
     totalThrowCount,
+    requiredThrowCount,
     throwCountDeduction,
     maxChainAll,
     saltoChainDeduction,
@@ -132,7 +133,9 @@ export function ScoreSummary({ result }: { result: ScoreResult }) {
           <span>-{directionDeduction.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
-          <span>投げ回数不足減点（投げ {totalThrowCount} 回）</span>
+          <span>
+            投げ回数不足減点（投げ {totalThrowCount} 回／必要 {requiredThrowCount} 回）
+          </span>
           <span>-{throwCountDeduction.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
