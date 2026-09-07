@@ -89,7 +89,9 @@ export const THROW_COUNT_DEDUCTION = 0.3;
 /** 投げ上げの最低回数。不足で THROW_COUNT_DEDUCTION（一般 / ジュニア）。 */
 export const THROW_COUNT_REQUIRED = 3;
 export const JUNIOR_THROW_COUNT_REQUIRED = 2;
-export const CONNECT_NO_APP_DEDUCTION = 0.1;
+// つなぎ技のA難度に手具操作がない場合の減点（Q&A Q10 より 0.2）。
+// 操作は回しに限らず持ち替え・足やわきに挟むなども含み、1つでもあれば減点しない。
+export const CONNECT_NO_APP_DEDUCTION = 0.2;
 export const SALTO_CHAIN_2_DEDUCTION = 0.1;
 export const SALTO_CHAIN_LOW_DEDUCTION = 0.2;
 
@@ -180,8 +182,13 @@ export const ROPE_JUMPS: RopeJump[] = [
   { id: "3x2fc", name: "3重跳び2回（前・クロス）", difficulty: "C", rotations: 3, direction: "front" },
   { id: "3x2b", name: "3重跳び2回（後ろ）", difficulty: "D", rotations: 3, direction: "back" },
   { id: "3x2bc", name: "3重跳び2回（後ろ・クロス）", difficulty: "D", rotations: 3, direction: "back" },
+  // 以下3種は難度判定で前後を区別しない（規則表では後ろの列にのみ記載）。
+  // 前後の別は §3.2(3) の前回し／後ろ回し跳びの要求要素判定にのみ使う。
+  { id: "3x3f", name: "3重跳び連続3回以上（前）", difficulty: "D", rotations: 3, direction: "front" },
   { id: "3x3b", name: "3重跳び連続3回以上（後ろ）", difficulty: "D", rotations: 3, direction: "back" },
+  { id: "4f", name: "4重跳び（前）", difficulty: "D", rotations: 4, direction: "front" },
   { id: "4b", name: "4重跳び（後ろ）", difficulty: "D", rotations: 4, direction: "back" },
+  { id: "4x2f", name: "4重跳び連続2回以上（前）", difficulty: "E", rotations: 4, direction: "front" },
   { id: "4x2b", name: "4重跳び連続2回以上（後ろ）", difficulty: "E", rotations: 4, direction: "back" },
 ];
 

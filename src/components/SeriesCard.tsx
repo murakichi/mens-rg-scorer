@@ -26,6 +26,8 @@ interface Props {
   /** ジュニア適用規則で採点中か（技の難度表示に反映） */
   junior: boolean;
   analysis: SeriesAnalysis;
+  /** analysis.units と同じ並びで、そのユニットが難度点に採用されたか */
+  unitAdopted: boolean[];
   breakdown: SeriesBreakdown;
   /** 採点上の重複扱いか（「重複ではない」チェックで解除された場合 false） */
   isDup: boolean;
@@ -202,6 +204,7 @@ export function SeriesCard({
   apparatus,
   junior,
   analysis: a,
+  unitAdopted,
   breakdown: b,
   isDup,
   isDupSignature,
@@ -301,8 +304,15 @@ export function SeriesCard({
                 u.tumblingDiff ?? "—"
               }）`}
           {`　／ 最大連続宙返り ${maxSaltoChain(u.skills.map((s) => s.skillId))} 回`}
+          {!unitAdopted[ui] && <span className="unit-unadopted">難度不採用</span>}
         </div>
       ))}
+      {a.units.some((_, ui) => !unitAdopted[ui]) && (
+        <p className="hint">
+          ※「難度不採用」は同じ内容の難度を既に数えているため難度点に算入しないという意味で、
+          実施しなかった扱いにはなりません（技術加点・連続投げ加点・本数・投げ回数には算入されます）。
+        </p>
+      )}
       {seriesQualifies && <div className="bonus-note">連続投げ加点の対象（投げ2回以上＋D難度以上）</div>}
       {flowErrors.map((err, ei) => (
         <div key={ei} className="flow-error">
@@ -315,10 +325,29 @@ export function SeriesCard({
           <span>D：タンブリング難度点</span>
           <span>{b.tumDiff.toFixed(1)}</span>
         </div>
-        <div className="breakdown-row">
-          <span>D：徒手難度点</span>
-          <span>{b.handDiff.toFixed(1)}</span>
-        </div>
+        {b.handRows.length === 0 ? (
+          <div className="breakdown-row">
+            <span>D：徒手難度点</span>
+            <span>0.0</span>
+          </div>
+        ) : (
+          b.handRows.map((row, ri) => {
+            const counted = row.adopted && row.inTop;
+            return (
+              <div key={ri} className={counted ? "breakdown-row" : "breakdown-row is-excluded"}>
+                <span>
+                  D：徒手難度点（{row.label}・{row.diff}難度）
+                  {!counted && (
+                    <span className="excluded-note">
+                      {row.adopted ? "上位3つ外" : "難度不採用"}
+                    </span>
+                  )}
+                </span>
+                <span className="excluded-value">{row.score.toFixed(1)}</span>
+              </div>
+            );
+          })
+        )}
         <div className="breakdown-row">
           <span>D：連続投げ加点</span>
           <span>{b.sBonus.toFixed(1)}</span>

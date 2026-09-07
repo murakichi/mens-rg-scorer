@@ -89,6 +89,13 @@ export interface Unit {
   skillThrow: boolean;
   /** 投げ単位かつ技を含む＝投げタン */
   isThrowTumbling?: boolean;
+  /** ロープ跳びから生成した徒手系ユニット（実際の投げ受けではない） */
+  fromRopeJump?: boolean;
+  /**
+   * 難度の内容を表す正規化キー。§3.4.4「全く同じ技は難度として数えない」の判定に使う。
+   * 技術タグ（視野外・手以外など）は難度の内容ではないため含めない。
+   */
+  signature: string;
   skills: { skillId: string; hasApparatus: boolean; isThrow: boolean }[];
   handDiff?: Difficulty | null;
   tumblingDiff?: Difficulty | null;

@@ -200,3 +200,276 @@ describe("computeScore — 重複シリーズはDスコアからも除外", () =
     expect(r.seriesBreakdowns[1].tumDiff).toBeCloseTo(0.5, 5);
   });
 });
+
+describe("computeScore — 連続投げで両方徒手のときA難度は採用しない", () => {
+  it("二つ投げ→4動作→キャッチ→視野外投げ→視野外キャッチ（クラブ）", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw", reqTypes: ["twothrow"] },
+          { kind: "motion", motionId: "m4" },
+          { kind: "catch" },
+          { kind: "throw", throwTypes: ["noview"] },
+          { kind: "catch", catchTypes: ["noview"] },
+        ),
+      ],
+      "clubs",
+    );
+    // 4動作の投げ受け E=0.7 のみ採用。動作0の投げ受け A=0.1 は不採用
+    expect(r.handScore).toBeCloseTo(0.7, 5);
+    expect(r.seriesBreakdowns[0].handDiff).toBeCloseTo(0.7, 5);
+    expect(r.twoThrowMotionBonus).toBeCloseTo(0.1, 5);
+    expect(r.seriesBonus).toBeCloseTo(0.1, 5);
+    expect(r.techniqueBonus).toBeCloseTo(0.2, 5);
+    expect(r.dScore).toBeCloseTo(1.1, 5);
+  });
+
+  it("投げ受けが1つだけならA難度でも採用する", () => {
+    const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
+    expect(r.handScore).toBeCloseTo(0.1, 5);
+  });
+
+  it("A難度以外で内容が違えば連続投げでもそれぞれ採用する", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw" },
+          { kind: "motion", motionId: "m3" },
+          { kind: "catch" },
+          { kind: "throw" },
+          { kind: "motion", motionId: "m2" },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    expect(r.handScore).toBeCloseTo(0.8, 5); // D(3動作) + C(2動作)
+  });
+
+  it("相手が投げタンならA難度の投げ受けは採用される（両方徒手ではない）", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw" },
+          { kind: "skill", skillId: "b_backsalto" },
+          { kind: "catch" },
+          { kind: "throw" },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    // 1つ目は投げタン（転回系側）、2つ目の徒手系はA=0.1 として採用
+    expect(r.handScore).toBeCloseTo(0.1, 5);
+  });
+
+  it("連続投げが全てA難度なら最高難度のA1つだけ採用する", () => {
+    const r = computeScore(
+      [S({ kind: "throw" }, { kind: "catch" }, { kind: "throw" }, { kind: "catch" })],
+      "clubs",
+    );
+    expect(r.analysis[0].units).toHaveLength(2);
+    expect(r.handScore).toBeCloseTo(0.1, 5);
+    expect(r.seriesBreakdowns[0].handDiff).toBeCloseTo(0.1, 5);
+  });
+
+  it("ロープ跳び由来のA難度（1重跳び）は投げ受けの連続とみなさない", () => {
+    const r = computeScore(
+      [S({ kind: "ropeJump", jumpId: "1f" }, { kind: "throw" }, { kind: "catch" })],
+      "rope",
+    );
+    // 1重跳び A=0.1 と 動作0の投げ受け A=0.1（投げ受けは1つなので採用）
+    expect(r.handScore).toBeCloseTo(0.2, 5);
+  });
+});
+
+describe("computeScore — 同じ内容の難度は演技全体で1回しか数えない（§3.4.4 / Q20）", () => {
+  it("同じ3動作の投げ受けを2回：難度は1つ分、技術加点と連続投げ加点は付く", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw" },
+          { kind: "motion", motionId: "m3" },
+          { kind: "catch" },
+          { kind: "throw", throwTypes: ["noview"] }, // 背面投げ相当の技術タグ
+          { kind: "motion", motionId: "m3" },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    expect(r.handScore).toBeCloseTo(0.5, 5); // D 1つ分のみ
+    expect(r.techniqueBonus).toBeCloseTo(0.1, 5); // 不採用でも技術加点は付く
+    expect(r.seriesBonus).toBeCloseTo(0.1, 5); // 連続投げ加点も付く
+    expect(r.totalThrowCount).toBe(2); // 投げ回数も2回のまま
+    expect(r.dScore).toBeCloseTo(0.7, 5);
+  });
+
+  it("シリーズをまたいでも同じ内容なら1回だけ採用する", () => {
+    const tum = (): Series => S({ kind: "skill", skillId: "d_doubleback" }, { kind: "catch" });
+    // 2本目は技術タグの有無で構成が違うのでシリーズ重複にはならないが、転回系の内容は同じ
+    const withThrow = S(
+      { kind: "skill", skillId: "d_doubleback" },
+      { kind: "catch" },
+      { kind: "throw" },
+      { kind: "catch" },
+    );
+    const r = computeScore([tum(), withThrow], "clubs");
+    expect(r.dupFlags).toEqual([false, false]);
+    expect(r.tumblingScore).toBeCloseTo(0.5, 5);
+    expect(r.nonDupTumblingCount).toBe(2); // 本数は2本のまま
+  });
+
+  it("内容が違えばそれぞれ採用する", () => {
+    const tum = (skillId: string): Series => S({ kind: "skill", skillId }, { kind: "catch" });
+    const r = computeScore([tum("d_doubleback"), tum("c_back15")], "clubs");
+    expect(r.tumblingScore).toBeCloseTo(0.8, 5);
+  });
+
+  it("「重複ではない」宣言のシリーズは内容が同じでも採用される", () => {
+    const tum = (): Series => S({ kind: "skill", skillId: "d_doubleback" }, { kind: "catch" });
+    const r = computeScore([tum(), { ...tum(), notDuplicate: true }], "clubs");
+    expect(r.tumblingScore).toBeCloseTo(1.0, 5);
+  });
+
+  it("ロープ跳びも同じ跳びなら1回だけ採用する", () => {
+    // 2本目は投げの技術タグでシリーズ構成を変え、シリーズ重複ではなくユニット重複にする
+    const jump = (id: string, tag?: string): Series =>
+      S({ kind: "ropeJump", jumpId: id }, { kind: "throw", throwTypes: tag ? [tag] : [] }, { kind: "catch" });
+    const same = computeScore([jump("3b"), jump("3b", "noview")], "rope");
+    expect(same.dupFlags).toEqual([false, false]);
+    // 3重跳び(C) 1つ + 投げ受け(A) 1つ（跳び・投げ受けとも内容が同じなので各1回）
+    expect(same.handScore).toBeCloseTo(0.3 + 0.1, 5);
+    const diff = computeScore([jump("3b"), jump("3bc", "noview")], "rope");
+    expect(diff.handScore).toBeCloseTo(0.3 + 0.5 + 0.1, 5); // C + D + 投げ受け(A)
+  });
+});
+
+describe("computeScore — つなぎ技のA難度に手具操作なし（Q10）", () => {
+  it("後方一回半ひねり(操作なし)〜ロンダート(操作なし)〜ダイビング前宙(操作あり)で −0.2", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "skill", skillId: "c_back15", hasApparatus: false },
+          { kind: "skill", skillId: "a_roundoff", hasApparatus: false },
+          { kind: "skill", skillId: "b_divefront", hasApparatus: true },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    expect(r.connectNoApparatus).toBe(true);
+    expect(r.noApparatusDeduction).toBeCloseTo(0.2, 5);
+  });
+
+  it("つなぎのA難度に手具操作があれば減点なし", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "skill", skillId: "c_back15", hasApparatus: true },
+          { kind: "skill", skillId: "a_roundoff", hasApparatus: true },
+          { kind: "skill", skillId: "b_divefront", hasApparatus: true },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    expect(r.connectNoApparatus).toBe(false);
+    expect(r.noApparatusDeduction).toBe(0);
+  });
+
+  it("投げを含む塊（投げタン）のつなぎ技は対象外", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw" },
+          { kind: "skill", skillId: "c_back15", hasApparatus: false },
+          { kind: "skill", skillId: "a_roundoff", hasApparatus: false },
+          { kind: "skill", skillId: "b_divefront", hasApparatus: true },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    expect(r.connectNoApparatus).toBe(false);
+    expect(r.noApparatusDeduction).toBe(0);
+  });
+
+  it("手具操作不足減点の上限0.4は維持される", () => {
+    // つなぎ技操作なし(0.2) + 投げなしタンブリング全体に操作なしのシリーズ2本(0.2×2) → 上限0.4
+    const noApp = (): Series =>
+      S(
+        { kind: "skill", skillId: "c_back15", hasApparatus: false },
+        { kind: "skill", skillId: "a_roundoff", hasApparatus: false },
+        { kind: "skill", skillId: "b_backsalto", hasApparatus: false },
+        { kind: "catch" },
+      );
+    const other = S(
+      { kind: "skill", skillId: "b_front", hasApparatus: false },
+      { kind: "catch" },
+    );
+    const r = computeScore([noApp(), other], "clubs");
+    expect(r.noApparatusDeduction).toBeCloseTo(0.4, 5);
+  });
+});
+
+describe("computeScore — 徒手難度点の投げごとの内訳（handRows）", () => {
+  it("投げごとに行が出て、上位3つ外は inTop=false になる", () => {
+    const thr = (motionId: string) => [
+      { kind: "throw" as const },
+      { kind: "motion" as const, motionId },
+      { kind: "catch" as const },
+    ];
+    const r = computeScore(
+      [S(...thr("m4"), ...thr("m3"), ...thr("m2"), ...thr("m1"))],
+      "clubs",
+    );
+    const rows = r.seriesBreakdowns[0].handRows;
+    expect(rows.map((x) => x.label)).toEqual(["投げ1", "投げ2", "投げ3", "投げ4"]);
+    expect(rows.map((x) => x.diff)).toEqual(["E", "D", "C", "B"]);
+    expect(rows.map((x) => x.inTop)).toEqual([true, true, true, false]);
+    expect(rows.every((x) => x.adopted)).toBe(true);
+    // 上位3つ（E+D+C）のみがシリーズの徒手難度点に入る
+    expect(r.seriesBreakdowns[0].handDiff).toBeCloseTo(1.5, 5);
+    expect(r.handScore).toBeCloseTo(1.5, 5);
+  });
+
+  it("難度不採用のユニットも行として出る（adopted=false）", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw" },
+          { kind: "motion", motionId: "m3" },
+          { kind: "catch" },
+          { kind: "throw", throwTypes: ["noview"] },
+          { kind: "motion", motionId: "m3" },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    const rows = r.seriesBreakdowns[0].handRows;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((x) => x.adopted)).toEqual([true, false]);
+    expect(r.seriesBreakdowns[0].handDiff).toBeCloseTo(0.5, 5);
+  });
+
+  it("シリーズごとの徒手難度点の合計は全体の徒手難度点と一致する", () => {
+    const tum = (skillId: string) => S({ kind: "skill", skillId }, { kind: "catch" });
+    const thr = (motionId: string, tag?: string) =>
+      S({ kind: "throw", throwTypes: tag ? [tag] : [] }, { kind: "motion", motionId }, { kind: "catch" });
+    const r = computeScore(
+      [thr("m4"), thr("m3"), thr("m2"), thr("m1", "noview"), tum("e_doublelay")],
+      "clubs",
+    );
+    const sumHand = r.seriesBreakdowns.reduce((s, b) => s + b.handDiff, 0);
+    const sumTum = r.seriesBreakdowns.reduce((s, b) => s + b.tumDiff, 0);
+    expect(sumHand).toBeCloseTo(r.handScore, 5);
+    expect(sumTum).toBeCloseTo(r.tumblingScore, 5);
+  });
+
+  it("ロープ跳び由来の行はラベルが「ロープ跳び」", () => {
+    const r = computeScore([S({ kind: "ropeJump", jumpId: "3b" })], "rope");
+    expect(r.seriesBreakdowns[0].handRows.map((x) => x.label)).toEqual(["ロープ跳び"]);
+  });
+});
