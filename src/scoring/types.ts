@@ -82,6 +82,8 @@ export interface Skill {
   saltoOnlyInChain?: boolean;
   /** つなぎ技として宙返り間に挟めるA難度技か */
   isConnectA?: boolean;
+  /** 2回宙返り系か（ジュニア適用規則では禁止のため選択肢に出さない） */
+  isDoubleSalto?: boolean;
 }
 
 export interface HandMotion {
