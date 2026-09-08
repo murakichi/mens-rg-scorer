@@ -616,3 +616,56 @@ describe("computeScore — シェネの手の有無で技を区別する（Q21 /
     expect(r.handScore).toBeCloseTo(0.7, 5);
   });
 });
+
+describe("computeScore — 徒手は内訳で技を判定する（順序は問わない）", () => {
+  const mo = (id: string, count?: number, hands?: boolean): Item => ({
+    kind: "motion",
+    motionId: id,
+    count,
+    hands,
+  });
+  const thr = (...items: Item[]): Series => S({ kind: "throw" }, ...items, { kind: "catch" });
+
+  it("順序を入れ替えただけなら同じ技", () => {
+    const r = computeScore([thr(mo("chene"), mo("fwd_roll")), thr(mo("fwd_roll"), mo("chene"))], "clubs");
+    expect(r.analysis[0].units[0].signature).toBe(r.analysis[1].units[0].signature);
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
+    expect(r.handScore).toBeCloseTo(0.3, 5);
+  });
+
+  it("4シェネ と 3シェネ＋前転 は別の技（どちらもE難度で両方採用）", () => {
+    const r = computeScore([thr(mo("chene", 4)), thr(mo("chene", 3), mo("fwd_roll"))], "clubs");
+    expect(r.analysis.map((a) => a.units[0].finalDiff)).toEqual(["E", "E"]);
+    expect(r.analysis[0].units[0].signature).toBe("hand:chene:4");
+    expect(r.analysis[1].units[0].signature).toBe("hand:chene:3,fwd_roll:1");
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, true]);
+    expect(r.handScore).toBeCloseTo(1.4, 5);
+  });
+
+  it("同じ内訳なら回数のまとめ方が違っても同じ技", () => {
+    const r = computeScore(
+      [thr(mo("chene", 2), mo("fwd_roll")), thr(mo("fwd_roll"), mo("chene"), mo("chene"))],
+      "clubs",
+    );
+    expect(r.analysis[0].units[0].signature).toBe(r.analysis[1].units[0].signature);
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
+  });
+
+  it("動作数が同じでも種類が違えば別の技", () => {
+    const r = computeScore([thr(mo("fwd_roll"), mo("back_roll")), thr(mo("chene"), mo("roll"))], "clubs");
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, true]);
+    expect(r.handScore).toBeCloseTo(0.6, 5);
+  });
+
+  it("タンブリング技として入れても徒手動作として入れても同じ技", () => {
+    const asSkill = S(
+      { kind: "throw" },
+      { kind: "skill", skillId: "a_flicflac" },
+      { kind: "motion", motionId: "chene" },
+      { kind: "catch" },
+    );
+    const r = computeScore([asSkill, thr(mo("chene"), mo("a_flicflac"))], "clubs");
+    expect(r.analysis[0].units[0].signature).toBe(r.analysis[1].units[0].signature);
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
+  });
+});

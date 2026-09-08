@@ -94,7 +94,13 @@ export function handMotionsOfSkill(skillId: string, junior = false): number {
 export function motionDef(
   id: string,
   junior = false,
-): { motions: number; verticalThree: boolean; vertical: number; hasHandsOption: boolean } | null {
+): {
+  motions: number;
+  verticalThree: boolean;
+  vertical: number;
+  hasHandsOption: boolean;
+  generic: boolean;
+} | null {
   const m = HAND_MOTIONS.find((x) => x.id === id);
   if (m)
     return {
@@ -102,11 +108,13 @@ export function motionDef(
       verticalThree: !!m.verticalThree,
       vertical: m.vertical ? m.motions : 0,
       hasHandsOption: !!m.hasHandsOption,
+      // 旧データの「n動作」は種類が特定できない汎用動作
+      generic: !!m.legacy && !m.verticalThree,
     };
   if (skillDef(id)) {
     const n = handMotionsOfSkill(id, junior);
     // 徒手扱いの転回技はすべて縦回転の徒手
-    return { motions: n, verticalThree: false, vertical: n, hasHandsOption: false };
+    return { motions: n, verticalThree: false, vertical: n, hasHandsOption: false, generic: false };
   }
   return null;
 }
@@ -163,7 +171,17 @@ interface UnitBuffer {
   cheneNoHands: number;
   /** 手を上げて実施したシェネの数 */
   cheneHands: number;
+  /** 徒手の内訳（動作id → 実施回数）。順序は問わないが内訳が違えば別の技。 */
+  composition: Map<string, number>;
   throwItems: number;
+}
+
+/** 内訳（動作id → 回数）を順序に依存しない文字列にする */
+function compositionKey(composition: Map<string, number>): string {
+  return [...composition.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([id, n]) => `${id}:${n}`)
+    .join(",");
 }
 
 /** 縦3動作とみなす動作数 */
@@ -177,26 +195,25 @@ const VERTICAL_THREE_COUNT = 3;
  * 技術タグ（視野外・手以外・背面投げ等）はいずれも難度の内容ではないので含めない。
  */
 /**
- * 内容キーを返す。手あり／手なしのシェネが混在した場合は、どちらの内容とも同じ技として
- * 扱うためキーを2つ返す（Q&A Q21：2シェネ＋手を上げた2シェネは、普通の4シェネとも
- * 手を上げた4シェネとも同じ技）。
+ * 内容キーを返す。徒手系は**内訳（動作の種類×回数）**で判定する。順序が違っても同じ技だが、
+ * 内訳が違えば（4シェネ と 3シェネ＋前転 など）別の技。
+ * 手あり／手なしのシェネが混在した場合は、どちらの内容とも同じ技として扱うためキーを2つ返す
+ * （Q&A Q21：2シェネ＋手を上げた2シェネは、普通の4シェネとも手を上げた4シェネとも同じ技）。
  */
 function unitSignatures(
   buf: UnitBuffer,
   tumblingSkillIds: string[],
-  motionCount: number,
-  verticalThree: boolean,
+  composition: Map<string, number>,
   junior: boolean,
 ): string[] {
   // 難度に効く非A難度技だけをキーにする（つなぎ技のA難度技は含めない：Q&A Q22）
   const tumIds = tumblingSkillIds.filter((id) => skillDifficulty(id, junior) !== "A");
   if (tumIds.length > 0) return [`tum:${tumIds.join(">")}`];
-  const base = `hand:m${motionCount}${verticalThree ? "v" : ""}`;
+  const base = `hand:${compositionKey(composition)}`;
   const { cheneNoHands, cheneHands } = buf;
-  if (cheneNoHands === 0 && cheneHands === 0) return [base];
-  if (cheneHands === 0) return [`${base}:cn`];
-  if (cheneNoHands === 0) return [`${base}:ch`];
-  return [`${base}:cn`, `${base}:ch`];
+  if (cheneHands === 0) return [base];
+  if (cheneNoHands === 0) return [`${base}:h`];
+  return [base, `${base}:h`];
 }
 
 function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
@@ -213,19 +230,19 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   const hasTumbling = tumblingSkillIds.length > 0;
   const skillMotions = ids.reduce((n, id, i) => n + (tumFlags[i] ? 0 : handMotionsOfSkill(id, junior)), 0);
   const motionCount = buf.motionCount + skillMotions;
+  // 徒手として数える技も内訳に含める（タンブリング技として入れても徒手動作として入れても同じ）
+  const composition = new Map(buf.composition);
+  ids.forEach((id, i) => {
+    if (tumFlags[i]) return;
+    composition.set(id, (composition.get(id) ?? 0) + 1);
+  });
   // 縦回転の徒手が3動作分そろえば縦3動作（E難度）
   const verticalThree = buf.verticalThree || buf.verticalCount + skillMotions >= VERTICAL_THREE_COUNT;
 
   const tumblingDiff = hasTumbling ? calcTumblingDifficulty(tumblingSkillIds, isThrow, junior) : null;
   const handDiff = isThrow || motionCount > 0 ? calcHandDifficulty(motionCount, verticalThree) : null;
 
-  const [signature, signatureAlt] = unitSignatures(
-    buf,
-    tumblingSkillIds,
-    motionCount,
-    verticalThree,
-    junior,
-  );
+  const [signature, signatureAlt] = unitSignatures(buf, tumblingSkillIds, composition, junior);
 
   if (!isThrow) {
     // 投げなし：転回系があればタンブリング塊、無ければ徒手系（縦の一回転の徒手など）
@@ -300,6 +317,7 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
     verticalThree: false,
     cheneNoHands: 0,
     cheneHands: 0,
+    composition: new Map(),
     throwItems: 0,
   });
   const flush = () => {
@@ -333,6 +351,10 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
           if (item.hands) buf.cheneHands += m.motions * times;
           else buf.cheneNoHands += m.motions * times;
         }
+        // 旧データの汎用動作（1〜4動作）は種類を区別できないので、まとめて動作数で数える
+        const key = m.generic ? "m" : item.motionId;
+        const n = m.generic ? m.motions * times : times;
+        buf.composition.set(key, (buf.composition.get(key) ?? 0) + n);
       }
     }
   });

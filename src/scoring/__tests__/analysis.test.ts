@@ -306,6 +306,7 @@ describe("タッチダウンライズ（縦回転の徒手）", () => {
       verticalThree: false,
       vertical: 1,
       hasHandsOption: false,
+      generic: false,
     });
     const u = analyzeSeries(
       S({ kind: "throw" }, { kind: "motion", motionId: "td_rise" }, { kind: "catch" }),
@@ -378,7 +379,7 @@ describe("徒手動作の連続回数", () => {
     expect(u.finalDiff).toBe("E"); // 4動作
   });
 
-  it("1動作×2回 と 2動作 は同じ扱い", () => {
+  it("旧データの1動作×2回 と 2動作 は同じ扱い", () => {
     const a = unit(S({ kind: "throw" }, { kind: "motion", motionId: "m1", count: 2 }, { kind: "catch" }));
     const b = unit(S({ kind: "throw" }, { kind: "motion", motionId: "m2" }, { kind: "catch" }));
     expect(a.finalDiff).toBe(b.finalDiff);
@@ -403,8 +404,8 @@ describe("徒手動作の連続回数", () => {
     );
     expect(mixed.finalDiff).toBe("E");
     // 手あり・手なし混在なので内容キーを2つ持つ
-    expect(mixed.signature).toBe("hand:m4:cn");
-    expect(mixed.signatureAlt).toBe("hand:m4:ch");
+    expect(mixed.signature).toBe("hand:chene:4");
+    expect(mixed.signatureAlt).toBe("hand:chene:4:h");
   });
 });
 
@@ -434,6 +435,7 @@ describe("前転・後転（縦の一回転の徒手）", () => {
       verticalThree: false,
       vertical: 1,
       hasHandsOption: false,
+      generic: false,
     });
     // 前転・後転・タッチダウンライズで縦3動作＝E
     const u = analyzeSeries(
@@ -477,6 +479,7 @@ describe("徒手動作の選択肢の並び順", () => {
       verticalThree: false,
       vertical: 1,
       hasHandsOption: false,
+      generic: false,
     });
   });
 });
