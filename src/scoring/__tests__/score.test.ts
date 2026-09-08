@@ -524,7 +524,7 @@ describe("computeScore — 投げ方が違っても間の内容が同じなら�
       "clubs",
     );
     const units = r.analysis[0].units;
-    expect(units[0].signature).toBe(units[1].signature);
+    expect(units[0].signatures).toEqual(units[1].signatures);
     expect(r.unitAdopted[0]).toEqual([true, false]);
     expect(r.handScore).toBeCloseTo(0.3, 5);
     // 不採用でも技術加点と投げ回数は残る
@@ -605,7 +605,7 @@ describe("computeScore — 徒手は内訳で技を判定する（順序は問�
 
   it("順序を入れ替えただけなら同じ技", () => {
     const r = computeScore([thr(mo("chene"), mo("fwd_roll")), thr(mo("fwd_roll"), mo("chene"))], "clubs");
-    expect(r.analysis[0].units[0].signature).toBe(r.analysis[1].units[0].signature);
+    expect(r.analysis[0].units[0].signatures).toEqual(r.analysis[1].units[0].signatures);
     expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
     expect(r.handScore).toBeCloseTo(0.3, 5);
   });
@@ -613,8 +613,8 @@ describe("computeScore — 徒手は内訳で技を判定する（順序は問�
   it("4シェネ と 3シェネ＋前転 は別の技（どちらもE難度で両方採用）", () => {
     const r = computeScore([thr(mo("chene", 4)), thr(mo("chene", 3), mo("fwd_roll"))], "clubs");
     expect(r.analysis.map((a) => a.units[0].finalDiff)).toEqual(["E", "E"]);
-    expect(r.analysis[0].units[0].signature).toBe("hand:chene:4");
-    expect(r.analysis[1].units[0].signature).toBe("hand:chene:3,fwd_roll:1");
+    expect(r.analysis[0].units[0].signatures).toEqual(["hand:chene:4"]);
+    expect(r.analysis[1].units[0].signatures).toEqual(["hand:chene:3,fwd_roll:1"]);
     expect(r.unitAdopted.map((u) => u[0])).toEqual([true, true]);
     expect(r.handScore).toBeCloseTo(1.4, 5);
   });
@@ -624,7 +624,7 @@ describe("computeScore — 徒手は内訳で技を判定する（順序は問�
       [thr(mo("chene", 2), mo("fwd_roll")), thr(mo("fwd_roll"), mo("chene"), mo("chene"))],
       "clubs",
     );
-    expect(r.analysis[0].units[0].signature).toBe(r.analysis[1].units[0].signature);
+    expect(r.analysis[0].units[0].signatures).toEqual(r.analysis[1].units[0].signatures);
     expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
   });
 
@@ -642,7 +642,7 @@ describe("computeScore — 徒手は内訳で技を判定する（順序は問�
       { kind: "catch" },
     );
     const r = computeScore([asSkill, thr(mo("chene"), mo("a_flicflac"))], "clubs");
-    expect(r.analysis[0].units[0].signature).toBe(r.analysis[1].units[0].signature);
+    expect(r.analysis[0].units[0].signatures).toEqual(r.analysis[1].units[0].signatures);
     expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
   });
 });
@@ -685,5 +685,64 @@ describe("computeScore — タンブリング難度点も塊ごとの内訳を�
       "clubs",
     );
     expect(r.seriesBreakdowns[0].tumRows[0].score).toBeCloseTo(0.8, 5);
+  });
+});
+
+describe("computeScore — 手ありシェネの種類", () => {
+  const chene = (hands: boolean, handsType?: string, count = 3): Item => ({
+    kind: "motion",
+    motionId: "chene",
+    hands,
+    handsType,
+    count,
+  });
+  const thr = (...items: Item[]): Series => S({ kind: "throw" }, ...items, { kind: "catch" });
+
+  it("種類が違えば別の技として両方採用される", () => {
+    const r = computeScore([thr(chene(true, "one")), thr(chene(true, "both"))], "clubs");
+    expect(r.analysis[0].units[0].signatures).toEqual(["hand:chene:3:h:one"]);
+    expect(r.analysis[1].units[0].signatures).toEqual(["hand:chene:3:h:both"]);
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, true]);
+  });
+
+  it("同じ種類なら同じ技（1つだけ採用）", () => {
+    const r = computeScore(
+      [thr(chene(true, "spin")), S({ kind: "throw", throwTypes: ["noview"] }, chene(true, "spin"), { kind: "catch" })],
+      "clubs",
+    );
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
+  });
+
+  it("手なしとも別の技", () => {
+    const r = computeScore([thr(chene(false)), thr(chene(true, "one"))], "clubs");
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, true]);
+  });
+
+  it("その他はいくつあっても重複にならない", () => {
+    const other = () => thr(chene(true, "other"));
+    const r = computeScore([other(), { ...other(), notDuplicate: false }, other()], "clubs");
+    // シリーズ構成が同一なので2本目以降はシリーズ重複になる。中身で判定するため技術タグで分ける
+    const tagged = (tag: string): Series =>
+      S({ kind: "throw", throwTypes: [tag] }, chene(true, "other"), { kind: "catch" });
+    const r2 = computeScore([tagged("noview"), tagged("nonhand"), tagged("other")], "clubs");
+    expect(r2.unitAdopted.map((u) => u[0])).toEqual([true, true, true]);
+    expect(r.dupFlags).toEqual([false, true, true]);
+  });
+
+  it("片手上げ・両手上げ・回旋は同じ種類同士でのみ重複する", () => {
+    const tagged = (tag: string, ht: string): Series =>
+      S({ kind: "throw", throwTypes: [tag] }, chene(true, ht), { kind: "catch" });
+    const r = computeScore(
+      [tagged("noview", "one"), tagged("nonhand", "one"), tagged("other", "both")],
+      "clubs",
+    );
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false, true]);
+  });
+
+  it("種類未指定の手ありは片手上げ扱い", () => {
+    const tagged = (tag: string, ht?: string): Series =>
+      S({ kind: "throw", throwTypes: [tag] }, chene(true, ht), { kind: "catch" });
+    const r = computeScore([tagged("noview"), tagged("nonhand", "one")], "clubs");
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
   });
 });

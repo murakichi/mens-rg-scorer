@@ -383,7 +383,7 @@ describe("徒手動作の連続回数", () => {
     const a = unit(S({ kind: "throw" }, { kind: "motion", motionId: "m1", count: 2 }, { kind: "catch" }));
     const b = unit(S({ kind: "throw" }, { kind: "motion", motionId: "m2" }, { kind: "catch" }));
     expect(a.finalDiff).toBe(b.finalDiff);
-    expect(a.signature).toBe(b.signature);
+    expect(a.signatures).toEqual(b.signatures);
   });
 
   it("縦回転も回数分だけ数える（バク転×3で縦3動作＝E）", () => {
@@ -404,9 +404,8 @@ describe("徒手動作の連続回数", () => {
     );
     expect(mixed.finalDiff).toBe("E");
     // 手あり・手なし混在なので内容キーを2つ持つ
-    expect(mixed.signature).toBe("hand:chene:4");
-    expect(mixed.signatureAlt).toBe("hand:chene:4:h");
-  });
+    expect(mixed.signatures).toEqual(["hand:chene:4", "hand:chene:4:h:one"]);
+    });
 });
 
 describe("旧データの徒手動作（n動作）", () => {

@@ -46,6 +46,8 @@ export interface MotionItem {
   motionId: string;
   /** シェネなど `hasHandsOption` の動作で、手を上げて実施したか */
   hands?: boolean;
+  /** 手ありの種類（HANDS_TYPES の id）。未指定は片手上げ扱い。 */
+  handsType?: string;
   /** 連続で実施した回数（未指定は1回）。動作数は 回数分だけ加算される。 */
   count?: number;
 }
@@ -116,13 +118,12 @@ export interface Unit {
   /**
    * 難度の内容を表す正規化キー。§3.4.4「全く同じ技は難度として数えない」の判定に使う。
    * 技術タグ（視野外・手以外など）は難度の内容ではないため含めない。
+   * 手あり／手なしのシェネが混在した場合など、どの内容とも同じ技として扱うために複数持つ
+   * ことがある（Q&A Q21）。表示や比較には先頭の要素を使う。
    */
-  signature: string;
-  /**
-   * もう一方の内容キー。手あり／手なしのシェネが混在した場合、どちらの内容とも
-   * 同じ技として扱うため2つ持つ（Q&A Q21）。
-   */
-  signatureAlt?: string;
+  signatures: string[];
+  /** 「その他」の手ありシェネを含み、いくつあっても重複と見なさないユニットか */
+  neverDuplicate?: boolean;
   skills: { skillId: string; hasApparatus: boolean; isThrow: boolean }[];
   handDiff?: Difficulty | null;
   tumblingDiff?: Difficulty | null;

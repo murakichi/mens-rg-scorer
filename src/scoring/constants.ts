@@ -275,6 +275,18 @@ export function skillOptions(junior = false): Skill[] {
 export const MOTION_SKILLS: Skill[] = SKILL_LIST.filter((s) => !s.isSalto || s.saltoOnlyInChain);
 
 /**
+ * 手ありシェネの種類。`other`（その他）はいくつ実施しても重複と見なさない。
+ */
+export const HANDS_TYPES = [
+  { id: "one", name: "片手上げ" },
+  { id: "both", name: "両手上げ" },
+  { id: "spin", name: "回旋" },
+  { id: "other", name: "その他" },
+] as const;
+export const DEFAULT_HANDS_TYPE = "one";
+export const HANDS_TYPE_OTHER = "other";
+
+/**
  * 徒手動作の選択肢の並び順。現実の演技で使われやすいものを上に出す。
  * `MOTION_PRIORITY_AFTER` は「直前に選んだ動作」に応じた優先順（つながりやすい動作を上に）。
  */
