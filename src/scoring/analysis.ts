@@ -7,6 +7,8 @@ import {
   VALUE_DIFF,
   MAX_DIFF,
   HAND_MOTIONS,
+  DEFAULT_HANDS_TYPE,
+  HANDS_TYPE_OTHER,
   APPARATUS_COUNT,
   skillDef,
   skillDifficulty,
@@ -169,8 +171,10 @@ interface UnitBuffer {
   verticalThree: boolean;
   /** 手を上げずに実施したシェネの数 */
   cheneNoHands: number;
-  /** 手を上げて実施したシェネの数 */
-  cheneHands: number;
+  /** 手ありで実施したシェネの種類（HANDS_TYPES の id） */
+  cheneHandsTypes: Set<string>;
+  /** 「その他」の手ありシェネを含むか（いくつあっても重複と見なさない） */
+  hasOtherHands: boolean;
   /** 徒手の内訳（動作id → 実施回数）。順序は問わないが内訳が違えば別の技。 */
   composition: Map<string, number>;
   throwItems: number;
@@ -210,10 +214,11 @@ function unitSignatures(
   const tumIds = tumblingSkillIds.filter((id) => skillDifficulty(id, junior) !== "A");
   if (tumIds.length > 0) return [`tum:${tumIds.join(">")}`];
   const base = `hand:${compositionKey(composition)}`;
-  const { cheneNoHands, cheneHands } = buf;
-  if (cheneHands === 0) return [base];
-  if (cheneNoHands === 0) return [`${base}:h`];
-  return [base, `${base}:h`];
+  const { cheneNoHands, cheneHandsTypes } = buf;
+  if (cheneHandsTypes.size === 0) return [base];
+  // 手ありの種類ごとにキーを持つ。手なしと混在していれば手なしのキーとも同じ技として扱う
+  const keys = [...cheneHandsTypes].sort().map((t) => `${base}:h:${t}`);
+  return cheneNoHands > 0 ? [base, ...keys] : keys;
 }
 
 function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
@@ -242,7 +247,8 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   const tumblingDiff = hasTumbling ? calcTumblingDifficulty(tumblingSkillIds, isThrow, junior) : null;
   const handDiff = isThrow || motionCount > 0 ? calcHandDifficulty(motionCount, verticalThree) : null;
 
-  const [signature, signatureAlt] = unitSignatures(buf, tumblingSkillIds, composition, junior);
+  const signatures = unitSignatures(buf, tumblingSkillIds, composition, junior);
+  const neverDuplicate = buf.hasOtherHands;
 
   if (!isThrow) {
     // 投げなし：転回系があればタンブリング塊、無ければ徒手系（縦の一回転の徒手など）
@@ -252,8 +258,7 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
         isThrow: false,
         throwCount: 0,
         skillThrow: false,
-        signature,
-        signatureAlt,
+        signatures,
         skills: buf.skills,
         finalDiff: tumblingDiff as Difficulty,
         hasApparatus,
@@ -266,8 +271,8 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
       throwCount: 0,
       skillThrow: false,
       isThrowTumbling: false,
-      signature,
-      signatureAlt,
+      signatures,
+      neverDuplicate,
       skills: buf.skills,
       handDiff,
       tumblingDiff: null,
@@ -289,8 +294,8 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
     throwCount,
     skillThrow,
     isThrowTumbling: hasTumbling,
-    signature,
-    signatureAlt,
+    signatures,
+    neverDuplicate,
     skills: buf.skills,
     handDiff,
     tumblingDiff,
@@ -316,7 +321,8 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
     verticalCount: 0,
     verticalThree: false,
     cheneNoHands: 0,
-    cheneHands: 0,
+    cheneHandsTypes: new Set<string>(),
+    hasOtherHands: false,
     composition: new Map(),
     throwItems: 0,
   });
@@ -348,8 +354,13 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
         buf.verticalCount += m.vertical * times;
         if (m.verticalThree) buf.verticalThree = true;
         if (m.hasHandsOption) {
-          if (item.hands) buf.cheneHands += m.motions * times;
-          else buf.cheneNoHands += m.motions * times;
+          if (item.hands) {
+            const type = item.handsType || DEFAULT_HANDS_TYPE;
+            buf.cheneHandsTypes.add(type);
+            if (type === HANDS_TYPE_OTHER) buf.hasOtherHands = true;
+          } else {
+            buf.cheneNoHands += m.motions * times;
+          }
         }
         // 旧データの汎用動作（1〜4動作）は種類を区別できないので、まとめて動作数で数える
         const key = m.generic ? "m" : item.motionId;
@@ -381,7 +392,7 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
       skillThrow: false,
       isThrowTumbling: false,
       fromRopeJump: true,
-      signature: `rope:${ropeMaxId}`,
+      signatures: [`rope:${ropeMaxId}`],
       skills: [],
       handDiff: diff,
       tumblingDiff: null,
@@ -436,7 +447,13 @@ export function seriesSignature(series: Series): string {
         return { k: "catch", types: [...(item.catchTypes || [])].sort(), two: !!item.catchTwo };
       if (item.kind === "skill") return { k: "skill", id: item.skillId, thr: !!item.isThrow };
       if (item.kind === "motion")
-        return { k: "motion", id: item.motionId, hands: !!item.hands, n: motionTimes(item.count) };
+        return {
+          k: "motion",
+          id: item.motionId,
+          hands: !!item.hands,
+          ht: item.hands ? item.handsType || DEFAULT_HANDS_TYPE : "",
+          n: motionTimes(item.count),
+        };
       if (item.kind === "ropeJump") return { k: "ropeJump", id: item.jumpId };
       return { k: "?" };
     }),

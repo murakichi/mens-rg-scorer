@@ -249,13 +249,18 @@ export function computeScore(
     // 「重複ではない」と宣言されたシリーズは別内容として扱い、他シリーズと内容キーを共有しない
     const scope = series[i].notDuplicate ? `${i}#` : "";
     const within = a.units.filter((_u, j) => !overLimitUnit[i][j]);
-    [...within.filter(isTumblingUnit), ...within.filter(isHandUnit)].forEach((unit) => {
-      const keys = [unit.signature, ...(unit.signatureAlt ? [unit.signatureAlt] : [])];
-      candidates.push({ keys: keys.map((k) => scope + k), unit, score: unitScore(unit) });
+    [...within.filter(isTumblingUnit), ...within.filter(isHandUnit)].forEach((unit, k) => {
+      // 「その他」の手ありシェネを含むユニットは、いくつあっても重複と見なさない
+      const uniq = unit.neverDuplicate ? `${i}#${k}#` : scope;
+      candidates.push({
+        keys: unit.signatures.map((sig) => uniq + sig),
+        unit,
+        score: unitScore(unit),
+      });
     });
   });
   // 同じ内容が複数あるときは難度（点）の高いものだけを採用する（Q&A Q22）。同点なら先に実施した方。
-  // キーを2つ持つユニット（手あり／手なしのシェネ混在）は、どちらかが埋まっていれば不採用。
+  // キーを複数持つユニット（手あり／手なしのシェネ混在）は、どれかが埋まっていれば不採用。
   const takenKeys = new Set<string>();
   const chosen = new Set<Unit>();
   [...candidates]

@@ -14,6 +14,8 @@ import {
   hasTwoThrow,
   motionOptionsFor,
   legacyMotionDef,
+  HANDS_TYPES,
+  DEFAULT_HANDS_TYPE,
   ROPE_JUMPS,
 } from "../scoring/constants";
 import { checkApparatusFlow, maxSaltoChain } from "../scoring/analysis";
@@ -259,10 +261,29 @@ function ItemEditor({
           <input
             type="checkbox"
             checked={item.hands || false}
-            onChange={(e) => onUpdate({ hands: e.target.checked })}
+            onChange={(e) =>
+              onUpdate(
+                e.target.checked
+                  ? { hands: true, handsType: item.handsType || DEFAULT_HANDS_TYPE }
+                  : { hands: false, handsType: undefined },
+              )
+            }
           />
           手あり
         </label>
+      )}
+      {motionOpt?.hasHandsOption && item.hands && (
+        <select
+          className="select"
+          value={item.handsType || DEFAULT_HANDS_TYPE}
+          onChange={(e) => onUpdate({ handsType: e.target.value })}
+        >
+          {HANDS_TYPES.map((h) => (
+            <option key={h.id} value={h.id}>
+              {h.name}
+            </option>
+          ))}
+        </select>
       )}
     </>
   );
