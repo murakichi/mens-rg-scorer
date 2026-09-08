@@ -93,6 +93,11 @@ export interface HandMotion {
   vertical?: boolean;
   /** 「手あり」チェックを出す動作か（シェネ。手の有無で別の技として扱う） */
   hasHandsOption?: boolean;
+  /**
+   * 選択肢には出さないが、保存済みデータのために解決だけできる旧項目。
+   * 具体的な技（回転系）が揃ったため、汎用の「n動作」は選択肢から外した。
+   */
+  legacy?: boolean;
 }
 
 /** analyzeSeries が items を分類して生成する単位（タンブリング塊 or 投げ） */

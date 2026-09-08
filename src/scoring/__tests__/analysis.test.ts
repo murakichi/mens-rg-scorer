@@ -12,7 +12,7 @@ import {
   analyzeSeries,
   seriesSignature,
 } from "../analysis";
-import { ropeJumpDef, MOTION_OPTIONS, SKILL_LIST } from "../constants";
+import { ropeJumpDef, MOTION_OPTIONS, SKILL_LIST, legacyMotionDef } from "../constants";
 import type { Series, Item } from "../types";
 
 // テストヘルパー：items から Series を組む
@@ -249,9 +249,14 @@ describe("宙返りに数えない技は徒手系の動作として数える（Q
 });
 
 describe("徒手動作として転回技を選べる（プルダウンの選択肢）", () => {
-  it("選択肢に徒手扱いの転回技が並ぶ", () => {
+  it("選択肢は回転系の徒手のみ（汎用のn動作は出さない）", () => {
     const ids = MOTION_OPTIONS.map((o) => o.id);
-    expect(ids.slice(0, 5)).toEqual(["m1", "m2", "m3", "m4", "mv3"]);
+    expect(ids).not.toContain("m1");
+    expect(ids).not.toContain("m4");
+    expect(ids).not.toContain("mv3");
+    expect(ids).toContain("td_rise");
+    expect(ids).toContain("chene");
+    expect(ids).toContain("roll");
     expect(ids).toContain("a_cartwheel");
     expect(ids).toContain("a_flicflac");
     expect(ids).toContain("b_kirimomi");
@@ -400,5 +405,21 @@ describe("徒手動作の連続回数", () => {
     // 手あり・手なし混在なので内容キーを2つ持つ
     expect(mixed.signature).toBe("hand:m4:cn");
     expect(mixed.signatureAlt).toBe("hand:m4:ch");
+  });
+});
+
+describe("旧データの徒手動作（n動作）", () => {
+  it("選択肢には出ないが計算では従来どおり解決する", () => {
+    expect(legacyMotionDef("m3")?.motions).toBe(3);
+    expect(legacyMotionDef("mv3")?.verticalThree).toBe(true);
+    expect(legacyMotionDef("chene")).toBeUndefined();
+    const u = analyzeSeries(
+      S({ kind: "throw" }, { kind: "motion", motionId: "m3" }, { kind: "catch" }),
+    ).units[0];
+    expect(u.finalDiff).toBe("D");
+    const v = analyzeSeries(
+      S({ kind: "throw" }, { kind: "motion", motionId: "mv3" }, { kind: "catch" }),
+    ).units[0];
+    expect(v.finalDiff).toBe("E");
   });
 });

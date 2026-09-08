@@ -11,6 +11,7 @@ import {
   skillDifficulty,
   hasTwoThrow,
   MOTION_OPTIONS,
+  legacyMotionDef,
   ROPE_JUMPS,
 } from "../scoring/constants";
 import { checkApparatusFlow, maxSaltoChain } from "../scoring/analysis";
@@ -187,6 +188,8 @@ function ItemEditor({
   }
   // motion
   const motionOpt = MOTION_OPTIONS.find((m) => m.id === item.motionId);
+  // 選択肢から外した旧項目（n動作）でも、読み込んだ構成では選択値として表示する
+  const legacy = !motionOpt ? legacyMotionDef(item.motionId) : undefined;
   return (
     <>
       <select
@@ -195,6 +198,7 @@ function ItemEditor({
         onChange={(e) => onUpdate({ motionId: e.target.value, hands: false })}
       >
         <option value="">徒手動作</option>
+        {legacy && <option value={legacy.id}>{legacy.name}（旧）</option>}
         {MOTION_OPTIONS.map((m) => (
           <option key={m.id} value={m.id}>
             {m.name}

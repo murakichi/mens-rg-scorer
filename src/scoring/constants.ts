@@ -200,11 +200,13 @@ export function ropeJumpDef(id: string): RopeJump | undefined {
 }
 
 export const HAND_MOTIONS: HandMotion[] = [
-  { id: "m1", name: "1動作", motions: 1 },
-  { id: "m2", name: "2動作", motions: 2 },
-  { id: "m3", name: "3動作", motions: 3 },
-  { id: "m4", name: "4動作", motions: 4 },
-  { id: "mv3", name: "縦3動作", motions: 3, verticalThree: true },
+  // 汎用の動作数。具体的な回転系が揃ったため選択肢からは外し、保存済みデータの解決用に残す。
+  // （§3.5.5.3 の注釈どおり、投げ受けの間に数えるのは縦軸・横軸の360度回転のみ）
+  { id: "m1", name: "1動作", motions: 1, legacy: true },
+  { id: "m2", name: "2動作", motions: 2, legacy: true },
+  { id: "m3", name: "3動作", motions: 3, legacy: true },
+  { id: "m4", name: "4動作", motions: 4, legacy: true },
+  { id: "mv3", name: "縦3動作", motions: 3, verticalThree: true, legacy: true },
   // 縦回転の徒手としてのみ判定する技（タンブリング技には出さない）
   { id: "td_rise", name: "タッチダウンライズ（1動作）", motions: 1, vertical: true },
   // 横の一回転の徒手
@@ -259,9 +261,18 @@ export function skillDef(id: string): Skill | undefined {
  */
 export const MOTION_SKILLS: Skill[] = SKILL_LIST.filter((s) => !s.isSalto || s.saltoOnlyInChain);
 
-/** 徒手動作アイテムの選択肢（動作数 + 徒手扱いの転回技） */
+/** 旧データの徒手動作（選択肢には出さないが、読み込んだ構成では表示・計算する） */
+export function legacyMotionDef(id: string): HandMotion | undefined {
+  return HAND_MOTIONS.find((m) => m.id === id && m.legacy);
+}
+
+/** 徒手動作アイテムの選択肢（回転系の徒手。汎用の「n動作」は含まない） */
 export const MOTION_OPTIONS: { id: string; name: string; hasHandsOption?: boolean }[] = [
-  ...HAND_MOTIONS.map((m) => ({ id: m.id, name: m.name, hasHandsOption: m.hasHandsOption })),
+  ...HAND_MOTIONS.filter((m) => !m.legacy).map((m) => ({
+    id: m.id,
+    name: m.name,
+    hasHandsOption: m.hasHandsOption,
+  })),
   ...MOTION_SKILLS.map((s) => ({
     id: s.id,
     name: `${s.name}（${Math.max(1, DIFF_VALUE[s.difficulty] - 1)}動作）`,
