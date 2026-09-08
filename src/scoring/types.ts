@@ -71,6 +71,11 @@ export interface Skill {
   category: string;
   difficulty: Difficulty;
   isSalto: boolean;
+  /**
+   * 宙返りの連続に含まれた場合のみ宙返りとして扱う技（きりもみ・きりもみ転回）。
+   * 採点規則集 P51 3.6.2.4 の宙返りの連続についての注釈（Q&A Q7）。
+   */
+  saltoOnlyInChain?: boolean;
   /** つなぎ技として宙返り間に挟めるA難度技か */
   isConnectA?: boolean;
 }

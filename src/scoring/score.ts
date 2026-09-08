@@ -47,6 +47,7 @@ import {
   analyzeSeries,
   seriesSignature,
   maxSaltoChain,
+  saltoFlags,
   hasConnect,
   hasConnectWithoutApparatus,
 } from "./analysis";
@@ -371,7 +372,9 @@ export function computeScore(
         const anyApp = skills.some((s) => s.hasApparatus);
         if (!anyApp) noApp = NO_APP_ALL_DEDUCTION;
         else {
-          const saltos = skills.filter((s) => skillDef(s.skillId)?.isSalto);
+          // 宙返りの連続に含まれないきりもみ系は宙返りとして数えない（Q&A Q7）
+          const salto = saltoFlags(skills.map((s) => s.skillId));
+          const saltos = skills.filter((_s, k) => salto[k]);
           if (saltos.length > 0 && !saltos.some((s) => s.hasApparatus)) noApp = NO_APP_SALTO_DEDUCTION;
         }
       }

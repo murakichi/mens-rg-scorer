@@ -74,6 +74,14 @@
 | つなぎ技手具操作なし | `CONNECT_NO_APP_DEDUCTION` | 0.2 | つなぎ技のA難度で手具操作なし（投げなしタンブリング塊のみ・Q&A Q10） |
 | 宙返り2連続止まり | `SALTO_CHAIN_2_DEDUCTION` | 0.1 | 最大連続宙返りが2 |
 | 宙返り連続なし | `SALTO_CHAIN_LOW_DEDUCTION` | 0.2 | 連続宙返りなし |
+
+**きりもみ系の宙返り判定（Q&A Q7 / 規則集 P51 3.6.2.4 注釈）**：きりもみ・きりもみ転回
+（`Skill.saltoOnlyInChain`）は**宙返りの連続に含まれる場合のみ**宙返りとして数える。
+判定は `saltoFlags(skillIds)` に集約し、`maxSaltoChain` / `hasConnect` /
+`hasConnectWithoutApparatus` / 無手具操作減点の宙返り判定がこれを使う。
+- 隣（つなぎ技のA難度技は読み飛ばす）に本物の宙返りがあれば宙返り扱い
+- きりもみ同士が並んだだけでは連続とみなさない（本物の宙返りが必要）
+- 難度そのもの（きりもみB／きりもみ転回C）は変わらない
 | 投げなしタンブリング（宙返り系のみ） | `NO_APP_SALTO_DEDUCTION` | 0.1 | 宙返り系すべてに手具操作なし |
 | 投げなしタンブリング（全体） | `NO_APP_ALL_DEDUCTION` | 0.2 | シリーズ全体に手具操作なし |
 | 無手具操作の上限 | `NO_APP_CAP` | 0.4 | 演技全体での合算上限 |
@@ -181,7 +189,7 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 |-----|--------|-------------|
 | `dir` | 前方系・側方系・後方系をすべて含む | タンブリングユニットの技の `category` 集合 |
 | `throwTum` | 1本以上が投げタン | `isThrowTumbling` なユニットの存在 |
-| `triple` | 1本以上が宙返り3回以上連続 | `maxSaltoChain >= 3` |
+| `triple` | 1本以上が宙返り3回以上連続 | `maxSaltoChain >= 3`（`saltoFlags` 経由） |
 | `connect` | 1本以上がつなぎ技 | `hasConnect()` で宙返り→A難度→宙返り パターン検出 |
 | `count3` | 投げをN回以上実施 | `totalThrowCount >= requiredThrowCount`（一般3／ジュニア2。ラベルもNに追従） |
 | `countMax` | 投げはN回以内（ジュニアのみ） | `performedThrowCount <= maxThrowCount`（5） |

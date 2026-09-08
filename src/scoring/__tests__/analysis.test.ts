@@ -5,6 +5,7 @@ import {
   maxSaltoChain,
   hasConnect,
   hasConnectWithoutApparatus,
+  saltoFlags,
   analyzeSeries,
   seriesSignature,
 } from "../analysis";
@@ -147,5 +148,44 @@ describe("ロープ跳び — 3重連続3回以上・4重跳びは前後で難�
     const a = analyzeSeries(S({ kind: "ropeJump", jumpId: "4f" }));
     expect(a.units).toHaveLength(1);
     expect(a.units[0].finalDiff).toBe("D");
+  });
+});
+
+describe("きりもみ系は宙返りの連続に含まれる場合のみ宙返り扱い（Q7）", () => {
+  it("単体のきりもみ・きりもみ転回は宙返りとして数えない", () => {
+    expect(saltoFlags(["b_kirimomi"])).toEqual([false]);
+    expect(saltoFlags(["c_kirimomiten"])).toEqual([false]);
+    expect(maxSaltoChain(["b_kirimomi"])).toBe(0);
+  });
+
+  it("きりもみ同士が並んだだけでは連続とみなさない", () => {
+    expect(saltoFlags(["b_kirimomi", "c_kirimomiten"])).toEqual([false, false]);
+    expect(maxSaltoChain(["b_kirimomi", "b_kirimomi"])).toBe(0);
+  });
+
+  it("本物の宙返りが隣にあれば宙返りとして数える", () => {
+    expect(saltoFlags(["b_front", "b_kirimomi"])).toEqual([true, true]);
+    expect(maxSaltoChain(["b_front", "b_kirimomi"])).toBe(2);
+    expect(maxSaltoChain(["b_front", "b_kirimomi", "b_backsalto"])).toBe(3);
+    // きりもみ→きりもみ→前宙：前宙の隣のきりもみだけが宙返り扱い
+    expect(saltoFlags(["b_kirimomi", "b_kirimomi", "b_front"])).toEqual([false, true, true]);
+    expect(maxSaltoChain(["b_kirimomi", "b_kirimomi", "b_front"])).toBe(2);
+  });
+
+  it("つなぎ技のA難度を挟んだ先に本物の宙返りがあれば宙返り扱い", () => {
+    expect(saltoFlags(["b_front", "a_roundoff", "b_kirimomi"])).toEqual([true, true, true].map((_, i) => i !== 1));
+    expect(saltoFlags(["b_kirimomi", "a_roundoff", "b_kirimomi"])).toEqual([false, false, false]);
+  });
+
+  it("A難度を挟んだきりもみ同士はつなぎ技にならない", () => {
+    const skills = (ids: string[]) => ids.map((skillId) => ({ skillId, hasApparatus: false, isThrow: false }));
+    expect(hasConnect(skills(["b_kirimomi", "a_roundoff", "b_kirimomi"]))).toBe(false);
+    expect(hasConnect(skills(["b_front", "a_roundoff", "b_kirimomi"]))).toBe(true);
+    expect(hasConnect(skills(["b_front", "a_roundoff", "b_backsalto"]))).toBe(true);
+  });
+
+  it("難度はそのまま（きりもみB・きりもみ転回C）", () => {
+    expect(calcTumblingDifficulty(["b_kirimomi"], false)).toBe("B");
+    expect(calcTumblingDifficulty(["c_kirimomiten"], false)).toBe("C");
   });
 });

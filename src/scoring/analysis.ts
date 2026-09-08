@@ -41,12 +41,38 @@ export function calcHandDifficulty(motionCount: number, verticalThree: boolean):
   return VALUE_DIFF[Math.min(DIFF_VALUE.A + motionCount, MAX_DIFF)];
 }
 
+/**
+ * 並びの各技を宙返りとして数えるかを判定する（Q&A Q7）。
+ * きりもみ・きりもみ転回（`saltoOnlyInChain`）は、隣に本物の宙返りがある＝宙返りの連続に
+ * 含まれる場合のみ宙返りとして扱う。きりもみ同士が並んだだけでは連続とみなさない。
+ */
+export function saltoFlags(skillIds: string[]): boolean[] {
+  const defs = skillIds.map((id) => skillDef(id));
+  const genuine = defs.map((d) => !!d?.isSalto && !d?.saltoOnlyInChain);
+  /** 左右いずれかに本物の宙返りが隣接するか（間のつなぎ技A難度は読み飛ばす） */
+  const nextToGenuine = (i: number): boolean => {
+    for (const step of [-1, 1]) {
+      for (let j = i + step; j >= 0 && j < defs.length; j += step) {
+        if (genuine[j]) return true;
+        if (!defs[j]?.isConnectA) break; // つなぎ技以外に当たったら打ち切り
+      }
+    }
+    return false;
+  };
+  return defs.map((d, i) => {
+    if (!d?.isSalto) return false;
+    if (!d.saltoOnlyInChain) return true;
+    return nextToGenuine(i);
+  });
+}
+
 /** skillIds 内の最大連続宙返り数 */
 export function maxSaltoChain(skillIds: string[]): number {
+  const flags = saltoFlags(skillIds);
   let max = 0;
   let run = 0;
-  skillIds.forEach((id) => {
-    if (skillDef(id)?.isSalto) {
+  flags.forEach((isSalto) => {
+    if (isSalto) {
       run += 1;
       max = Math.max(max, run);
     } else {
@@ -58,22 +84,20 @@ export function maxSaltoChain(skillIds: string[]): number {
 
 /** 宙返り−A難度−宙返りの並びがあるか（つなぎ技） */
 export function hasConnect(skills: Unit["skills"]): boolean {
+  const salto = saltoFlags(skills.map((s) => s.skillId));
   for (let i = 1; i < skills.length - 1; i++) {
-    const prev = skillDef(skills[i - 1].skillId);
     const cur = skillDef(skills[i].skillId);
-    const next = skillDef(skills[i + 1].skillId);
-    if (prev?.isSalto && cur?.isConnectA && next?.isSalto) return true;
+    if (salto[i - 1] && cur?.isConnectA && salto[i + 1]) return true;
   }
   return false;
 }
 
 /** つなぎ技のA難度に手具操作が付いていないものがあるか */
 export function hasConnectWithoutApparatus(skills: Unit["skills"]): boolean {
+  const salto = saltoFlags(skills.map((s) => s.skillId));
   for (let i = 1; i < skills.length - 1; i++) {
-    const prev = skillDef(skills[i - 1].skillId);
     const cur = skillDef(skills[i].skillId);
-    const next = skillDef(skills[i + 1].skillId);
-    if (prev?.isSalto && cur?.isConnectA && next?.isSalto && !skills[i].hasApparatus) return true;
+    if (salto[i - 1] && cur?.isConnectA && salto[i + 1] && !skills[i].hasApparatus) return true;
   }
   return false;
 }
