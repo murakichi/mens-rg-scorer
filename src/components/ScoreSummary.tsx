@@ -25,8 +25,12 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
     missingDirCount,
     directionDeduction,
     totalThrowCount,
+    performedThrowCount,
+    overThrowCount,
     requiredThrowCount,
+    maxThrowCount,
     throwCountDeduction,
+    throwCountOverDeduction,
     maxChainAll,
     saltoChainDeduction,
     throwKindCount,
@@ -144,6 +148,15 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
           </span>
           <span>-{throwCountDeduction.toFixed(1)} 点</span>
         </div>
+        {maxThrowCount !== null && (
+          <div className="total-row">
+            <span>
+              投げ回数超過減点（投げ {performedThrowCount} 回／上限 {maxThrowCount} 回
+              {overThrowCount > 0 ? `・超過 ${overThrowCount} 回` : ""}）
+            </span>
+            <span>-{throwCountOverDeduction.toFixed(1)} 点</span>
+          </div>
+        )}
         <div className="total-row">
           <span>連続宙返り減点（最大 {maxChainAll} 回連続）</span>
           <span>-{saltoChainDeduction.toFixed(1)} 点</span>
@@ -183,7 +196,12 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
 
         <div className="total-row">
           <span>投げ回数</span>
-          <span>{totalThrowCount} 回</span>
+          <span>
+            {performedThrowCount} 回
+            {maxThrowCount !== null && performedThrowCount !== totalThrowCount
+              ? `（要素・難度に算入 ${totalThrowCount} 回）`
+              : ""}
+          </span>
         </div>
         <div className="grand-row">
           <span>合計（D + A残点 + E残点）</span>

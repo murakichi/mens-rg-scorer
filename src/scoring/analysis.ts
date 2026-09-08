@@ -86,19 +86,27 @@ interface UnitBuffer {
 }
 
 /**
- * 難度の内容キー。転回系は技の並び、徒手系は投げ受けの間の動作数で決まる。
- * 技術タグ（視野外・手以外・背面投げ等）は難度の内容ではないので含めない。
+ * 難度の内容キー。§3.4.4「全く同じ技は難度として数えない」の判定に使う。
+ * - 技を含むユニット（タンブリング塊・投げタン）＝転回系：難度に効く非A難度技の並び。
+ *   手具を持っての前宙と投げての前宙は「同じ前宙」なので、投げの有無やA難度技は含めない（Q&A Q22）。
+ * - 技を含まない投げ受け＝徒手系：投げとキャッチの間の動作数。
+ * 技術タグ（視野外・手以外・背面投げ等）はいずれも難度の内容ではないので含めない。
  */
-function unitSignature(buf: UnitBuffer, isThrow: boolean): string {
-  const skillSig = buf.skills.map((s) => `${s.skillId}${s.isThrow ? "!" : ""}`).join(">");
-  const motionSig = `m${buf.motionCount}${buf.verticalThree ? "v" : ""}`;
-  return isThrow ? `throw:${skillSig}:${motionSig}` : `tum:${skillSig}`;
+function unitSignature(buf: UnitBuffer, junior: boolean): string {
+  if (buf.skills.length > 0) {
+    const nonA = buf.skills.filter((s) => skillDifficulty(s.skillId, junior) !== "A").map((s) => s.skillId);
+    // 非A難度技が無い場合だけは技の並びそのものをキーにする（すべて同一視しないため）
+    const ids = nonA.length > 0 ? nonA : buf.skills.map((s) => s.skillId);
+    return `tum:${ids.join(">")}`;
+  }
+  return `hand:m${buf.motionCount}${buf.verticalThree ? "v" : ""}`;
 }
 
 function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   const hasSkill = buf.skills.length > 0;
   const skillThrow = buf.skills.some((s) => s.isThrow);
   const isThrow = buf.throwItems > 0 || skillThrow;
+  const throwCount = buf.throwItems + buf.skills.filter((s) => s.isThrow).length;
   const hasApparatus = buf.skills.some((s) => s.hasApparatus);
 
   const tumblingDiff = hasSkill
@@ -106,12 +114,13 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
     : null;
   const handDiff = isThrow ? calcHandDifficulty(buf.motionCount, buf.verticalThree) : null;
 
-  const signature = unitSignature(buf, isThrow);
+  const signature = unitSignature(buf, junior);
 
   if (!isThrow) {
     return {
       type: "tumbling",
       isThrow: false,
+      throwCount: 0,
       skillThrow: false,
       signature,
       skills: buf.skills,
@@ -129,6 +138,7 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   return {
     type: "throw",
     isThrow: true,
+    throwCount,
     skillThrow,
     isThrowTumbling: hasSkill,
     signature,
@@ -199,6 +209,7 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
     units.push({
       type: "throw",
       isThrow: true,
+      throwCount: 0,
       skillThrow: false,
       isThrowTumbling: false,
       fromRopeJump: true,

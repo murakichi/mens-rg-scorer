@@ -87,3 +87,81 @@ describe("ジュニア適用規則 — 投げ上げの最低回数", () => {
     expect(junior.aScore - normal.aScore).toBeCloseTo(0.3, 5);
   });
 });
+
+describe("ジュニア適用規則 — 投げ上げの上限回数（5回）", () => {
+  /** 内容が重ならないよう動作数を変えた投げ受けをn個並べる */
+  const throws = (n: number): Series => {
+    const items: Item[] = [];
+    const motions = ["m1", "m2", "m3", "m4", "mv3", "m1", "m2", "m3"];
+    for (let i = 0; i < n; i++) {
+      items.push({ kind: "throw" }, { kind: "motion", motionId: motions[i] }, { kind: "catch" });
+    }
+    return { executionDeduction: 0, items };
+  };
+
+  it("上限は一般なし・ジュニア5回", () => {
+    expect(computeScore([], "stick").maxThrowCount).toBeNull();
+    expect(computeScore([], "stick", { junior: true }).maxThrowCount).toBe(5);
+  });
+
+  it("ジュニアで5回までは減点なし", () => {
+    const r = computeScore([throws(5)], "stick", { junior: true });
+    expect(r.performedThrowCount).toBe(5);
+    expect(r.totalThrowCount).toBe(5);
+    expect(r.overThrowCount).toBe(0);
+    expect(r.throwCountOverDeduction).toBe(0);
+    expect(r.required.find((c) => c.key === "countMax")?.passed).toBe(true);
+  });
+
+  it("6回目は要素として数えず、超過1回につき −0.30", () => {
+    const r = computeScore([throws(6)], "stick", { junior: true });
+    expect(r.performedThrowCount).toBe(6);
+    expect(r.totalThrowCount).toBe(5); // 6回目は要素にカウントしない
+    expect(r.overThrowCount).toBe(1);
+    expect(r.throwCountOverDeduction).toBeCloseTo(0.3, 5);
+    expect(r.required.find((c) => c.key === "countMax")?.passed).toBe(false);
+  });
+
+  it("多かった分だけ減点が増える（2回超過で0.6）", () => {
+    const r = computeScore([throws(7)], "stick", { junior: true });
+    expect(r.overThrowCount).toBe(2);
+    expect(r.throwCountOverDeduction).toBeCloseTo(0.6, 5);
+    expect(r.totalThrowCount).toBe(5);
+  });
+
+  it("6回目以降の投げは難度にも算入しない", () => {
+    // 1〜5投げ目は1〜4動作＋縦3動作、6投げ目に4動作(E)を置いても採用されない
+    const ser: Series = {
+      executionDeduction: 0,
+      items: [
+        ...["m1", "m1", "m1", "m1", "m1"].flatMap((m) => [
+          { kind: "throw" as const },
+          { kind: "motion" as const, motionId: m },
+          { kind: "catch" as const },
+        ]),
+        { kind: "throw" as const, throwTypes: ["noview"] },
+        { kind: "motion" as const, motionId: "m4" },
+        { kind: "catch" as const, catchTypes: ["noview"] },
+      ],
+    };
+    const r = computeScore([ser], "stick", { junior: true });
+    // 1〜5投げ目はすべて1動作(B)で内容が同じなので難度は1つ分だけ、
+    // 6投げ目のE難度(0.7)は上限超過で不採用
+    expect(r.handScore).toBeCloseTo(0.2, 5);
+    // 技術加点も6投げ目の分は付かない
+    expect(r.techniqueBonus).toBe(0);
+  });
+
+  it("一般は6回以上でも減点なし・チェック項目も出ない", () => {
+    const r = computeScore([throws(6)], "stick");
+    expect(r.throwCountOverDeduction).toBe(0);
+    expect(r.totalThrowCount).toBe(6);
+    expect(r.required.find((c) => c.key === "countMax")).toBeUndefined();
+  });
+
+  it("A減点の差はちょうど超過分（0.3）", () => {
+    const five = computeScore([throws(5)], "stick", { junior: true });
+    const six = computeScore([throws(6)], "stick", { junior: true });
+    expect(six.aDeduction - five.aDeduction).toBeCloseTo(0.3, 5);
+  });
+});

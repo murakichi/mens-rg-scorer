@@ -24,7 +24,9 @@ import {
   NO_APP_CAP,
   DIRECTION_DEDUCTION,
   THROW_COUNT_DEDUCTION,
+  THROW_COUNT_OVER_DEDUCTION,
   throwCountRequired,
+  throwCountMax,
   CONNECT_NO_APP_DEDUCTION,
   SALTO_CHAIN_2_DEDUCTION,
   SALTO_CHAIN_LOW_DEDUCTION,
@@ -116,9 +118,17 @@ export interface ScoreResult {
   missingDirCount: number;
   directionDeduction: number;
   totalThrowCount: number;
+  /** 実施した投げ上げ回数（上限超過分も含む） */
+  performedThrowCount: number;
+  /** 上限を超えた投げ上げの回数（ジュニアのみ） */
+  overThrowCount: number;
   /** 適用規則上必要な投げ上げ回数（一般3 / ジュニア2） */
   requiredThrowCount: number;
+  /** 投げ上げの上限回数（ジュニア5 / 一般は上限なしで null） */
+  maxThrowCount: number | null;
   throwCountDeduction: number;
+  /** 投げ上げが上限を超えた場合の減点（ジュニアのみ） */
+  throwCountOverDeduction: number;
   maxChainAll: number;
   saltoChainDeduction: number;
   throwKindCount: number;
@@ -143,6 +153,9 @@ export interface ScoreResult {
 
 const isTumblingUnit = (u: Unit) => u.type === "tumbling" || (u.type === "throw" && u.isThrowTumbling);
 const isHandUnit = (u: Unit) => u.type === "throw" && !u.isThrowTumbling;
+/** そのユニットが難度点に寄与する点数（E難度ボーナス込み）。採用の優劣比較に使う。 */
+const unitScore = (u: Unit) =>
+  DIFF_SCORE[u.finalDiff] + (isTumblingUnit(u) && u.finalDiff === "E" && u.skillThrow ? E_BONUS : 0);
 
 /**
  * シリーズ内で徒手難度点に採用する徒手系ユニット。
@@ -179,6 +192,7 @@ export function computeScore(
   const { overallExecutionDeduction = 0, apparatusElements = [], violations = [], junior = false } = opts;
   const analysis = series.map((ser) => analyzeSeries(ser, junior));
   const requiredThrowCount = throwCountRequired(junior);
+  const maxThrowCount = throwCountMax(junior);
   const allUnits = analysis.flatMap((a) => a.units);
 
   // 重複シリーズ判定。構成が既出でも notDuplicate が立っていれば重複として扱わない
@@ -192,23 +206,71 @@ export function computeScore(
   });
   const dupFlags = dupSignatureFlags.map((dup, i) => dup && !series[i].notDuplicate);
 
+  // ---- 投げ上げの上限（ジュニアのみ）----
+  // 上限を超えた6回目以降の投げは、要素・難度ともにカウントしない。
+  // 実施回数そのものは超過分の減点に使うため別に数える。
+  const overLimitUnit = (() => {
+    let n = 0;
+    return analysis.map((a, i) =>
+      a.units.map((u) => {
+        if (dupFlags[i] || u.throwCount === 0) return false;
+        const over = maxThrowCount !== null && n >= maxThrowCount;
+        n += u.throwCount;
+        return over;
+      }),
+    );
+  })();
+  // アイテム単位（多様性・技術加点・必須投げの判定用）。投げと同じ順序で数える。
+  const overLimitItem = (() => {
+    let n = 0;
+    return series.map((ser, i) =>
+      ser.items.map((item) => {
+        const isThrowItem = item.kind === "throw" || (item.kind === "skill" && !!item.isThrow);
+        if (!isThrowItem || dupFlags[i]) return false;
+        const over = maxThrowCount !== null && n >= maxThrowCount;
+        n += 1;
+        return over;
+      }),
+    );
+  })();
+  /** キャッチは直前の投げの扱いに従う */
+  const itemOver = series.map((ser, i) => {
+    let last = false;
+    return ser.items.map((item, j) => {
+      if (item.kind === "throw" || (item.kind === "skill" && !!item.isThrow)) {
+        last = overLimitItem[i][j];
+        return last;
+      }
+      if (item.kind === "catch") return last;
+      return false;
+    });
+  });
+
+  // 実施した投げ回数（上限超過分も含む。減点の算出に使う）
+  const performedThrowCount = analysis.reduce((s, a, i) => s + (dupFlags[i] ? 0 : a.throwCount), 0);
+
   // ---- 難度点に採用するユニットをシリーズ順に確定する ----
   // 重複シリーズは全除外、A難度の投げ受けは adoptedHandUnits() で間引き、
   // さらに演技全体で同じ内容の難度は1回しか数えない（§3.4.4）。
   // 不採用でも本数・投げ回数・加点・A側の判定には従来どおり算入する。
-  const seenUnitSig = new Set<string>();
-  const adoptedUnits: Unit[][] = analysis.map((a, i) => {
-    if (dupFlags[i]) return [];
+  const candidates: { key: string; unit: Unit; score: number }[] = [];
+  analysis.forEach((a, i) => {
+    if (dupFlags[i]) return;
     // 「重複ではない」と宣言されたシリーズは別内容として扱い、他シリーズと内容キーを共有しない
     const scope = series[i].notDuplicate ? `${i}#` : "";
-    const candidates = [...a.units.filter(isTumblingUnit), ...adoptedHandUnits(a.units)];
-    return candidates.filter((u) => {
-      const key = scope + u.signature;
-      if (seenUnitSig.has(key)) return false;
-      seenUnitSig.add(key);
-      return true;
-    });
+    const within = a.units.filter((_u, j) => !overLimitUnit[i][j]);
+    [...within.filter(isTumblingUnit), ...adoptedHandUnits(within)].forEach((unit) =>
+      candidates.push({ key: scope + unit.signature, unit, score: unitScore(unit) }),
+    );
   });
+  // 同じ内容が複数あるときは難度（点）の高いものだけを採用する（Q&A Q22）。同点なら先に実施した方。
+  const bestBySig = new Map<string, { unit: Unit; score: number }>();
+  candidates.forEach((c) => {
+    const cur = bestBySig.get(c.key);
+    if (!cur || c.score > cur.score) bestBySig.set(c.key, { unit: c.unit, score: c.score });
+  });
+  const chosen = new Set([...bestBySig.values()].map((v) => v.unit));
+  const adoptedUnits: Unit[][] = analysis.map((a) => a.units.filter((u) => chosen.has(u)));
 
   const unitAdopted = analysis.map((a, i) => {
     const adopted = new Set(adoptedUnits[i]);
@@ -253,7 +315,8 @@ export function computeScore(
 
     let techCount = 0;
     if (!isDup) {
-      ser.items.forEach((item) => {
+      ser.items.forEach((item, j) => {
+        if (itemOver[i][j]) return; // 上限超過の投げ受けは加点も数えない
         if (item.kind === "throw") techCount += (item.throwTypes || []).length;
         else if (item.kind === "catch") techCount += (item.catchTypes || []).length;
         else if (item.kind === "skill" && item.isThrow) techCount += (item.throwTypes || []).length;
@@ -341,7 +404,12 @@ export function computeScore(
   const apparatusOpBonus = seriesBreakdowns.reduce((s, b) => s + b.appOp, 0);
   const twoThrowMotionBonus = seriesBreakdowns.reduce((s, b) => s + b.twoMot, 0);
 
-  const totalThrowCount = analysis.reduce((s, a, i) => s + (dupFlags[i] ? 0 : a.throwCount), 0);
+  // 要素として数える投げ回数（ジュニアの上限超過分は含めない）
+  const totalThrowCount = analysis.reduce(
+    (s, a, i) =>
+      s + (dupFlags[i] ? 0 : a.units.reduce((t, u, j) => t + (overLimitUnit[i][j] ? 0 : u.throwCount), 0)),
+    0,
+  );
 
   // ---- A（芸術と多様性）----
   // 手具操作不足：各シリーズ内訳の noApp 総和 + つなぎ技A難度の手具操作なし、上限 NO_APP_CAP
@@ -361,6 +429,9 @@ export function computeScore(
     (cats.has(CATEGORY.BACKWARD) ? 0 : 1);
   const directionDeduction = missingDirCount * DIRECTION_DEDUCTION;
   const throwCountDeduction = totalThrowCount < requiredThrowCount ? THROW_COUNT_DEDUCTION : 0;
+  const overThrowCount =
+    maxThrowCount !== null ? Math.max(0, performedThrowCount - maxThrowCount) : 0;
+  const throwCountOverDeduction = overThrowCount * THROW_COUNT_OVER_DEDUCTION;
 
   const maxChainAll = tumblingUnits.reduce(
     (m, u) => Math.max(m, maxSaltoChain(u.skills.map((s) => s.skillId))),
@@ -376,7 +447,8 @@ export function computeScore(
   let catchOtherCount = 0;
   series.forEach((ser, i) => {
     const isDup = dupFlags[i];
-    ser.items.forEach((item) => {
+    ser.items.forEach((item, j) => {
+      if (itemOver[i][j]) return; // 上限超過の投げ受けは種類にも数えない
       if (item.kind === "throw") {
         const types = item.throwTypes || [];
         const reqs = item.reqTypes || [];
@@ -425,8 +497,9 @@ export function computeScore(
 
   const requiredThrowIds = REQUIRED_THROW_OPTIONS[apparatus].map((o) => o.id);
   const performedThrowTypes = new Set<string>();
-  series.forEach((ser) =>
-    ser.items.forEach((item) => {
+  series.forEach((ser, i) =>
+    ser.items.forEach((item, j) => {
+      if (itemOver[i][j]) return;
       if (item.kind === "throw") (item.reqTypes || []).forEach((t) => performedThrowTypes.add(t));
     }),
   );
@@ -447,6 +520,15 @@ export function computeScore(
       label: `投げを${requiredThrowCount}回以上実施`,
       passed: totalThrowCount >= requiredThrowCount,
     },
+    ...(maxThrowCount !== null
+      ? [
+          {
+            key: "countMax",
+            label: `投げは${maxThrowCount}回以内`,
+            passed: performedThrowCount <= maxThrowCount,
+          },
+        ]
+      : []),
     { key: "tumCount", label: "タンブリング3本以上", passed: nonDupTumblingCount >= 3 },
     {
       key: "appThrow",
@@ -524,6 +606,7 @@ export function computeScore(
     noApparatusDeduction +
     directionDeduction +
     throwCountDeduction +
+    throwCountOverDeduction +
     saltoChainDeduction +
     varietyDeduction +
     apparatusElementDeduction +
@@ -557,8 +640,12 @@ export function computeScore(
     missingDirCount,
     directionDeduction,
     totalThrowCount,
+    performedThrowCount,
+    overThrowCount,
     requiredThrowCount,
+    maxThrowCount,
     throwCountDeduction,
+    throwCountOverDeduction,
     maxChainAll,
     saltoChainDeduction,
     throwKindCount,
