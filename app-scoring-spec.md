@@ -43,6 +43,9 @@
 | 手具が二つあるか | `APPARATUS_USE` / `APPARATUS_COUNT` | `constants.ts` |
 | 徒手動作（1〜4動作 + 縦3動作） | `HAND_MOTIONS` | `constants.ts` |
 | 徒手動作の選択肢（動作数 + 徒手扱いの転回技） | `MOTION_OPTIONS` / `MOTION_SKILLS` | `constants.ts` |
+
+タッチダウンライズは**縦回転の徒手としてのみ**判定するため、`SKILL_LIST`（タンブリング技）には入れず
+`HAND_MOTIONS` に1動作の項目（`td_rise`）として持つ。方向系の網羅判定にも影響しない。
 | ロープ跳びの難度表 | `ROPE_JUMPS` | `constants.ts` |
 
 `ROPE_JUMPS` は §3.5.5.3 の跳び難度表と1対1。1重跳びは全パターンA固定のためクロスの区別を持たない。

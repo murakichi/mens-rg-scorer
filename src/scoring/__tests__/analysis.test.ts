@@ -7,10 +7,11 @@ import {
   hasConnectWithoutApparatus,
   saltoFlags,
   handMotionsOfSkill,
+  motionDef,
   analyzeSeries,
   seriesSignature,
 } from "../analysis";
-import { ropeJumpDef, MOTION_OPTIONS } from "../constants";
+import { ropeJumpDef, MOTION_OPTIONS, SKILL_LIST } from "../constants";
 import type { Series, Item } from "../types";
 
 // テストヘルパー：items から Series を組む
@@ -283,5 +284,34 @@ describe("徒手動作として転回技を選べる（プルダウンの選択�
     ).units[0];
     expect(asMotion.finalDiff).toBe("C");
     expect(asSkill.finalDiff).toBe("C");
+  });
+});
+
+describe("タッチダウンライズ（縦回転の徒手）", () => {
+  it("徒手動作の選択肢にあり、タンブリング技には無い", () => {
+    expect(MOTION_OPTIONS.map((o) => o.id)).toContain("td_rise");
+    expect(MOTION_OPTIONS.find((o) => o.id === "td_rise")?.name).toBe("タッチダウンライズ（1動作）");
+    expect(SKILL_LIST.some((s) => s.id === "td_rise")).toBe(false);
+  });
+
+  it("1動作として徒手系難度に数える", () => {
+    expect(motionDef("td_rise")).toEqual({ motions: 1, verticalThree: false });
+    const u = analyzeSeries(
+      S({ kind: "throw" }, { kind: "motion", motionId: "td_rise" }, { kind: "catch" }),
+    ).units[0];
+    expect(u.finalDiff).toBe("B");
+    expect(u.isThrowTumbling).toBe(false);
+  });
+
+  it("徒手動作と合算される", () => {
+    const u = analyzeSeries(
+      S(
+        { kind: "throw" },
+        { kind: "motion", motionId: "m2" },
+        { kind: "motion", motionId: "td_rise" },
+        { kind: "catch" },
+      ),
+    ).units[0];
+    expect(u.finalDiff).toBe("D"); // 2動作 + 1動作
   });
 });
