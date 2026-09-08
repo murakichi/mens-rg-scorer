@@ -16,7 +16,7 @@ import {
 } from "../scoring/constants";
 import { checkApparatusFlow, maxSaltoChain } from "../scoring/analysis";
 import type { ApparatusKey, Item, Series, SeriesAnalysis } from "../scoring/types";
-import type { SeriesBreakdown } from "../scoring/score";
+import type { DiffRow, SeriesBreakdown } from "../scoring/score";
 
 type ItemKind = Item["kind"];
 
@@ -40,6 +40,20 @@ interface Props {
   onUpdateItem: (iIdx: number, patch: Partial<Item>) => void;
   onRemoveItem: (iIdx: number) => void;
   onRemoveSeries: () => void;
+}
+
+/** 難度点の内訳1行。採用されなかった行は斜線＋理由バッジで表示する。 */
+function DiffRowLine({ label, row }: { label: string; row: DiffRow }) {
+  const counted = row.adopted && row.inTop;
+  return (
+    <div className={counted ? "breakdown-row" : "breakdown-row is-excluded"}>
+      <span>
+        {label}（{row.label}・{row.diff}難度）
+        {!counted && <span className="excluded-note">{row.adopted ? "上位3つ外" : "難度不採用"}</span>}
+      </span>
+      <span>{row.score.toFixed(1)}</span>
+    </div>
+  );
 }
 
 /** iIdx より前にある直近の徒手動作アイテムで選ばれていた動作id */
@@ -372,32 +386,21 @@ export function SeriesCard({
       ))}
       <div className="series-breakdown">
         <div className="breakdown-title">シリーズの加点・減点</div>
-        <div className="breakdown-row">
-          <span>D：タンブリング難度点</span>
-          <span>{b.tumDiff.toFixed(1)}</span>
-        </div>
+        {b.tumRows.length === 0 ? (
+          <div className="breakdown-row">
+            <span>D：タンブリング難度点</span>
+            <span>0.0</span>
+          </div>
+        ) : (
+          b.tumRows.map((row, ri) => <DiffRowLine key={`t${ri}`} label="D：タンブリング難度点" row={row} />)
+        )}
         {b.handRows.length === 0 ? (
           <div className="breakdown-row">
             <span>D：徒手難度点</span>
             <span>0.0</span>
           </div>
         ) : (
-          b.handRows.map((row, ri) => {
-            const counted = row.adopted && row.inTop;
-            return (
-              <div key={ri} className={counted ? "breakdown-row" : "breakdown-row is-excluded"}>
-                <span>
-                  D：徒手難度点（{row.label}・{row.diff}難度）
-                  {!counted && (
-                    <span className="excluded-note">
-                      {row.adopted ? "上位3つ外" : "難度不採用"}
-                    </span>
-                  )}
-                </span>
-                <span className="excluded-value">{row.score.toFixed(1)}</span>
-              </div>
-            );
-          })
+          b.handRows.map((row, ri) => <DiffRowLine key={`h${ri}`} label="D：徒手難度点" row={row} />)
         )}
         <div className="breakdown-row">
           <span>D：連続投げ加点</span>

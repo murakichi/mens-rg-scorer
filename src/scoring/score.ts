@@ -54,23 +54,28 @@ import {
 } from "./analysis";
 import type { ApparatusKey, Difficulty, Series, SeriesAnalysis, Unit } from "./types";
 
-/** シリーズ内の徒手系ユニット1つ分の難度点の内訳（投げごとの表示用） */
-export interface HandDiffRow {
-  /** 表示用ラベル（投げ1／ロープ跳び など） */
+/** シリーズ内のユニット1つ分の難度点の内訳（表示用） */
+export interface DiffRow {
+  /** 表示用ラベル（投げ1／ロープ跳び／タンブリング1 など） */
   label: string;
   diff: Difficulty;
   score: number;
   /** 難度として採用されたか（重複・同一内容・連続投げのA難度は false） */
   adopted: boolean;
-  /** 徒手難度点の上位3つに入ったか */
+  /** 難度点の上位3つに入ったか */
   inTop: boolean;
 }
+
+/** 旧名（徒手系の行）。互換のため別名として残す。 */
+export type HandDiffRow = DiffRow;
 
 export interface SeriesBreakdown {
   tumDiff: number;
   handDiff: number;
+  /** タンブリング難度点の塊ごとの内訳（不採用・上位3外も含む） */
+  tumRows: DiffRow[];
   /** 徒手難度点の投げごとの内訳（不採用・上位3外も含む） */
-  handRows: HandDiffRow[];
+  handRows: DiffRow[];
   sBonus: number;
   tech: number;
   appOp: number;
@@ -159,24 +164,6 @@ const isHandUnit = (u: Unit) => u.type === "throw" && !u.isThrowTumbling;
 const unitScore = (u: Unit) =>
   DIFF_SCORE[u.finalDiff] + (isTumblingUnit(u) && u.finalDiff === "E" && u.skillThrow ? E_BONUS : 0);
 
-/**
- * シリーズ内で徒手難度点に採用する徒手系ユニット。
- * 連続投げ（実際の投げ受けが2つ以上）で、そのすべてが徒手系（投げタンでない）の場合、
- * その中のA難度＝間に徒手動作0の投げ受けは採用しない。
- * ただし全てがA難度なら最高難度＝A を1つだけ採用する（0にはしない）。
- * ロープ跳び由来のユニットは投げ受けではないため対象外（1重跳びのA難度は従来どおり採用）。
- */
-function adoptedHandUnits(units: Unit[]): Unit[] {
-  const handUnits = units.filter(isHandUnit);
-  // 実際の投げ受けユニットのみが対象（ロープ跳び・投げなしの徒手ユニットは除く）
-  const throwUnits = handUnits.filter((u) => !u.fromRopeJump && u.throwCount > 0);
-  const others = handUnits.filter((u) => u.fromRopeJump || u.throwCount === 0);
-  if (throwUnits.length < 2) return handUnits;
-  const nonA = throwUnits.filter((u) => u.finalDiff !== "A");
-  const adoptedThrows = nonA.length > 0 ? nonA : throwUnits.slice(0, 1);
-  return [...others, ...adoptedThrows];
-}
-
 export interface ComputeOptions {
   overallExecutionDeduction?: number;
   /** §3.2 実施した手具別必須要素のid */
@@ -253,8 +240,8 @@ export function computeScore(
   const performedThrowCount = analysis.reduce((s, a, i) => s + (dupFlags[i] ? 0 : a.throwCount), 0);
 
   // ---- 難度点に採用するユニットをシリーズ順に確定する ----
-  // 重複シリーズは全除外、A難度の投げ受けは adoptedHandUnits() で間引き、
-  // さらに演技全体で同じ内容の難度は1回しか数えない（§3.4.4）。
+  // 重複シリーズは全除外。演技全体で同じ内容の難度は1回しか数えない（§3.4.4）。
+  // 連続投げの2回目以降も難度の候補には入る（難度が低ければ上位3つから漏れるだけ）。
   // 不採用でも本数・投げ回数・加点・A側の判定には従来どおり算入する。
   const candidates: { keys: string[]; unit: Unit; score: number }[] = [];
   analysis.forEach((a, i) => {
@@ -262,7 +249,7 @@ export function computeScore(
     // 「重複ではない」と宣言されたシリーズは別内容として扱い、他シリーズと内容キーを共有しない
     const scope = series[i].notDuplicate ? `${i}#` : "";
     const within = a.units.filter((_u, j) => !overLimitUnit[i][j]);
-    [...within.filter(isTumblingUnit), ...adoptedHandUnits(within)].forEach((unit) => {
+    [...within.filter(isTumblingUnit), ...within.filter(isHandUnit)].forEach((unit) => {
       const keys = [unit.signature, ...(unit.signatureAlt ? [unit.signatureAlt] : [])];
       candidates.push({ keys: keys.map((k) => scope + k), unit, score: unitScore(unit) });
     });
@@ -299,14 +286,21 @@ export function computeScore(
     const a = analysis[i];
     const isDup = dupFlags[i];
     // 重複シリーズは D（難度点・加点）に一切算入しない（§3.5.5「全く同じ技は難度として数えない」）
-    const tumU = adoptedUnits[i].filter((u) => isTumblingUnit(u) && inTop.has(u));
-    const tumDiff = tumU.reduce(
-      (s, u) => s + DIFF_SCORE[u.finalDiff] + (u.finalDiff === "E" && u.skillThrow ? E_BONUS : 0),
-      0,
-    );
     const adoptedSet = new Set(adoptedUnits[i]);
+    let tumNo = 0;
+    const tumRows: DiffRow[] = a.units.filter(isTumblingUnit).map((u) => {
+      tumNo += 1;
+      return {
+        label: u.isThrowTumbling ? `投げタン${tumNo}` : `タンブリング${tumNo}`,
+        diff: u.finalDiff,
+        score: unitScore(u),
+        adopted: adoptedSet.has(u),
+        inTop: inTop.has(u),
+      };
+    });
+    const tumDiff = tumRows.reduce((s, r) => s + (r.adopted && r.inTop ? r.score : 0), 0);
     let throwNo = 0;
-    const handRows: HandDiffRow[] = a.units.filter(isHandUnit).map((u) => {
+    const handRows: DiffRow[] = a.units.filter(isHandUnit).map((u) => {
       const label = u.fromRopeJump ? "ロープ跳び" : `投げ${++throwNo}`;
       return {
         label,
@@ -391,7 +385,7 @@ export function computeScore(
     const exec = Number(ser.executionDeduction) || 0;
     const dPart = tumDiff + handDiff + sBonus + tech + appOp + twoMot;
     const aPart = noApp;
-    return { tumDiff, handDiff, handRows, sBonus, tech, appOp, twoMot, noApp, exec, dPart, aPart };
+    return { tumDiff, handDiff, tumRows, handRows, sBonus, tech, appOp, twoMot, noApp, exec, dPart, aPart };
   });
 
   // ---- D（難度）----
