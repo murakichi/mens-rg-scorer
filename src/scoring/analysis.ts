@@ -88,6 +88,16 @@ export function handMotionsOfSkill(skillId: string, junior = false): number {
   return d ? Math.max(1, DIFF_VALUE[d] - 1) : 0;
 }
 
+/**
+ * 徒手動作アイテムの内容。動作数プルダウンのほか、徒手扱いの転回技（側転・きりもみ等）も選べる。
+ */
+export function motionDef(id: string, junior = false): { motions: number; verticalThree: boolean } | null {
+  const m = HAND_MOTIONS.find((x) => x.id === id);
+  if (m) return { motions: m.motions, verticalThree: !!m.verticalThree };
+  if (skillDef(id)) return { motions: handMotionsOfSkill(id, junior), verticalThree: false };
+  return null;
+}
+
 /** skillIds 内の最大連続宙返り数 */
 export function maxSaltoChain(skillIds: string[]): number {
   const flags = saltoFlags(skillIds);
@@ -254,7 +264,7 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
       buf.skills.push({ skillId: item.skillId, hasApparatus: !!item.hasApparatus, isThrow: !!item.isThrow });
     } else if (item.kind === "motion") {
       if (!buf) buf = newBuf();
-      const m = HAND_MOTIONS.find((x) => x.id === item.motionId);
+      const m = motionDef(item.motionId, junior);
       if (m) {
         buf.motionCount += m.motions;
         if (m.verticalThree) buf.verticalThree = true;

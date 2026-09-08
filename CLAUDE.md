@@ -33,7 +33,7 @@ The data model is a flat **list of `Series`**, each an ordered list of `items` (
 
 - `throw` (投げ) / `catch` (キャッチ) — bracket an apparatus throw; `reqTypes` holds required throws (e.g. `twothrow`, `lefthand`), `throwTypes`/`catchTypes` hold optional technique tags.
 - `skill` (タンブリング技) — a tumbling element referencing `SKILL_LIST` by `skillId`, with `hasApparatus` and `isThrow` (throw executed mid-skill) flags.
-- `motion` (徒手動作) — empty-hand body motions referencing `HAND_MOTIONS`.
+- `motion` (徒手動作) — empty-hand body motions referencing `MOTION_OPTIONS` (`HAND_MOTIONS` plus the 転回技 that can count as 徒手 — 側転/バク転/きりもみ etc.; `motionDef()` resolves either).
 
 ### The scoring pipeline (`src/scoring/`)
 

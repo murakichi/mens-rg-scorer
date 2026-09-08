@@ -42,6 +42,7 @@
 | 受けオプション | `CATCH_OPTIONS_COMMON` / `CATCH_OPTIONS_APPARATUS` | `constants.ts` |
 | 手具が二つあるか | `APPARATUS_USE` / `APPARATUS_COUNT` | `constants.ts` |
 | 徒手動作（1〜4動作 + 縦3動作） | `HAND_MOTIONS` | `constants.ts` |
+| 徒手動作の選択肢（動作数 + 徒手扱いの転回技） | `MOTION_OPTIONS` / `MOTION_SKILLS` | `constants.ts` |
 | ロープ跳びの難度表 | `ROPE_JUMPS` | `constants.ts` |
 
 `ROPE_JUMPS` は §3.5.5.3 の跳び難度表と1対1。1重跳びは全パターンA固定のためクロスの区別を持たない。
@@ -93,6 +94,8 @@
 - 転回系の技が1つも無い塊は `isThrowTumbling = false` の徒手系ユニットになる。
   投げを含まない場合も徒手系ユニットとして難度を数える（`Unit.isThrow = false`／型は `"throw"`）
 - 例：投げ→バク転→キャッチ ＝ 徒手系B、投げ→きりもみ転回→キャッチ ＝ 徒手系C、側転単体 ＝ 徒手系B
+- これらの技は**徒手動作アイテムの選択肢にも出す**（`MOTION_OPTIONS`＝`HAND_MOTIONS` + `MOTION_SKILLS`）。
+  タンブリング技として入れても徒手動作として入れても動作数は同じ（`motionDef()` が両方を解決する）
 | 投げなしタンブリング（宙返り系のみ） | `NO_APP_SALTO_DEDUCTION` | 0.1 | 宙返り系すべてに手具操作なし |
 | 投げなしタンブリング（全体） | `NO_APP_ALL_DEDUCTION` | 0.2 | シリーズ全体に手具操作なし |
 | 無手具操作の上限 | `NO_APP_CAP` | 0.4 | 演技全体での合算上限 |

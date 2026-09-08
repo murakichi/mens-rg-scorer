@@ -10,7 +10,7 @@ import {
   SKILL_LIST,
   skillDifficulty,
   hasTwoThrow,
-  HAND_MOTIONS,
+  MOTION_OPTIONS,
   ROPE_JUMPS,
 } from "../scoring/constants";
 import { checkApparatusFlow, maxSaltoChain } from "../scoring/analysis";
@@ -189,7 +189,7 @@ function ItemEditor({
   return (
     <select className="select" value={item.motionId} onChange={(e) => onUpdate({ motionId: e.target.value })}>
       <option value="">徒手動作</option>
-      {HAND_MOTIONS.map((m) => (
+      {MOTION_OPTIONS.map((m) => (
         <option key={m.id} value={m.id}>
           {m.name}
         </option>

@@ -11,7 +11,6 @@ import {
   APPARATUS,
   DIFF_VALUE,
   DIFF_SCORE,
-  HAND_MOTIONS,
   E_BONUS,
   SERIES_BONUS,
   TECHNIQUE_BONUS,
@@ -48,6 +47,7 @@ import {
   seriesSignature,
   maxSaltoChain,
   saltoFlags,
+  motionDef,
   hasConnect,
   hasConnectWithoutApparatus,
 } from "./analysis";
@@ -356,7 +356,7 @@ export function computeScore(
         } else if (item.kind === "catch") {
           fin();
         } else if (item.kind === "motion" && inTwo) {
-          const m = HAND_MOTIONS.find((x) => x.id === item.motionId);
+          const m = motionDef(item.motionId, junior);
           if (m) motSum += m.motions;
         }
       });

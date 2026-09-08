@@ -10,7 +10,7 @@ import {
   analyzeSeries,
   seriesSignature,
 } from "../analysis";
-import { ropeJumpDef } from "../constants";
+import { ropeJumpDef, MOTION_OPTIONS } from "../constants";
 import type { Series, Item } from "../types";
 
 // テストヘルパー：items から Series を組む
@@ -243,5 +243,45 @@ describe("宙返りに数えない技は徒手系の動作として数える（Q
     const u = unit(S(sk("b_front"), sk("b_kirimomi"), { kind: "catch" }));
     expect(u.type).toBe("tumbling");
     expect(u.finalDiff).toBe("C"); // 前宙B + きりもみ(B-1) = C
+  });
+});
+
+describe("徒手動作として転回技を選べる（プルダウンの選択肢）", () => {
+  it("選択肢に徒手扱いの転回技が並ぶ", () => {
+    const ids = MOTION_OPTIONS.map((o) => o.id);
+    expect(ids.slice(0, 5)).toEqual(["m1", "m2", "m3", "m4", "mv3"]);
+    expect(ids).toContain("a_cartwheel");
+    expect(ids).toContain("a_flicflac");
+    expect(ids).toContain("b_kirimomi");
+    expect(ids).toContain("c_kirimomiten");
+    // 宙返りは徒手動作の選択肢に出さない
+    expect(ids).not.toContain("b_front");
+    expect(ids).not.toContain("e_doublelay");
+    expect(MOTION_OPTIONS.find((o) => o.id === "a_cartwheel")?.name).toBe("側転（1動作）");
+    expect(MOTION_OPTIONS.find((o) => o.id === "c_kirimomiten")?.name).toBe("きりもみ転回（2動作）");
+  });
+
+  it("徒手動作として選んだ転回技も動作数に合算される", () => {
+    // 投げ→2動作→バク転（徒手動作として選択）→キャッチ ＝ 3動作 → D
+    const u = analyzeSeries(
+      S(
+        { kind: "throw" },
+        { kind: "motion", motionId: "m2" },
+        { kind: "motion", motionId: "a_flicflac" },
+        { kind: "catch" },
+      ),
+    ).units[0];
+    expect(u.finalDiff).toBe("D");
+  });
+
+  it("タンブリング技として入れた場合と同じ動作数になる", () => {
+    const asMotion = analyzeSeries(
+      S({ kind: "throw" }, { kind: "motion", motionId: "c_kirimomiten" }, { kind: "catch" }),
+    ).units[0];
+    const asSkill = analyzeSeries(
+      S({ kind: "throw" }, { kind: "skill", skillId: "c_kirimomiten" }, { kind: "catch" }),
+    ).units[0];
+    expect(asMotion.finalDiff).toBe("C");
+    expect(asSkill.finalDiff).toBe("C");
   });
 });

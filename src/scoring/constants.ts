@@ -248,6 +248,21 @@ export function skillDef(id: string): Skill | undefined {
   return SKILL_LIST.find((x) => x.id === id);
 }
 
+/**
+ * 徒手として扱うことがある転回技（A難度技ときりもみ系）。徒手動作の選択肢にも出す。
+ * 動作数は難度をそのまま徒手系難度に読み替えた値（A/きりもみ＝1動作、きりもみ転回＝2動作）。
+ */
+export const MOTION_SKILLS: Skill[] = SKILL_LIST.filter((s) => !s.isSalto || s.saltoOnlyInChain);
+
+/** 徒手動作アイテムの選択肢（動作数 + 徒手扱いの転回技） */
+export const MOTION_OPTIONS: { id: string; name: string }[] = [
+  ...HAND_MOTIONS.map((m) => ({ id: m.id, name: m.name })),
+  ...MOTION_SKILLS.map((s) => ({
+    id: s.id,
+    name: `${s.name}（${Math.max(1, DIFF_VALUE[s.difficulty] - 1)}動作）`,
+  })),
+];
+
 // ---- ジュニア適用規則（変更規則1）----
 
 /**
