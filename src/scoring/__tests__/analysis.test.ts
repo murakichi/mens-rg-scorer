@@ -12,7 +12,7 @@ import {
   analyzeSeries,
   seriesSignature,
 } from "../analysis";
-import { ropeJumpDef, MOTION_OPTIONS, SKILL_LIST, legacyMotionDef } from "../constants";
+import { ropeJumpDef, MOTION_OPTIONS, SKILL_LIST, legacyMotionDef, motionOptionsFor } from "../constants";
 import type { Series, Item } from "../types";
 
 // テストヘルパー：items から Series を組む
@@ -446,5 +446,37 @@ describe("前転・後転（縦の一回転の徒手）", () => {
       ),
     ).units[0];
     expect(u.finalDiff).toBe("E");
+  });
+});
+
+describe("徒手動作の選択肢の並び順", () => {
+  const names = (prev?: string) => motionOptionsFor(prev).map((o) => o.name);
+
+  it("既定はシェネ→前転→側転→とび前転→ハンドスプリングの順", () => {
+    expect(names().slice(0, 5)).toEqual(["シェネ", "前転", "側転", "とび前転", "ハンドスプリング"]);
+  });
+
+  it("シェネの次は前転・転がり・側転が上に来る", () => {
+    expect(names("chene").slice(0, 3)).toEqual(["前転", "転がり", "側転"]);
+  });
+
+  it("前転の次は転がりが一番上", () => {
+    expect(names("fwd_roll")[0]).toBe("転がり");
+  });
+
+  it("並べ替えても選択肢の顔ぶれは変わらない", () => {
+    const base = motionOptionsFor().map((o) => o.id).sort();
+    expect(motionOptionsFor("chene").map((o) => o.id).sort()).toEqual(base);
+    expect(motionOptionsFor("fwd_roll").map((o) => o.id).sort()).toEqual(base);
+  });
+
+  it("ギャンビは縦の一回転の徒手", () => {
+    expect(motionOptionsFor().map((o) => o.id)).toContain("gambi");
+    expect(motionDef("gambi")).toEqual({
+      motions: 1,
+      verticalThree: false,
+      vertical: 1,
+      hasHandsOption: false,
+    });
   });
 });

@@ -211,6 +211,7 @@ export const HAND_MOTIONS: HandMotion[] = [
   { id: "td_rise", name: "タッチダウンライズ", motions: 1, vertical: true },
   { id: "fwd_roll", name: "前転", motions: 1, vertical: true },
   { id: "back_roll", name: "後転", motions: 1, vertical: true },
+  { id: "gambi", name: "ギャンビ", motions: 1, vertical: true },
   // 横の一回転の徒手
   { id: "chene", name: "シェネ", motions: 1, hasHandsOption: true },
   { id: "roll", name: "転がり", motions: 1 },
@@ -262,6 +263,29 @@ export function skillDef(id: string): Skill | undefined {
  * 動作数は難度をそのまま徒手系難度に読み替えた値（A/きりもみ＝1動作、きりもみ転回＝2動作）。
  */
 export const MOTION_SKILLS: Skill[] = SKILL_LIST.filter((s) => !s.isSalto || s.saltoOnlyInChain);
+
+/**
+ * 徒手動作の選択肢の並び順。現実の演技で使われやすいものを上に出す。
+ * `MOTION_PRIORITY_AFTER` は「直前に選んだ動作」に応じた優先順（つながりやすい動作を上に）。
+ */
+export const MOTION_PRIORITY_DEFAULT = ["chene", "fwd_roll", "a_cartwheel", "a_frontroll", "a_handspring"];
+export const MOTION_PRIORITY_AFTER: Record<string, string[]> = {
+  chene: ["fwd_roll", "roll", "a_cartwheel"],
+  fwd_roll: ["roll"],
+};
+
+/** 直前に選んだ徒手動作（あれば）に応じて並べ替えた選択肢を返す */
+export function motionOptionsFor(prevMotionId?: string): typeof MOTION_OPTIONS {
+  const priority = [...(prevMotionId ? MOTION_PRIORITY_AFTER[prevMotionId] ?? [] : []), ...MOTION_PRIORITY_DEFAULT];
+  const rank = (id: string) => {
+    const i = priority.indexOf(id);
+    return i === -1 ? priority.length : i;
+  };
+  return [...MOTION_OPTIONS]
+    .map((o, i) => ({ o, i }))
+    .sort((a, b) => rank(a.o.id) - rank(b.o.id) || a.i - b.i)
+    .map((x) => x.o);
+}
 
 /** 旧データの徒手動作（選択肢には出さないが、読み込んだ構成では表示・計算する） */
 export function legacyMotionDef(id: string): HandMotion | undefined {

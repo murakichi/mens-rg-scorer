@@ -10,7 +10,7 @@ import {
   SKILL_LIST,
   skillDifficulty,
   hasTwoThrow,
-  MOTION_OPTIONS,
+  motionOptionsFor,
   legacyMotionDef,
   ROPE_JUMPS,
 } from "../scoring/constants";
@@ -42,6 +42,15 @@ interface Props {
   onRemoveSeries: () => void;
 }
 
+/** iIdx より前にある直近の徒手動作アイテムで選ばれていた動作id */
+function prevMotionId(items: Item[], iIdx: number): string | undefined {
+  for (let i = iIdx - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === "motion") return it.motionId || undefined;
+  }
+  return undefined;
+}
+
 /** 配列トグル用ヘルパ：id を含めば除去、なければ追加 */
 function toggle(list: string[] | undefined, id: string, checked: boolean): string[] {
   const cur = list || [];
@@ -52,11 +61,14 @@ function ItemEditor({
   item,
   apparatus,
   junior,
+  prevMotionId,
   onUpdate,
 }: {
   item: Item;
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 直前の徒手動作アイテムで選ばれていた動作（選択肢の並べ替えに使う） */
+  prevMotionId?: string;
   onUpdate: (patch: Partial<Item>) => void;
 }) {
   if (item.kind === "throw") {
@@ -187,7 +199,8 @@ function ItemEditor({
     );
   }
   // motion
-  const motionOpt = MOTION_OPTIONS.find((m) => m.id === item.motionId);
+  const options = motionOptionsFor(prevMotionId);
+  const motionOpt = options.find((m) => m.id === item.motionId);
   // 選択肢から外した旧項目（n動作）でも、読み込んだ構成では選択値として表示する
   const legacy = !motionOpt ? legacyMotionDef(item.motionId) : undefined;
   return (
@@ -199,7 +212,7 @@ function ItemEditor({
       >
         <option value="">徒手動作</option>
         {legacy && <option value={legacy.id}>{legacy.name}（旧）</option>}
-        {MOTION_OPTIONS.map((m) => (
+        {options.map((m) => (
           <option key={m.id} value={m.id}>
             {m.name}
           </option>
@@ -301,6 +314,7 @@ export function SeriesCard({
               item={item}
               apparatus={apparatus}
               junior={junior}
+              prevMotionId={prevMotionId(ser.items, iIdx)}
               onUpdate={(patch) => onUpdateItem(iIdx, patch)}
             />
             <button className="remove-btn-xs" onClick={() => onRemoveItem(iIdx)} aria-label="削除">
