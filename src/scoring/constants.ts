@@ -106,36 +106,58 @@ export const AE_FULL = 10;
 
 // §3.5.6.3 要求要素の欠如（A減点、各 −0.30）
 export const REQUIRED_ELEMENT_DEDUCTION = 0.3; // 手具操作の要求要素がない場合（1つにつき）
+// 必須要素チェックのうち、他に固有の減点が無い項目（投げタン・つなぎ技・タンブリング本数）の欠如
+export const MISSING_ELEMENT_DEDUCTION = 0.3;
 export const VIOLATION_DEDUCTION = 0.3; // 開始/終了/音楽違反・徒手系基礎要素群欠如（各）
 
 /**
  * §3.2 手具別の必須要素のうち「手具操作」要素のチェック項目。
- * 左手投げ/二つ投げ（→必須投げ）と3回以上の投げ上げ（→投げ回数）は別途判定するため除外。
+ * 3回以上の投げ上げは投げ回数の判定と重複するため除外（不足時は THROW_COUNT_DEDUCTION）。
  * 未実施の項目は §3.5.6.3 により1つにつき −0.30。
  *
  * `auto` が付いた項目はシリーズ入力から自動判定し、手動チェックの対象外にする。
  * - `rightThrow`：左手投げ・手以外の投げ以外の投げ（＝通常の右投げ右受け）が1回以上あるか。
+ * - `leftThrow` / `twoThrow`：左手投げ／二つ同時投げ（投げアイテムの `reqTypes`）が1回以上あるか。
  * - `throwTumbling`：転回系の投げ受け＝投げタンが1本以上あるか。
+ * - `ropeTriple` / `ropeMoving` / `ropeFront` / `ropeBack`：ロープ跳びの入力から判定する
+ *   3重跳び／6m以上移動の3回以上連続跳び／その場前回し跳び2回以上／その場後ろ回し跳び2回以上。
  */
-export type RequiredElementAuto = "rightThrow" | "throwTumbling";
+export type RequiredElementAuto =
+  | "rightThrow"
+  | "leftThrow"
+  | "twoThrow"
+  | "throwTumbling"
+  | "ropeTriple"
+  | "ropeMoving"
+  | "ropeFront"
+  | "ropeBack";
 
 export const APPARATUS_REQUIRED_ELEMENTS: Record<
   ApparatusKey,
   { id: string; name: string; auto?: RequiredElementAuto }[]
 > = {
   stick: [
+    { id: "stick_left", name: "左投げ左受け1回以上", auto: "leftThrow" },
     { id: "stick_right", name: "右投げ右受け1回以上", auto: "rightThrow" },
     { id: "stick_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "stick_roll", name: "1m以上のころがし" },
     { id: "stick_propeller", name: "プロペラ回旋2回以上" },
   ],
   ring: [
+    { id: "ring_twothrow", name: "2つ同時投げ", auto: "twoThrow" },
     { id: "ring_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "ring_roll", name: "1m以上のころがし" },
     { id: "ring_turn", name: "まわし2回以上" },
   ],
-  rope: [{ id: "rope_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" }],
+  rope: [
+    { id: "rope_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
+    { id: "rope_triple", name: "3重跳び", auto: "ropeTriple" },
+    { id: "rope_moving", name: "6m以上移動の3回以上連続跳び", auto: "ropeMoving" },
+    { id: "rope_front", name: "その場前回し跳び2回以上連続", auto: "ropeFront" },
+    { id: "rope_back", name: "その場後ろ回し跳び2回以上連続", auto: "ropeBack" },
+  ],
   clubs: [
+    { id: "clubs_twothrow", name: "2つ同時投げ", auto: "twoThrow" },
     { id: "clubs_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "clubs_roll", name: "50cm以上のころがし" },
     { id: "clubs_propeller", name: "プロペラ回旋2回以上" },

@@ -36,6 +36,7 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
     throwKindCount,
     catchKindCount,
     varietyDeduction,
+    missingElementDeduction,
     aDeduction,
     aScore,
     seriesExecutionDeduction,
@@ -56,6 +57,9 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
                 {r.passed === false ? "×" : r.passed === null ? "?" : "✓"}
               </span>
               <span className={r.passed === false ? "ng-text" : "ok-text"}>{r.label}</span>
+              {r.passed === false && !!r.deduction && (
+                <span className="ng-text">-{r.deduction.toFixed(1)}</span>
+              )}
             </li>
           ))}
         </ul>
@@ -166,6 +170,10 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
             投げ方・受け方の種類不足減点（投げ{throwKindCount}/3・受け{catchKindCount}/3｜上限0.5）
           </span>
           <span>-{varietyDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>必須要素の欠如減点（投げタン・つなぎ技・タンブリング本数／1つにつき0.3）</span>
+          <span>-{missingElementDeduction.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
           <span>手具別必須要素の欠如減点（§3.2／1つにつき0.3）</span>
