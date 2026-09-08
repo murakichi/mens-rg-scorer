@@ -201,13 +201,13 @@ describe("computeScore — 重複シリーズはDスコアからも除外", () =
   });
 });
 
-describe("computeScore — 連続投げで両方徒手のときA難度は採用しない", () => {
+describe("computeScore — 連続投げの2回目以降も難度の候補に入る", () => {
   it("二つ投げ→4動作→キャッチ→視野外投げ→視野外キャッチ（クラブ）", () => {
     const r = computeScore(
       [
         S(
           { kind: "throw", reqTypes: ["twothrow"] },
-          { kind: "motion", motionId: "m4" },
+          { kind: "motion", motionId: "chene", count: 4 },
           { kind: "catch" },
           { kind: "throw", throwTypes: ["noview"] },
           { kind: "catch", catchTypes: ["noview"] },
@@ -215,71 +215,48 @@ describe("computeScore — 連続投げで両方徒手のときA難度は採用�
       ],
       "clubs",
     );
-    // 4動作の投げ受け E=0.7 のみ採用。動作0の投げ受け A=0.1 は不採用
-    expect(r.handScore).toBeCloseTo(0.7, 5);
-    expect(r.seriesBreakdowns[0].handDiff).toBeCloseTo(0.7, 5);
+    // 4動作の投げ受け E=0.7 と 動作0の投げ受け A=0.1。上位3つに収まるので両方採用
+    expect(r.handScore).toBeCloseTo(0.8, 5);
+    expect(r.unitAdopted[0]).toEqual([true, true]);
     expect(r.twoThrowMotionBonus).toBeCloseTo(0.1, 5);
     expect(r.seriesBonus).toBeCloseTo(0.1, 5);
     expect(r.techniqueBonus).toBeCloseTo(0.2, 5);
-    expect(r.dScore).toBeCloseTo(1.1, 5);
   });
 
-  it("投げ受けが1つだけならA難度でも採用する", () => {
+  it("徒手系が4つ以上あれば難度の低い投げ受けが上位3つから漏れる", () => {
+    const thr = (motions: number): Item[] => [
+      { kind: "throw" },
+      ...(motions > 0 ? [{ kind: "motion" as const, motionId: "chene", count: motions }] : []),
+      { kind: "catch" as const },
+    ];
+    const r = computeScore([S(...thr(4), ...thr(3), ...thr(2), ...thr(0))], "clubs");
+    expect(r.analysis[0].units.map((u) => u.finalDiff)).toEqual(["E", "D", "C", "A"]);
+    // 上位3つ E+D+C のみ。A難度は候補には入るが上位3つから漏れる
+    expect(r.handScore).toBeCloseTo(1.5, 5);
+    expect(r.seriesBreakdowns[0].handRows.map((x) => x.adopted)).toEqual([true, true, true, true]);
+    expect(r.seriesBreakdowns[0].handRows.map((x) => x.inTop)).toEqual([true, true, true, false]);
+  });
+
+  it("A難度の投げ受けしかなければそれが採用される", () => {
     const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
     expect(r.handScore).toBeCloseTo(0.1, 5);
   });
 
-  it("A難度以外で内容が違えば連続投げでもそれぞれ採用する", () => {
-    const r = computeScore(
-      [
-        S(
-          { kind: "throw" },
-          { kind: "motion", motionId: "m3" },
-          { kind: "catch" },
-          { kind: "throw" },
-          { kind: "motion", motionId: "m2" },
-          { kind: "catch" },
-        ),
-      ],
-      "clubs",
-    );
-    expect(r.handScore).toBeCloseTo(0.8, 5); // D(3動作) + C(2動作)
-  });
-
-  it("相手が投げタンならA難度の投げ受けは採用される（両方徒手ではない）", () => {
-    const r = computeScore(
-      [
-        S(
-          { kind: "throw" },
-          { kind: "skill", skillId: "b_backsalto" },
-          { kind: "catch" },
-          { kind: "throw" },
-          { kind: "catch" },
-        ),
-      ],
-      "clubs",
-    );
-    // 1つ目は投げタン（転回系側）、2つ目の徒手系はA=0.1 として採用
-    expect(r.handScore).toBeCloseTo(0.1, 5);
-  });
-
-  it("連続投げが全てA難度なら最高難度のA1つだけ採用する", () => {
+  it("同じ内容の投げ受けが2つなら1つだけ採用（内容重複のルール）", () => {
     const r = computeScore(
       [S({ kind: "throw" }, { kind: "catch" }, { kind: "throw" }, { kind: "catch" })],
       "clubs",
     );
     expect(r.analysis[0].units).toHaveLength(2);
     expect(r.handScore).toBeCloseTo(0.1, 5);
-    expect(r.seriesBreakdowns[0].handDiff).toBeCloseTo(0.1, 5);
   });
 
-  it("ロープ跳び由来のA難度（1重跳び）は投げ受けの連続とみなさない", () => {
+  it("ロープ跳びと投げ受けはどちらも候補に入る", () => {
     const r = computeScore(
       [S({ kind: "ropeJump", jumpId: "1f" }, { kind: "throw" }, { kind: "catch" })],
       "rope",
     );
-    // 1重跳び A=0.1 と 動作0の投げ受け A=0.1（投げ受けは1つなので採用）
-    expect(r.handScore).toBeCloseTo(0.2, 5);
+    expect(r.handScore).toBeCloseTo(0.2, 5); // 1重跳び A + 投げ受け A
   });
 });
 
@@ -667,5 +644,46 @@ describe("computeScore — 徒手は内訳で技を判定する（順序は問�
     const r = computeScore([asSkill, thr(mo("chene"), mo("a_flicflac"))], "clubs");
     expect(r.analysis[0].units[0].signature).toBe(r.analysis[1].units[0].signature);
     expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
+  });
+});
+
+describe("computeScore — タンブリング難度点も塊ごとの内訳を返す", () => {
+  const tum = (skillId: string): Series => S({ kind: "skill", skillId }, { kind: "catch" });
+
+  it("上位3つ外の塊は inTop=false になる", () => {
+    const r = computeScore(
+      [tum("e_doublelay"), tum("d_doubleback"), tum("c_back15"), tum("b_backsalto")],
+      "clubs",
+    );
+    const rows = r.seriesBreakdowns.map((b) => b.tumRows[0]);
+    expect(rows.map((x) => x.label)).toEqual(["タンブリング1", "タンブリング1", "タンブリング1", "タンブリング1"]);
+    expect(rows.map((x) => x.diff)).toEqual(["E", "D", "C", "B"]);
+    expect(rows.map((x) => x.inTop)).toEqual([true, true, true, false]);
+    expect(rows.every((x) => x.adopted)).toBe(true);
+    expect(r.tumblingScore).toBeCloseTo(1.5, 5);
+    expect(r.seriesBreakdowns.reduce((s, b) => s + b.tumDiff, 0)).toBeCloseTo(1.5, 5);
+  });
+
+  it("同じ内容の塊は adopted=false（難度不採用）になる", () => {
+    const r = computeScore([tum("d_doubleback"), tum("d_doubleback")], "clubs");
+    // 2本目はシリーズ重複でもあるので行自体が空
+    expect(r.seriesBreakdowns[0].tumRows[0].adopted).toBe(true);
+    expect(r.seriesBreakdowns[1].tumRows[0].adopted).toBe(false);
+  });
+
+  it("投げタンの行は「投げタン」表記になる", () => {
+    const r = computeScore(
+      [S({ kind: "throw" }, { kind: "skill", skillId: "b_front" }, { kind: "catch" })],
+      "clubs",
+    );
+    expect(r.seriesBreakdowns[0].tumRows[0].label).toBe("投げタン1");
+  });
+
+  it("E難度＋技中の投げのボーナスが行の点数に含まれる", () => {
+    const r = computeScore(
+      [S({ kind: "skill", skillId: "e_doublelay", isThrow: true }, { kind: "catch" })],
+      "clubs",
+    );
+    expect(r.seriesBreakdowns[0].tumRows[0].score).toBeCloseTo(0.8, 5);
   });
 });
