@@ -10,7 +10,8 @@ import {
   SKILL_LIST,
   skillDifficulty,
   hasTwoThrow,
-  HAND_MOTIONS,
+  motionOptionsFor,
+  legacyMotionDef,
   ROPE_JUMPS,
 } from "../scoring/constants";
 import { checkApparatusFlow, maxSaltoChain } from "../scoring/analysis";
@@ -41,6 +42,15 @@ interface Props {
   onRemoveSeries: () => void;
 }
 
+/** iIdx より前にある直近の徒手動作アイテムで選ばれていた動作id */
+function prevMotionId(items: Item[], iIdx: number): string | undefined {
+  for (let i = iIdx - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === "motion") return it.motionId || undefined;
+  }
+  return undefined;
+}
+
 /** 配列トグル用ヘルパ：id を含めば除去、なければ追加 */
 function toggle(list: string[] | undefined, id: string, checked: boolean): string[] {
   const cur = list || [];
@@ -51,11 +61,14 @@ function ItemEditor({
   item,
   apparatus,
   junior,
+  prevMotionId,
   onUpdate,
 }: {
   item: Item;
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 直前の徒手動作アイテムで選ばれていた動作（選択肢の並べ替えに使う） */
+  prevMotionId?: string;
   onUpdate: (patch: Partial<Item>) => void;
 }) {
   if (item.kind === "throw") {
@@ -186,15 +199,50 @@ function ItemEditor({
     );
   }
   // motion
+  const options = motionOptionsFor(prevMotionId);
+  const motionOpt = options.find((m) => m.id === item.motionId);
+  // 選択肢から外した旧項目（n動作）でも、読み込んだ構成では選択値として表示する
+  const legacy = !motionOpt ? legacyMotionDef(item.motionId) : undefined;
   return (
-    <select className="select" value={item.motionId} onChange={(e) => onUpdate({ motionId: e.target.value })}>
-      <option value="">徒手動作</option>
-      {HAND_MOTIONS.map((m) => (
-        <option key={m.id} value={m.id}>
-          {m.name}
-        </option>
-      ))}
-    </select>
+    <>
+      <select
+        className="select"
+        value={item.motionId}
+        onChange={(e) => onUpdate({ motionId: e.target.value, hands: false })}
+      >
+        <option value="">徒手動作</option>
+        {legacy && <option value={legacy.id}>{legacy.name}（旧）</option>}
+        {options.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name}
+          </option>
+        ))}
+      </select>
+      {item.motionId && (
+        <label className="motion-count">
+          ×
+          <input
+            className="count-input"
+            type="number"
+            min="1"
+            step="1"
+            value={item.count ?? 1}
+            onChange={(e) => onUpdate({ count: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+          />
+          回
+        </label>
+      )}
+      {motionOpt?.hasHandsOption && (
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={item.hands || false}
+            onChange={(e) => onUpdate({ hands: e.target.checked })}
+          />
+          手あり
+        </label>
+      )}
+    </>
   );
 }
 
@@ -266,6 +314,7 @@ export function SeriesCard({
               item={item}
               apparatus={apparatus}
               junior={junior}
+              prevMotionId={prevMotionId(ser.items, iIdx)}
               onUpdate={(patch) => onUpdateItem(iIdx, patch)}
             />
             <button className="remove-btn-xs" onClick={() => onRemoveItem(iIdx)} aria-label="削除">
@@ -298,11 +347,13 @@ export function SeriesCard({
         <div key={ui} className="unit-result">
           {u.type === "tumbling"
             ? `タンブリング塊：難度 ${u.finalDiff}`
-            : `投げ：難度 ${u.finalDiff}（${
-                u.isThrowTumbling ? "転回系としてカウント・投げタン" : "徒手系としてカウント"
-              }｜難度は${u.diffFromHand ? "徒手系" : "転回系"}由来｜徒手${u.handDiff}/転回${
-                u.tumblingDiff ?? "—"
-              }）`}
+            : u.isThrow
+              ? `投げ：難度 ${u.finalDiff}（${
+                  u.isThrowTumbling ? "転回系としてカウント・投げタン" : "徒手系としてカウント"
+                }｜難度は${u.diffFromHand ? "徒手系" : "転回系"}由来｜徒手${u.handDiff}/転回${
+                  u.tumblingDiff ?? "—"
+                }）`
+              : `徒手：難度 ${u.finalDiff}（徒手系としてカウント）`}
           {`　／ 最大連続宙返り ${maxSaltoChain(u.skills.map((s) => s.skillId))} 回`}
           {!unitAdopted[ui] && <span className="unit-unadopted">難度不採用</span>}
         </div>

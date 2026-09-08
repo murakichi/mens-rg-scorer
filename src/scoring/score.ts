@@ -11,7 +11,6 @@ import {
   APPARATUS,
   DIFF_VALUE,
   DIFF_SCORE,
-  HAND_MOTIONS,
   E_BONUS,
   SERIES_BONUS,
   TECHNIQUE_BONUS,
@@ -47,6 +46,9 @@ import {
   analyzeSeries,
   seriesSignature,
   maxSaltoChain,
+  saltoFlags,
+  motionDef,
+  motionTimes,
   hasConnect,
   hasConnectWithoutApparatus,
 } from "./analysis";
@@ -166,12 +168,13 @@ const unitScore = (u: Unit) =>
  */
 function adoptedHandUnits(units: Unit[]): Unit[] {
   const handUnits = units.filter(isHandUnit);
-  const ropeUnits = handUnits.filter((u) => u.fromRopeJump);
-  const throwUnits = handUnits.filter((u) => !u.fromRopeJump);
+  // 実際の投げ受けユニットのみが対象（ロープ跳び・投げなしの徒手ユニットは除く）
+  const throwUnits = handUnits.filter((u) => !u.fromRopeJump && u.throwCount > 0);
+  const others = handUnits.filter((u) => u.fromRopeJump || u.throwCount === 0);
   if (throwUnits.length < 2) return handUnits;
   const nonA = throwUnits.filter((u) => u.finalDiff !== "A");
   const adoptedThrows = nonA.length > 0 ? nonA : throwUnits.slice(0, 1);
-  return [...ropeUnits, ...adoptedThrows];
+  return [...others, ...adoptedThrows];
 }
 
 export interface ComputeOptions {
@@ -253,23 +256,29 @@ export function computeScore(
   // 重複シリーズは全除外、A難度の投げ受けは adoptedHandUnits() で間引き、
   // さらに演技全体で同じ内容の難度は1回しか数えない（§3.4.4）。
   // 不採用でも本数・投げ回数・加点・A側の判定には従来どおり算入する。
-  const candidates: { key: string; unit: Unit; score: number }[] = [];
+  const candidates: { keys: string[]; unit: Unit; score: number }[] = [];
   analysis.forEach((a, i) => {
     if (dupFlags[i]) return;
     // 「重複ではない」と宣言されたシリーズは別内容として扱い、他シリーズと内容キーを共有しない
     const scope = series[i].notDuplicate ? `${i}#` : "";
     const within = a.units.filter((_u, j) => !overLimitUnit[i][j]);
-    [...within.filter(isTumblingUnit), ...adoptedHandUnits(within)].forEach((unit) =>
-      candidates.push({ key: scope + unit.signature, unit, score: unitScore(unit) }),
-    );
+    [...within.filter(isTumblingUnit), ...adoptedHandUnits(within)].forEach((unit) => {
+      const keys = [unit.signature, ...(unit.signatureAlt ? [unit.signatureAlt] : [])];
+      candidates.push({ keys: keys.map((k) => scope + k), unit, score: unitScore(unit) });
+    });
   });
   // 同じ内容が複数あるときは難度（点）の高いものだけを採用する（Q&A Q22）。同点なら先に実施した方。
-  const bestBySig = new Map<string, { unit: Unit; score: number }>();
-  candidates.forEach((c) => {
-    const cur = bestBySig.get(c.key);
-    if (!cur || c.score > cur.score) bestBySig.set(c.key, { unit: c.unit, score: c.score });
-  });
-  const chosen = new Set([...bestBySig.values()].map((v) => v.unit));
+  // キーを2つ持つユニット（手あり／手なしのシェネ混在）は、どちらかが埋まっていれば不採用。
+  const takenKeys = new Set<string>();
+  const chosen = new Set<Unit>();
+  [...candidates]
+    .map((c, order) => ({ ...c, order }))
+    .sort((x, y) => y.score - x.score || x.order - y.order)
+    .forEach((c) => {
+      if (c.keys.some((k) => takenKeys.has(k))) return;
+      c.keys.forEach((k) => takenKeys.add(k));
+      chosen.add(c.unit);
+    });
   const adoptedUnits: Unit[][] = analysis.map((a) => a.units.filter((u) => chosen.has(u)));
 
   const unitAdopted = analysis.map((a, i) => {
@@ -354,8 +363,8 @@ export function computeScore(
         } else if (item.kind === "catch") {
           fin();
         } else if (item.kind === "motion" && inTwo) {
-          const m = HAND_MOTIONS.find((x) => x.id === item.motionId);
-          if (m) motSum += m.motions;
+          const m = motionDef(item.motionId, junior);
+          if (m) motSum += m.motions * motionTimes(item.count);
         }
       });
       fin();
@@ -371,7 +380,9 @@ export function computeScore(
         const anyApp = skills.some((s) => s.hasApparatus);
         if (!anyApp) noApp = NO_APP_ALL_DEDUCTION;
         else {
-          const saltos = skills.filter((s) => skillDef(s.skillId)?.isSalto);
+          // 宙返りの連続に含まれないきりもみ系は宙返りとして数えない（Q&A Q7）
+          const salto = saltoFlags(skills.map((s) => s.skillId));
+          const saltos = skills.filter((_s, k) => salto[k]);
           if (saltos.length > 0 && !saltos.some((s) => s.hasApparatus)) noApp = NO_APP_SALTO_DEDUCTION;
         }
       }

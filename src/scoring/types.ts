@@ -42,8 +42,12 @@ export interface SkillItem {
 
 export interface MotionItem {
   kind: "motion";
-  /** HAND_MOTIONS の id */
+  /** MOTION_OPTIONS の id */
   motionId: string;
+  /** シェネなど `hasHandsOption` の動作で、手を上げて実施したか */
+  hands?: boolean;
+  /** 連続で実施した回数（未指定は1回）。動作数は 回数分だけ加算される。 */
+  count?: number;
 }
 
 export interface RopeJumpItem {
@@ -71,6 +75,11 @@ export interface Skill {
   category: string;
   difficulty: Difficulty;
   isSalto: boolean;
+  /**
+   * 宙返りの連続に含まれた場合のみ宙返りとして扱う技（きりもみ・きりもみ転回）。
+   * 採点規則集 P51 3.6.2.4 の宙返りの連続についての注釈（Q&A Q7）。
+   */
+  saltoOnlyInChain?: boolean;
   /** つなぎ技として宙返り間に挟めるA難度技か */
   isConnectA?: boolean;
 }
@@ -80,6 +89,15 @@ export interface HandMotion {
   name: string;
   motions: number;
   verticalThree?: boolean;
+  /** 縦回転の徒手か（3動作分そろうと縦3動作＝E難度になる） */
+  vertical?: boolean;
+  /** 「手あり」チェックを出す動作か（シェネ。手の有無で別の技として扱う） */
+  hasHandsOption?: boolean;
+  /**
+   * 選択肢には出さないが、保存済みデータのために解決だけできる旧項目。
+   * 具体的な技（回転系）が揃ったため、汎用の「n動作」は選択肢から外した。
+   */
+  legacy?: boolean;
 }
 
 /** analyzeSeries が items を分類して生成する単位（タンブリング塊 or 投げ） */
@@ -98,6 +116,11 @@ export interface Unit {
    * 技術タグ（視野外・手以外など）は難度の内容ではないため含めない。
    */
   signature: string;
+  /**
+   * もう一方の内容キー。手あり／手なしのシェネが混在した場合、どちらの内容とも
+   * 同じ技として扱うため2つ持つ（Q&A Q21）。
+   */
+  signatureAlt?: string;
   skills: { skillId: string; hasApparatus: boolean; isThrow: boolean }[];
   handDiff?: Difficulty | null;
   tumblingDiff?: Difficulty | null;

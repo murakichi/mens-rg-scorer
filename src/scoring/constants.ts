@@ -200,11 +200,21 @@ export function ropeJumpDef(id: string): RopeJump | undefined {
 }
 
 export const HAND_MOTIONS: HandMotion[] = [
-  { id: "m1", name: "1動作", motions: 1 },
-  { id: "m2", name: "2動作", motions: 2 },
-  { id: "m3", name: "3動作", motions: 3 },
-  { id: "m4", name: "4動作", motions: 4 },
-  { id: "mv3", name: "縦3動作", motions: 3, verticalThree: true },
+  // 汎用の動作数。具体的な回転系が揃ったため選択肢からは外し、保存済みデータの解決用に残す。
+  // （§3.5.5.3 の注釈どおり、投げ受けの間に数えるのは縦軸・横軸の360度回転のみ）
+  { id: "m1", name: "1動作", motions: 1, legacy: true },
+  { id: "m2", name: "2動作", motions: 2, legacy: true },
+  { id: "m3", name: "3動作", motions: 3, legacy: true },
+  { id: "m4", name: "4動作", motions: 4, legacy: true },
+  { id: "mv3", name: "縦3動作", motions: 3, verticalThree: true, legacy: true },
+  // 縦回転の徒手としてのみ判定する技（タンブリング技には出さない）
+  { id: "td_rise", name: "タッチダウンライズ", motions: 1, vertical: true },
+  { id: "fwd_roll", name: "前転", motions: 1, vertical: true },
+  { id: "back_roll", name: "後転", motions: 1, vertical: true },
+  { id: "gambi", name: "ギャンビ", motions: 1, vertical: true },
+  // 横の一回転の徒手
+  { id: "chene", name: "シェネ", motions: 1, hasHandsOption: true },
+  { id: "roll", name: "転がり", motions: 1 },
 ];
 
 export const SKILL_LIST: Skill[] = [
@@ -223,9 +233,9 @@ export const SKILL_LIST: Skill[] = [
   { id: "b_divefront", name: "ダイビング前宙", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true },
   { id: "b_front", name: "前宙", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true },
   { id: "b_fronthalf", name: "前宙半ひねり", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true },
-  { id: "b_kirimomi", name: "きりもみ", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true },
+  { id: "b_kirimomi", name: "きりもみ", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true, saltoOnlyInChain: true },
   { id: "c_front1full", name: "前方宙返り1回ひねり", category: CATEGORY.FORWARD, difficulty: "C", isSalto: true },
-  { id: "c_kirimomiten", name: "きりもみ転回", category: CATEGORY.FORWARD, difficulty: "C", isSalto: true },
+  { id: "c_kirimomiten", name: "きりもみ転回", category: CATEGORY.FORWARD, difficulty: "C", isSalto: true, saltoOnlyInChain: true },
   { id: "c_back15", name: "後方1回半ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true },
   { id: "c_back1full", name: "後方宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true },
   { id: "c_backtuck1full", name: "後方屈伸宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true },
@@ -247,6 +257,50 @@ export const SKILL_LIST: Skill[] = [
 export function skillDef(id: string): Skill | undefined {
   return SKILL_LIST.find((x) => x.id === id);
 }
+
+/**
+ * 徒手として扱うことがある転回技（A難度技ときりもみ系）。徒手動作の選択肢にも出す。
+ * 動作数は難度をそのまま徒手系難度に読み替えた値（A/きりもみ＝1動作、きりもみ転回＝2動作）。
+ */
+export const MOTION_SKILLS: Skill[] = SKILL_LIST.filter((s) => !s.isSalto || s.saltoOnlyInChain);
+
+/**
+ * 徒手動作の選択肢の並び順。現実の演技で使われやすいものを上に出す。
+ * `MOTION_PRIORITY_AFTER` は「直前に選んだ動作」に応じた優先順（つながりやすい動作を上に）。
+ */
+export const MOTION_PRIORITY_DEFAULT = ["chene", "fwd_roll", "a_cartwheel", "a_frontroll", "a_handspring"];
+export const MOTION_PRIORITY_AFTER: Record<string, string[]> = {
+  chene: ["fwd_roll", "roll", "a_cartwheel"],
+  fwd_roll: ["roll"],
+};
+
+/** 直前に選んだ徒手動作（あれば）に応じて並べ替えた選択肢を返す */
+export function motionOptionsFor(prevMotionId?: string): typeof MOTION_OPTIONS {
+  const priority = [...(prevMotionId ? MOTION_PRIORITY_AFTER[prevMotionId] ?? [] : []), ...MOTION_PRIORITY_DEFAULT];
+  const rank = (id: string) => {
+    const i = priority.indexOf(id);
+    return i === -1 ? priority.length : i;
+  };
+  return [...MOTION_OPTIONS]
+    .map((o, i) => ({ o, i }))
+    .sort((a, b) => rank(a.o.id) - rank(b.o.id) || a.i - b.i)
+    .map((x) => x.o);
+}
+
+/** 旧データの徒手動作（選択肢には出さないが、読み込んだ構成では表示・計算する） */
+export function legacyMotionDef(id: string): HandMotion | undefined {
+  return HAND_MOTIONS.find((m) => m.id === id && m.legacy);
+}
+
+/** 徒手動作アイテムの選択肢（回転系の徒手。汎用の「n動作」は含まない） */
+export const MOTION_OPTIONS: { id: string; name: string; hasHandsOption?: boolean }[] = [
+  ...HAND_MOTIONS.filter((m) => !m.legacy).map((m) => ({
+    id: m.id,
+    name: m.name,
+    hasHandsOption: m.hasHandsOption,
+  })),
+  ...MOTION_SKILLS.map((s) => ({ id: s.id, name: s.name })),
+];
 
 // ---- ジュニア適用規則（変更規則1）----
 

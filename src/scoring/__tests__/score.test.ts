@@ -555,3 +555,117 @@ describe("computeScore — 投げ方が違っても間の内容が同じなら�
     expect(r.totalThrowCount).toBe(2);
   });
 });
+
+describe("computeScore — シェネの手の有無で技を区別する（Q21 / Q28）", () => {
+  /** n回のシェネ（handsで手あり）を投げ受けの間に実施 */
+  const chene = (spec: [number, boolean][]): Series =>
+    S(
+      { kind: "throw" },
+      ...spec.flatMap(([n, hands]) =>
+        Array.from({ length: n }, () => ({ kind: "motion" as const, motionId: "chene", hands })),
+      ),
+      { kind: "catch" },
+    );
+
+  it("Q21：4シェネ／2シェネ＋手あり2シェネ／手あり4シェネ → 2つ目だけ不採用", () => {
+    const r = computeScore(
+      [chene([[4, false]]), chene([[2, false], [2, true]]), chene([[4, true]])],
+      "clubs",
+    );
+    expect(r.analysis.map((a) => a.units[0].finalDiff)).toEqual(["E", "E", "E"]);
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false, true]);
+    expect(r.handScore).toBeCloseTo(1.4, 5); // E 0.7 × 2
+  });
+
+  it("手なし4シェネと手あり4シェネは別の技", () => {
+    const r = computeScore([chene([[4, false]]), chene([[4, true]])], "clubs");
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, true]);
+    expect(r.handScore).toBeCloseTo(1.4, 5);
+  });
+
+  it("同じ手の状態なら同じ技として1つだけ採用", () => {
+    // 2本目は投げの技術タグでシリーズ重複を避ける
+    const withTag = { ...chene([[4, true]]) };
+    withTag.items = [{ kind: "throw", throwTypes: ["noview"] }, ...withTag.items.slice(1)];
+    const r = computeScore([chene([[4, true]]), withTag], "clubs");
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
+    expect(r.handScore).toBeCloseTo(0.7, 5);
+  });
+
+  it("Q28：シェネ2回＋前転 は手の有無で別の技", () => {
+    const roll = (hands: boolean): Series =>
+      S(
+        { kind: "throw" },
+        { kind: "motion", motionId: "chene", hands },
+        { kind: "motion", motionId: "chene", hands },
+        { kind: "motion", motionId: "a_frontroll" },
+        { kind: "catch" },
+      );
+    const r = computeScore([roll(false), roll(true)], "clubs");
+    expect(r.analysis.map((a) => a.units[0].finalDiff)).toEqual(["D", "D"]);
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, true]);
+    expect(r.handScore).toBeCloseTo(1.0, 5);
+  });
+
+  it("混在シェネが先に採用された場合は手あり・手なしの両方が不採用になる", () => {
+    const r = computeScore(
+      [chene([[2, false], [2, true]]), chene([[4, false]]), chene([[4, true]])],
+      "clubs",
+    );
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false, false]);
+    expect(r.handScore).toBeCloseTo(0.7, 5);
+  });
+});
+
+describe("computeScore — 徒手は内訳で技を判定する（順序は問わない）", () => {
+  const mo = (id: string, count?: number, hands?: boolean): Item => ({
+    kind: "motion",
+    motionId: id,
+    count,
+    hands,
+  });
+  const thr = (...items: Item[]): Series => S({ kind: "throw" }, ...items, { kind: "catch" });
+
+  it("順序を入れ替えただけなら同じ技", () => {
+    const r = computeScore([thr(mo("chene"), mo("fwd_roll")), thr(mo("fwd_roll"), mo("chene"))], "clubs");
+    expect(r.analysis[0].units[0].signature).toBe(r.analysis[1].units[0].signature);
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
+    expect(r.handScore).toBeCloseTo(0.3, 5);
+  });
+
+  it("4シェネ と 3シェネ＋前転 は別の技（どちらもE難度で両方採用）", () => {
+    const r = computeScore([thr(mo("chene", 4)), thr(mo("chene", 3), mo("fwd_roll"))], "clubs");
+    expect(r.analysis.map((a) => a.units[0].finalDiff)).toEqual(["E", "E"]);
+    expect(r.analysis[0].units[0].signature).toBe("hand:chene:4");
+    expect(r.analysis[1].units[0].signature).toBe("hand:chene:3,fwd_roll:1");
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, true]);
+    expect(r.handScore).toBeCloseTo(1.4, 5);
+  });
+
+  it("同じ内訳なら回数のまとめ方が違っても同じ技", () => {
+    const r = computeScore(
+      [thr(mo("chene", 2), mo("fwd_roll")), thr(mo("fwd_roll"), mo("chene"), mo("chene"))],
+      "clubs",
+    );
+    expect(r.analysis[0].units[0].signature).toBe(r.analysis[1].units[0].signature);
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
+  });
+
+  it("動作数が同じでも種類が違えば別の技", () => {
+    const r = computeScore([thr(mo("fwd_roll"), mo("back_roll")), thr(mo("chene"), mo("roll"))], "clubs");
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, true]);
+    expect(r.handScore).toBeCloseTo(0.6, 5);
+  });
+
+  it("タンブリング技として入れても徒手動作として入れても同じ技", () => {
+    const asSkill = S(
+      { kind: "throw" },
+      { kind: "skill", skillId: "a_flicflac" },
+      { kind: "motion", motionId: "chene" },
+      { kind: "catch" },
+    );
+    const r = computeScore([asSkill, thr(mo("chene"), mo("a_flicflac"))], "clubs");
+    expect(r.analysis[0].units[0].signature).toBe(r.analysis[1].units[0].signature);
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
+  });
+});
