@@ -264,8 +264,8 @@ describe("徒手動作として転回技を選べる（プルダウンの選択�
     // 宙返りは徒手動作の選択肢に出さない
     expect(ids).not.toContain("b_front");
     expect(ids).not.toContain("e_doublelay");
-    expect(MOTION_OPTIONS.find((o) => o.id === "a_cartwheel")?.name).toBe("側転（1動作）");
-    expect(MOTION_OPTIONS.find((o) => o.id === "c_kirimomiten")?.name).toBe("きりもみ転回（2動作）");
+    expect(MOTION_OPTIONS.find((o) => o.id === "a_cartwheel")?.name).toBe("側転");
+    expect(MOTION_OPTIONS.find((o) => o.id === "c_kirimomiten")?.name).toBe("きりもみ転回");
   });
 
   it("徒手動作として選んだ転回技も動作数に合算される", () => {
@@ -296,7 +296,7 @@ describe("徒手動作として転回技を選べる（プルダウンの選択�
 describe("タッチダウンライズ（縦回転の徒手）", () => {
   it("徒手動作の選択肢にあり、タンブリング技には無い", () => {
     expect(MOTION_OPTIONS.map((o) => o.id)).toContain("td_rise");
-    expect(MOTION_OPTIONS.find((o) => o.id === "td_rise")?.name).toBe("タッチダウンライズ（1動作）");
+    expect(MOTION_OPTIONS.find((o) => o.id === "td_rise")?.name).toBe("タッチダウンライズ");
     expect(SKILL_LIST.some((s) => s.id === "td_rise")).toBe(false);
   });
 
@@ -421,5 +421,30 @@ describe("旧データの徒手動作（n動作）", () => {
       S({ kind: "throw" }, { kind: "motion", motionId: "mv3" }, { kind: "catch" }),
     ).units[0];
     expect(v.finalDiff).toBe("E");
+  });
+});
+
+describe("前転・後転（縦の一回転の徒手）", () => {
+  it("選択肢にあり、1動作の縦回転として数える", () => {
+    const ids = MOTION_OPTIONS.map((o) => o.id);
+    expect(ids).toContain("fwd_roll");
+    expect(ids).toContain("back_roll");
+    expect(motionDef("fwd_roll")).toEqual({
+      motions: 1,
+      verticalThree: false,
+      vertical: 1,
+      hasHandsOption: false,
+    });
+    // 前転・後転・タッチダウンライズで縦3動作＝E
+    const u = analyzeSeries(
+      S(
+        { kind: "throw" },
+        { kind: "motion", motionId: "fwd_roll" },
+        { kind: "motion", motionId: "back_roll" },
+        { kind: "motion", motionId: "td_rise" },
+        { kind: "catch" },
+      ),
+    ).units[0];
+    expect(u.finalDiff).toBe("E");
   });
 });

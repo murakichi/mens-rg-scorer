@@ -208,10 +208,12 @@ export const HAND_MOTIONS: HandMotion[] = [
   { id: "m4", name: "4動作", motions: 4, legacy: true },
   { id: "mv3", name: "縦3動作", motions: 3, verticalThree: true, legacy: true },
   // 縦回転の徒手としてのみ判定する技（タンブリング技には出さない）
-  { id: "td_rise", name: "タッチダウンライズ（1動作）", motions: 1, vertical: true },
+  { id: "td_rise", name: "タッチダウンライズ", motions: 1, vertical: true },
+  { id: "fwd_roll", name: "前転", motions: 1, vertical: true },
+  { id: "back_roll", name: "後転", motions: 1, vertical: true },
   // 横の一回転の徒手
-  { id: "chene", name: "シェネ（1動作）", motions: 1, hasHandsOption: true },
-  { id: "roll", name: "転がり（1動作）", motions: 1 },
+  { id: "chene", name: "シェネ", motions: 1, hasHandsOption: true },
+  { id: "roll", name: "転がり", motions: 1 },
 ];
 
 export const SKILL_LIST: Skill[] = [
@@ -273,10 +275,7 @@ export const MOTION_OPTIONS: { id: string; name: string; hasHandsOption?: boolea
     name: m.name,
     hasHandsOption: m.hasHandsOption,
   })),
-  ...MOTION_SKILLS.map((s) => ({
-    id: s.id,
-    name: `${s.name}（${Math.max(1, DIFF_VALUE[s.difficulty] - 1)}動作）`,
-  })),
+  ...MOTION_SKILLS.map((s) => ({ id: s.id, name: s.name })),
 ];
 
 // ---- ジュニア適用規則（変更規則1）----
