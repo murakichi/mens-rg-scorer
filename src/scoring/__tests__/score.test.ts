@@ -530,3 +530,28 @@ describe("computeScore — 手具を持っての前宙と投げての前宙は�
     expect(tum(r)).toBeCloseTo(0.4, 5);
   });
 });
+
+describe("computeScore — 投げ方が違っても間の内容が同じなら同じ技（Q2）", () => {
+  it("背面投げ→2動作→キャッチ と 前投げ→2動作→キャッチ は難度1つ分", () => {
+    const r = computeScore(
+      [
+        S(
+          { kind: "throw", throwTypes: ["noview"] }, // 背面投げ
+          { kind: "motion", motionId: "m2" },
+          { kind: "catch" },
+          { kind: "throw" }, // 前投げ
+          { kind: "motion", motionId: "m2" },
+          { kind: "catch" },
+        ),
+      ],
+      "clubs",
+    );
+    const units = r.analysis[0].units;
+    expect(units[0].signature).toBe(units[1].signature);
+    expect(r.unitAdopted[0]).toEqual([true, false]);
+    expect(r.handScore).toBeCloseTo(0.3, 5);
+    // 不採用でも技術加点と投げ回数は残る
+    expect(r.techniqueBonus).toBeCloseTo(0.1, 5);
+    expect(r.totalThrowCount).toBe(2);
+  });
+});
