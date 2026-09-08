@@ -295,7 +295,7 @@ describe("タッチダウンライズ（縦回転の徒手）", () => {
   });
 
   it("1動作として徒手系難度に数える", () => {
-    expect(motionDef("td_rise")).toEqual({ motions: 1, verticalThree: false });
+    expect(motionDef("td_rise")).toEqual({ motions: 1, verticalThree: false, vertical: 1 });
     const u = analyzeSeries(
       S({ kind: "throw" }, { kind: "motion", motionId: "td_rise" }, { kind: "catch" }),
     ).units[0];
@@ -313,5 +313,43 @@ describe("タッチダウンライズ（縦回転の徒手）", () => {
       ),
     ).units[0];
     expect(u.finalDiff).toBe("D"); // 2動作 + 1動作
+  });
+});
+
+describe("縦回転の徒手を3動作分つなげると縦3動作（E難度）", () => {
+  const unit = (ser: Series) => analyzeSeries(ser).units[0];
+  const mo = (id: string): Item => ({ kind: "motion", motionId: id });
+  const sk = (skillId: string): Item => ({ kind: "skill", skillId });
+
+  it("徒手動作として3つ並べるとE", () => {
+    expect(
+      unit(S({ kind: "throw" }, mo("a_flicflac"), mo("a_flicflac"), mo("a_flicflac"), { kind: "catch" })).finalDiff,
+    ).toBe("E");
+    expect(
+      unit(S({ kind: "throw" }, mo("a_cartwheel"), mo("a_flicflac"), mo("td_rise"), { kind: "catch" })).finalDiff,
+    ).toBe("E");
+  });
+
+  it("タンブリング技として入れても同じ判定", () => {
+    expect(
+      unit(S({ kind: "throw" }, sk("a_cartwheel"), sk("a_flicflac"), sk("a_handspring"), { kind: "catch" })).finalDiff,
+    ).toBe("E");
+  });
+
+  it("きりもみ転回（2動作）＋縦回転1つでもE", () => {
+    expect(unit(S({ kind: "throw" }, mo("c_kirimomiten"), mo("a_flicflac"), { kind: "catch" })).finalDiff).toBe("E");
+  });
+
+  it("縦回転が2動作分までならD以下のまま", () => {
+    expect(unit(S({ kind: "throw" }, mo("a_flicflac"), mo("a_flicflac"), { kind: "catch" })).finalDiff).toBe("C");
+    // 一般の動作は縦回転として数えない（2動作＋バク転＝3動作でD）
+    expect(unit(S({ kind: "throw" }, mo("m2"), mo("a_flicflac"), { kind: "catch" })).finalDiff).toBe("D");
+    expect(unit(S({ kind: "throw" }, mo("m1"), mo("m1"), mo("m1"), { kind: "catch" })).finalDiff).toBe("D");
+  });
+
+  it("宙返りの連続に含まれる技は縦回転の徒手に数えない", () => {
+    // 前宙→ロンダート→前宙は転回系。徒手側は0動作のまま
+    const u = unit(S({ kind: "throw" }, sk("b_front"), sk("a_roundoff"), sk("b_front"), { kind: "catch" }));
+    expect(u.handDiff).toBe("A");
   });
 });

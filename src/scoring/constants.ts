@@ -206,7 +206,7 @@ export const HAND_MOTIONS: HandMotion[] = [
   { id: "m4", name: "4動作", motions: 4 },
   { id: "mv3", name: "縦3動作", motions: 3, verticalThree: true },
   // 縦回転の徒手としてのみ判定する技（タンブリング技には出さない）
-  { id: "td_rise", name: "タッチダウンライズ（1動作）", motions: 1 },
+  { id: "td_rise", name: "タッチダウンライズ（1動作）", motions: 1, vertical: true },
 ];
 
 export const SKILL_LIST: Skill[] = [

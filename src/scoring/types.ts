@@ -85,6 +85,8 @@ export interface HandMotion {
   name: string;
   motions: number;
   verticalThree?: boolean;
+  /** 縦回転の徒手か（3動作分そろうと縦3動作＝E難度になる） */
+  vertical?: boolean;
 }
 
 /** analyzeSeries が items を分類して生成する単位（タンブリング塊 or 投げ） */

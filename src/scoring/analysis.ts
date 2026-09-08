@@ -91,10 +91,17 @@ export function handMotionsOfSkill(skillId: string, junior = false): number {
 /**
  * 徒手動作アイテムの内容。動作数プルダウンのほか、徒手扱いの転回技（側転・きりもみ等）も選べる。
  */
-export function motionDef(id: string, junior = false): { motions: number; verticalThree: boolean } | null {
+export function motionDef(
+  id: string,
+  junior = false,
+): { motions: number; verticalThree: boolean; vertical: number } | null {
   const m = HAND_MOTIONS.find((x) => x.id === id);
-  if (m) return { motions: m.motions, verticalThree: !!m.verticalThree };
-  if (skillDef(id)) return { motions: handMotionsOfSkill(id, junior), verticalThree: false };
+  if (m) return { motions: m.motions, verticalThree: !!m.verticalThree, vertical: m.vertical ? m.motions : 0 };
+  if (skillDef(id)) {
+    const n = handMotionsOfSkill(id, junior);
+    // 徒手扱いの転回技はすべて縦回転の徒手
+    return { motions: n, verticalThree: false, vertical: n };
+  }
   return null;
 }
 
@@ -137,9 +144,14 @@ export function hasConnectWithoutApparatus(skills: Unit["skills"]): boolean {
 interface UnitBuffer {
   skills: Unit["skills"];
   motionCount: number;
+  /** うち縦回転の徒手の動作数。3以上で縦3動作（E難度）とみなす。 */
+  verticalCount: number;
   verticalThree: boolean;
   throwItems: number;
 }
+
+/** 縦3動作とみなす動作数 */
+const VERTICAL_THREE_COUNT = 3;
 
 /**
  * 難度の内容キー。§3.4.4「全く同じ技は難度として数えない」の判定に使う。
@@ -148,15 +160,16 @@ interface UnitBuffer {
  * - 技を含まない投げ受け＝徒手系：投げとキャッチの間の動作数。
  * 技術タグ（視野外・手以外・背面投げ等）はいずれも難度の内容ではないので含めない。
  */
-function unitSignature(buf: UnitBuffer, junior: boolean): string {
-  const ids = buf.skills.map((s) => s.skillId);
-  const tumFlags = tumblingFlags(ids);
+function unitSignature(
+  tumblingSkillIds: string[],
+  motionCount: number,
+  verticalThree: boolean,
+  junior: boolean,
+): string {
   // 難度に効く非A難度技だけをキーにする（つなぎ技のA難度技は含めない：Q&A Q22）
-  const tumIds = ids.filter((_id, i) => tumFlags[i] && skillDifficulty(ids[i], junior) !== "A");
+  const tumIds = tumblingSkillIds.filter((id) => skillDifficulty(id, junior) !== "A");
   if (tumIds.length > 0) return `tum:${tumIds.join(">")}`;
-  const motions =
-    buf.motionCount + ids.reduce((n, id, i) => n + (tumFlags[i] ? 0 : handMotionsOfSkill(id, junior)), 0);
-  return `hand:m${motions}${buf.verticalThree ? "v" : ""}`;
+  return `hand:m${motionCount}${verticalThree ? "v" : ""}`;
 }
 
 function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
@@ -171,13 +184,15 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   const tumFlags = tumblingFlags(ids);
   const tumblingSkillIds = ids.filter((_id, i) => tumFlags[i]);
   const hasTumbling = tumblingSkillIds.length > 0;
-  const motionCount =
-    buf.motionCount + ids.reduce((n, id, i) => n + (tumFlags[i] ? 0 : handMotionsOfSkill(id, junior)), 0);
+  const skillMotions = ids.reduce((n, id, i) => n + (tumFlags[i] ? 0 : handMotionsOfSkill(id, junior)), 0);
+  const motionCount = buf.motionCount + skillMotions;
+  // 縦回転の徒手が3動作分そろえば縦3動作（E難度）
+  const verticalThree = buf.verticalThree || buf.verticalCount + skillMotions >= VERTICAL_THREE_COUNT;
 
   const tumblingDiff = hasTumbling ? calcTumblingDifficulty(tumblingSkillIds, isThrow, junior) : null;
-  const handDiff = isThrow || motionCount > 0 ? calcHandDifficulty(motionCount, buf.verticalThree) : null;
+  const handDiff = isThrow || motionCount > 0 ? calcHandDifficulty(motionCount, verticalThree) : null;
 
-  const signature = unitSignature(buf, junior);
+  const signature = unitSignature(tumblingSkillIds, motionCount, verticalThree, junior);
 
   if (!isThrow) {
     // 投げなし：転回系があればタンブリング塊、無ければ徒手系（縦の一回転の徒手など）
@@ -242,7 +257,13 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
   const units: Unit[] = [];
   let throwCount = 0;
   let buf: UnitBuffer | null = null;
-  const newBuf = (): UnitBuffer => ({ skills: [], motionCount: 0, verticalThree: false, throwItems: 0 });
+  const newBuf = (): UnitBuffer => ({
+    skills: [],
+    motionCount: 0,
+    verticalCount: 0,
+    verticalThree: false,
+    throwItems: 0,
+  });
   const flush = () => {
     if (buf && (buf.skills.length || buf.motionCount > 0 || buf.throwItems > 0)) {
       const u = finalizeUnit(buf, junior);
@@ -267,6 +288,7 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
       const m = motionDef(item.motionId, junior);
       if (m) {
         buf.motionCount += m.motions;
+        buf.verticalCount += m.vertical;
         if (m.verticalThree) buf.verticalThree = true;
       }
     }
