@@ -167,12 +167,13 @@ const unitScore = (u: Unit) =>
  */
 function adoptedHandUnits(units: Unit[]): Unit[] {
   const handUnits = units.filter(isHandUnit);
-  const ropeUnits = handUnits.filter((u) => u.fromRopeJump);
-  const throwUnits = handUnits.filter((u) => !u.fromRopeJump);
+  // 実際の投げ受けユニットのみが対象（ロープ跳び・投げなしの徒手ユニットは除く）
+  const throwUnits = handUnits.filter((u) => !u.fromRopeJump && u.throwCount > 0);
+  const others = handUnits.filter((u) => u.fromRopeJump || u.throwCount === 0);
   if (throwUnits.length < 2) return handUnits;
   const nonA = throwUnits.filter((u) => u.finalDiff !== "A");
   const adoptedThrows = nonA.length > 0 ? nonA : throwUnits.slice(0, 1);
-  return [...ropeUnits, ...adoptedThrows];
+  return [...others, ...adoptedThrows];
 }
 
 export interface ComputeOptions {

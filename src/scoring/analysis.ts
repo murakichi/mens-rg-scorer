@@ -66,6 +66,28 @@ export function saltoFlags(skillIds: string[]): boolean[] {
   });
 }
 
+/**
+ * 各技を転回系として扱うか。宙返り（`saltoFlags`）と、宙返りの間に挟んだつなぎ技のA難度技。
+ * ここで false になった技は「縦の一回転の徒手」として徒手系の動作に数える（Q&A Q7）。
+ */
+export function tumblingFlags(skillIds: string[]): boolean[] {
+  const salto = saltoFlags(skillIds);
+  return skillIds.map((id, i) => {
+    if (salto[i]) return true;
+    return !!skillDef(id)?.isConnectA && !!salto[i - 1] && !!salto[i + 1];
+  });
+}
+
+/**
+ * 転回系として扱わない技が徒手系難度に持ち込む動作数。
+ * A難度技（側転・ロンダート・バク転・ハンドスプリング・とび前転）は縦の一回転の徒手で1動作、
+ * きりもみ（B）は1動作、きりもみ転回（C）は2動作＝難度をそのまま徒手系難度に読み替える。
+ */
+export function handMotionsOfSkill(skillId: string, junior = false): number {
+  const d = skillDifficulty(skillId, junior);
+  return d ? Math.max(1, DIFF_VALUE[d] - 1) : 0;
+}
+
 /** skillIds 内の最大連続宙返り数 */
 export function maxSaltoChain(skillIds: string[]): number {
   const flags = saltoFlags(skillIds);
@@ -117,13 +139,14 @@ interface UnitBuffer {
  * 技術タグ（視野外・手以外・背面投げ等）はいずれも難度の内容ではないので含めない。
  */
 function unitSignature(buf: UnitBuffer, junior: boolean): string {
-  if (buf.skills.length > 0) {
-    const nonA = buf.skills.filter((s) => skillDifficulty(s.skillId, junior) !== "A").map((s) => s.skillId);
-    // 非A難度技が無い場合だけは技の並びそのものをキーにする（すべて同一視しないため）
-    const ids = nonA.length > 0 ? nonA : buf.skills.map((s) => s.skillId);
-    return `tum:${ids.join(">")}`;
-  }
-  return `hand:m${buf.motionCount}${buf.verticalThree ? "v" : ""}`;
+  const ids = buf.skills.map((s) => s.skillId);
+  const tumFlags = tumblingFlags(ids);
+  // 難度に効く非A難度技だけをキーにする（つなぎ技のA難度技は含めない：Q&A Q22）
+  const tumIds = ids.filter((_id, i) => tumFlags[i] && skillDifficulty(ids[i], junior) !== "A");
+  if (tumIds.length > 0) return `tum:${tumIds.join(">")}`;
+  const motions =
+    buf.motionCount + ids.reduce((n, id, i) => n + (tumFlags[i] ? 0 : handMotionsOfSkill(id, junior)), 0);
+  return `hand:m${motions}${buf.verticalThree ? "v" : ""}`;
 }
 
 function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
@@ -133,22 +156,46 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   const throwCount = buf.throwItems + buf.skills.filter((s) => s.isThrow).length;
   const hasApparatus = buf.skills.some((s) => s.hasApparatus);
 
-  const tumblingDiff = hasSkill
-    ? calcTumblingDifficulty(buf.skills.map((s) => s.skillId), isThrow, junior)
-    : null;
-  const handDiff = isThrow ? calcHandDifficulty(buf.motionCount, buf.verticalThree) : null;
+  // 転回系として扱う技と、徒手系の動作に数える技に分ける（Q&A Q7）
+  const ids = buf.skills.map((s) => s.skillId);
+  const tumFlags = tumblingFlags(ids);
+  const tumblingSkillIds = ids.filter((_id, i) => tumFlags[i]);
+  const hasTumbling = tumblingSkillIds.length > 0;
+  const motionCount =
+    buf.motionCount + ids.reduce((n, id, i) => n + (tumFlags[i] ? 0 : handMotionsOfSkill(id, junior)), 0);
+
+  const tumblingDiff = hasTumbling ? calcTumblingDifficulty(tumblingSkillIds, isThrow, junior) : null;
+  const handDiff = isThrow || motionCount > 0 ? calcHandDifficulty(motionCount, buf.verticalThree) : null;
 
   const signature = unitSignature(buf, junior);
 
   if (!isThrow) {
+    // 投げなし：転回系があればタンブリング塊、無ければ徒手系（縦の一回転の徒手など）
+    if (hasTumbling) {
+      return {
+        type: "tumbling",
+        isThrow: false,
+        throwCount: 0,
+        skillThrow: false,
+        signature,
+        skills: buf.skills,
+        finalDiff: tumblingDiff as Difficulty,
+        hasApparatus,
+        hasDPlus: false,
+      };
+    }
     return {
-      type: "tumbling",
+      type: "throw",
       isThrow: false,
       throwCount: 0,
       skillThrow: false,
+      isThrowTumbling: false,
       signature,
       skills: buf.skills,
-      finalDiff: tumblingDiff as Difficulty,
+      handDiff,
+      tumblingDiff: null,
+      finalDiff: handDiff as Difficulty,
+      diffFromHand: true,
       hasApparatus,
       hasDPlus: false,
     };
@@ -158,13 +205,13 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   const finalDiff = (handV >= tumbV ? handDiff : tumblingDiff) as Difficulty;
   const diffFromHand = handV >= tumbV;
   const hasDPlus =
-    DIFF_VALUE[finalDiff] >= DIFF_VALUE.D && (buf.motionCount >= 3 || buf.verticalThree || hasSkill);
+    DIFF_VALUE[finalDiff] >= DIFF_VALUE.D && (motionCount >= 3 || buf.verticalThree || hasSkill);
   return {
     type: "throw",
     isThrow: true,
     throwCount,
     skillThrow,
-    isThrowTumbling: hasSkill,
+    isThrowTumbling: hasTumbling,
     signature,
     skills: buf.skills,
     handDiff,

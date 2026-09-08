@@ -298,11 +298,13 @@ export function SeriesCard({
         <div key={ui} className="unit-result">
           {u.type === "tumbling"
             ? `タンブリング塊：難度 ${u.finalDiff}`
-            : `投げ：難度 ${u.finalDiff}（${
-                u.isThrowTumbling ? "転回系としてカウント・投げタン" : "徒手系としてカウント"
-              }｜難度は${u.diffFromHand ? "徒手系" : "転回系"}由来｜徒手${u.handDiff}/転回${
-                u.tumblingDiff ?? "—"
-              }）`}
+            : u.isThrow
+              ? `投げ：難度 ${u.finalDiff}（${
+                  u.isThrowTumbling ? "転回系としてカウント・投げタン" : "徒手系としてカウント"
+                }｜難度は${u.diffFromHand ? "徒手系" : "転回系"}由来｜徒手${u.handDiff}/転回${
+                  u.tumblingDiff ?? "—"
+                }）`
+              : `徒手：難度 ${u.finalDiff}（徒手系としてカウント）`}
           {`　／ 最大連続宙返り ${maxSaltoChain(u.skills.map((s) => s.skillId))} 回`}
           {!unitAdopted[ui] && <span className="unit-unadopted">難度不採用</span>}
         </div>

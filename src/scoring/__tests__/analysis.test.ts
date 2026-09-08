@@ -6,6 +6,7 @@ import {
   hasConnect,
   hasConnectWithoutApparatus,
   saltoFlags,
+  handMotionsOfSkill,
   analyzeSeries,
   seriesSignature,
 } from "../analysis";
@@ -187,5 +188,60 @@ describe("きりもみ系は宙返りの連続に含まれる場合のみ宙返�
   it("難度はそのまま（きりもみB・きりもみ転回C）", () => {
     expect(calcTumblingDifficulty(["b_kirimomi"], false)).toBe("B");
     expect(calcTumblingDifficulty(["c_kirimomiten"], false)).toBe("C");
+  });
+});
+
+describe("宙返りに数えない技は徒手系の動作として数える（Q7の回答）", () => {
+  const unit = (ser: Series) => analyzeSeries(ser).units[0];
+  const sk = (skillId: string): Item => ({ kind: "skill", skillId });
+
+  it("A難度技は縦の一回転の徒手＝1動作", () => {
+    expect(handMotionsOfSkill("a_cartwheel")).toBe(1);
+    expect(handMotionsOfSkill("a_flicflac")).toBe(1);
+    expect(handMotionsOfSkill("a_handspring")).toBe(1);
+  });
+
+  it("きりもみは1動作・きりもみ転回は2動作（難度をそのまま読み替える）", () => {
+    expect(handMotionsOfSkill("b_kirimomi")).toBe(1);
+    expect(handMotionsOfSkill("c_kirimomiten")).toBe(2);
+  });
+
+  it("投げ→バク転→キャッチ は徒手系B（1動作）", () => {
+    const u = unit(S({ kind: "throw" }, sk("a_flicflac"), { kind: "catch" }));
+    expect(u.isThrowTumbling).toBe(false);
+    expect(u.finalDiff).toBe("B");
+  });
+
+  it("投げ→ロンダート→バク転→キャッチ は徒手系C（2動作）", () => {
+    expect(unit(S({ kind: "throw" }, sk("a_roundoff"), sk("a_flicflac"), { kind: "catch" })).finalDiff).toBe("C");
+  });
+
+  it("徒手動作と技の動作数は合算する", () => {
+    const u = unit(S({ kind: "throw" }, { kind: "motion", motionId: "m2" }, sk("a_flicflac"), { kind: "catch" }));
+    expect(u.finalDiff).toBe("D"); // 2動作 + バク転1動作 = 3動作
+  });
+
+  it("単体のきりもみ系は徒手扱いで難度はそのまま", () => {
+    expect(unit(S({ kind: "throw" }, sk("b_kirimomi"), { kind: "catch" })).finalDiff).toBe("B");
+    expect(unit(S({ kind: "throw" }, sk("c_kirimomiten"), { kind: "catch" })).finalDiff).toBe("C");
+  });
+
+  it("投げなしでも徒手としてカウントする", () => {
+    const u = unit(S(sk("a_cartwheel"), { kind: "catch" }));
+    expect(u.type).toBe("throw"); // 徒手系ユニット（投げは含まない）
+    expect(u.isThrow).toBe(false);
+    expect(u.finalDiff).toBe("B");
+  });
+
+  it("宙返りと並んだA難度技は転回系のまま（つなぎ技は動作に数えない）", () => {
+    const u = unit(S(sk("b_front"), sk("a_roundoff"), sk("b_front"), { kind: "catch" }));
+    expect(u.type).toBe("tumbling");
+    expect(u.finalDiff).toBe("C"); // B + (B-1) = C、ロンダートは徒手に数えない
+  });
+
+  it("宙返りの連続に含まれるきりもみは転回系のまま", () => {
+    const u = unit(S(sk("b_front"), sk("b_kirimomi"), { kind: "catch" }));
+    expect(u.type).toBe("tumbling");
+    expect(u.finalDiff).toBe("C"); // 前宙B + きりもみ(B-1) = C
   });
 });
