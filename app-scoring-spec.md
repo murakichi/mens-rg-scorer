@@ -140,6 +140,7 @@
 | 要素 | `auto` | 判定 |
 |------|--------|------|
 | スティック `stick_right`（右投げ右受け1回以上） | `rightThrow` | 左手投げ（`reqTypes: lefthand`）でも手以外の投げ（`throwTypes: nonhand`）でもない投げが1回以上あるか。技の最中の投げ（投げタン）も対象 |
+| 各手具 `*_rotthrow`（転回系の投げ受け） | `throwTumbling` | 投げタン（`Unit.isThrowTumbling`）が1本以上あるか。必須要素チェックの `throwTum` と同じ判定 |
 
 `VIOLATION_DEDUCTION` の対象は `VIOLATION_OPTIONS`（審判判断による手動チェック）。
 

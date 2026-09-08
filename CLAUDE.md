@@ -47,7 +47,7 @@ The data model is a flat **list of `Series`**, each an ordered list of `items` (
 
 ### Conventions and gotchas
 
-- **`APPARATUS_REQUIRED_ELEMENTS` entries with an `auto` field are judged from the series input** (currently only stick's 右投げ右受け, via `auto: "rightThrow"`), not from the `apparatusElements` manual checkboxes — `computeScore` ignores the manual list for those, and `IndividualScorer` hides them from the checkbox card.
+- **`APPARATUS_REQUIRED_ELEMENTS` entries with an `auto` field are judged from the series input** (stick's 右投げ右受け via `auto: "rightThrow"`, and every apparatus's 転回系の投げ受け via `auto: "throwTumbling"` — the same 投げタン test as the `throwTum` required check), not from the `apparatusElements` manual checkboxes — `computeScore` ignores the manual list for those, and `IndividualScorer` hides them from the checkbox card.
 - **`connectNoApparatus` (つなぎ技のA難度に手具操作なし, −0.2) only looks at throw-free tumbling units** — a connect inside a 投げタン unit is not deducted.
 - **`computeScore` returns everything the UI needs**, including `seriesBreakdowns` (per-series contribution rows) and `required`/`missing` (必須要素 checks). Add new derived values to `ScoreResult`, not as ad-hoc calculations in components.
 - **`seriesBreakdowns[i].tumRows`/`handRows`** carry one row per unit with `adopted`/`inTop` flags so `SeriesCard` can strike out what doesn't count; `tumDiff`/`handDiff` sum only the top-3-adopted units, so Σ per-series = `tumblingScore`/`handScore`.

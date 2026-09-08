@@ -587,7 +587,11 @@ export function computeScore(
       return false;
     }),
   );
-  const autoPassed: Record<RequiredElementAuto, boolean> = { rightThrow: hasRightThrow };
+  // 転回系の投げ受け＝投げタン。1本以上あれば実施とみなす。
+  const autoPassed: Record<RequiredElementAuto, boolean> = {
+    rightThrow: hasRightThrow,
+    throwTumbling: hasThrowTumbling,
+  };
 
   const apparatusElementChecks: RequiredCheck[] = APPARATUS_REQUIRED_ELEMENTS[apparatus].map((el) => ({
     key: `appEl_${el.id}`,

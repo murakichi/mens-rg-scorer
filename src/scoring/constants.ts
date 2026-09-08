@@ -115,8 +115,9 @@ export const VIOLATION_DEDUCTION = 0.3; // 開始/終了/音楽違反・徒手�
  *
  * `auto` が付いた項目はシリーズ入力から自動判定し、手動チェックの対象外にする。
  * - `rightThrow`：左手投げ・手以外の投げ以外の投げ（＝通常の右投げ右受け）が1回以上あるか。
+ * - `throwTumbling`：転回系の投げ受け＝投げタンが1本以上あるか。
  */
-export type RequiredElementAuto = "rightThrow";
+export type RequiredElementAuto = "rightThrow" | "throwTumbling";
 
 export const APPARATUS_REQUIRED_ELEMENTS: Record<
   ApparatusKey,
@@ -124,18 +125,18 @@ export const APPARATUS_REQUIRED_ELEMENTS: Record<
 > = {
   stick: [
     { id: "stick_right", name: "右投げ右受け1回以上", auto: "rightThrow" },
-    { id: "stick_rotthrow", name: "転回系の投げ受け" },
+    { id: "stick_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "stick_roll", name: "1m以上のころがし" },
     { id: "stick_propeller", name: "プロペラ回旋2回以上" },
   ],
   ring: [
-    { id: "ring_rotthrow", name: "転回系の投げ受け" },
+    { id: "ring_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "ring_roll", name: "1m以上のころがし" },
     { id: "ring_turn", name: "まわし2回以上" },
   ],
-  rope: [{ id: "rope_rotthrow", name: "転回系の投げ受け" }],
+  rope: [{ id: "rope_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" }],
   clubs: [
-    { id: "clubs_rotthrow", name: "転回系の投げ受け" },
+    { id: "clubs_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "clubs_roll", name: "50cm以上のころがし" },
     { id: "clubs_propeller", name: "プロペラ回旋2回以上" },
   ],

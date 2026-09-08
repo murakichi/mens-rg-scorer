@@ -746,3 +746,48 @@ describe("computeScore — 手ありシェネの種類", () => {
     expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
   });
 });
+
+describe("computeScore — 転回系の投げ受け（投げタン）の自動判定", () => {
+  const check = (r: ReturnType<typeof computeScore>, apparatus: string) =>
+    r.apparatusElementChecks.find((c) => c.key === `appEl_${apparatus}_rotthrow`);
+
+  it("投げタンが無ければ不足", () => {
+    const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
+    expect(check(r, "clubs")?.passed).toBe(false);
+    expect(check(r, "clubs")?.label).toBe("転回系の投げ受け（自動判定）");
+  });
+
+  it("投げ→技→キャッチ（投げタン）があれば自動でOK", () => {
+    const r = computeScore(
+      [S({ kind: "throw" }, { kind: "skill", skillId: "b_front" }, { kind: "catch" })],
+      "clubs",
+    );
+    expect(check(r, "clubs")?.passed).toBe(true);
+    expect(r.required.find((c) => c.key === "throwTum")?.passed).toBe(true);
+  });
+
+  it("技の最中の投げ（投げタン）でもOK", () => {
+    const r = computeScore(
+      [S({ kind: "skill", skillId: "b_front", isThrow: true }, { kind: "catch" })],
+      "rope",
+    );
+    expect(check(r, "rope")?.passed).toBe(true);
+  });
+
+  it("転回系を伴わない投げ受けだけでは不足（徒手系ユニット）", () => {
+    const r = computeScore(
+      [S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 3 }, { kind: "catch" })],
+      "ring",
+    );
+    expect(check(r, "ring")?.passed).toBe(false);
+  });
+
+  it("4手具とも自動判定になり、手動チェックでは上書きできない", () => {
+    for (const ap of ["stick", "ring", "rope", "clubs"] as const) {
+      const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], ap, {
+        apparatusElements: [`${ap}_rotthrow`],
+      });
+      expect(check(r, ap)?.passed).toBe(false);
+    }
+  });
+});
