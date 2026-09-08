@@ -274,6 +274,11 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 | 後方宙返り半ひねり（`b_backhalf`）の難度 | B | C | `JUNIOR_SKILL_DIFFICULTY` |
 | 投げ上げの最低回数 | 3（`THROW_COUNT_REQUIRED`） | 2（`JUNIOR_THROW_COUNT_REQUIRED`） | `throwCountRequired(junior)` |
 | 投げ上げの上限回数 | なし | 5（`JUNIOR_THROW_COUNT_MAX`） | `throwCountMax(junior)` |
+| 2回宙返り系 | 実施可 | 禁止（選択肢に出さない） | `Skill.isDoubleSalto` / `skillAllowed()` / `skillOptions(junior)` |
+
+2回宙返り系（後方2回宙返り・後方伸身2回宙返り・ダイビングダブル・ムーンサルト・ルドルフ）は
+ジュニアでは選択肢から外す。すでに選ばれている構成を読み込んだ場合は、値を失わないよう
+「（D・ジュニア禁止）」と印を付けて選択値として残す（採点自体は従来どおり行う）。
 
 上限を超えた6回目以降の投げは**要素・難度ともにカウントしない**（難度点の採用候補から外し、
 投げ回数・投げ方/受け方の多様性・必須投げ・技術加点にも算入しない）。そのうえで

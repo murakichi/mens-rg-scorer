@@ -7,7 +7,9 @@ import {
   CATCH_OPTIONS_APPARATUS,
   REQUIRED_THROW_OPTIONS,
   APPARATUS_USE,
-  SKILL_LIST,
+  skillDef,
+  skillAllowed,
+  skillOptions,
   skillDifficulty,
   hasTwoThrow,
   motionOptionsFor,
@@ -149,7 +151,13 @@ function ItemEditor({
             onChange={(e) => onUpdate({ skillId: e.target.value })}
           >
             <option value="">タンブリング技</option>
-            {SKILL_LIST.map((s) => (
+            {/* ジュニアで禁止の技（2回宙返り系）が既に選ばれている場合は、消さずに印を付けて残す */}
+            {item.skillId && !skillAllowed(item.skillId, junior) && (
+              <option value={item.skillId}>
+                {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}・ジュニア禁止）
+              </option>
+            )}
+            {skillOptions(junior).map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}（{skillDifficulty(s.id, junior)}）
               </option>

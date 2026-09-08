@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { calcTumblingDifficulty, analyzeSeries } from "../analysis";
-import { skillDifficulty, JUNIOR_THROW_COUNT_REQUIRED, THROW_COUNT_REQUIRED } from "../constants";
+import {
+  skillDifficulty,
+  skillAllowed,
+  skillOptions,
+  SKILL_LIST,
+  JUNIOR_THROW_COUNT_REQUIRED,
+  THROW_COUNT_REQUIRED,
+} from "../constants";
 import { computeScore } from "../score";
 import type { Series, Item } from "../types";
 
@@ -163,5 +170,29 @@ describe("ジュニア適用規則 — 投げ上げの上限回数（5回）", (
     const five = computeScore([throws(5)], "stick", { junior: true });
     const six = computeScore([throws(6)], "stick", { junior: true });
     expect(six.aDeduction - five.aDeduction).toBeCloseTo(0.3, 5);
+  });
+});
+
+describe("ジュニア適用規則 — 2回宙返り系は禁止", () => {
+  const doubles = ["d_doubleback", "e_doublelay", "e_divedouble", "e_moonsault", "e_rudolph"];
+
+  it("一般では選択肢に出る", () => {
+    const ids = skillOptions().map((s) => s.id);
+    doubles.forEach((id) => expect(ids).toContain(id));
+    expect(skillOptions()).toHaveLength(SKILL_LIST.length);
+  });
+
+  it("ジュニアでは選択肢から外れる", () => {
+    const ids = skillOptions(true).map((s) => s.id);
+    doubles.forEach((id) => expect(ids).not.toContain(id));
+    expect(ids).toContain("b_front");
+    expect(ids).toContain("d_back2twist"); // ひねり技は2回宙返りではないので残る
+    expect(skillOptions(true)).toHaveLength(SKILL_LIST.length - doubles.length);
+  });
+
+  it("skillAllowed が実施可否を返す", () => {
+    expect(skillAllowed("d_doubleback")).toBe(true);
+    expect(skillAllowed("d_doubleback", true)).toBe(false);
+    expect(skillAllowed("b_front", true)).toBe(true);
   });
 });

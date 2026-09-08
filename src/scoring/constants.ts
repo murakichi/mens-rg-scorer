@@ -247,15 +247,25 @@ export const SKILL_LIST: Skill[] = [
   { id: "d_backlay25", name: "後方伸身宙返り2回半ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true },
   { id: "e_backlay3twist", name: "後方伸身宙返り3回ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true },
   { id: "e_backlay35twist", name: "後方伸身宙返り3回半ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true },
-  { id: "d_doubleback", name: "後方2回宙返り", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true },
-  { id: "e_doublelay", name: "後方伸身2回宙返り", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true },
-  { id: "e_divedouble", name: "ダイビングダブル", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true },
-  { id: "e_moonsault", name: "後方2回宙返り1回ひねり（ムーンサルト）", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true },
-  { id: "e_rudolph", name: "後方2回宙返り2回ひねり（ルドルフ）", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true },
+  { id: "d_doubleback", name: "後方2回宙返り", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, isDoubleSalto: true },
+  { id: "e_doublelay", name: "後方伸身2回宙返り", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
+  { id: "e_divedouble", name: "ダイビングダブル", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
+  { id: "e_moonsault", name: "後方2回宙返り1回ひねり（ムーンサルト）", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
+  { id: "e_rudolph", name: "後方2回宙返り2回ひねり（ルドルフ）", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
 ];
 
 export function skillDef(id: string): Skill | undefined {
   return SKILL_LIST.find((x) => x.id === id);
+}
+
+/** 適用規則で実施できる技か。ジュニアは2回宙返り系が禁止（§10 変更規則1）。 */
+export function skillAllowed(id: string, junior = false): boolean {
+  return !(junior && skillDef(id)?.isDoubleSalto);
+}
+
+/** 適用規則に応じたタンブリング技の選択肢 */
+export function skillOptions(junior = false): Skill[] {
+  return SKILL_LIST.filter((s) => skillAllowed(s.id, junior));
 }
 
 /**
