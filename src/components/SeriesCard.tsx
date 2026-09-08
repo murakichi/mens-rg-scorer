@@ -186,15 +186,46 @@ function ItemEditor({
     );
   }
   // motion
+  const motionOpt = MOTION_OPTIONS.find((m) => m.id === item.motionId);
   return (
-    <select className="select" value={item.motionId} onChange={(e) => onUpdate({ motionId: e.target.value })}>
-      <option value="">徒手動作</option>
-      {MOTION_OPTIONS.map((m) => (
-        <option key={m.id} value={m.id}>
-          {m.name}
-        </option>
-      ))}
-    </select>
+    <>
+      <select
+        className="select"
+        value={item.motionId}
+        onChange={(e) => onUpdate({ motionId: e.target.value, hands: false })}
+      >
+        <option value="">徒手動作</option>
+        {MOTION_OPTIONS.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name}
+          </option>
+        ))}
+      </select>
+      {item.motionId && (
+        <label className="motion-count">
+          ×
+          <input
+            className="count-input"
+            type="number"
+            min="1"
+            step="1"
+            value={item.count ?? 1}
+            onChange={(e) => onUpdate({ count: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+          />
+          回
+        </label>
+      )}
+      {motionOpt?.hasHandsOption && (
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={item.hands || false}
+            onChange={(e) => onUpdate({ hands: e.target.checked })}
+          />
+          手あり
+        </label>
+      )}
+    </>
   );
 }
 

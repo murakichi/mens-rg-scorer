@@ -8,6 +8,7 @@ import {
   saltoFlags,
   handMotionsOfSkill,
   motionDef,
+  motionTimes,
   analyzeSeries,
   seriesSignature,
 } from "../analysis";
@@ -295,7 +296,12 @@ describe("タッチダウンライズ（縦回転の徒手）", () => {
   });
 
   it("1動作として徒手系難度に数える", () => {
-    expect(motionDef("td_rise")).toEqual({ motions: 1, verticalThree: false, vertical: 1 });
+    expect(motionDef("td_rise")).toEqual({
+      motions: 1,
+      verticalThree: false,
+      vertical: 1,
+      hasHandsOption: false,
+    });
     const u = analyzeSeries(
       S({ kind: "throw" }, { kind: "motion", motionId: "td_rise" }, { kind: "catch" }),
     ).units[0];
@@ -351,5 +357,48 @@ describe("縦回転の徒手を3動作分つなげると縦3動作（E難度）"
     // 前宙→ロンダート→前宙は転回系。徒手側は0動作のまま
     const u = unit(S({ kind: "throw" }, sk("b_front"), sk("a_roundoff"), sk("b_front"), { kind: "catch" }));
     expect(u.handDiff).toBe("A");
+  });
+});
+
+describe("徒手動作の連続回数", () => {
+  const unit = (ser: Series) => analyzeSeries(ser).units[0];
+
+  it("未指定は1回、2以上でその回数分の動作数になる", () => {
+    expect(motionTimes(undefined)).toBe(1);
+    expect(motionTimes(0)).toBe(1);
+    expect(motionTimes(4)).toBe(4);
+    const u = unit(
+      S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4 }, { kind: "catch" }),
+    );
+    expect(u.finalDiff).toBe("E"); // 4動作
+  });
+
+  it("1動作×2回 と 2動作 は同じ扱い", () => {
+    const a = unit(S({ kind: "throw" }, { kind: "motion", motionId: "m1", count: 2 }, { kind: "catch" }));
+    const b = unit(S({ kind: "throw" }, { kind: "motion", motionId: "m2" }, { kind: "catch" }));
+    expect(a.finalDiff).toBe(b.finalDiff);
+    expect(a.signature).toBe(b.signature);
+  });
+
+  it("縦回転も回数分だけ数える（バク転×3で縦3動作＝E）", () => {
+    const u = unit(
+      S({ kind: "throw" }, { kind: "motion", motionId: "a_flicflac", count: 3 }, { kind: "catch" }),
+    );
+    expect(u.finalDiff).toBe("E");
+  });
+
+  it("シェネの手ありも回数分だけ数える", () => {
+    const mixed = unit(
+      S(
+        { kind: "throw" },
+        { kind: "motion", motionId: "chene", count: 2 },
+        { kind: "motion", motionId: "chene", hands: true, count: 2 },
+        { kind: "catch" },
+      ),
+    );
+    expect(mixed.finalDiff).toBe("E");
+    // 手あり・手なし混在なので内容キーを2つ持つ
+    expect(mixed.signature).toBe("hand:m4:cn");
+    expect(mixed.signatureAlt).toBe("hand:m4:ch");
   });
 });

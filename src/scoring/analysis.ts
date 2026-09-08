@@ -94,15 +94,27 @@ export function handMotionsOfSkill(skillId: string, junior = false): number {
 export function motionDef(
   id: string,
   junior = false,
-): { motions: number; verticalThree: boolean; vertical: number } | null {
+): { motions: number; verticalThree: boolean; vertical: number; hasHandsOption: boolean } | null {
   const m = HAND_MOTIONS.find((x) => x.id === id);
-  if (m) return { motions: m.motions, verticalThree: !!m.verticalThree, vertical: m.vertical ? m.motions : 0 };
+  if (m)
+    return {
+      motions: m.motions,
+      verticalThree: !!m.verticalThree,
+      vertical: m.vertical ? m.motions : 0,
+      hasHandsOption: !!m.hasHandsOption,
+    };
   if (skillDef(id)) {
     const n = handMotionsOfSkill(id, junior);
     // 徒手扱いの転回技はすべて縦回転の徒手
-    return { motions: n, verticalThree: false, vertical: n };
+    return { motions: n, verticalThree: false, vertical: n, hasHandsOption: false };
   }
   return null;
+}
+
+/** 徒手動作アイテムの連続回数（未指定・不正値は1回） */
+export function motionTimes(count: number | undefined): number {
+  const n = Math.floor(Number(count));
+  return Number.isFinite(n) && n > 1 ? n : 1;
 }
 
 /** skillIds 内の最大連続宙返り数 */
@@ -147,6 +159,10 @@ interface UnitBuffer {
   /** うち縦回転の徒手の動作数。3以上で縦3動作（E難度）とみなす。 */
   verticalCount: number;
   verticalThree: boolean;
+  /** 手を上げずに実施したシェネの数 */
+  cheneNoHands: number;
+  /** 手を上げて実施したシェネの数 */
+  cheneHands: number;
   throwItems: number;
 }
 
@@ -160,16 +176,27 @@ const VERTICAL_THREE_COUNT = 3;
  * - 技を含まない投げ受け＝徒手系：投げとキャッチの間の動作数。
  * 技術タグ（視野外・手以外・背面投げ等）はいずれも難度の内容ではないので含めない。
  */
-function unitSignature(
+/**
+ * 内容キーを返す。手あり／手なしのシェネが混在した場合は、どちらの内容とも同じ技として
+ * 扱うためキーを2つ返す（Q&A Q21：2シェネ＋手を上げた2シェネは、普通の4シェネとも
+ * 手を上げた4シェネとも同じ技）。
+ */
+function unitSignatures(
+  buf: UnitBuffer,
   tumblingSkillIds: string[],
   motionCount: number,
   verticalThree: boolean,
   junior: boolean,
-): string {
+): string[] {
   // 難度に効く非A難度技だけをキーにする（つなぎ技のA難度技は含めない：Q&A Q22）
   const tumIds = tumblingSkillIds.filter((id) => skillDifficulty(id, junior) !== "A");
-  if (tumIds.length > 0) return `tum:${tumIds.join(">")}`;
-  return `hand:m${motionCount}${verticalThree ? "v" : ""}`;
+  if (tumIds.length > 0) return [`tum:${tumIds.join(">")}`];
+  const base = `hand:m${motionCount}${verticalThree ? "v" : ""}`;
+  const { cheneNoHands, cheneHands } = buf;
+  if (cheneNoHands === 0 && cheneHands === 0) return [base];
+  if (cheneHands === 0) return [`${base}:cn`];
+  if (cheneNoHands === 0) return [`${base}:ch`];
+  return [`${base}:cn`, `${base}:ch`];
 }
 
 function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
@@ -192,7 +219,13 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   const tumblingDiff = hasTumbling ? calcTumblingDifficulty(tumblingSkillIds, isThrow, junior) : null;
   const handDiff = isThrow || motionCount > 0 ? calcHandDifficulty(motionCount, verticalThree) : null;
 
-  const signature = unitSignature(tumblingSkillIds, motionCount, verticalThree, junior);
+  const [signature, signatureAlt] = unitSignatures(
+    buf,
+    tumblingSkillIds,
+    motionCount,
+    verticalThree,
+    junior,
+  );
 
   if (!isThrow) {
     // 投げなし：転回系があればタンブリング塊、無ければ徒手系（縦の一回転の徒手など）
@@ -203,6 +236,7 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
         throwCount: 0,
         skillThrow: false,
         signature,
+        signatureAlt,
         skills: buf.skills,
         finalDiff: tumblingDiff as Difficulty,
         hasApparatus,
@@ -216,6 +250,7 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
       skillThrow: false,
       isThrowTumbling: false,
       signature,
+      signatureAlt,
       skills: buf.skills,
       handDiff,
       tumblingDiff: null,
@@ -238,6 +273,7 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
     skillThrow,
     isThrowTumbling: hasTumbling,
     signature,
+    signatureAlt,
     skills: buf.skills,
     handDiff,
     tumblingDiff,
@@ -262,6 +298,8 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
     motionCount: 0,
     verticalCount: 0,
     verticalThree: false,
+    cheneNoHands: 0,
+    cheneHands: 0,
     throwItems: 0,
   });
   const flush = () => {
@@ -287,9 +325,14 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
       if (!buf) buf = newBuf();
       const m = motionDef(item.motionId, junior);
       if (m) {
-        buf.motionCount += m.motions;
-        buf.verticalCount += m.vertical;
+        const times = motionTimes(item.count);
+        buf.motionCount += m.motions * times;
+        buf.verticalCount += m.vertical * times;
         if (m.verticalThree) buf.verticalThree = true;
+        if (m.hasHandsOption) {
+          if (item.hands) buf.cheneHands += m.motions * times;
+          else buf.cheneNoHands += m.motions * times;
+        }
       }
     }
   });
@@ -370,7 +413,8 @@ export function seriesSignature(series: Series): string {
       if (item.kind === "catch")
         return { k: "catch", types: [...(item.catchTypes || [])].sort(), two: !!item.catchTwo };
       if (item.kind === "skill") return { k: "skill", id: item.skillId, thr: !!item.isThrow };
-      if (item.kind === "motion") return { k: "motion", id: item.motionId };
+      if (item.kind === "motion")
+        return { k: "motion", id: item.motionId, hands: !!item.hands, n: motionTimes(item.count) };
       if (item.kind === "ropeJump") return { k: "ropeJump", id: item.jumpId };
       return { k: "?" };
     }),

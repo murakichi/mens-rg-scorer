@@ -207,6 +207,9 @@ export const HAND_MOTIONS: HandMotion[] = [
   { id: "mv3", name: "縦3動作", motions: 3, verticalThree: true },
   // 縦回転の徒手としてのみ判定する技（タンブリング技には出さない）
   { id: "td_rise", name: "タッチダウンライズ（1動作）", motions: 1, vertical: true },
+  // 横の一回転の徒手
+  { id: "chene", name: "シェネ（1動作）", motions: 1, hasHandsOption: true },
+  { id: "roll", name: "転がり（1動作）", motions: 1 },
 ];
 
 export const SKILL_LIST: Skill[] = [
@@ -257,8 +260,8 @@ export function skillDef(id: string): Skill | undefined {
 export const MOTION_SKILLS: Skill[] = SKILL_LIST.filter((s) => !s.isSalto || s.saltoOnlyInChain);
 
 /** 徒手動作アイテムの選択肢（動作数 + 徒手扱いの転回技） */
-export const MOTION_OPTIONS: { id: string; name: string }[] = [
-  ...HAND_MOTIONS.map((m) => ({ id: m.id, name: m.name })),
+export const MOTION_OPTIONS: { id: string; name: string; hasHandsOption?: boolean }[] = [
+  ...HAND_MOTIONS.map((m) => ({ id: m.id, name: m.name, hasHandsOption: m.hasHandsOption })),
   ...MOTION_SKILLS.map((s) => ({
     id: s.id,
     name: `${s.name}（${Math.max(1, DIFF_VALUE[s.difficulty] - 1)}動作）`,

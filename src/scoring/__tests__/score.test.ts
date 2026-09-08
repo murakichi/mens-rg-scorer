@@ -555,3 +555,64 @@ describe("computeScore — 投げ方が違っても間の内容が同じなら�
     expect(r.totalThrowCount).toBe(2);
   });
 });
+
+describe("computeScore — シェネの手の有無で技を区別する（Q21 / Q28）", () => {
+  /** n回のシェネ（handsで手あり）を投げ受けの間に実施 */
+  const chene = (spec: [number, boolean][]): Series =>
+    S(
+      { kind: "throw" },
+      ...spec.flatMap(([n, hands]) =>
+        Array.from({ length: n }, () => ({ kind: "motion" as const, motionId: "chene", hands })),
+      ),
+      { kind: "catch" },
+    );
+
+  it("Q21：4シェネ／2シェネ＋手あり2シェネ／手あり4シェネ → 2つ目だけ不採用", () => {
+    const r = computeScore(
+      [chene([[4, false]]), chene([[2, false], [2, true]]), chene([[4, true]])],
+      "clubs",
+    );
+    expect(r.analysis.map((a) => a.units[0].finalDiff)).toEqual(["E", "E", "E"]);
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false, true]);
+    expect(r.handScore).toBeCloseTo(1.4, 5); // E 0.7 × 2
+  });
+
+  it("手なし4シェネと手あり4シェネは別の技", () => {
+    const r = computeScore([chene([[4, false]]), chene([[4, true]])], "clubs");
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, true]);
+    expect(r.handScore).toBeCloseTo(1.4, 5);
+  });
+
+  it("同じ手の状態なら同じ技として1つだけ採用", () => {
+    // 2本目は投げの技術タグでシリーズ重複を避ける
+    const withTag = { ...chene([[4, true]]) };
+    withTag.items = [{ kind: "throw", throwTypes: ["noview"] }, ...withTag.items.slice(1)];
+    const r = computeScore([chene([[4, true]]), withTag], "clubs");
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
+    expect(r.handScore).toBeCloseTo(0.7, 5);
+  });
+
+  it("Q28：シェネ2回＋前転 は手の有無で別の技", () => {
+    const roll = (hands: boolean): Series =>
+      S(
+        { kind: "throw" },
+        { kind: "motion", motionId: "chene", hands },
+        { kind: "motion", motionId: "chene", hands },
+        { kind: "motion", motionId: "a_frontroll" },
+        { kind: "catch" },
+      );
+    const r = computeScore([roll(false), roll(true)], "clubs");
+    expect(r.analysis.map((a) => a.units[0].finalDiff)).toEqual(["D", "D"]);
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, true]);
+    expect(r.handScore).toBeCloseTo(1.0, 5);
+  });
+
+  it("混在シェネが先に採用された場合は手あり・手なしの両方が不採用になる", () => {
+    const r = computeScore(
+      [chene([[2, false], [2, true]]), chene([[4, false]]), chene([[4, true]])],
+      "clubs",
+    );
+    expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false, false]);
+    expect(r.handScore).toBeCloseTo(0.7, 5);
+  });
+});

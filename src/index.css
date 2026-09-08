@@ -597,6 +597,23 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 
+.motion-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.count-input {
+  width: 48px;
+  padding: 3px 6px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: var(--glass-soft);
+  font-size: 12px;
+  color: var(--ink);
+}
+
 .unit-unadopted {
   margin-left: 8px;
   padding: 1px 8px;
