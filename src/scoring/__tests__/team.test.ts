@@ -183,6 +183,20 @@ describe("団体のジュニア適用規則（§10 変更規則1）", () => {
     expect(laneDiff({ ...t, junior: true })).toBe("C");
   });
 
+  it("助走のロンダート／側転が前に付いても連続技として認定する", () => {
+    // 現実の実施：ロンダート→バク転→後方伸身宙返り
+    expect(laneDiff(chunk("a_roundoff", "a_flicflac", "b_backlayout"))).toBe("B");
+    expect(laneDiff({ ...chunk("a_roundoff", "a_flicflac", "b_backlayout"), junior: true })).toBe("C");
+    expect(laneDiff({ ...chunk("a_cartwheel", "a_flicflac", "b_backlayout"), junior: true })).toBe("C");
+  });
+
+  it("バク転→後方伸身宙返りを繰り返すと認定Cどうしを連続加算する", () => {
+    // ジュニア：C + (C-1) = 3+2 = 5 = E（一般は B + (B-1) = 3 = C）
+    const ids = ["a_roundoff", "a_flicflac", "b_backlayout", "a_flicflac", "b_backlayout"];
+    expect(laneDiff(chunk(...ids))).toBe("C");
+    expect(laneDiff({ ...chunk(...ids), junior: true })).toBe("E");
+  });
+
   it("バク転単独・後方伸身宙返り単独はジュニアでも変わらない", () => {
     expect(laneDiff({ ...chunk("b_backlayout"), junior: true })).toBe("B");
     expect(laneDiff({ ...chunk("a_flicflac"), junior: true })).toBeNull();
