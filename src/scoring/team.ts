@@ -29,6 +29,9 @@ import {
   TEAM_CROSS_BONUS,
   TEAM_SAMEDIFF_BONUS,
   skillDef,
+  skillDifficulty,
+  juniorComboAt,
+  clampSeriesExecution,
   teamHandDifficulty,
   handElementDef,
 } from "./constants";
@@ -61,8 +64,12 @@ export interface CellGroup {
 export type CrossGroup = CellGroup;
 
 export type SeriesMode = "normal" | "allTogether";
+/** シリーズの内容：転回（タンブリング技のグリッド）か徒手（全員実施の徒手要素1つ）。 */
+export type SeriesContent = "skill" | "motion";
 export interface TeamSeries {
   mode: SeriesMode;
+  /** 転回シリーズか徒手シリーズか。徒手は全員実施が前提なので mode は allTogether 固定。 */
+  content: SeriesContent;
   slots: number;
   /** 選手レーン × スロットのセル。同時実施(allTogether)では1レーンのみ。 */
   lanes: Cell[][];
@@ -75,6 +82,8 @@ export interface TeamSeries {
 }
 export interface TeamState {
   series: TeamSeries[];
+  /** ジュニア適用規則（§10 変更規則1）で採点する。 */
+  junior?: boolean;
   /** 演技全体の実施減点(E)。シリーズ非依存。未指定は0扱い。 */
   executionDeduction?: number;
 }
@@ -176,8 +185,20 @@ export const emptyLane = (slots: number): Cell[] => Array.from({ length: slots }
 
 export const emptySeries = (slots = 4): TeamSeries => ({
   mode: "normal",
+  content: "skill",
   slots,
   lanes: Array.from({ length: NUM_PLAYERS }, () => emptyLane(slots)),
+  crossGroups: [],
+  unionGroups: [],
+  executionDeduction: 0,
+});
+
+/** 徒手シリーズ：全員実施が前提なので1レーン・1スロットに徒手要素を1つ持つ。 */
+export const motionSeries = (): TeamSeries => ({
+  mode: "allTogether",
+  content: "motion",
+  slots: 1,
+  lanes: [[{ type: "motion", motionId: "" }]],
   crossGroups: [],
   unionGroups: [],
   executionDeduction: 0,
@@ -187,21 +208,48 @@ export const initialTeamState = (): TeamState => ({
   series: Array.from({ length: NUM_SERIES }, () => emptySeries(3)),
 });
 
-/** 団体の塊難度：個人と異なり投げ加点(+1)はない。A難度は連続加算で無視。 */
-function calcChunkDifficulty(skillIds: string[]): Difficulty | null {
-  const diffs = skillIds
-    .map((id) => skillDef(id)?.difficulty)
-    .filter((d): d is Difficulty => !!d && d !== "A");
-  if (diffs.length === 0) return null;
-  let v = DIFF_VALUE[diffs[0]];
-  for (let i = 1; i < diffs.length; i++) v += DIFF_VALUE[diffs[i]] - 1;
-  return VALUE_DIFF[Math.min(v, MAX_DIFF)];
+/** 連続する難度列を団体の連続加算でまとめる（A難度は無視）。 */
+function chainValue(diffs: Difficulty[]): number {
+  const ds = diffs.filter((d) => d !== "A");
+  if (ds.length === 0) return 0;
+  let v = DIFF_VALUE[ds[0]];
+  for (let i = 1; i < ds.length; i++) v += DIFF_VALUE[ds[i]] - 1;
+  return Math.min(v, MAX_DIFF);
+}
+
+/**
+ * 団体の塊難度：個人と異なり投げ加点(+1)はない。A難度は連続加算で無視。
+ * ジュニアは技ごとの難度認定（JUNIOR_SKILL_DIFFICULTY）に加え、連続技の認定
+ * （JUNIOR_SKILL_COMBOS：バク転→後方伸身宙返り＝C）を1つの技として扱い、
+ * まとめなかった場合の連続難度と高い方を採る。
+ */
+function calcChunkDifficulty(skillIds: string[], junior = false): Difficulty | null {
+  const plain = skillIds
+    .map((id) => skillDifficulty(id, junior))
+    .filter((d): d is Difficulty => !!d);
+  let v = chainValue(plain);
+  if (junior) {
+    const merged: Difficulty[] = [];
+    for (let i = 0; i < skillIds.length; ) {
+      const combo = juniorComboAt(skillIds, i);
+      if (combo) {
+        merged.push(combo.difficulty);
+        i += combo.length;
+      } else {
+        const d = skillDifficulty(skillIds[i], junior);
+        if (d) merged.push(d);
+        i += 1;
+      }
+    }
+    v = Math.max(v, chainValue(merged));
+  }
+  return v > 0 ? VALUE_DIFF[v] : null;
 }
 
 /** セル単体の難度値（交差の段の値）。技=難度値、徒手=1、組/空=0。 */
-function cellValue(cell: Cell | undefined): number {
+function cellValue(cell: Cell | undefined, junior = false): number {
   if (!cell) return 0;
-  if (cell.type === "skill") return cell.skillId ? DIFF_VALUE[skillDef(cell.skillId)?.difficulty ?? "A"] : 0;
+  if (cell.type === "skill") return cell.skillId ? DIFF_VALUE[skillDifficulty(cell.skillId, junior) ?? "A"] : 0;
   // 徒手は §3.6.1 の団体列の難度値（未選択は0）
   if (cell.type === "motion") return cell.motionId ? DIFF_VALUE[teamHandDifficulty(cell.motionId) ?? "A"] : 0;
   return 0; // union / empty
@@ -212,7 +260,7 @@ function cellLabel(cell: Cell): string {
   return cell.motionId ? handElementDef(cell.motionId)?.name ?? "徒手" : "徒手（未選択）";
 }
 
-function analyzeTeamSeries(ser: TeamSeries): TeamSeriesAnalysis {
+function analyzeTeamSeries(ser: TeamSeries, junior = false): TeamSeriesAnalysis {
   const lanes: Chunk[][] = ser.lanes.map((lane, laneIdx) => {
     const chunks: Chunk[] = [];
     let buf: Chunk | null = null;
@@ -274,7 +322,7 @@ function analyzeTeamSeries(ser: TeamSeries): TeamSeriesAnalysis {
         .map((id) => teamHandDifficulty(id))
         .filter((d): d is Difficulty => !!d);
       c.diff = skillIds.length
-        ? calcChunkDifficulty(skillIds)
+        ? calcChunkDifficulty(skillIds, junior)
         : motionDiffs.length
           ? motionDiffs.reduce((a, b) => (DIFF_VALUE[a] >= DIFF_VALUE[b] ? a : b))
           : null;
@@ -312,7 +360,7 @@ function analyzeTeamSeries(ser: TeamSeries): TeamSeriesAnalysis {
       const effVals = c.cells
         .filter((cell) => cell.type === "skill" && cell.skillId)
         .map((cell) => {
-          const base = DIFF_VALUE[skillDef(cell.skillId!)?.difficulty ?? "A"];
+          const base = DIFF_VALUE[skillDifficulty(cell.skillId!, junior) ?? "A"];
           // 同時実施シリーズは常に5人同時扱い。通常は全員同技スロットのみ。
           const isFive = ser.mode === "allTogether" || fivePerson.has(cell.slot);
           if (isFive) hadFive = true;
@@ -352,7 +400,7 @@ function analyzeTeamSeries(ser: TeamSeries): TeamSeriesAnalysis {
       .map(({ lane, slot }) => {
         const cell = ser.lanes[lane]?.[slot];
         if (!cell || cell.type === "empty") return null;
-        return { lane, slot, value: cellValue(cell), label: cellLabel(cell) };
+        return { lane, slot, value: cellValue(cell, junior), label: cellLabel(cell) };
       })
       .filter((m): m is CrossMember => m !== null);
     const hasSkill = members.some((m) => ser.lanes[m.lane]?.[m.slot]?.type === "skill");
@@ -372,7 +420,7 @@ function analyzeTeamSeries(ser: TeamSeries): TeamSeriesAnalysis {
       .map(({ lane, slot }) => {
         const cell = ser.lanes[lane]?.[slot];
         if (!cell || cell.type === "empty") return null;
-        return { lane, slot, value: cellValue(cell), label: cellLabel(cell) };
+        return { lane, slot, value: cellValue(cell, junior), label: cellLabel(cell) };
       })
       .filter((m): m is CrossMember => m !== null);
     // 転回(宙返り)を伴う場合のみ難度。空中転回は最大C。
@@ -516,13 +564,13 @@ function crossBonusForCross(info: CrossInfo, ser: TeamSeries): number {
 }
 
 /** 同一難度に関する加点：全員D以上 / 全員E */
-function sameDiffBonusForSeries(ser: TeamSeries, a: TeamSeriesAnalysis): number {
+function sameDiffBonusForSeries(ser: TeamSeries, a: TeamSeriesAnalysis, junior = false): number {
   const laneMaxSkill = a.lanes.map((chunks) => {
     let m = 0;
     chunks.forEach((c) =>
       c.cells.forEach((cell) => {
         if (cell.type === "skill" && cell.skillId) {
-          m = Math.max(m, DIFF_VALUE[skillDef(cell.skillId)?.difficulty ?? "A"]);
+          m = Math.max(m, DIFF_VALUE[skillDifficulty(cell.skillId, junior) ?? "A"]);
         }
       }),
     );
@@ -587,17 +635,18 @@ function countPlayers(
 }
 
 /** 1シリーズ分の加点。各カテゴリはそのシリーズ内で最高ティアのみ採用。 */
-function seriesBonus(ser: TeamSeries, a: TeamSeriesAnalysis): TeamSeriesBonus {
+function seriesBonus(ser: TeamSeries, a: TeamSeriesAnalysis, junior = false): TeamSeriesBonus {
   const rotation = rotationBonusForSeries(ser, a);
   const landing = landingBonusForSeries(ser, a);
-  const sameDiff = sameDiffBonusForSeries(ser, a);
+  const sameDiff = sameDiffBonusForSeries(ser, a, junior);
   const cross = a.crosses.reduce((m, c) => Math.max(m, crossBonusForCross(c, ser)), 0);
   return { rotation, landing, cross, sameDiff, total: rotation + landing + cross + sameDiff };
 }
 
 /** 加点は各シリーズごとに算出し、全シリーズを合算する。 */
 function computeTeamBonus(team: TeamState, analysis: TeamSeriesAnalysis[]): TeamBonus {
-  const perSeries = team.series.map((ser, i) => seriesBonus(ser, analysis[i]));
+  const junior = !!team.junior;
+  const perSeries = team.series.map((ser, i) => seriesBonus(ser, analysis[i], junior));
   const sum = (pick: (b: TeamSeriesBonus) => number) => perSeries.reduce((s, b) => s + pick(b), 0);
   return {
     perSeries,
@@ -610,7 +659,8 @@ function computeTeamBonus(team: TeamState, analysis: TeamSeriesAnalysis[]): Team
 }
 
 export function computeTeamScore(team: TeamState): TeamScoreResult {
-  const analysis = team.series.map(analyzeTeamSeries);
+  const junior = !!team.junior;
+  const analysis = team.series.map((ser) => analyzeTeamSeries(ser, junior));
 
   const emptyColumnWarnings = team.series.map((ser) => {
     if (ser.mode === "allTogether") return [];
@@ -702,7 +752,11 @@ export function computeTeamScore(team: TeamState): TeamScoreResult {
   const bonus = computeTeamBonus(team, analysis);
   const dScore = seriesDiffScore + bonus.total;
   const aDeduction = aDeductions.reduce((s, d) => s + d.deduct, 0);
-  const seriesExecutionDeduction = team.series.reduce((s, ser) => s + (Number(ser.executionDeduction) || 0), 0);
+  // ジュニアは1シリーズあたりの実施減点を JUNIOR_SERIES_EXECUTION_MAX で頭打ちにする
+  const seriesExecutionDeduction = team.series.reduce(
+    (s, ser) => s + clampSeriesExecution(ser.executionDeduction, junior),
+    0,
+  );
   const overallExecutionDeduction = Number(team.executionDeduction) || 0;
   const executionDeduction = seriesExecutionDeduction + overallExecutionDeduction;
   const aScore = Math.max(0, AE_FULL - aDeduction);
@@ -732,8 +786,24 @@ export function normalizeTeamState(data: unknown): TeamState | null {
   if (!d || !Array.isArray(d.series) || d.series.length === 0) return null;
   const series: TeamSeries[] = d.series.map((rawS, si) => {
     const s = rawS as Partial<TeamSeries> & { lanes?: unknown[] };
-    const mode: SeriesMode = s.mode === "allTogether" ? "allTogether" : "normal";
     const srcLanes = Array.isArray(s.lanes) ? (s.lanes as unknown[][]) : [];
+    // content 未指定の旧データは、徒手セルを含むシリーズを徒手シリーズとみなす
+    const hasMotionCell = srcLanes.some(
+      (lane) => Array.isArray(lane) && lane.some((c) => (c as Cell | undefined)?.type === "motion"),
+    );
+    const content: SeriesContent = s.content === "motion" || (!s.content && hasMotionCell) ? "motion" : "skill";
+    if (content === "motion") {
+      // 徒手は全員実施が前提。1レーン・1スロットに正規化する。
+      const motionId = srcLanes
+        .flatMap((lane) => (Array.isArray(lane) ? (lane as (Cell | undefined)[]) : []))
+        .find((c) => c?.type === "motion")?.motionId;
+      return {
+        ...motionSeries(),
+        lanes: [[{ type: "motion", motionId: typeof motionId === "string" ? motionId : "" }]],
+        executionDeduction: Number(s.executionDeduction) || 0,
+      };
+    }
+    const mode: SeriesMode = s.mode === "allTogether" ? "allTogether" : "normal";
     const slots = Math.max(1, Number(s.slots) || (Array.isArray(srcLanes[0]) ? srcLanes[0].length : 1));
     const laneCount = mode === "allTogether" ? 1 : NUM_PLAYERS;
     const lanes: Cell[][] = Array.from({ length: laneCount }, (_, li) => {
@@ -760,6 +830,7 @@ export function normalizeTeamState(data: unknown): TeamState | null {
         : [];
     return {
       mode,
+      content,
       slots,
       lanes,
       crossGroups: mapGroups(s.crossGroups, "cross"),
@@ -767,5 +838,6 @@ export function normalizeTeamState(data: unknown): TeamState | null {
       executionDeduction: Number(s.executionDeduction) || 0,
     };
   });
-  return { series, executionDeduction: Number((d as { executionDeduction?: unknown }).executionDeduction) || 0 };
+  const root = d as { executionDeduction?: unknown; junior?: unknown };
+  return { series, junior: !!root.junior, executionDeduction: Number(root.executionDeduction) || 0 };
 }

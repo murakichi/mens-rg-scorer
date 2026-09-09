@@ -196,3 +196,11 @@ describe("ジュニア適用規則 — 2回宙返り系は禁止", () => {
     expect(skillAllowed("b_front", true)).toBe(true);
   });
 });
+
+describe("ジュニア適用規則 — 実施減点(E)の上限は団体のみ", () => {
+  it("個人はジュニアでも1シリーズの実施減点に上限を設けない", () => {
+    const ser: Series = { ...throwOnce(), executionDeduction: 1.5 };
+    expect(computeScore([ser], "stick").executionDeduction).toBeCloseTo(1.5, 5);
+    expect(computeScore([ser], "stick", { junior: true }).executionDeduction).toBeCloseTo(1.5, 5);
+  });
+});

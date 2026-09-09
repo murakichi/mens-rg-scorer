@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { computeTeamScore, emptySeries, type TeamState, type Cell } from "../team";
+import {
+  computeTeamScore,
+  emptySeries,
+  motionSeries,
+  normalizeTeamState,
+  type TeamState,
+  type Cell,
+} from "../team";
 import { handElementDef } from "../constants";
 
 const skill = (id: string): Cell => ({ type: "skill", skillId: id });
@@ -100,5 +107,128 @@ describe("伸腕屈身力倒立（シンピ）は閉脚と開脚で難度が違�
   it("個人の難度は閉脚C・開脚B", () => {
     expect(handElementDef("h8")).toMatchObject({ solo: "C", team: "D" });
     expect(handElementDef("h8b")).toMatchObject({ solo: "B", team: "C" });
+  });
+});
+
+describe("徒手シリーズ（全員実施・content: motion）", () => {
+  const motionSer = (motionId: string): TeamState => {
+    const ser = motionSeries();
+    ser.lanes[0][0] = { type: "motion", motionId };
+    return { series: [ser] };
+  };
+
+  it("徒手シリーズは1レーン・1スロットの同時実施シリーズ", () => {
+    const ser = motionSeries();
+    expect(ser.mode).toBe("allTogether");
+    expect(ser.content).toBe("motion");
+    expect(ser.slots).toBe(1);
+    expect(ser.lanes).toHaveLength(1);
+  });
+
+  it("選んだ徒手要素の団体列の難度がシリーズ難度になる", () => {
+    expect(seriesDiff(motionSer("j2"))).toBe("B");
+    expect(seriesDiff(motionSer("h4"))).toBe("D");
+    expect(seriesDiff(motionSer(""))).toBeNull();
+  });
+
+  it("転回シリーズの content は skill", () => {
+    expect(emptySeries(3).content).toBe("skill");
+  });
+});
+
+describe("normalizeTeamState — 徒手シリーズとジュニアの復元", () => {
+  it("content 未指定でも徒手セルがあれば徒手シリーズに正規化する（旧データ互換）", () => {
+    const legacy = {
+      series: [
+        {
+          mode: "normal",
+          slots: 3,
+          lanes: [
+            [{ type: "motion", motionId: "h4" }, { type: "skill", skillId: "b_front" }, { type: "empty" }],
+            ...Array.from({ length: 4 }, () => [{ type: "empty" }, { type: "empty" }, { type: "empty" }]),
+          ],
+          crossGroups: [],
+          unionGroups: [],
+          executionDeduction: 0.5,
+        },
+      ],
+    };
+    const n = normalizeTeamState(legacy)!;
+    const ser = n.series[0];
+    expect(ser.content).toBe("motion");
+    expect(ser.mode).toBe("allTogether");
+    expect(ser.slots).toBe(1);
+    expect(ser.lanes).toEqual([[{ type: "motion", motionId: "h4" }]]);
+    expect(ser.executionDeduction).toBe(0.5);
+  });
+
+  it("ジュニアフラグを往復できる", () => {
+    const base = { series: [emptySeries(2)], junior: true };
+    expect(normalizeTeamState(base)!.junior).toBe(true);
+    expect(normalizeTeamState({ series: [emptySeries(2)] })!.junior).toBe(false);
+  });
+});
+
+describe("団体のジュニア適用規則（§10 変更規則1）", () => {
+  const chunk = (...ids: string[]): TeamState => {
+    const ser = emptySeries(ids.length);
+    ids.forEach((id, s) => (ser.lanes[0][s] = skill(id)));
+    return { series: [ser] };
+  };
+  const laneDiff = (t: TeamState) => computeTeamScore(t).analysis[0].lanes[0][0].adjDiff;
+
+  it("バク転→後方伸身宙返りは一般でB、ジュニアでC", () => {
+    const t = chunk("a_flicflac", "b_backlayout");
+    expect(laneDiff(t)).toBe("B");
+    expect(laneDiff({ ...t, junior: true })).toBe("C");
+  });
+
+  it("助走のロンダート／側転が前に付いても連続技として認定する", () => {
+    // 現実の実施：ロンダート→バク転→後方伸身宙返り
+    expect(laneDiff(chunk("a_roundoff", "a_flicflac", "b_backlayout"))).toBe("B");
+    expect(laneDiff({ ...chunk("a_roundoff", "a_flicflac", "b_backlayout"), junior: true })).toBe("C");
+    expect(laneDiff({ ...chunk("a_cartwheel", "a_flicflac", "b_backlayout"), junior: true })).toBe("C");
+  });
+
+  it("バク転→後方伸身宙返りを繰り返すと認定Cどうしを連続加算する", () => {
+    // ジュニア：C + (C-1) = 3+2 = 5 = E（一般は B + (B-1) = 3 = C）
+    const ids = ["a_roundoff", "a_flicflac", "b_backlayout", "a_flicflac", "b_backlayout"];
+    expect(laneDiff(chunk(...ids))).toBe("C");
+    expect(laneDiff({ ...chunk(...ids), junior: true })).toBe("E");
+  });
+
+  it("バク転単独・後方伸身宙返り単独はジュニアでも変わらない", () => {
+    expect(laneDiff({ ...chunk("b_backlayout"), junior: true })).toBe("B");
+    expect(laneDiff({ ...chunk("a_flicflac"), junior: true })).toBeNull();
+  });
+
+  it("技ごとの難度認定（ダイビング前宙＝C）も団体に効く", () => {
+    expect(laneDiff(chunk("b_divefront"))).toBe("B");
+    expect(laneDiff({ ...chunk("b_divefront"), junior: true })).toBe("C");
+  });
+
+  it("5人同時の格上げとジュニアの連続技認定は高い方を採る", () => {
+    // 5人同時：バク転A→B・後方伸身宙返りB→C の連続 = 2+(3-1) = 4 = D。
+    // ジュニアの連続技認定（まとめてC）より格上げの方が高いので D のまま。
+    const t = normalAll5("a_flicflac", "b_backlayout");
+    expect(seriesDiff(t)).toBe("D");
+    expect(seriesDiff({ ...t, junior: true })).toBe("D");
+  });
+});
+
+describe("団体の実施減点(E)はジュニアのみ1シリーズ最大1.0点", () => {
+  const withExec = (exec: number, junior: boolean): TeamState => {
+    const ser = emptySeries(1);
+    ser.executionDeduction = exec;
+    return { series: [ser], junior };
+  };
+
+  it("一般は上限なし", () => {
+    expect(computeTeamScore(withExec(1.5, false)).seriesExecutionDeduction).toBeCloseTo(1.5, 5);
+  });
+
+  it("ジュニアは1.0点で頭打ち", () => {
+    expect(computeTeamScore(withExec(1.5, true)).seriesExecutionDeduction).toBeCloseTo(1.0, 5);
+    expect(computeTeamScore(withExec(0.7, true)).seriesExecutionDeduction).toBeCloseTo(0.7, 5);
   });
 });
