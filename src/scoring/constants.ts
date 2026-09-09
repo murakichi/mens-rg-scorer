@@ -356,6 +356,7 @@ export const MOTION_OPTIONS: { id: string; name: string; hasHandsOption?: boolea
 export const JUNIOR_SKILL_DIFFICULTY: Record<string, Difficulty> = {
   b_divefront: "C", // ダイビング前宙
   b_backhalf: "C", // 後方宙返り半ひねり
+  b_backlayhalf: "C", // 後方伸身宙返り半ひねり
 };
 
 /** 適用規則に応じた転回系の難度。ジュニアは JUNIOR_SKILL_DIFFICULTY で上書きする。 */

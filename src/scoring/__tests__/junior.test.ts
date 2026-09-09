@@ -16,11 +16,11 @@ const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 const throwOnce = (): Series => S({ kind: "throw" }, { kind: "catch" });
 
 describe("ジュニア適用規則 — 難度認定（§10 変更規則1-5）", () => {
-  it("ダイビング前宙・後方宙返り半ひねりは一般でB、ジュニアでC", () => {
-    expect(skillDifficulty("b_divefront")).toBe("B");
-    expect(skillDifficulty("b_backhalf")).toBe("B");
-    expect(skillDifficulty("b_divefront", true)).toBe("C");
-    expect(skillDifficulty("b_backhalf", true)).toBe("C");
+  it("ダイビング前宙・後方宙返り半ひねり・後方伸身宙返り半ひねりは一般でB、ジュニアでC", () => {
+    for (const id of ["b_divefront", "b_backhalf", "b_backlayhalf"]) {
+      expect(skillDifficulty(id)).toBe("B");
+      expect(skillDifficulty(id, true)).toBe("C");
+    }
   });
 
   it("その他の技の難度はジュニアでも変わらない", () => {
