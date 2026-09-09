@@ -285,6 +285,7 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 |------|------|---------|------|
 | ダイビング前宙（`b_divefront`）の難度 | B | C | `JUNIOR_SKILL_DIFFICULTY` |
 | 後方宙返り半ひねり（`b_backhalf`）の難度 | B | C | `JUNIOR_SKILL_DIFFICULTY` |
+| 後方伸身宙返り半ひねり（`b_backlayhalf`）の難度 | B | C | `JUNIOR_SKILL_DIFFICULTY` |
 | 投げ上げの最低回数 | 3（`THROW_COUNT_REQUIRED`） | 2（`JUNIOR_THROW_COUNT_REQUIRED`） | `throwCountRequired(junior)` |
 | 投げ上げの上限回数 | なし | 5（`JUNIOR_THROW_COUNT_MAX`） | `throwCountMax(junior)` |
 | 2回宙返り系 | 実施可 | 禁止（選択肢に出さない） | `Skill.isDoubleSalto` / `skillAllowed()` / `skillOptions(junior)` |
