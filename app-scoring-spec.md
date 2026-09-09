@@ -131,6 +131,7 @@
 | 多様性不足の上限 | `VARIETY_CAP` | 0.5 | 投げ方+受け方の合算上限 |
 | 必要種類数 | `VARIETY_REQUIRED` | 3 | 投げ方・受け方それぞれ |
 | 手具別必須要素の欠如 | `REQUIRED_ELEMENT_DEDUCTION` | 0.3 | §3.2 手具操作要求要素の未実施1つにつき（§3.5.6.3） |
+| 必須要素の欠如 | `MISSING_ELEMENT_DEDUCTION` | 0.3 | 投げタン・つなぎ技・タンブリング本数の不足（各） |
 | 違反・欠如 | `VIOLATION_DEDUCTION` | 0.3 | 開始/終了/音楽違反・徒手系基礎要素群欠如の各該当（§3.5.6.3） |
 
 `REQUIRED_ELEMENT_DEDUCTION` の対象要素は `APPARATUS_REQUIRED_ELEMENTS`（手具別）。
@@ -140,6 +141,9 @@
 | 要素 | `auto` | 判定 |
 |------|--------|------|
 | スティック `stick_right`（右投げ右受け1回以上） | `rightThrow` | 左手投げ（`reqTypes: lefthand`）でも手以外の投げ（`throwTypes: nonhand`）でもない投げが1回以上あるか。技の最中の投げ（投げタン）も対象 |
+| 各手具 `*_rotthrow`（転回系の投げ受け） | `throwTumbling` | 投げタン（`Unit.isThrowTumbling`）が1本以上あるか。必須要素チェックの `throwTum` と同じ判定 |
+| スティック `stick_left` / リング・クラブ `*_twothrow` | `leftThrow` / `twoThrow` | 投げアイテムの必須投げ（`reqTypes`）に左手投げ／二つ投げがあるか |
+| ロープ `rope_triple` / `rope_moving` / `rope_front` / `rope_back` | 同名の auto | ロープ跳びの入力から判定（3重跳び／6m以上移動の3回以上連続跳び／その場前回し・後ろ回し2回以上） |
 
 `VIOLATION_DEDUCTION` の対象は `VIOLATION_OPTIONS`（審判判断による手動チェック）。
 
@@ -235,9 +239,14 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 | `triple` | 1本以上が宙返り3回以上連続 | `maxSaltoChain >= 3`（`saltoFlags` 経由） |
 | `connect` | 1本以上がつなぎ技 | `hasConnect()` で宙返り→A難度→宙返り パターン検出 |
 | `count3` | 投げをN回以上実施 | `totalThrowCount >= requiredThrowCount`（一般3／ジュニア2。ラベルもNに追従） |
+| （手具別必須投げは §3.2 手具別必須要素に統合） | — | `appThrow` は廃止し、`stick_left` / `*_twothrow` の自動判定で扱う |
 | `countMax` | 投げはN回以内（ジュニアのみ） | `performedThrowCount <= maxThrowCount`（5） |
 | `tumCount` | タンブリング3本以上 | `nonDupTumblingCount >= 3` |
 | `appThrow` | 手具別必須投げ | `REQUIRED_THROW_OPTIONS` の全IDが実施済みか |
+
+各行は `deduction`（不足時のA減点）を持ち、`SeriesCard`／`ScoreSummary` が金額を表示する。
+うち **投げタン・つなぎ技・タンブリング本数**の不足は `missingElementDeduction`（各 −0.30）として
+A減点に加算する。方向系・連続宙返り・投げ回数は従来どおり固有の減点項目で計上するので二重計上しない。
 
 `required[]` とは別に、`computeScore` は §3.2/§3.5.6.3 用の表示リストも返す：
 - `apparatusElementChecks[]`：`APPARATUS_REQUIRED_ELEMENTS[apparatus]` の手動チェック状況（未実施は `apparatusElementDeduction` に −0.3）。

@@ -8,7 +8,6 @@
 
 import {
   CATEGORY,
-  APPARATUS,
   DIFF_VALUE,
   DIFF_SCORE,
   E_BONUS,
@@ -34,8 +33,8 @@ import {
   VARIETY_CAP,
   ADOPT_COUNT,
   AE_FULL,
-  REQUIRED_THROW_OPTIONS,
   REQUIRED_ELEMENT_DEDUCTION,
+  MISSING_ELEMENT_DEDUCTION,
   VIOLATION_DEDUCTION,
   APPARATUS_REQUIRED_ELEMENTS,
   type RequiredElementAuto,
@@ -90,6 +89,8 @@ export interface RequiredCheck {
   key: string;
   label: string;
   passed: boolean | null;
+  /** 不足しているときのA減点（表示用。合計は各減点項目として aDeduction に入る） */
+  deduction?: number;
 }
 
 export interface ScoreResult {
@@ -141,6 +142,8 @@ export interface ScoreResult {
   throwKindCount: number;
   catchKindCount: number;
   varietyDeduction: number;
+  /** 必須要素チェックのうち投げタン・つなぎ技・タンブリング本数の欠如（各 −0.30） */
+  missingElementDeduction: number;
   aDeduction: number;
   aScore: number;
 
@@ -505,7 +508,6 @@ export function computeScore(
   const hasConn = allUnits.some((u) => hasConnect(u.skills || []));
   const hasThrowTumbling = allUnits.some((u) => u.type === "throw" && u.isThrowTumbling);
 
-  const requiredThrowIds = REQUIRED_THROW_OPTIONS[apparatus].map((o) => o.id);
   const performedThrowTypes = new Set<string>();
   series.forEach((ser, i) =>
     ser.items.forEach((item, j) => {
@@ -513,22 +515,36 @@ export function computeScore(
       if (item.kind === "throw") (item.reqTypes || []).forEach((t) => performedThrowTypes.add(t));
     }),
   );
-  const requiredThrowPassed =
-    requiredThrowIds.length === 0 || requiredThrowIds.every((id) => performedThrowTypes.has(id));
-
   const required: RequiredCheck[] = [
     {
       key: "dir",
       label: "前方系・側方系・後方系をすべて含む",
       passed: cats.has(CATEGORY.FORWARD) && cats.has(CATEGORY.SIDE) && cats.has(CATEGORY.BACKWARD),
+      deduction: directionDeduction,
     },
-    { key: "throwTum", label: "1本以上が投げタン", passed: hasThrowTumbling },
-    { key: "triple", label: "1本以上が宙返り3回以上連続", passed: hasTriple },
-    { key: "connect", label: "1本以上がつなぎ技（宙返り間にA難度を挟む）", passed: hasConn },
+    {
+      key: "throwTum",
+      label: "1本以上が投げタン",
+      passed: hasThrowTumbling,
+      deduction: MISSING_ELEMENT_DEDUCTION,
+    },
+    {
+      key: "triple",
+      label: "1本以上が宙返り3回以上連続",
+      passed: hasTriple,
+      deduction: saltoChainDeduction,
+    },
+    {
+      key: "connect",
+      label: "1本以上がつなぎ技（宙返り間にA難度を挟む）",
+      passed: hasConn,
+      deduction: MISSING_ELEMENT_DEDUCTION,
+    },
     {
       key: "count3",
       label: `投げを${requiredThrowCount}回以上実施`,
       passed: totalThrowCount >= requiredThrowCount,
+      deduction: THROW_COUNT_DEDUCTION,
     },
     ...(maxThrowCount !== null
       ? [
@@ -536,21 +552,22 @@ export function computeScore(
             key: "countMax",
             label: `投げは${maxThrowCount}回以内`,
             passed: performedThrowCount <= maxThrowCount,
+            deduction: throwCountOverDeduction,
           },
         ]
       : []),
-    { key: "tumCount", label: "タンブリング3本以上", passed: nonDupTumblingCount >= 3 },
     {
-      key: "appThrow",
-      label: `${APPARATUS[apparatus].name}の必須投げ方${
-        APPARATUS[apparatus].throws.length ? "：" + APPARATUS[apparatus].throws.join("・") : "（なし）"
-      }`,
-      passed: requiredThrowPassed,
+      key: "tumCount",
+      label: "タンブリング3本以上",
+      passed: nonDupTumblingCount >= 3,
+      deduction: MISSING_ELEMENT_DEDUCTION,
     },
+    // 手具別の必須投げ（左手投げ／二つ同時投げ）は §3.2 手具別必須要素として自動判定する
   ];
 
-  // ロープ固有の要求要素（§3.2(3) ③〜⑥）
+  // ロープ固有の要求要素（§3.2(3) ③〜⑥）。判定結果は手具別必須要素の自動判定に渡す。
   let jumpVarietyBonus = 0;
+  const ropeAuto = { ropeTriple: false, ropeMoving: false, ropeFront: false, ropeBack: false };
   if (apparatus === "rope") {
     const allJumps = series.flatMap((ser) =>
       ser.items.filter((item): item is Extract<typeof item, { kind: "ropeJump" }> => item.kind === "ropeJump" && !!item.jumpId)
@@ -562,12 +579,10 @@ export function computeScore(
     const frontInPlace = allJumps.filter((j) => !j.moving && j.def.direction === "front").length;
     const backInPlace = allJumps.filter((j) => !j.moving && j.def.direction === "back").length;
 
-    required.push(
-      { key: "ropeTriple", label: "3重跳び", passed: hasTripleJump },
-      { key: "ropeMoving", label: "6m以上移動の3回以上連続跳び", passed: movingCount >= 3 },
-      { key: "ropeFront", label: "前回し跳び2回以上連続", passed: frontInPlace >= 2 },
-      { key: "ropeBack", label: "後ろ回し跳び2回以上連続", passed: backInPlace >= 2 },
-    );
+    ropeAuto.ropeTriple = hasTripleJump;
+    ropeAuto.ropeMoving = movingCount >= 3;
+    ropeAuto.ropeFront = frontInPlace >= 2;
+    ropeAuto.ropeBack = backInPlace >= 2;
 
     // §3.5.5.5(4)① 6m以上移動の連続跳びに2重跳び（rotations≧2）が3回以上 → 加点
     // ②③（跳びの形の多様性 / その場回転跳び2回転）は入力未対応のため今後対応。
@@ -576,6 +591,10 @@ export function computeScore(
   }
 
   const missing = required.filter((r) => r.passed === false);
+  // 投げタン・つなぎ技・タンブリング本数の欠如（他の項目は固有の減点として既に計上している）
+  const missingElementKeys = ["throwTum", "connect", "tumCount"];
+  const missingElementDeduction =
+    missing.filter((r) => missingElementKeys.includes(r.key)).length * MISSING_ELEMENT_DEDUCTION;
 
   // ---- §3.2 手具別必須要素（自動判定＋手動チェック）と §3.5.6.3 要求要素の欠如による A減点 ----
   // 右投げ右受け：左手投げでも手以外の投げでもない通常の投げが1回以上あれば実施とみなす。
@@ -587,7 +606,15 @@ export function computeScore(
       return false;
     }),
   );
-  const autoPassed: Record<RequiredElementAuto, boolean> = { rightThrow: hasRightThrow };
+  // 転回系の投げ受け＝投げタン。1本以上あれば実施とみなす。
+  const autoPassed: Record<RequiredElementAuto, boolean> = {
+    rightThrow: hasRightThrow,
+    // 左手投げ・二つ同時投げは投げアイテムの必須投げチェックから判定する
+    leftThrow: performedThrowTypes.has("lefthand"),
+    twoThrow: performedThrowTypes.has("twothrow"),
+    throwTumbling: hasThrowTumbling,
+    ...ropeAuto,
+  };
 
   const apparatusElementChecks: RequiredCheck[] = APPARATUS_REQUIRED_ELEMENTS[apparatus].map((el) => ({
     key: `appEl_${el.id}`,
@@ -619,6 +646,7 @@ export function computeScore(
     throwCountOverDeduction +
     saltoChainDeduction +
     varietyDeduction +
+    missingElementDeduction +
     apparatusElementDeduction +
     violationDeduction;
   const aScore = Math.max(0, AE_FULL - aDeduction);
@@ -661,6 +689,7 @@ export function computeScore(
     throwKindCount,
     catchKindCount,
     varietyDeduction,
+    missingElementDeduction,
     aDeduction,
     aScore,
     seriesExecutionDeduction,

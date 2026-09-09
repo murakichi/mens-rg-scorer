@@ -10,13 +10,15 @@ describe("computeScore — 空の演技（回帰アンカー）", () => {
     expect(r.dScore).toBe(0);
     expect(r.eScore).toBe(10);
     // 方向系3不足(0.9) + 投げ不足(0.3) + 宙返り連続なし(0.2) + 多様性上限(0.5)
-    //  + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 3.1
-    expect(r.aDeduction).toBeCloseTo(3.1, 5);
-    expect(r.aScore).toBeCloseTo(6.9, 5);
-    expect(r.grandTotal).toBeCloseTo(16.9, 5);
+    //  + 必須要素の欠如3項目(投げタン・つなぎ技・タンブリング本数 3×0.3=0.9)
+    //  + スティック手具別必須要素5項目未実施(5×0.3=1.5) = 4.3
+    expect(r.aDeduction).toBeCloseTo(4.3, 5);
+    expect(r.aScore).toBeCloseTo(5.7, 5);
+    expect(r.grandTotal).toBeCloseTo(15.7, 5);
     expect(r.missing.length).toBeGreaterThan(0);
-    // 手具別必須要素は未実施4項目で −1.2
-    expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
+    expect(r.missingElementDeduction).toBeCloseTo(0.9, 5);
+    // 手具別必須要素は未実施5項目で −1.5
+    expect(r.apparatusElementDeduction).toBeCloseTo(1.5, 5);
   });
 });
 
@@ -33,18 +35,23 @@ describe("computeScore — 難度採用は上位3ユニット", () => {
 });
 
 describe("computeScore — スティックの必須投げ（左手投げ）", () => {
-  it("左手投げが無ければ appThrow が不足", () => {
+  const leftEl = (r: ReturnType<typeof computeScore>) =>
+    r.apparatusElementChecks.find((c) => c.key === "appEl_stick_left");
+
+  it("左手投げが無ければ手具別必須要素が不足", () => {
     const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "stick");
-    const appThrow = r.required.find((c) => c.key === "appThrow");
-    expect(appThrow?.passed).toBe(false);
+    expect(leftEl(r)?.passed).toBe(false);
   });
-  it("左手投げを実施すれば appThrow を満たす", () => {
+  it("左手投げを実施すれば満たす", () => {
     const r = computeScore(
       [S({ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" })],
       "stick",
     );
-    const appThrow = r.required.find((c) => c.key === "appThrow");
-    expect(appThrow?.passed).toBe(true);
+    expect(leftEl(r)?.passed).toBe(true);
+  });
+  it("必須投げは必須要素チェックには出さない（手具別必須要素に一本化）", () => {
+    const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "stick");
+    expect(r.required.find((c) => c.key === "appThrow")).toBeUndefined();
   });
 });
 
@@ -55,14 +62,14 @@ describe("computeScore — 右投げ右受けの自動判定（§3.2 スティ�
   it("投げが無ければ不足のまま（−0.3）", () => {
     const r = computeScore([S({ kind: "skill", skillId: "b_backsalto" }, { kind: "catch" })], "stick");
     expect(check(r)?.passed).toBe(false);
-    expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
+    expect(r.apparatusElementDeduction).toBeCloseTo(1.5, 5);
   });
 
   it("通常の投げが1回でもあれば自動でOK", () => {
     const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "stick");
     expect(check(r)?.passed).toBe(true);
-    // 4項目中1つ自動OK → 残り3項目未チェックで −0.9
-    expect(r.apparatusElementDeduction).toBeCloseTo(0.9, 5);
+    // 5項目中1つ自動OK → 残り4項目未実施で −1.2
+    expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
   });
 
   it("左手投げ・手以外の投げだけでは右投げとみなさない", () => {
@@ -744,5 +751,191 @@ describe("computeScore — 手ありシェネの種類", () => {
       S({ kind: "throw", throwTypes: [tag] }, chene(true, ht), { kind: "catch" });
     const r = computeScore([tagged("noview"), tagged("nonhand", "one")], "clubs");
     expect(r.unitAdopted.map((u) => u[0])).toEqual([true, false]);
+  });
+});
+
+describe("computeScore — 転回系の投げ受け（投げタン）の自動判定", () => {
+  const check = (r: ReturnType<typeof computeScore>, apparatus: string) =>
+    r.apparatusElementChecks.find((c) => c.key === `appEl_${apparatus}_rotthrow`);
+
+  it("投げタンが無ければ不足", () => {
+    const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
+    expect(check(r, "clubs")?.passed).toBe(false);
+    expect(check(r, "clubs")?.label).toBe("転回系の投げ受け（自動判定）");
+  });
+
+  it("投げ→技→キャッチ（投げタン）があれば自動でOK", () => {
+    const r = computeScore(
+      [S({ kind: "throw" }, { kind: "skill", skillId: "b_front" }, { kind: "catch" })],
+      "clubs",
+    );
+    expect(check(r, "clubs")?.passed).toBe(true);
+    expect(r.required.find((c) => c.key === "throwTum")?.passed).toBe(true);
+  });
+
+  it("技の最中の投げ（投げタン）でもOK", () => {
+    const r = computeScore(
+      [S({ kind: "skill", skillId: "b_front", isThrow: true }, { kind: "catch" })],
+      "rope",
+    );
+    expect(check(r, "rope")?.passed).toBe(true);
+  });
+
+  it("転回系を伴わない投げ受けだけでは不足（徒手系ユニット）", () => {
+    const r = computeScore(
+      [S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 3 }, { kind: "catch" })],
+      "ring",
+    );
+    expect(check(r, "ring")?.passed).toBe(false);
+  });
+
+  it("4手具とも自動判定になり、手動チェックでは上書きできない", () => {
+    for (const ap of ["stick", "ring", "rope", "clubs"] as const) {
+      const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], ap, {
+        apparatusElements: [`${ap}_rotthrow`],
+      });
+      expect(check(r, ap)?.passed).toBe(false);
+    }
+  });
+});
+
+describe("computeScore — 必須投げ（左手投げ／二つ同時投げ）の自動判定", () => {
+  const el = (r: ReturnType<typeof computeScore>, id: string) =>
+    r.apparatusElementChecks.find((c) => c.key === `appEl_${id}`);
+
+  it("スティックの左投げ左受けがチェックリストに出る", () => {
+    const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "stick");
+    expect(r.apparatusElementChecks.map((c) => c.label)).toEqual([
+      "左投げ左受け1回以上（自動判定）",
+      "右投げ右受け1回以上（自動判定）",
+      "転回系の投げ受け（自動判定）",
+      "1m以上のころがし",
+      "プロペラ回旋2回以上",
+    ]);
+    expect(el(r, "stick_left")?.passed).toBe(false);
+  });
+
+  it("左手投げを実施すれば自動でOK", () => {
+    const r = computeScore(
+      [S({ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" })],
+      "stick",
+    );
+    expect(el(r, "stick_left")?.passed).toBe(true);
+  });
+
+  it("リング・クラブの2つ同時投げも自動判定", () => {
+    for (const ap of ["ring", "clubs"] as const) {
+      const none = computeScore([S({ kind: "throw" }, { kind: "catch" })], ap);
+      expect(el(none, `${ap}_twothrow`)?.passed).toBe(false);
+      const done = computeScore(
+        [S({ kind: "throw", reqTypes: ["twothrow"] }, { kind: "catch", catchTwo: true })],
+        ap,
+      );
+      expect(el(done, `${ap}_twothrow`)?.passed).toBe(true);
+    }
+  });
+
+  it("ロープは必須投げが無く、跳びの要求要素が並ぶ", () => {
+    const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "rope");
+    expect(r.apparatusElementChecks.map((c) => c.key)).toEqual([
+      "appEl_rope_rotthrow",
+      "appEl_rope_triple",
+      "appEl_rope_moving",
+      "appEl_rope_front",
+      "appEl_rope_back",
+    ]);
+    expect(r.apparatusElementChecks.every((c) => !c.passed)).toBe(true);
+    expect(r.apparatusElementDeduction).toBeCloseTo(1.5, 5);
+  });
+});
+
+describe("computeScore — ロープの跳び要求要素は手具別必須要素として自動判定", () => {
+  const jump = (id: string, moving = false): Item => ({ kind: "ropeJump", jumpId: id, isMoving6m: moving });
+  const el = (r: ReturnType<typeof computeScore>, id: string) =>
+    r.apparatusElementChecks.find((c) => c.key === `appEl_rope_${id}`);
+
+  it("3重跳びを実施すれば満たす", () => {
+    const r = computeScore([S(jump("3b"))], "rope");
+    expect(el(r, "triple")?.passed).toBe(true);
+    expect(el(r, "triple")?.label).toBe("3重跳び（自動判定）");
+  });
+
+  it("6m移動の跳びが3回以上で満たす", () => {
+    const two = computeScore([S(jump("2f", true), jump("2b", true))], "rope");
+    expect(el(two, "moving")?.passed).toBe(false);
+    const three = computeScore([S(jump("2f", true), jump("2b", true), jump("3f", true))], "rope");
+    expect(el(three, "moving")?.passed).toBe(true);
+  });
+
+  it("その場の前回し／後ろ回しは2回以上連続で満たす", () => {
+    const r = computeScore([S(jump("1f"), jump("2f"), jump("1b"))], "rope");
+    expect(el(r, "front")?.passed).toBe(true);
+    expect(el(r, "back")?.passed).toBe(false);
+    const r2 = computeScore([S(jump("1b"), jump("2b"))], "rope");
+    expect(el(r2, "back")?.passed).toBe(true);
+  });
+
+  it("必須要素チェックからは外れている", () => {
+    const r = computeScore([S(jump("3b"))], "rope");
+    ["ropeTriple", "ropeMoving", "ropeFront", "ropeBack"].forEach((k) =>
+      expect(r.required.find((c) => c.key === k)).toBeUndefined(),
+    );
+  });
+});
+
+describe("computeScore — 必須要素チェックの不足も減点する", () => {
+  it("投げタン・つなぎ技・タンブリング本数はそれぞれ −0.30", () => {
+    const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
+    expect(r.required.find((c) => c.key === "throwTum")?.passed).toBe(false);
+    expect(r.required.find((c) => c.key === "connect")?.passed).toBe(false);
+    expect(r.required.find((c) => c.key === "tumCount")?.passed).toBe(false);
+    expect(r.missingElementDeduction).toBeCloseTo(0.9, 5);
+  });
+
+  it("満たせば減点されない", () => {
+    // 投げタン・つなぎ技・タンブリング3本を満たす構成
+    const conn = (skillId: string): Series =>
+      S(
+        { kind: "skill", skillId: "b_front" },
+        { kind: "skill", skillId: "a_roundoff" },
+        { kind: "skill", skillId },
+        { kind: "catch" },
+      );
+    const r = computeScore(
+      [
+        S({ kind: "throw" }, { kind: "skill", skillId: "b_backsalto" }, { kind: "catch" }),
+        conn("b_backsalto"),
+        conn("b_sidesalto"),
+      ],
+      "clubs",
+    );
+    expect(r.required.find((c) => c.key === "throwTum")?.passed).toBe(true);
+    expect(r.required.find((c) => c.key === "connect")?.passed).toBe(true);
+    expect(r.required.find((c) => c.key === "tumCount")?.passed).toBe(true);
+    expect(r.missingElementDeduction).toBe(0);
+  });
+
+  it("各行に減点額が入る（表示用）", () => {
+    const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
+    const byKey = (k: string) => r.required.find((c) => c.key === k);
+    expect(byKey("throwTum")?.deduction).toBeCloseTo(0.3, 5);
+    expect(byKey("dir")?.deduction).toBeCloseTo(r.directionDeduction, 5);
+    expect(byKey("triple")?.deduction).toBeCloseTo(r.saltoChainDeduction, 5);
+    expect(byKey("count3")?.deduction).toBeCloseTo(0.3, 5);
+  });
+
+  it("連続宙返り・方向系・投げ回数は既存の減点のままで二重計上しない", () => {
+    const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
+    const sum =
+      r.noApparatusDeduction +
+      r.directionDeduction +
+      r.throwCountDeduction +
+      r.throwCountOverDeduction +
+      r.saltoChainDeduction +
+      r.varietyDeduction +
+      r.missingElementDeduction +
+      r.apparatusElementDeduction +
+      r.violationDeduction;
+    expect(sum).toBeCloseTo(r.aDeduction, 5);
   });
 });
