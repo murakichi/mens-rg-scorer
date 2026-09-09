@@ -221,7 +221,8 @@ export const HAND_ELEMENTS: HandElement[] = [
   { id: "h5", group: "handstand", name: "片手倒立", solo: "C", team: "D" },
   { id: "h6", group: "handstand", name: "後転倒立", solo: "C", team: "D" },
   { id: "h7", group: "handstand", name: "後方ブリッヂから倒立", solo: "C", team: "D" },
-  { id: "h8", group: "handstand", name: "伸腕屈身力倒立（シンピ閉脚・開脚）", solo: "C", team: "D" },
+  { id: "h8", group: "handstand", name: "伸腕屈身力倒立（シンピ閉脚）", solo: "C", team: "D" },
+  { id: "h8b", group: "handstand", name: "伸腕屈身力倒立（シンピ開脚）", solo: "B", team: "C" },
   { id: "h9", group: "handstand", name: "開脚前挙支持から伸腕屈伸力倒立", solo: "C", team: "D" },
   // 4. 柔軟
   { id: "f1", group: "flex", name: "長座になり体前屈（頭が足につく）", solo: "A", team: "B" },

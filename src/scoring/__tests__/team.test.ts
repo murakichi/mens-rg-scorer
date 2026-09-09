@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeTeamScore, emptySeries, type TeamState, type Cell } from "../team";
+import { handElementDef } from "../constants";
 
 const skill = (id: string): Cell => ({ type: "skill", skillId: id });
 
@@ -80,5 +81,24 @@ describe("団体の徒手（§3.6.1 徒手系難度表）", () => {
 
   it("未選択の徒手は難度なし", () => {
     expect(seriesDiff(all5(motion("")))).toBeNull();
+  });
+});
+
+describe("伸腕屈身力倒立（シンピ）は閉脚と開脚で難度が違う", () => {
+  const motion = (id: string): Cell => ({ type: "motion", motionId: id });
+  const all5 = (...cells: Cell[]): TeamState => {
+    const ser = emptySeries(cells.length);
+    for (let l = 0; l < 5; l++) cells.forEach((c, s) => (ser.lanes[l][s] = { ...c }));
+    return { series: [ser] };
+  };
+
+  it("閉脚は団体D、開脚は団体C", () => {
+    expect(seriesDiff(all5(motion("h8")))).toBe("D");
+    expect(seriesDiff(all5(motion("h8b")))).toBe("C");
+  });
+
+  it("個人の難度は閉脚C・開脚B", () => {
+    expect(handElementDef("h8")).toMatchObject({ solo: "C", team: "D" });
+    expect(handElementDef("h8b")).toMatchObject({ solo: "B", team: "C" });
   });
 });
