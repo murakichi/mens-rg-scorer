@@ -109,8 +109,19 @@ export function TeamScorer({ initialData }: Props = {}) {
     });
   const setCellType = (sIdx: number, lane: number, slot: number, type: CellType) => {
     if (type === "skill") updateCell(sIdx, lane, slot, { type: "skill", skillId: "" });
-    else if (type === "motion") updateCell(sIdx, lane, slot, { type: "motion", motionId: "" });
-    else if (type === "union") updateCell(sIdx, lane, slot, { type: "union" });
+    else if (type === "motion") {
+      // 徒手はスロット1専用。そのレーンの以降のスロットは空にし、グループ参照も外す
+      setTeam((p) => {
+        const n = structuredClone(p);
+        const ser = n.series[sIdx];
+        ser.lanes[lane][slot] = { type: "motion", motionId: "" };
+        for (let s = slot + 1; s < ser.slots; s++) ser.lanes[lane][s] = { type: "empty" };
+        [...ser.crossGroups, ...ser.unionGroups].forEach((g) => {
+          g.cells = g.cells.filter((c) => !(c.lane === lane && c.slot > slot));
+        });
+        return n;
+      });
+    } else if (type === "union") updateCell(sIdx, lane, slot, { type: "union" });
     else {
       // 空にするセルは交差・組運動グループから外す
       setTeam((p) => {
@@ -363,12 +374,15 @@ export function TeamScorer({ initialData }: Props = {}) {
                                 <button className="cell-btn" onClick={() => setCellType(sIdx, laneIdx, slot, "skill")}>
                                   技
                                 </button>
-                                <button
-                                  className="cell-btn"
-                                  onClick={() => setCellType(sIdx, laneIdx, slot, "motion")}
-                                >
-                                  徒手
-                                </button>
+                                {/* 徒手は連続しないため、レーンの先頭スロット専用にする */}
+                                {slot === 0 && (
+                                  <button
+                                    className="cell-btn"
+                                    onClick={() => setCellType(sIdx, laneIdx, slot, "motion")}
+                                  >
+                                    徒手
+                                  </button>
+                                )}
                                 <button
                                   className="cell-btn"
                                   onClick={() => setCellType(sIdx, laneIdx, slot, "union")}
