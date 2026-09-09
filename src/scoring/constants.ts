@@ -92,7 +92,7 @@ export const JUNIOR_THROW_COUNT_REQUIRED = 2;
 /** 投げ上げの上限回数。ジュニアのみ5回までで、超過すると THROW_COUNT_OVER_DEDUCTION。 */
 export const JUNIOR_THROW_COUNT_MAX = 5;
 export const THROW_COUNT_OVER_DEDUCTION = 0.3;
-/** ジュニアのみ、1シリーズあたりの実施減点(E)の上限。一般は上限なし。 */
+/** 団体のジュニアのみ、1シリーズあたりの実施減点(E)の上限（個人は上限なし）。 */
 export const JUNIOR_SERIES_EXECUTION_MAX = 1.0;
 // つなぎ技のA難度に手具操作がない場合の減点（Q&A Q10 より 0.2）。
 // 操作は回しに限らず持ち替え・足やわきに挟むなども含み、1つでもあれば減点しない。
@@ -468,7 +468,7 @@ export function juniorComboAt(skillIds: string[], i: number): { difficulty: Diff
   return null;
 }
 
-/** 適用規則に応じた1シリーズの実施減点(E)の上限。一般は上限なし（null）。 */
+/** 適用規則に応じた1シリーズの実施減点(E)の上限（団体のみ）。一般は上限なし（null）。 */
 export function seriesExecutionMax(junior = false): number | null {
   return junior ? JUNIOR_SERIES_EXECUTION_MAX : null;
 }

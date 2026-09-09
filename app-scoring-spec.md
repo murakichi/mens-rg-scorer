@@ -310,7 +310,7 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 | 投げ上げの上限回数 | なし | 5（`JUNIOR_THROW_COUNT_MAX`） | `throwCountMax(junior)` |
 | 2回宙返り系 | 実施可 | 禁止（選択肢に出さない） | `Skill.isDoubleSalto` / `skillAllowed()` / `skillOptions(junior)` |
 | バク転→後方伸身宙返りの連続（団体） | 連続加算どおり（B） | まとめてC | `JUNIOR_SKILL_COMBOS` / `juniorComboAt()` |
-| 1シリーズの実施減点(E) | 上限なし | 最大1.0（`JUNIOR_SERIES_EXECUTION_MAX`） | `clampSeriesExecution(v, junior)` |
+| 1シリーズの実施減点(E)（**団体のみ**） | 上限なし | 最大1.0（`JUNIOR_SERIES_EXECUTION_MAX`） | `clampSeriesExecution(v, junior)` |
 
 2回宙返り系（後方2回宙返り・後方伸身2回宙返り・ダイビングダブル・ムーンサルト・ルドルフ）は
 ジュニアでは選択肢から外す。すでに選ばれている構成を読み込んだ場合は、値を失わないよう
@@ -334,9 +334,9 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
   連続難度と**高い方**を採る（5人同時の格上げ後の値とも `max` を取るので、格上げが上回る構成では
   格上げ値が残る）。認定後のCは通常どおり連続加算の対象で、繰り返せば
   ロンダート→バク転→後方伸身→バク転→後方伸身 ＝ C+(C−1) ＝ E。
-- **1シリーズの実施減点(E)はジュニアのみ 1.0 点が上限**（`JUNIOR_SERIES_EXECUTION_MAX`）。
-  個人・団体とも `clampSeriesExecution()` を通して合算する（演技全体の実施減点には上限なし）。
-  UIは `max` 属性と入力時の丸めの両方で上限を反映する。
+- **1シリーズの実施減点(E)の上限（1.0点）は団体のジュニアのみ**（`JUNIOR_SERIES_EXECUTION_MAX`）。
+  `computeTeamScore` が `clampSeriesExecution()` を通して合算し、UIは `max` 属性と入力時の丸めの
+  両方で上限を反映する。**個人は一般・ジュニアとも上限なし**、団体の演技全体の実施減点も上限なし。
 - **未対応**：変更規則1-1〜1-2（手具1つのみ）と 1-4（転回系はD難度まで、E難度実施で1つにつき −0.30）。
 
 ---

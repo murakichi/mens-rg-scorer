@@ -216,7 +216,7 @@ describe("団体のジュニア適用規則（§10 変更規則1）", () => {
   });
 });
 
-describe("実施減点(E)はジュニアのみ1シリーズ最大1.0点", () => {
+describe("団体の実施減点(E)はジュニアのみ1シリーズ最大1.0点", () => {
   const withExec = (exec: number, junior: boolean): TeamState => {
     const ser = emptySeries(1);
     ser.executionDeduction = exec;

@@ -40,7 +40,6 @@ import {
   type RequiredElementAuto,
   VIOLATION_OPTIONS,
   skillDef,
-  clampSeriesExecution,
 } from "./constants";
 import {
   analyzeSeries,
@@ -391,7 +390,7 @@ export function computeScore(
       }
     }
 
-    const exec = clampSeriesExecution(ser.executionDeduction, junior);
+    const exec = Number(ser.executionDeduction) || 0;
     const dPart = tumDiff + handDiff + sBonus + tech + appOp + twoMot;
     const aPart = noApp;
     return { tumDiff, handDiff, tumRows, handRows, sBonus, tech, appOp, twoMot, noApp, exec, dPart, aPart };
@@ -635,11 +634,7 @@ export function computeScore(
     VIOLATION_OPTIONS.filter((v) => violations.includes(v.id)).length * VIOLATION_DEDUCTION;
 
   // ---- 合計 ----
-  // ジュニアは1シリーズあたりの実施減点を JUNIOR_SERIES_EXECUTION_MAX で頭打ちにする
-  const seriesExecutionDeduction = series.reduce(
-    (s, ser) => s + clampSeriesExecution(ser.executionDeduction, junior),
-    0,
-  );
+  const seriesExecutionDeduction = series.reduce((s, ser) => s + (Number(ser.executionDeduction) || 0), 0);
   const overallExec = Number(overallExecutionDeduction) || 0;
   const executionDeduction = seriesExecutionDeduction + overallExec;
   const dScore =
