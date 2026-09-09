@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeTeamScore, emptySeries, type TeamState, type Cell } from "../team";
+import { handElementDef } from "../constants";
 
 const skill = (id: string): Cell => ({ type: "skill", skillId: id });
 
@@ -40,5 +41,64 @@ describe("団体 §6.2 5人同時同技の格上げ（格上げ後の実効難�
     // 1レーンだけに技を入れる＝5人同時ではない
     ["b_backsalto", "b_backsalto", "b_backsalto"].forEach((id, s) => (ser.lanes[0][s] = skill(id)));
     expect(computeTeamScore({ series: [ser] }).analysis[0].lanes[0][0].adjDiff).toBe("D");
+  });
+});
+
+describe("団体の徒手（§3.6.1 徒手系難度表）", () => {
+  const motion = (id: string): Cell => ({ type: "motion", motionId: id });
+  /** 5レーン全員が同じ内容を同一スロットで実施するシリーズを組む */
+  const all5 = (...cells: Cell[]): TeamState => {
+    const ser = emptySeries(cells.length);
+    for (let l = 0; l < 5; l++) cells.forEach((c, s) => (ser.lanes[l][s] = { ...c }));
+    return { series: [ser] };
+  };
+
+  it("徒手は表の団体列の難度になる", () => {
+    expect(seriesDiff(all5(motion("j1")))).toBe("A"); // 閉脚から大の字とび
+    expect(seriesDiff(all5(motion("j2")))).toBe("B"); // とびあがって1回以上のひねり
+    expect(seriesDiff(all5(motion("b8")))).toBe("D"); // 足を保持しない180°以上の開脚片足平均立ち
+    expect(seriesDiff(all5(motion("h4")))).toBe("D"); // 十字倒立
+    expect(seriesDiff(all5(motion("f7")))).toBe("C"); // 開脚座（180度）仰臥位
+  });
+
+  it("徒手は5人同時でも格上げしない（団体列が5名実施の値）", () => {
+    const ser = emptySeries(1);
+    ser.mode = "allTogether";
+    ser.lanes = [[motion("j2")]];
+    expect(seriesDiff({ series: [ser] })).toBe("B");
+  });
+
+  it("徒手は連続しない（隣の技と繋がらず、高い方がシリーズ難度になる）", () => {
+    // 前宙(B)→バランス(B) を並べても連続加算されない
+    expect(seriesDiff(all5(skill("b_front"), motion("b1")))).toBe("C"); // 前宙は5人同時で B→C
+    // 徒手を挟んだ技どうしも繋がらない
+    expect(seriesDiff(all5(skill("b_front"), motion("b1"), skill("b_front")))).toBe("C");
+  });
+
+  it("徒手どうしも連続しない（最も高い徒手の難度）", () => {
+    expect(seriesDiff(all5(motion("j1"), motion("b8")))).toBe("D");
+  });
+
+  it("未選択の徒手は難度なし", () => {
+    expect(seriesDiff(all5(motion("")))).toBeNull();
+  });
+});
+
+describe("伸腕屈身力倒立（シンピ）は閉脚と開脚で難度が違う", () => {
+  const motion = (id: string): Cell => ({ type: "motion", motionId: id });
+  const all5 = (...cells: Cell[]): TeamState => {
+    const ser = emptySeries(cells.length);
+    for (let l = 0; l < 5; l++) cells.forEach((c, s) => (ser.lanes[l][s] = { ...c }));
+    return { series: [ser] };
+  };
+
+  it("閉脚は団体D、開脚は団体C", () => {
+    expect(seriesDiff(all5(motion("h8")))).toBe("D");
+    expect(seriesDiff(all5(motion("h8b")))).toBe("C");
+  });
+
+  it("個人の難度は閉脚C・開脚B", () => {
+    expect(handElementDef("h8")).toMatchObject({ solo: "C", team: "D" });
+    expect(handElementDef("h8b")).toMatchObject({ solo: "B", team: "C" });
   });
 });

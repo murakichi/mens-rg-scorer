@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { Plus, X, Trash2, Download, Upload, Link2 } from "lucide-react";
-import { SKILL_LIST, HAND_MOTIONS } from "../scoring/constants";
+import { SKILL_LIST, HAND_ELEMENTS, HAND_ELEMENT_GROUPS } from "../scoring/constants";
 import {
   computeTeamScore,
   initialTeamState,
@@ -418,10 +418,14 @@ export function TeamScorer({ initialData }: Props = {}) {
                                   onChange={(e) => updateCell(sIdx, laneIdx, slot, { motionId: e.target.value })}
                                 >
                                   <option value="">徒手</option>
-                                  {HAND_MOTIONS.map((m) => (
-                                    <option key={m.id} value={m.id}>
-                                      {m.name}
-                                    </option>
+                                  {HAND_ELEMENT_GROUPS.map((g) => (
+                                    <optgroup key={g.id} label={g.name}>
+                                      {HAND_ELEMENTS.filter((h) => h.group === g.id).map((h) => (
+                                        <option key={h.id} value={h.id}>
+                                          {h.name}（{h.team}）
+                                        </option>
+                                      ))}
+                                    </optgroup>
                                   ))}
                                 </select>
                                 <button

@@ -172,6 +172,76 @@ export const VIOLATION_OPTIONS = [
   { id: "music", name: "伴奏音楽の違反（リズムに欠け演技を妨害）" },
 ];
 
+/**
+ * §3.6.1 徒手系難度表。団体の徒手はこの表から選ぶ（個人の「投げ受けの間の動作数」とは別物）。
+ * `team` は団体（5名実施）の難度、`solo` は個人の難度。
+ */
+export type HandElementGroup = "jump" | "balance" | "handstand" | "flex";
+export interface HandElement {
+  id: string;
+  group: HandElementGroup;
+  name: string;
+  solo: Difficulty;
+  team: Difficulty;
+}
+export const HAND_ELEMENT_GROUPS: { id: HandElementGroup; name: string }[] = [
+  { id: "jump", name: "跳躍" },
+  { id: "balance", name: "バランス（静止2秒）" },
+  { id: "handstand", name: "倒立（静止2秒）" },
+  { id: "flex", name: "柔軟（静止2秒）" },
+];
+export const HAND_ELEMENTS: HandElement[] = [
+  // 1. 跳躍
+  { id: "j1", group: "jump", name: "閉脚から大の字とび", solo: "A", team: "A" },
+  { id: "j2", group: "jump", name: "とびあがって1回以上のひねり", solo: "A", team: "B" },
+  { id: "j3", group: "jump", name: "とびあがって2回以上のひねり", solo: "B", team: "C" },
+  { id: "j4", group: "jump", name: "前後開脚交叉とび", solo: "A", team: "B" },
+  { id: "j5", group: "jump", name: "開脚屈身とび", solo: "A", team: "B" },
+  { id: "j6", group: "jump", name: "かかえこみとび", solo: "A", team: "A" },
+  { id: "j7", group: "jump", name: "閉脚屈身とび", solo: "A", team: "B" },
+  { id: "j8", group: "jump", name: "後に振り上げて反り身の跳躍", solo: "A", team: "B" },
+  { id: "j9", group: "jump", name: "後に振り上げて反り身の跳躍（頭と足がつく）", solo: "B", team: "C" },
+  { id: "j10", group: "jump", name: "前・後・側で足打ちを伴う跳躍", solo: "A", team: "B" },
+  { id: "j11", group: "jump", name: "バタフライ", solo: "A", team: "B" },
+  { id: "j12", group: "jump", name: "バタフライ1回ひねり", solo: "B", team: "C" },
+  // 2. バランス
+  { id: "b1", group: "balance", name: "正面水平立ち", solo: "A", team: "B" },
+  { id: "b2", group: "balance", name: "側面水平立ち", solo: "A", team: "B" },
+  { id: "b3", group: "balance", name: "足を保持した片足平均立ち", solo: "A", team: "B" },
+  { id: "b4", group: "balance", name: "開脚片足平均立ち（頭と足が触れる）", solo: "C", team: "C" },
+  { id: "b5", group: "balance", name: "背面水平立ち", solo: "B", team: "C" },
+  { id: "b6", group: "balance", name: "足を保持した180°開脚片足平均立ち", solo: "B", team: "C" },
+  { id: "b7", group: "balance", name: "足を保持しない135°以上の開脚片足平均立ち", solo: "B", team: "C" },
+  { id: "b8", group: "balance", name: "足を保持しない180°以上の開脚片足平均立ち", solo: "C", team: "D" },
+  // 3. 倒立
+  { id: "h1", group: "handstand", name: "閉脚（開脚）倒立", solo: "A", team: "B" },
+  { id: "h2", group: "handstand", name: "前後開脚倒立（片足屈膝を含む）", solo: "A", team: "B" },
+  { id: "h3", group: "handstand", name: "前とび倒立", solo: "B", team: "C" },
+  { id: "h4", group: "handstand", name: "十字倒立", solo: "C", team: "D" },
+  { id: "h5", group: "handstand", name: "片手倒立", solo: "C", team: "D" },
+  { id: "h6", group: "handstand", name: "後転倒立", solo: "C", team: "D" },
+  { id: "h7", group: "handstand", name: "後方ブリッヂから倒立", solo: "C", team: "D" },
+  { id: "h8", group: "handstand", name: "伸腕屈身力倒立（シンピ閉脚）", solo: "C", team: "D" },
+  { id: "h8b", group: "handstand", name: "伸腕屈身力倒立（シンピ開脚）", solo: "B", team: "C" },
+  { id: "h9", group: "handstand", name: "開脚前挙支持から伸腕屈伸力倒立", solo: "C", team: "D" },
+  // 4. 柔軟
+  { id: "f1", group: "flex", name: "長座になり体前屈（頭が足につく）", solo: "A", team: "B" },
+  { id: "f2", group: "flex", name: "左右開脚座で体前屈（胸が床面につく）", solo: "A", team: "B" },
+  { id: "f3", group: "flex", name: "左右開脚座、又は前後開脚座（一直線・180度）", solo: "A", team: "B" },
+  { id: "f4", group: "flex", name: "左右開脚座（一直線・180度）前屈", solo: "B", team: "C" },
+  { id: "f5", group: "flex", name: "前後開脚座（一直線・180度）前屈", solo: "A", team: "B" },
+  { id: "f6", group: "flex", name: "左右／前後開脚座（180度未満）仰臥位", solo: "A", team: "B" },
+  { id: "f7", group: "flex", name: "左右／前後開脚座（一直線・180度）仰臥位", solo: "B", team: "C" },
+];
+
+export function handElementDef(id: string): HandElement | undefined {
+  return HAND_ELEMENTS.find((x) => x.id === id);
+}
+/** 団体での徒手系難度（表の団体列） */
+export function teamHandDifficulty(id: string): Difficulty | undefined {
+  return handElementDef(id)?.team;
+}
+
 // ---- 団体（5人）モード ----
 export const UNION_MAX_VALUE = DIFF_VALUE.C; // 組運動の空中転回は最大C
 export const ROT_CHAIN_REQUIRED = 4; // 加点対象の連続転回数

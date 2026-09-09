@@ -29,6 +29,8 @@ import {
   TEAM_CROSS_BONUS,
   TEAM_SAMEDIFF_BONUS,
   skillDef,
+  teamHandDifficulty,
+  handElementDef,
 } from "./constants";
 import type { Difficulty } from "./types";
 
@@ -200,13 +202,14 @@ function calcChunkDifficulty(skillIds: string[]): Difficulty | null {
 function cellValue(cell: Cell | undefined): number {
   if (!cell) return 0;
   if (cell.type === "skill") return cell.skillId ? DIFF_VALUE[skillDef(cell.skillId)?.difficulty ?? "A"] : 0;
-  if (cell.type === "motion") return 1;
+  // 徒手は §3.6.1 の団体列の難度値（未選択は0）
+  if (cell.type === "motion") return cell.motionId ? DIFF_VALUE[teamHandDifficulty(cell.motionId) ?? "A"] : 0;
   return 0; // union / empty
 }
 function cellLabel(cell: Cell): string {
   if (cell.type === "skill") return cell.skillId ? skillDef(cell.skillId)?.name ?? "技" : "技（未選択）";
   if (cell.type === "union") return "組";
-  return "徒手";
+  return cell.motionId ? handElementDef(cell.motionId)?.name ?? "徒手" : "徒手（未選択）";
 }
 
 function analyzeTeamSeries(ser: TeamSeries): TeamSeriesAnalysis {
@@ -221,6 +224,25 @@ function analyzeTeamSeries(ser: TeamSeries): TeamSeriesAnalysis {
       // 組(union)セルは参加マーカー。タンブリング塊には含めず区切りとして扱う。
       if (cell.type === "empty" || cell.type === "union") {
         flush();
+        return;
+      }
+      // 徒手は連続しない。前後の塊と繋げず、単独の塊として扱う。
+      if (cell.type === "motion") {
+        flush();
+        chunks.push({
+          lane: laneIdx,
+          startSlot: slot,
+          endSlot: slot,
+          cells: [{ slot, ...cell }],
+          skillIds: [],
+          motionIds: [],
+          diff: null,
+          adjDiff: null,
+          adjValue: 0,
+          bumped: false,
+          hasMotion: false,
+          hasSkill: false,
+        });
         return;
       }
       if (!buf) {
@@ -247,7 +269,15 @@ function analyzeTeamSeries(ser: TeamSeries): TeamSeriesAnalysis {
       const skillIds = c.cells.filter((x) => x.type === "skill" && x.skillId).map((x) => x.skillId!);
       c.skillIds = skillIds;
       c.motionIds = c.cells.filter((x) => x.type === "motion" && x.motionId).map((x) => x.motionId!);
-      c.diff = skillIds.length ? calcChunkDifficulty(skillIds) : null;
+      // 徒手のみの塊は §3.6.1 の団体列の難度、技を含む塊は連続難度
+      const motionDiffs = c.motionIds
+        .map((id) => teamHandDifficulty(id))
+        .filter((d): d is Difficulty => !!d);
+      c.diff = skillIds.length
+        ? calcChunkDifficulty(skillIds)
+        : motionDiffs.length
+          ? motionDiffs.reduce((a, b) => (DIFF_VALUE[a] >= DIFF_VALUE[b] ? a : b))
+          : null;
       c.hasMotion = c.motionIds.length > 0;
       c.hasSkill = skillIds.length > 0;
     });
@@ -297,7 +327,8 @@ function analyzeTeamSeries(ser: TeamSeries): TeamSeriesAnalysis {
         for (let i = 1; i < effVals.length; i++) bumpedVal += effVals[i] - 1;
         bumpedVal = Math.min(bumpedVal, MAX_DIFF);
       }
-      const adj = Math.max(contVal, bumpedVal);
+      // 徒手のみの塊は §3.6.1 の団体列がすでに5名実施の値なので格上げしない
+      const adj = c.hasSkill ? Math.max(contVal, bumpedVal) : contVal;
       c.adjValue = adj;
       c.adjDiff = adj > 0 ? VALUE_DIFF[adj] : null;
       c.bumped = hadFive && adj > contVal;
