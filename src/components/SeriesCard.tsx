@@ -17,6 +17,8 @@ import {
   HANDS_TYPES,
   DEFAULT_HANDS_TYPE,
   ROPE_JUMPS,
+  JUNIOR_SERIES_EXECUTION_MAX,
+  clampSeriesExecution,
 } from "../scoring/constants";
 import { checkApparatusFlow, maxSaltoChain } from "../scoring/analysis";
 import type { ApparatusKey, Item, Series, SeriesAnalysis } from "../scoring/types";
@@ -329,8 +331,11 @@ export function SeriesCard({
           type="number"
           step="0.1"
           min="0"
+          max={junior ? JUNIOR_SERIES_EXECUTION_MAX : undefined}
           value={ser.executionDeduction || 0}
-          onChange={(e) => onUpdateField({ executionDeduction: parseFloat(e.target.value) || 0 })}
+          onChange={(e) =>
+            onUpdateField({ executionDeduction: clampSeriesExecution(parseFloat(e.target.value), junior) })
+          }
         />
         点
       </label>

@@ -7,6 +7,7 @@ import {
   SKILL_LIST,
   JUNIOR_THROW_COUNT_REQUIRED,
   THROW_COUNT_REQUIRED,
+  JUNIOR_SERIES_EXECUTION_MAX,
 } from "../constants";
 import { computeScore } from "../score";
 import type { Series, Item } from "../types";
@@ -194,5 +195,29 @@ describe("ジュニア適用規則 — 2回宙返り系は禁止", () => {
     expect(skillAllowed("d_doubleback")).toBe(true);
     expect(skillAllowed("d_doubleback", true)).toBe(false);
     expect(skillAllowed("b_front", true)).toBe(true);
+  });
+});
+
+describe("ジュニア適用規則 — 1シリーズの実施減点は最大1.0点", () => {
+  const withExec = (exec: number): Series => ({ ...throwOnce(), executionDeduction: exec });
+
+  it("一般は入力どおり引く（上限なし）", () => {
+    expect(computeScore([withExec(1.5)], "stick").executionDeduction).toBeCloseTo(1.5, 5);
+  });
+
+  it("ジュニアは1シリーズ1.0点で頭打ち", () => {
+    expect(JUNIOR_SERIES_EXECUTION_MAX).toBe(1.0);
+    expect(computeScore([withExec(1.5)], "stick", { junior: true }).executionDeduction).toBeCloseTo(1.0, 5);
+    expect(computeScore([withExec(0.6)], "stick", { junior: true }).executionDeduction).toBeCloseTo(0.6, 5);
+  });
+
+  it("シリーズごとに頭打ちする（合算後ではない）", () => {
+    const r = computeScore([withExec(1.5), withExec(2)], "stick", { junior: true });
+    expect(r.executionDeduction).toBeCloseTo(2.0, 5);
+  });
+
+  it("演技全体の実施減点には上限を適用しない", () => {
+    const r = computeScore([throwOnce()], "stick", { junior: true, overallExecutionDeduction: 1.8 });
+    expect(r.executionDeduction).toBeCloseTo(1.8, 5);
   });
 });

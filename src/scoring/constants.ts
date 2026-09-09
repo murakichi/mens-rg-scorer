@@ -92,6 +92,8 @@ export const JUNIOR_THROW_COUNT_REQUIRED = 2;
 /** 投げ上げの上限回数。ジュニアのみ5回までで、超過すると THROW_COUNT_OVER_DEDUCTION。 */
 export const JUNIOR_THROW_COUNT_MAX = 5;
 export const THROW_COUNT_OVER_DEDUCTION = 0.3;
+/** ジュニアのみ、1シリーズあたりの実施減点(E)の上限。一般は上限なし。 */
+export const JUNIOR_SERIES_EXECUTION_MAX = 1.0;
 // つなぎ技のA難度に手具操作がない場合の減点（Q&A Q10 より 0.2）。
 // 操作は回しに限らず持ち替え・足やわきに挟むなども含み、1つでもあれば減点しない。
 export const CONNECT_NO_APP_DEDUCTION = 0.2;
@@ -446,4 +448,34 @@ export function throwCountRequired(junior = false): number {
 /** 適用規則に応じた投げ上げの上限回数。一般は上限なし（null）。 */
 export function throwCountMax(junior = false): number | null {
   return junior ? JUNIOR_THROW_COUNT_MAX : null;
+}
+
+/**
+ * ジュニアで難度認定が変わる連続技（§10 変更規則1-5 の適用）。
+ * バク転→後方伸身宙返りは、まとめて1つのC難度として認定する。
+ */
+export const JUNIOR_SKILL_COMBOS: { ids: string[]; difficulty: Difficulty }[] = [
+  { ids: ["a_flicflac", "b_backlayout"], difficulty: "C" }, // バク転→後方伸身宙返り
+];
+
+/** skillIds の先頭がジュニアの連続技認定に一致すればその難度と長さを返す。 */
+export function juniorComboAt(skillIds: string[], i: number): { difficulty: Difficulty; length: number } | null {
+  for (const combo of JUNIOR_SKILL_COMBOS) {
+    if (combo.ids.every((id, k) => skillIds[i + k] === id)) {
+      return { difficulty: combo.difficulty, length: combo.ids.length };
+    }
+  }
+  return null;
+}
+
+/** 適用規則に応じた1シリーズの実施減点(E)の上限。一般は上限なし（null）。 */
+export function seriesExecutionMax(junior = false): number | null {
+  return junior ? JUNIOR_SERIES_EXECUTION_MAX : null;
+}
+
+/** 1シリーズの実施減点(E)を適用規則の上限で丸める（負値は0）。 */
+export function clampSeriesExecution(value: unknown, junior = false): number {
+  const v = Math.max(0, Number(value) || 0);
+  const max = seriesExecutionMax(junior);
+  return max === null ? v : Math.min(v, max);
 }

@@ -262,9 +262,13 @@ A減点に加算する。方向系・連続宙返り・投げ回数は従来ど�
 難度は表の**団体（5名実施）列**（`teamHandDifficulty()`）を採用する。
 
 - 徒手セルは**連続しない**：前後のセルと塊を作らず単独の塊になる（技どうしも徒手を挟むと繋がらない）
-- 連続しないので、UIでは徒手を**レーンの先頭スロット専用**にしている。徒手にすると
-  そのレーンの以降のスロットは空にし、交差・組運動の参照も外す
-  （採点ロジック側は位置を問わず計算できるままなので、旧データも従来どおり読める）
+- 徒手は**全員実施が前提**。シリーズは `TeamSeries.content`（`"skill"`＝転回 / `"motion"`＝徒手）で
+  どちらの内容かを持ち、UIでは**同時実施シリーズの「転回／徒手」切替**で選ぶ。
+  徒手シリーズは `mode: "allTogether"` 固定・1レーン・1スロットで、徒手要素を1つだけ選ぶ
+  （`motionSeries()`）。グリッド・交差・組運動は表示しない
+- 旧データ（`content` 無し）で徒手セルを含むシリーズは、`normalizeTeamState` が最初の徒手要素を拾って
+  徒手シリーズに正規化する。採点ロジック側はセル位置を問わず計算できるままなので、
+  途中スロットに徒手がある構成もそのまま採点できる
 - 団体列がすでに5名実施の値なので、5人同時の**格上げ（+1）は行わない**
 - 交差グループの段の値も表の難度値を使う（従来は一律1）
 
@@ -305,6 +309,8 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 | 投げ上げの最低回数 | 3（`THROW_COUNT_REQUIRED`） | 2（`JUNIOR_THROW_COUNT_REQUIRED`） | `throwCountRequired(junior)` |
 | 投げ上げの上限回数 | なし | 5（`JUNIOR_THROW_COUNT_MAX`） | `throwCountMax(junior)` |
 | 2回宙返り系 | 実施可 | 禁止（選択肢に出さない） | `Skill.isDoubleSalto` / `skillAllowed()` / `skillOptions(junior)` |
+| バク転→後方伸身宙返りの連続（団体） | 連続加算どおり（B） | まとめてC | `JUNIOR_SKILL_COMBOS` / `juniorComboAt()` |
+| 1シリーズの実施減点(E) | 上限なし | 最大1.0（`JUNIOR_SERIES_EXECUTION_MAX`） | `clampSeriesExecution(v, junior)` |
 
 2回宙返り系（後方2回宙返り・後方伸身2回宙返り・ダイビングダブル・ムーンサルト・ルドルフ）は
 ジュニアでは選択肢から外す。すでに選ばれている構成を読み込んだ場合は、値を失わないよう
@@ -319,7 +325,15 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
   `calcTumblingDifficulty` へ引き渡す（既定 `false` なので既存の呼び出しは無変更）。
   `skillDef()` を直接見ている `isSalto` / `category` / `isConnectA` は適用規則で変わらないため据え置き。
 - `SaveData.junior`（任意・既定 false）としてファイル/テキスト/共有URLに往復する。
-- 団体モードは対象外（`team.ts` は `skillDef().difficulty` を参照したまま）。
+- **団体モードにもジュニアがある**：フラグは `TeamState.junior` に持ち（保存データに往復）、
+  `computeTeamScore` が `analyzeTeamSeries` / `calcChunkDifficulty` / 加点へ引き渡す。
+  技ごとの難度認定（`skillDifficulty(id, junior)`）と2回宙返り系の非表示は個人と同じ。
+  加えて**連続技の認定**（`JUNIOR_SKILL_COMBOS`）があり、バク転→後方伸身宙返りは
+  まとめて1つのC難度として扱う。まとめない場合の連続難度と**高い方**を採る（5人同時の
+  格上げ後の値とも `max` を取るので、格上げが上回る構成では格上げ値が残る）。
+- **1シリーズの実施減点(E)はジュニアのみ 1.0 点が上限**（`JUNIOR_SERIES_EXECUTION_MAX`）。
+  個人・団体とも `clampSeriesExecution()` を通して合算する（演技全体の実施減点には上限なし）。
+  UIは `max` 属性と入力時の丸めの両方で上限を反映する。
 - **未対応**：変更規則1-1〜1-2（手具1つのみ）と 1-4（転回系はD難度まで、E難度実施で1つにつき −0.30）。
 
 ---

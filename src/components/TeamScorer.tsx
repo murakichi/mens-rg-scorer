@@ -1,15 +1,26 @@
 import { useState, useMemo, useRef } from "react";
 import { Plus, X, Trash2, Download, Upload, Link2 } from "lucide-react";
-import { SKILL_LIST, HAND_ELEMENTS, HAND_ELEMENT_GROUPS } from "../scoring/constants";
+import {
+  HAND_ELEMENTS,
+  HAND_ELEMENT_GROUPS,
+  JUNIOR_SERIES_EXECUTION_MAX,
+  clampSeriesExecution,
+  skillAllowed,
+  skillDef,
+  skillDifficulty,
+  skillOptions,
+} from "../scoring/constants";
 import {
   computeTeamScore,
   initialTeamState,
   normalizeTeamState,
   emptySeries,
+  motionSeries,
   emptyCell,
   emptyLane,
   NUM_PLAYERS,
   type CellType,
+  type SeriesContent,
   type TeamSeries,
   type TeamState,
 } from "../scoring/team";
@@ -20,6 +31,9 @@ const newId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `g${Date.now()}${Math.random()}`;
 
 type GroupKind = "cross" | "union";
+
+/** シリーズを新規作成／転回に戻すときの既定スロット数 */
+const DEFAULT_SLOTS = 3;
 
 interface Props {
   /** URL共有から復元する初期構成（任意） */
@@ -109,19 +123,7 @@ export function TeamScorer({ initialData }: Props = {}) {
     });
   const setCellType = (sIdx: number, lane: number, slot: number, type: CellType) => {
     if (type === "skill") updateCell(sIdx, lane, slot, { type: "skill", skillId: "" });
-    else if (type === "motion") {
-      // 徒手はスロット1専用。そのレーンの以降のスロットは空にし、グループ参照も外す
-      setTeam((p) => {
-        const n = structuredClone(p);
-        const ser = n.series[sIdx];
-        ser.lanes[lane][slot] = { type: "motion", motionId: "" };
-        for (let s = slot + 1; s < ser.slots; s++) ser.lanes[lane][s] = { type: "empty" };
-        [...ser.crossGroups, ...ser.unionGroups].forEach((g) => {
-          g.cells = g.cells.filter((c) => !(c.lane === lane && c.slot > slot));
-        });
-        return n;
-      });
-    } else if (type === "union") updateCell(sIdx, lane, slot, { type: "union" });
+    else if (type === "union") updateCell(sIdx, lane, slot, { type: "union" });
     else {
       // 空にするセルは交差・組運動グループから外す
       setTeam((p) => {
@@ -137,7 +139,8 @@ export function TeamScorer({ initialData }: Props = {}) {
   const setSeriesExecution = (sIdx: number, value: number) =>
     setTeam((p) => {
       const n = structuredClone(p);
-      n.series[sIdx].executionDeduction = value;
+      // ジュニアは1シリーズあたり JUNIOR_SERIES_EXECUTION_MAX 点まで
+      n.series[sIdx].executionDeduction = clampSeriesExecution(value, !!p.junior);
       return n;
     });
   const setOverallExecution = (value: number) =>
@@ -174,7 +177,7 @@ export function TeamScorer({ initialData }: Props = {}) {
   const addSeries = () =>
     setTeam((p) => {
       const n = structuredClone(p);
-      n.series.push(emptySeries(3));
+      n.series.push(emptySeries(DEFAULT_SLOTS));
       return n;
     });
   const removeSeries = (sIdx: number) =>
@@ -194,6 +197,7 @@ export function TeamScorer({ initialData }: Props = {}) {
         const firstLane = cur.lanes[0] || emptyLane(cur.slots);
         n.series[sIdx] = {
           mode: "normal",
+          content: "skill",
           slots: cur.slots,
           lanes: [firstLane, ...Array.from({ length: NUM_PLAYERS - 1 }, () => emptyLane(cur.slots))],
           crossGroups: [],
@@ -202,6 +206,7 @@ export function TeamScorer({ initialData }: Props = {}) {
       } else {
         n.series[sIdx] = {
           mode: "allTogether",
+          content: "skill",
           slots: cur.slots,
           lanes: [cur.lanes[0] || emptyLane(cur.slots)],
           crossGroups: [],
@@ -210,6 +215,35 @@ export function TeamScorer({ initialData }: Props = {}) {
       }
       return n;
     });
+
+  /** 転回シリーズ ⇄ 徒手シリーズの切替。徒手は全員実施が前提なので同時実施シリーズ固定。 */
+  const setSeriesContent = (sIdx: number, content: SeriesContent) =>
+    setTeam((p) => {
+      const cur = p.series[sIdx];
+      if ((cur.content ?? "skill") === content) return p;
+      const n = structuredClone(p);
+      const exec = cur.executionDeduction || 0;
+      if (content === "motion") {
+        n.series[sIdx] = { ...motionSeries(), executionDeduction: exec };
+      } else {
+        // 徒手シリーズは1スロットなので、転回に戻すときは既定のスロット数に戻す
+        const slots = cur.content === "motion" ? DEFAULT_SLOTS : cur.slots;
+        n.series[sIdx] = {
+          ...emptySeries(slots),
+          mode: "allTogether",
+          lanes: [emptyLane(slots)],
+          executionDeduction: exec,
+        };
+      }
+      return n;
+    });
+  const setMotionOfSeries = (sIdx: number, motionId: string) =>
+    setTeam((p) => {
+      const n = structuredClone(p);
+      n.series[sIdx].lanes[0][0] = { type: "motion", motionId };
+      return n;
+    });
+  const toggleJunior = () => setTeam((p) => ({ ...structuredClone(p), junior: !p.junior }));
 
   // ---- 交差／組運動グループ（共通） ----
   const groupsOf = (s: TeamSeries, kind: GroupKind) => (kind === "cross" ? s.crossGroups : s.unionGroups);
@@ -259,6 +293,8 @@ export function TeamScorer({ initialData }: Props = {}) {
     grandTotal,
   } = result;
 
+  const junior = !!team.junior;
+
   return (
     <>
       <JsonModal
@@ -295,8 +331,30 @@ export function TeamScorer({ initialData }: Props = {}) {
         />
       </div>
 
+      <section className="card">
+        <div className="line-head">適用規則</div>
+        <div className="switch-row">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={junior}
+            className={junior ? "switch is-on" : "switch"}
+            onClick={toggleJunior}
+          >
+            <span className="switch-knob" />
+          </button>
+          <span className="switch-label">ジュニアモード{junior ? "：ON" : "：OFF"}</span>
+        </div>
+        <p className="hint">
+          ジュニア適用規則（§10 変更規則1）で採点します。ダイビング前宙・後方宙返り半ひねりをC難度で認定し、
+          バク転→後方伸身宙返りの連続はまとめてC難度、2回宙返り系は選べません。各シリーズの実施減点は
+          {JUNIOR_SERIES_EXECUTION_MAX.toFixed(1)}点が上限です。
+        </p>
+      </section>
+
       <p className="note">
-        5人×3シリーズの構成です。各セルにタンブリング技列か徒手動作を入れます。縦に並ぶセルは同時実施として扱われます。
+        5人×3シリーズの構成です。転回シリーズは各セルにタンブリング技を入れ、縦に並ぶセルは同時実施として扱われます。
+        徒手シリーズは全員実施が前提なので、シリーズごとに徒手要素を1つ選びます。
       </p>
 
       {team.series.map((ser, sIdx) => {
@@ -306,7 +364,7 @@ export function TeamScorer({ initialData }: Props = {}) {
             <div className="line-head">
               <span>
                 シリーズ {sIdx + 1}
-                {ser.mode === "allTogether" ? "（同時実施）" : ""}
+                {ser.content === "motion" ? "（全員実施・徒手）" : ser.mode === "allTogether" ? "（同時実施）" : ""}
               </span>
               <span className="line-head-right">
                 <span className="diff-badge">{a.seriesDiff ? `シリーズ難度 ${a.seriesDiff}` : "難度 —"}</span>
@@ -324,8 +382,53 @@ export function TeamScorer({ initialData }: Props = {}) {
               >
                 {ser.mode === "allTogether" ? "同時実施シリーズ ✓" : "同時実施シリーズに切替"}
               </button>
+              {/* 徒手は全員実施が前提なので、同時実施シリーズでのみ転回／徒手を切り替える */}
+              {ser.mode === "allTogether" && (
+                <>
+                  <button
+                    className={ser.content !== "motion" ? "app-btn is-active" : "app-btn"}
+                    onClick={() => setSeriesContent(sIdx, "skill")}
+                  >
+                    転回
+                  </button>
+                  <button
+                    className={ser.content === "motion" ? "app-btn is-active" : "app-btn"}
+                    onClick={() => setSeriesContent(sIdx, "motion")}
+                  >
+                    徒手
+                  </button>
+                </>
+              )}
             </div>
 
+            {ser.content === "motion" ? (
+              <div className="motion-series">
+                <label className="exec-label">
+                  徒手要素：
+                  <select
+                    className="select"
+                    value={ser.lanes[0]?.[0]?.motionId || ""}
+                    onChange={(e) => setMotionOfSeries(sIdx, e.target.value)}
+                  >
+                    <option value="">徒手</option>
+                    {HAND_ELEMENT_GROUPS.map((g) => (
+                      <optgroup key={g.id} label={g.name}>
+                        {HAND_ELEMENTS.filter((h) => h.group === g.id).map((h) => (
+                          <option key={h.id} value={h.id}>
+                            {h.name}（{h.team}）
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </label>
+                <p className="hint">
+                  徒手は5人全員が実施することが前提です。§3.6.1 徒手系難度表の団体列（5名実施の値）でシリーズ難度を判定します。
+                  徒手は連続しないため、1シリーズにつき1つを選びます。
+                </p>
+              </div>
+            ) : (
+              <>
             <div className="team-grid-wrap">
               <table className="team-grid">
                 <thead>
@@ -374,15 +477,6 @@ export function TeamScorer({ initialData }: Props = {}) {
                                 <button className="cell-btn" onClick={() => setCellType(sIdx, laneIdx, slot, "skill")}>
                                   技
                                 </button>
-                                {/* 徒手は連続しないため、レーンの先頭スロット専用にする */}
-                                {slot === 0 && (
-                                  <button
-                                    className="cell-btn"
-                                    onClick={() => setCellType(sIdx, laneIdx, slot, "motion")}
-                                  >
-                                    徒手
-                                  </button>
-                                )}
                                 <button
                                   className="cell-btn"
                                   onClick={() => setCellType(sIdx, laneIdx, slot, "union")}
@@ -410,36 +504,16 @@ export function TeamScorer({ initialData }: Props = {}) {
                                   onChange={(e) => updateCell(sIdx, laneIdx, slot, { skillId: e.target.value })}
                                 >
                                   <option value="">技</option>
-                                  {SKILL_LIST.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                      {s.name}
+                                  {/* ジュニアで禁止の技（2回宙返り系）が既に選ばれている場合は印を付けて残す */}
+                                  {cell.skillId && !skillAllowed(cell.skillId, junior) && (
+                                    <option value={cell.skillId}>
+                                      {skillDef(cell.skillId)?.name}（ジュニア禁止）
                                     </option>
-                                  ))}
-                                </select>
-                                <button
-                                  className="remove-btn-xs"
-                                  onClick={() => setCellType(sIdx, laneIdx, slot, "empty")}
-                                >
-                                  <X size={10} />
-                                </button>
-                              </div>
-                            )}
-                            {cell.type === "motion" && (
-                              <div className="cell-edit">
-                                <select
-                                  className="select"
-                                  value={cell.motionId || ""}
-                                  onChange={(e) => updateCell(sIdx, laneIdx, slot, { motionId: e.target.value })}
-                                >
-                                  <option value="">徒手</option>
-                                  {HAND_ELEMENT_GROUPS.map((g) => (
-                                    <optgroup key={g.id} label={g.name}>
-                                      {HAND_ELEMENTS.filter((h) => h.group === g.id).map((h) => (
-                                        <option key={h.id} value={h.id}>
-                                          {h.name}（{h.team}）
-                                        </option>
-                                      ))}
-                                    </optgroup>
+                                  )}
+                                  {skillOptions(junior).map((sk) => (
+                                    <option key={sk.id} value={sk.id}>
+                                      {sk.name}（{skillDifficulty(sk.id, junior)}）
+                                    </option>
                                   ))}
                                 </select>
                                 <button
@@ -564,6 +638,8 @@ export function TeamScorer({ initialData }: Props = {}) {
                 全員が空のスロット：{emptyColumnWarnings[sIdx].map((s) => s + 1).join(", ")}
               </div>
             )}
+              </>
+            )}
             <label className="exec-label">
               実施減点(E)：
               <input
@@ -571,6 +647,7 @@ export function TeamScorer({ initialData }: Props = {}) {
                 type="number"
                 step="0.1"
                 min="0"
+                max={junior ? JUNIOR_SERIES_EXECUTION_MAX : undefined}
                 value={ser.executionDeduction || 0}
                 onChange={(e) => setSeriesExecution(sIdx, parseFloat(e.target.value) || 0)}
               />
