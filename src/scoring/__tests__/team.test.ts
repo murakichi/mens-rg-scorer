@@ -232,3 +232,46 @@ describe("団体の実施減点(E)はジュニアのみ1シリーズ最大1.0点
     expect(computeTeamScore(withExec(0.7, true)).seriesExecutionDeduction).toBeCloseTo(0.7, 5);
   });
 });
+
+describe("複雑な同調性タンブリング（A減点⑤）", () => {
+  const syncRow = (t: TeamState) => computeTeamScore(t).aDeductions.find((d) => d.key === "sync")!;
+  /** 5レーンのシリーズに (lane, slot) → 技 を置く */
+  const grid = (slots: number, cells: [number, number, string][]): TeamState => {
+    const ser = emptySeries(slots);
+    cells.forEach(([l, s, id]) => (ser.lanes[l][s] = skill(id)));
+    return { series: [ser] };
+  };
+
+  it("宙返りでなくても2〜4人が同時に転回系を実施すれば1回と数える", () => {
+    // ハンドスプリング（A・宙返りではない）を2人が同時に実施
+    const t = grid(1, [
+      [0, 0, "a_handspring"],
+      [1, 0, "a_handspring"],
+    ]);
+    expect(syncRow(t).detail).toContain("1回");
+    expect(syncRow(t).deduct).toBeCloseTo(0.1, 5);
+  });
+
+  it("5人そろったスロットは数えない（全員同時のタンブリング側で見る）", () => {
+    const t = grid(1, [0, 1, 2, 3, 4].map((l) => [l, 0, "a_handspring"] as [number, number, string]));
+    expect(syncRow(t).detail).toContain("0回");
+    expect(syncRow(t).deduct).toBeCloseTo(0.2, 5);
+  });
+
+  it("1人だけのスロットは数えない", () => {
+    expect(syncRow(grid(1, [[0, 0, "b_front"]])).detail).toContain("0回");
+  });
+
+  it("2回以上あれば減点なし（前宙4人 + ハンドスプリング2人）", () => {
+    const t = grid(2, [
+      [0, 0, "b_front"],
+      [1, 0, "b_front"],
+      [2, 0, "b_front"],
+      [3, 0, "b_front"],
+      [1, 1, "a_handspring"],
+      [3, 1, "a_handspring"],
+    ]);
+    expect(syncRow(t).detail).toContain("2回");
+    expect(syncRow(t).deduct).toBe(0);
+  });
+});

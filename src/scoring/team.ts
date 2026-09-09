@@ -687,17 +687,19 @@ export function computeTeamScore(team: TeamState): TeamScoreResult {
     }
     return false;
   });
-  // ⑤ 複雑な同調性タンブリング（演技全体）：同一スロットで2〜4人が同時に宙返り＝1回。0回 -0.2 / 1回 -0.1 / 2回以上 0
+  // ⑤ 複雑な同調性タンブリング（演技全体）：同一スロットで2〜4人が同時に転回系を実施＝1回。
+  // 0回 -0.2 / 1回 -0.1 / 2回以上 0。宙返りに限らずA難度の転回（ハンドスプリング・ロンダート等）も数える。
+  // 5人全員そろったスロットは「全員同時のタンブリング」(④)の対象なので、ここでは数えない。
   let syncCount = 0;
   team.series.forEach((ser) => {
     if (ser.mode === "allTogether" || ser.lanes.length < NUM_PLAYERS) return;
     for (let s = 0; s < ser.slots; s++) {
-      let saltos = 0;
+      let players = 0;
       for (let l = 0; l < NUM_PLAYERS; l++) {
         const cell = ser.lanes[l][s];
-        if (cell?.type === "skill" && cell.skillId && skillDef(cell.skillId)?.isSalto) saltos++;
+        if (cell?.type === "skill" && cell.skillId) players++;
       }
-      if (saltos >= 2 && saltos <= 4) syncCount++;
+      if (players >= 2 && players <= 4) syncCount++;
     }
   });
   const syncDeduct = syncCount >= 2 ? 0 : syncCount === 1 ? 0.1 : 0.2;
@@ -737,7 +739,7 @@ export function computeTeamScore(team: TeamState): TeamScoreResult {
     {
       key: "sync",
       label: "複雑な同調性タンブリング（0回 -0.2 / 1回 -0.1）",
-      detail: `${syncCount}回`,
+      detail: `${syncCount}回（2〜4人が同時に転回系のスロット）`,
       deduct: syncDeduct,
     },
     {
