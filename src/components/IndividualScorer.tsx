@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from "react";
-import { Download, Upload, Link2, BookMarked } from "lucide-react";
+import { Download, Upload, Link2, BookMarked, Save } from "lucide-react";
 import { APPARATUS, APPARATUS_REQUIRED_ELEMENTS, VIOLATION_OPTIONS } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
 import type { ApparatusKey, Series } from "../scoring/types";
@@ -265,6 +265,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
         <button className="io-btn" onClick={handleCopyShareUrl}>
           <Link2 size={14} /> 共有URLをコピー
         </button>
+        <button className="io-btn" onClick={saveCurrentRoutine}>
+          <Save size={14} /> 構成をテンプレートに保存
+        </button>
         <button className="io-btn" onClick={() => setTemplateOpen(true)}>
           <BookMarked size={14} /> テンプレート
         </button>
@@ -391,6 +394,24 @@ export function IndividualScorer({ initialData }: Props = {}) {
       </section>
 
       <ScoreSummary result={result} apparatus={apparatus} />
+
+      {/* 入力中どこにいても届くように、画面下に貼り付く操作バー */}
+      <div className="action-bar">
+        <span className="action-bar-score">
+          合計 <b>{result.grandTotal.toFixed(1)}</b>
+          <span className="action-bar-sub">
+            D {result.dScore.toFixed(1)}／A {result.aScore.toFixed(1)}／E {result.eScore.toFixed(1)}
+          </span>
+        </span>
+        <span className="action-bar-btns">
+          <button className="io-btn" onClick={saveCurrentRoutine}>
+            <Save size={14} /> 構成を保存
+          </button>
+          <button className="io-btn" onClick={() => setTemplateOpen(true)}>
+            <BookMarked size={14} /> テンプレート
+          </button>
+        </span>
+      </div>
     </>
   );
 }

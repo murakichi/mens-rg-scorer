@@ -8,6 +8,7 @@ import {
   removeTemplate,
   renameTemplate,
   splitByApparatus,
+  templateMetrics,
 } from "../templates";
 import type { Series } from "../types";
 
@@ -113,5 +114,56 @@ describe("カード表示用のシリーズ要約", () => {
     };
     expect(describeSeries(many)).toBe("投げ→投げ→投げ→投げ→投げ→投げ→…");
     expect(describeSeries({ executionDeduction: 0, items: [] })).toBe("（空）");
+  });
+});
+
+describe("テンプレートの難度・点数（範囲検索用）", () => {
+  const throwFront = (): Series => ({
+    executionDeduction: 0,
+    items: [
+      { kind: "throw", throwTypes: [], reqTypes: [] },
+      { kind: "skill", skillId: "b_front", hasApparatus: false, isThrow: false },
+      { kind: "catch", catchTypes: [], catchTwo: false },
+    ],
+  });
+  const salto3 = (): Series => ({
+    executionDeduction: 0,
+    items: ["b_backsalto", "b_backsalto", "b_backsalto"].map((skillId) => ({
+      kind: "skill" as const,
+      skillId,
+      hasApparatus: false,
+      isThrow: false,
+    })),
+  });
+
+  it("含まれるユニットの最高難度とDスコアを返す", () => {
+    const a = templateMetrics([throwFront()], "stick");
+    expect(a.diff).toBe("C"); // 投げ+前宙 = 投げタンC
+    expect(a.dScore).toBeCloseTo(0.3, 5);
+    const b = templateMetrics([salto3()], "stick");
+    expect(b.diff).toBe("D"); // B+1+1 = D
+    expect(b.dScore).toBeCloseTo(0.5, 5);
+  });
+
+  it("複数シリーズの構成は全体のDになる", () => {
+    const both = templateMetrics([throwFront(), salto3()], "stick");
+    expect(both.dScore).toBeCloseTo(0.8, 5);
+    expect(both.diff).toBe("D");
+  });
+
+  it("空のシリーズは難度なし・0点", () => {
+    const m = templateMetrics([{ executionDeduction: 0, items: [] }], "stick");
+    expect(m.diff).toBeNull();
+    expect(m.diffValue).toBe(0);
+    expect(m.dScore).toBe(0);
+  });
+
+  it("ジュニアの難度認定が反映される（ダイビング前宙 B→C）", () => {
+    const ser: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "skill", skillId: "b_divefront", hasApparatus: false, isThrow: false }],
+    };
+    expect(templateMetrics([ser], "stick").diff).toBe("B");
+    expect(templateMetrics([ser], "stick", true).diff).toBe("C");
   });
 });

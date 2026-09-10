@@ -1218,3 +1218,161 @@ input[type="checkbox"] {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ---- 画面下に貼り付く操作バー（個人モード） ---- */
+.action-bar {
+  position: sticky;
+  bottom: 10px;
+  z-index: 50;
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(18px) saturate(180%);
+  box-shadow: 0 12px 30px -12px rgba(40, 40, 90, 0.35);
+}
+.action-bar-score {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  padding-left: 6px;
+}
+.action-bar-score b {
+  font-size: 18px;
+  color: var(--ink);
+}
+.action-bar-sub {
+  font-size: 11px;
+}
+.action-bar-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 560px) {
+  /* 画面を塞がないよう1行に収める */
+  .action-bar {
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    flex-wrap: nowrap;
+  }
+  .action-bar-sub {
+    display: none;
+  }
+  .action-bar-score {
+    padding-left: 2px;
+    font-size: 12px;
+  }
+  .action-bar-score b {
+    font-size: 16px;
+  }
+  .action-bar-btns {
+    flex-wrap: nowrap;
+  }
+  .action-bar .io-btn {
+    padding: 7px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}
+
+
+/* ---- シリーズのタグ／テンプレート検索 ---- */
+.tag-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-left: 8px;
+}
+.tag {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: rgba(120, 130, 255, 0.12);
+  border: 1px solid rgba(120, 130, 255, 0.25);
+  white-space: nowrap;
+}
+.tag-btn {
+  cursor: pointer;
+  color: var(--ink-soft);
+  background: var(--glass-soft);
+  border-color: var(--glass-border);
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+.tag-btn:hover {
+  border-color: var(--accent);
+}
+.tag-btn.is-on {
+  color: #fff;
+  background: var(--accent-grad);
+  border-color: transparent;
+}
+.tpl-card .tag-row {
+  margin-left: 0;
+}
+.tpl-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.tpl-search .tag-row {
+  margin-left: 0;
+}
+.tpl-search-input {
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(150, 150, 190, 0.35);
+  color: var(--ink);
+  border-radius: var(--radius-xs);
+  font-size: 13px;
+  padding: 7px 10px;
+  width: 100%;
+}
+.tpl-search-input:focus,
+.tpl-range-input:focus,
+.tpl-range-sel:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+/* 難度・点数の範囲指定 */
+.tpl-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  flex-wrap: wrap;
+}
+.tpl-range-sel {
+  min-width: 0;
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.tpl-range-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(150, 150, 190, 0.35);
+  color: var(--ink);
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+  padding: 5px 8px;
+}

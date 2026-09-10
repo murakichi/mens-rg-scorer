@@ -5,8 +5,9 @@
 // 保持するのは入力データ（Series / Series[] と手具）だけ。
 // =====================================================================
 
-import { APPARATUS, HAND_MOTIONS, MOTION_OPTIONS, ropeJumpDef, skillDef } from "./constants";
-import type { ApparatusKey, Item, Series } from "./types";
+import { APPARATUS, DIFF_VALUE, HAND_MOTIONS, MOTION_OPTIONS, VALUE_DIFF, ropeJumpDef, skillDef } from "./constants";
+import { computeScore } from "./score";
+import type { ApparatusKey, Difficulty, Item, Series } from "./types";
 
 export const TEMPLATE_STORAGE_KEY = "mens-rg-scorer:templates:v1";
 
@@ -170,4 +171,22 @@ export function describeSeries(series: Series, max = 6): string {
   const labels = series.items.map(itemLabel);
   if (labels.length === 0) return "（空）";
   return labels.length > max ? `${labels.slice(0, max).join("→")}→…` : labels.join("→");
+}
+
+
+/** テンプレートの検索・表示に使う指標 */
+export interface TemplateMetrics {
+  /** 含まれるユニットの最高難度（空なら null） */
+  diff: Difficulty | null;
+  diffValue: number;
+  /** そのテンプレート単体で採点したときのD（難度点＋加点） */
+  dScore: number;
+}
+
+/** テンプレート（シリーズ1つ／構成まるごと）の難度と点数を求める */
+export function templateMetrics(list: Series[], apparatus: ApparatusKey, junior = false): TemplateMetrics {
+  const r = computeScore(list, apparatus, { junior });
+  let v = 0;
+  r.analysis.forEach((a) => a.units.forEach((u) => (v = Math.max(v, DIFF_VALUE[u.finalDiff]))));
+  return { diff: v > 0 ? VALUE_DIFF[v] : null, diffValue: v, dScore: r.dScore };
 }

@@ -3,13 +3,19 @@ import { X, Trash2, Download, Upload, Plus, ChevronLeft } from "lucide-react";
 import { APPARATUS } from "../scoring/constants";
 import {
   addRoutineTemplate,
+  addSeriesTemplate,
   apparatusName,
   describeSeries,
   removeTemplate,
+  templateMetrics,
   type TemplateKind,
   type TemplateStore,
 } from "../scoring/templates";
+import { DIFF_VALUE } from "../scoring/constants";
+import type { Difficulty } from "../scoring/types";
 import { SeriesListEditor } from "./SeriesListEditor";
+import { SeriesTags } from "./SeriesCard";
+import { SERIES_TAGS, seriesTags, type SeriesTagId } from "../scoring/analysis";
 import type { ApparatusKey, Series } from "../scoring/types";
 
 interface Props {
@@ -64,6 +70,13 @@ export function TemplateModal({
   onImport,
 }: Props) {
   const [sel, setSel] = useState<Selection>(null);
+  const [query, setQuery] = useState("");
+  const [tagFilter, setTagFilter] = useState<SeriesTagId[]>([]);
+  // 難度・点数は範囲で絞り込む（空欄＝制限なし）
+  const [diffMin, setDiffMin] = useState("");
+  const [diffMax, setDiffMax] = useState("");
+  const [scoreMin, setScoreMin] = useState("");
+  const [scoreMax, setScoreMax] = useState("");
   const narrow = useNarrow();
   if (!open) return null;
 
@@ -110,23 +123,79 @@ export function TemplateModal({
     if (sel?.id === id) setSel(null);
   };
 
+  const emptySeries = (): Series => ({
+    executionDeduction: 0,
+    items: [{ kind: "skill", skillId: "", hasApparatus: false, isThrow: false }],
+  });
+
   const addRoutine = () => {
     const name = window.prompt("新しい構成テンプレートの名前");
     if (!name?.trim()) return;
-    const next = addRoutineTemplate(store, name, apparatus, [
-      { executionDeduction: 0, items: [{ kind: "skill", skillId: "", hasApparatus: false, isThrow: false }] },
-    ]);
+    const next = addRoutineTemplate(store, name, apparatus, [emptySeries()]);
     onChange(next);
     setSel({ kind: "routine", id: next.routines[0].id });
   };
 
+  const addSeries = () => {
+    const name = window.prompt("新しいシリーズテンプレートの名前");
+    if (!name?.trim()) return;
+    const next = addSeriesTemplate(store, name, apparatus, emptySeries());
+    onChange(next);
+    setSel({ kind: "series", id: next.series[0].id });
+  };
+
+  const toggleTag = (id: SeriesTagId) =>
+    setTagFilter((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+
+  const filtering =
+    !!query.trim() || tagFilter.length > 0 || !!diffMin || !!diffMax || !!scoreMin || !!scoreMax;
+  const clearFilters = () => {
+    setQuery("");
+    setTagFilter([]);
+    setDiffMin("");
+    setDiffMax("");
+    setScoreMin("");
+    setScoreMax("");
+  };
+
+  /** フリーワード（名前・手具・中身）・タグ・難度／点数の範囲で絞り込む */
+  const matches = (name: string, ap: ApparatusKey, list: Series[]) => {
+    const q = query.trim().toLowerCase();
+    if (q) {
+      const hay = [name, apparatusName(ap), ...list.map((s) => describeSeries(s, 99))].join(" ").toLowerCase();
+      if (!q.split(/\s+/).every((w) => hay.includes(w))) return false;
+    }
+    if (tagFilter.length > 0) {
+      const tags = new Set(list.flatMap((s) => seriesTags(s, junior)));
+      if (!tagFilter.every((t) => tags.has(t))) return false;
+    }
+    if (diffMin || diffMax || scoreMin || scoreMax) {
+      const m = templateMetrics(list, ap, junior);
+      if (diffMin && m.diffValue < DIFF_VALUE[diffMin as Difficulty]) return false;
+      if (diffMax && (m.diffValue === 0 || m.diffValue > DIFF_VALUE[diffMax as Difficulty])) return false;
+      if (scoreMin && m.dScore < parseFloat(scoreMin) - 1e-9) return false;
+      if (scoreMax && m.dScore > parseFloat(scoreMax) + 1e-9) return false;
+    }
+    return true;
+  };
+
   const cards = (kind: TemplateKind) => {
-    const items = kind === "series" ? store.series : store.routines;
+    const all = kind === "series" ? store.series : store.routines;
+    const items = all.filter((t) =>
+      matches(
+        t.name,
+        t.apparatus,
+        kind === "series" ? [(t as { series: Series }).series] : (t as { series: Series[] }).series,
+      ),
+    );
+    if (all.length > 0 && items.length === 0) {
+      return <p className="hint">条件に合うテンプレートがありません。</p>;
+    }
     if (items.length === 0) {
       return (
         <p className="hint">
           {kind === "series"
-            ? "各シリーズの「テンプレートに保存」から登録します。"
+            ? "採点画面の各シリーズの「テンプレートに保存」か、下の「新規」から登録します。"
             : "「現在の構成を保存」から登録します。"}
         </p>
       );
@@ -160,6 +229,14 @@ export function TemplateModal({
               <span className="tpl-card-meta">
                 {apparatusName(t.apparatus)}
                 {kind === "routine" && `・${list.length}シリーズ`}／{stamp(t.updatedAt)}
+                {(() => {
+                  const m = templateMetrics(list, t.apparatus, junior);
+                  return (
+                    <>
+                      ／難度 {m.diff ?? "—"}・D {m.dScore.toFixed(1)}
+                    </>
+                  );
+                })()}
               </span>
               <span className="tpl-card-body">
                 {list.slice(0, 3).map((ser, i) => (
@@ -170,6 +247,7 @@ export function TemplateModal({
                 ))}
                 {list.length > 3 && <span className="tpl-card-line">…ほか{list.length - 3}シリーズ</span>}
               </span>
+              {kind === "series" && <SeriesTags series={list[0]} junior={junior} />}
             </button>
           );
         })}
@@ -232,6 +310,76 @@ export function TemplateModal({
 
         <div className={narrow ? "tpl-panes is-narrow" : "tpl-panes"}>
           <div className="tpl-list">
+            <div className="tpl-search">
+              <input
+                className="tpl-search-input"
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="名前・技名で検索"
+              />
+              <span className="tag-row">
+                {SERIES_TAGS.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    title={t.title}
+                    className={tagFilter.includes(t.id) ? "tag tag-btn is-on" : "tag tag-btn"}
+                    onClick={() => toggleTag(t.id)}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+                {filtering && (
+                  <button type="button" className="tag tag-btn" onClick={clearFilters}>
+                    クリア
+                  </button>
+                )}
+              </span>
+              <span className="tpl-range">
+                難度
+                <select className="select tpl-range-sel" value={diffMin} onChange={(e) => setDiffMin(e.target.value)}>
+                  <option value="">下限なし</option>
+                  {(["A", "B", "C", "D", "E"] as Difficulty[]).map((d) => (
+                    <option key={d} value={d}>
+                      {d}以上
+                    </option>
+                  ))}
+                </select>
+                〜
+                <select className="select tpl-range-sel" value={diffMax} onChange={(e) => setDiffMax(e.target.value)}>
+                  <option value="">上限なし</option>
+                  {(["A", "B", "C", "D", "E"] as Difficulty[]).map((d) => (
+                    <option key={d} value={d}>
+                      {d}以下
+                    </option>
+                  ))}
+                </select>
+              </span>
+              <span className="tpl-range">
+                点数(D)
+                <input
+                  className="tpl-range-input"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={scoreMin}
+                  onChange={(e) => setScoreMin(e.target.value)}
+                  placeholder="下限"
+                />
+                〜
+                <input
+                  className="tpl-range-input"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={scoreMax}
+                  onChange={(e) => setScoreMax(e.target.value)}
+                  placeholder="上限"
+                />
+              </span>
+            </div>
+
             <div className="line-head">演技構成のテンプレート</div>
             {cards("routine")}
             <div className="tpl-list-actions">
@@ -245,6 +393,11 @@ export function TemplateModal({
 
             <div className="line-head">シリーズのテンプレート</div>
             {cards("series")}
+            <div className="tpl-list-actions">
+              <button className="io-btn" onClick={addSeries}>
+                <Plus size={13} /> 新規
+              </button>
+            </div>
           </div>
 
           {!narrow && (
