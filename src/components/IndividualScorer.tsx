@@ -1,6 +1,13 @@
 import { useState, useMemo, useRef } from "react";
 import { Download, Upload, Link2, BookMarked, Save, Shuffle } from "lucide-react";
-import { APPARATUS, APPARATUS_REQUIRED_ELEMENTS, VIOLATION_OPTIONS } from "../scoring/constants";
+import {
+  APPARATUS,
+  APPARATUS_REQUIRED_ELEMENTS,
+  ART_DEDUCTION_ITEMS,
+  ART_DEDUCTION_STEP,
+  VIOLATION_OPTIONS,
+  clampArtDeduction,
+} from "../scoring/constants";
 import { computeScore } from "../scoring/score";
 import type { ApparatusKey, Series } from "../scoring/types";
 import { buildShareUrl } from "../scoring/share";
@@ -30,11 +37,23 @@ interface Props {
     apparatusElements?: unknown;
     violations?: unknown;
     junior?: unknown;
+    artDeductions?: unknown;
     series?: unknown;
   };
 }
 
 const asStringArray = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+
+/** 保存データの欠点テーブルを項目ごとに丸めて取り込む */
+const normalizeArt = (v: unknown): Record<string, number> => {
+  const src = (v ?? {}) as Record<string, unknown>;
+  const out: Record<string, number> = {};
+  ART_DEDUCTION_ITEMS.forEach((item) => {
+    const n = clampArtDeduction(item.id, src[item.id]);
+    if (n > 0) out[item.id] = n;
+  });
+  return out;
+};
 
 export function IndividualScorer({ initialData }: Props = {}) {
   const [apparatus, setApparatus] = useState<ApparatusKey>(() =>
@@ -51,6 +70,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [apparatusElements, setApparatusElements] = useState<string[]>(() => asStringArray(initialData?.apparatusElements));
   const [violations, setViolations] = useState<string[]>(() => asStringArray(initialData?.violations));
   const [junior, setJunior] = useState<boolean>(() => !!initialData?.junior);
+  const [artDeductions, setArtDeductions] = useState<Record<string, number>>(() =>
+    normalizeArt(initialData?.artDeductions),
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
   const [jsonText, setJsonText] = useState("");
@@ -71,8 +93,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
         apparatusElements,
         violations,
         junior,
+        artDeductions,
       }),
-    [series, apparatus, overallExecution, apparatusElements, violations, junior],
+    [series, apparatus, overallExecution, apparatusElements, violations, junior, artDeductions],
   );
 
   // 自動判定の要素（auto付き）は手動チェック欄に出さない
@@ -88,6 +111,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     apparatusElements,
     violations,
     junior,
+    artDeductions,
     series,
   });
   const handleExport = () => {
@@ -109,6 +133,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setApparatusElements(asStringArray(data.apparatusElements));
     setViolations(asStringArray(data.violations));
     setJunior(!!data.junior);
+    setArtDeductions(normalizeArt(data.artDeductions));
     if (Array.isArray(data.series) && data.series.length > 0) {
       setSeries(data.series);
       return true;
@@ -401,6 +426,54 @@ export function IndividualScorer({ initialData }: Props = {}) {
             </p>
           </>
         )}
+      </section>
+
+      <section className="card">
+        <div className="line-head">芸術と多様性の欠点（§3.5.6.4）</div>
+        {ART_DEDUCTION_ITEMS.map((item, i) => {
+          const prev = ART_DEDUCTION_ITEMS[i - 1];
+          const value = artDeductions[item.id] ?? 0;
+          return (
+            <div key={item.id}>
+              {item.group !== prev?.group && <div className="art-group">{item.group}</div>}
+              <label className="art-row">
+                <span className="art-row-name">
+                  {item.name}
+                  <span className="art-row-note">
+                    上限 {item.max.toFixed(2)}／減点幅 {item.note}
+                  </span>
+                </span>
+                <select
+                  className="select art-select"
+                  value={value}
+                  onChange={(e) =>
+                    setArtDeductions((p) => {
+                      const n = { ...p };
+                      const v = clampArtDeduction(item.id, e.target.value);
+                      if (v > 0) n[item.id] = v;
+                      else delete n[item.id];
+                      return n;
+                    })
+                  }
+                >
+                  <option value={0}>—</option>
+                  {Array.from({ length: Math.round(item.max / ART_DEDUCTION_STEP) }, (_, k) => {
+                    const v = Math.round((k + 1) * ART_DEDUCTION_STEP * 10) / 10;
+                    return (
+                      <option key={v} value={v}>
+                        -{v.toFixed(1)}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            </div>
+          );
+        })}
+        <p className="hint">
+          審判の主観評価にあたる項目です。該当する減点を選びます（A減点に加算）。
+          「投げ受けの操作（上限0.50）」はシリーズ入力から自動判定するため、ここには出しません。
+        </p>
       </section>
 
       <section className="card">

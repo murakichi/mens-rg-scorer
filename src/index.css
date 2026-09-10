@@ -1403,3 +1403,34 @@ input[type="checkbox"] {
   color: var(--ink-soft);
   margin-left: 8px;
 }
+
+
+/* ---- 芸術と多様性の欠点テーブル（手入力） ---- */
+.art-group {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin: 10px 0 4px;
+}
+.art-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.art-row-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.art-row-note {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.art-select {
+  min-width: 92px;
+  flex: none;
+  padding: 6px 10px;
+}

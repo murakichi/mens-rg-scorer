@@ -40,6 +40,8 @@ import {
   type RequiredElementAuto,
   VIOLATION_OPTIONS,
   skillDef,
+  ART_DEDUCTION_ITEMS,
+  clampArtDeduction,
 } from "./constants";
 import {
   analyzeSeries,
@@ -121,6 +123,10 @@ export interface ScoreResult {
   apparatusElementDeduction: number;
   violationChecks: RequiredCheck[];
   violationDeduction: number;
+  /** §3.5.6.4 欠点テーブルの合計減点 */
+  artDeduction: number;
+  /** 欠点テーブルの内訳（入力があった項目だけでなく全項目を返す） */
+  artRows: { id: string; name: string; group: string; max: number; note: string; value: number }[];
   noApparatusDeduction: number;
   connectNoApparatus: boolean;
   missingDirCount: number;
@@ -175,6 +181,8 @@ export interface ComputeOptions {
   violations?: string[];
   /** ジュニア適用規則（変更規則1）で採点するか */
   junior?: boolean;
+  /** §3.5.6.4 芸術と多様性の欠点テーブル（項目id → 減点）。審判の主観評価。 */
+  artDeductions?: Record<string, number>;
 }
 
 export function computeScore(
@@ -182,7 +190,13 @@ export function computeScore(
   apparatus: ApparatusKey,
   opts: ComputeOptions = {},
 ): ScoreResult {
-  const { overallExecutionDeduction = 0, apparatusElements = [], violations = [], junior = false } = opts;
+  const {
+    overallExecutionDeduction = 0,
+    apparatusElements = [],
+    violations = [],
+    junior = false,
+    artDeductions = {},
+  } = opts;
   const analysis = series.map((ser) => analyzeSeries(ser, junior));
   const requiredThrowCount = throwCountRequired(junior);
   const maxThrowCount = throwCountMax(junior);
@@ -639,7 +653,19 @@ export function computeScore(
   const executionDeduction = seriesExecutionDeduction + overallExec;
   const dScore =
     tumblingScore + handScore + seriesBonus + techniqueBonus + apparatusOpBonus + twoThrowMotionBonus + jumpVarietyBonus;
+  // §3.5.6.4 欠点テーブル（主観評価の手入力）
+  const artRows = ART_DEDUCTION_ITEMS.map((item) => ({
+    id: item.id,
+    name: item.name,
+    group: item.group,
+    max: item.max,
+    note: item.note,
+    value: clampArtDeduction(item.id, artDeductions[item.id]),
+  }));
+  const artDeduction = artRows.reduce((s, r) => s + r.value, 0);
+
   const aDeduction =
+    artDeduction +
     noApparatusDeduction +
     directionDeduction +
     throwCountDeduction +
@@ -673,6 +699,8 @@ export function computeScore(
     apparatusElementDeduction,
     violationChecks,
     violationDeduction,
+    artDeduction,
+    artRows,
     noApparatusDeduction,
     connectNoApparatus,
     missingDirCount,
