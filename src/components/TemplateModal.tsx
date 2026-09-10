@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
 import { X, Trash2, Download, Upload, Plus, ChevronLeft } from "lucide-react";
-import { APPARATUS } from "../scoring/constants";
 import {
   addRoutineTemplate,
   addSeriesTemplate,
   apparatusName,
+  commonBlockers,
   describeSeries,
+  isCommonApparatus,
   removeTemplate,
+  scoringApparatus,
   templateMetrics,
+  TEMPLATE_APPARATUS_OPTIONS,
+  type TemplateApparatus,
   type TemplateKind,
   type TemplateStore,
 } from "../scoring/templates";
@@ -93,9 +97,9 @@ export function TemplateModal({
     : [];
 
   /** 選択中のテンプレートを書き換える */
-  const patchSelected = (patch: { name?: string; apparatus?: ApparatusKey; series?: Series[] }) => {
+  const patchSelected = (patch: { name?: string; apparatus?: TemplateApparatus; series?: Series[] }) => {
     if (!sel) return;
-    const apply = <T extends { id: string; name: string; apparatus: ApparatusKey; updatedAt: number }>(
+    const apply = <T extends { id: string; name: string; apparatus: TemplateApparatus; updatedAt: number }>(
       list: T[],
       toSeries: (s: Series[]) => unknown,
     ): T[] =>
@@ -159,7 +163,7 @@ export function TemplateModal({
   };
 
   /** フリーワード（名前・手具・中身）・タグ・難度／点数の範囲で絞り込む */
-  const matches = (name: string, ap: ApparatusKey, list: Series[]) => {
+  const matches = (name: string, ap: TemplateApparatus, list: Series[]) => {
     const q = query.trim().toLowerCase();
     if (q) {
       const hay = [name, apparatusName(ap), ...list.map((s) => describeSeries(s, 99))].join(" ").toLowerCase();
@@ -177,6 +181,18 @@ export function TemplateModal({
       if (scoreMax && m.dScore > parseFloat(scoreMax) + 1e-9) return false;
     }
     return true;
+  };
+
+  /** 手具を変える。共通にするときは手具固有の要素が入っていないか確かめる。 */
+  const setApparatusOf = (next: TemplateApparatus) => {
+    if (isCommonApparatus(next)) {
+      const blockers = commonBlockers(selectedSeries);
+      if (blockers.length > 0) {
+        window.alert(`共通にできません：${blockers.join("・")}が含まれています。`);
+        return;
+      }
+    }
+    patchSelected({ apparatus: next });
   };
 
   const cards = (kind: TemplateKind) => {
@@ -277,19 +293,26 @@ export function TemplateModal({
         </button>
       </div>
       <div className="app-wrap">
-        {(Object.entries(APPARATUS) as [ApparatusKey, { name: string }][]).map(([k, v]) => (
+        {TEMPLATE_APPARATUS_OPTIONS.map((o) => (
           <button
-            key={k}
-            className={k === selected.apparatus ? "app-btn is-active" : "app-btn"}
-            onClick={() => patchSelected({ apparatus: k })}
+            key={o.id}
+            className={o.id === selected.apparatus ? "app-btn is-active" : "app-btn"}
+            onClick={() => setApparatusOf(o.id)}
           >
-            {v.name}
+            {o.name}
           </button>
         ))}
       </div>
+      {isCommonApparatus(selected.apparatus) && (
+        <p className="hint">
+          共通テンプレートはどの手具でも使えます。手具固有の要素（二つ投げ・左手投げ・手具を使った投げ／キャッチ・
+          2つ同時キャッチ・ロープ跳び）は入力できません。
+        </p>
+      )}
       <SeriesListEditor
         series={selectedSeries}
-        apparatus={selected.apparatus}
+        apparatus={scoringApparatus(selected.apparatus)}
+        common={isCommonApparatus(selected.apparatus)}
         junior={junior}
         allowAdd={sel!.kind === "routine"}
         showExec={false}

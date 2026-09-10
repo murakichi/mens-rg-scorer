@@ -43,6 +43,8 @@ interface Props {
   canRemove: boolean;
   /** 実施減点の行を出すか（テンプレート編集では出さない） */
   showExec?: boolean;
+  /** 共通テンプレートの編集か（手具固有の入力を出さない） */
+  common?: boolean;
   /** テンプレート読み込みプルダウンの選択肢（省略時はプルダウンを出さない） */
   templateOptions?: SeriesTemplateOption[];
   onLoadTemplate?: (templateId: string) => void;
@@ -87,12 +89,15 @@ function ItemEditor({
   item,
   apparatus,
   junior,
+  common,
   prevMotionId,
   onUpdate,
 }: {
   item: Item;
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 共通テンプレートの編集か（手具固有の入力を出さない） */
+  common?: boolean;
   /** 直前の徒手動作アイテムで選ばれていた動作（選択肢の並べ替えに使う） */
   prevMotionId?: string;
   onUpdate: (patch: Partial<Item>) => void;
@@ -101,7 +106,7 @@ function ItemEditor({
     return (
       <>
         <div className="throw-tag">投げ</div>
-        {[...THROW_OPTIONS_COMMON, ...(APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map((opt) => (
+        {[...THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map((opt) => (
           <label key={opt.id} className="check">
             <input
               type="checkbox"
@@ -111,7 +116,7 @@ function ItemEditor({
             {opt.name}
           </label>
         ))}
-        {REQUIRED_THROW_OPTIONS[apparatus].map((opt) => (
+        {(common ? [] : REQUIRED_THROW_OPTIONS[apparatus]).map((opt) => (
           <label key={opt.id} className="check-req">
             <input
               type="checkbox"
@@ -128,7 +133,7 @@ function ItemEditor({
     return (
       <>
         <div className="catch-tag">キャッチ</div>
-        {[...CATCH_OPTIONS_COMMON, ...(APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])].map((opt) => (
+        {[...CATCH_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])].map((opt) => (
           <label key={opt.id} className="check">
             <input
               type="checkbox"
@@ -138,7 +143,7 @@ function ItemEditor({
             {opt.name}
           </label>
         ))}
-        {APPARATUS_USE[apparatus] && (
+        {!common && APPARATUS_USE[apparatus] && (
           <label className="check-req">
             <input
               type="checkbox"
@@ -198,7 +203,7 @@ function ItemEditor({
           この技の最中に投げ
         </label>
         {item.isThrow &&
-          [...SKILL_THROW_OPTIONS_COMMON, ...(APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map(
+          [...SKILL_THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map(
             (opt) => (
               <label key={opt.id} className="check">
                 <input
@@ -338,6 +343,7 @@ export function SeriesCard({
   isDupSignature,
   canRemove,
   showExec = true,
+  common = false,
   templateOptions,
   onLoadTemplate,
   onSaveTemplate,
@@ -442,6 +448,7 @@ export function SeriesCard({
               item={item}
               apparatus={apparatus}
               junior={junior}
+              common={common}
               prevMotionId={prevMotionId(ser.items, iIdx)}
               onUpdate={(patch) => onUpdateItem(iIdx, patch)}
             />
@@ -462,7 +469,7 @@ export function SeriesCard({
         <button className="add-btn-sm" onClick={() => onAddItem("motion")}>
           ＋ 徒手動作
         </button>
-        {apparatus === "rope" && (
+        {!common && apparatus === "rope" && (
           <button className="add-btn-sm" onClick={() => onAddItem("ropeJump")}>
             ＋ ロープ跳び
           </button>

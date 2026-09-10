@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   addRoutineTemplate,
+  apparatusName,
+  commonBlockers,
   describeSeries,
+  scoringApparatus,
   addSeriesTemplate,
   emptyTemplateStore,
   normalizeTemplateStore,
@@ -10,7 +13,7 @@ import {
   splitByApparatus,
   templateMetrics,
 } from "../templates";
-import type { Series } from "../types";
+import type { Item, Series } from "../types";
 
 const ser = (skillId: string): Series => ({
   executionDeduction: 0,
@@ -165,5 +168,54 @@ describe("テンプレートの難度・点数（範囲検索用）", () => {
     };
     expect(templateMetrics([ser], "stick").diff).toBe("B");
     expect(templateMetrics([ser], "stick", true).diff).toBe("C");
+  });
+});
+
+describe("共通テンプレート", () => {
+  const item = (i: Item): Series => ({ executionDeduction: 0, items: [i] });
+
+  it("手具固有の要素があると共通にできない", () => {
+    expect(commonBlockers([item({ kind: "throw", reqTypes: ["lefthand"] })])).toEqual(["左手投げ"]);
+    expect(commonBlockers([item({ kind: "throw", reqTypes: ["twothrow"] })])).toEqual(["二つ投げ"]);
+    expect(commonBlockers([item({ kind: "throw", throwTypes: ["useapp"] })])).toEqual(["手具を使った投げ"]);
+    expect(commonBlockers([item({ kind: "catch", catchTypes: ["useapp"] })])).toEqual(["手具を使ったキャッチ"]);
+    expect(commonBlockers([item({ kind: "catch", catchTwo: true })])).toEqual(["2つ同時キャッチ"]);
+    expect(commonBlockers([item({ kind: "ropeJump", jumpId: "2f" })])).toEqual(["ロープ跳び"]);
+  });
+
+  it("手具に依らない内容なら共通にできる", () => {
+    const ser: Series = {
+      executionDeduction: 0,
+      items: [
+        { kind: "throw", throwTypes: ["noview"] },
+        { kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: false },
+        { kind: "catch", catchTypes: ["nonhand"] },
+      ],
+    };
+    expect(commonBlockers([ser])).toEqual([]);
+  });
+
+  it("共通・この手具・他の手具に分かれる", () => {
+    let store = addSeriesTemplate(emptyTemplateStore(), "共通の", "common", ser("b_front"));
+    store = addSeriesTemplate(store, "スティックの", "stick", ser("b_front"));
+    store = addSeriesTemplate(store, "ロープの", "rope", ser("b_front"));
+    const { common, same, other } = splitByApparatus(store.series, "stick");
+    expect(common.map((t) => t.name)).toEqual(["共通の"]);
+    expect(same.map((t) => t.name)).toEqual(["スティックの"]);
+    expect(other.map((t) => t.name)).toEqual(["ロープの"]);
+  });
+
+  it("共通は手具名として「共通」を返し、採点にはスティックを使う", () => {
+    expect(apparatusName("common")).toBe("共通");
+    expect(scoringApparatus("common")).toBe("stick");
+    expect(scoringApparatus("rope")).toBe("rope");
+  });
+
+  it("保存データの共通も復元できる", () => {
+    const store = normalizeTemplateStore({
+      series: [{ name: "c", apparatus: "common", series: ser("b_front") }],
+      routines: [],
+    });
+    expect(store.series[0].apparatus).toBe("common");
   });
 });

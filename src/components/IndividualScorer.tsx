@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from "react";
-import { Download, Upload, Link2, BookMarked, Save } from "lucide-react";
+import { Download, Upload, Link2, BookMarked, Save, Shuffle } from "lucide-react";
 import { APPARATUS, APPARATUS_REQUIRED_ELEMENTS, VIOLATION_OPTIONS } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
 import type { ApparatusKey, Series } from "../scoring/types";
@@ -7,11 +7,13 @@ import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
 import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
 import { TemplateModal } from "./TemplateModal";
+import { GenerateModal } from "./GenerateModal";
 import { ScoreSummary } from "./ScoreSummary";
 import {
   addRoutineTemplate,
   addSeriesTemplate,
   apparatusName,
+  isCommonApparatus,
   loadTemplates,
   normalizeTemplateStore,
   saveTemplates,
@@ -54,6 +56,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
   // ---- テンプレート（localStorage 保存）----
   const [templates, setTemplates] = useState<TemplateStore>(() => loadTemplates());
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const updateTemplates = (next: TemplateStore) => {
     setTemplates(next);
     if (!saveTemplates(next)) alert("テンプレートを保存できませんでした（ブラウザの設定をご確認ください）");
@@ -160,8 +163,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
   };
 
   // ---- テンプレートの操作 ----
-  const { same, other } = splitByApparatus(templates.series, apparatus);
+  const { common, same, other } = splitByApparatus(templates.series, apparatus);
   const seriesTemplateOptions = [
+    ...common.map((t) => ({ id: t.id, name: t.name })),
     ...same.map((t) => ({ id: t.id, name: t.name })),
     ...other.map((t) => ({ id: t.id, name: t.name, otherApparatus: apparatusName(t.apparatus) })),
   ];
@@ -187,7 +191,8 @@ export function IndividualScorer({ initialData }: Props = {}) {
     const t = templates.routines.find((x) => x.id === id);
     if (!t) return;
     if (!window.confirm(`「${t.name}」を読み込みます。編集中の構成は置き換わります。`)) return;
-    setApparatus(t.apparatus);
+    // 共通テンプレートは手具を選ばないので、今の手具のまま読み込む
+    if (!isCommonApparatus(t.apparatus)) setApparatus(t.apparatus);
     setSeries(structuredClone(t.series));
     setTemplateOpen(false);
   };
@@ -227,6 +232,19 @@ export function IndividualScorer({ initialData }: Props = {}) {
 
   return (
     <>
+      <GenerateModal
+        open={generateOpen}
+        templates={templates.series}
+        apparatus={apparatus}
+        junior={junior}
+        onClose={() => setGenerateOpen(false)}
+        onApply={(ap, r) => {
+          if (!window.confirm("生成した構成を反映します。編集中の構成は置き換わります。")) return;
+          setApparatus(ap);
+          setSeries(structuredClone(r.series));
+          setGenerateOpen(false);
+        }}
+      />
       <TemplateModal
         open={templateOpen}
         store={templates}
@@ -270,6 +288,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
         </button>
         <button className="io-btn" onClick={() => setTemplateOpen(true)}>
           <BookMarked size={14} /> テンプレート
+        </button>
+        <button className="io-btn" onClick={() => setGenerateOpen(true)}>
+          <Shuffle size={14} /> ランダム生成
         </button>
         <input
           ref={fileInputRef}

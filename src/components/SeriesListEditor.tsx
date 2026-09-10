@@ -48,6 +48,8 @@ interface Props {
   allowAdd?: boolean;
   /** 実施減点の行を出すか */
   showExec?: boolean;
+  /** 共通テンプレートの編集か（手具固有の入力を出さない） */
+  common?: boolean;
 }
 
 /**
@@ -66,6 +68,7 @@ export function SeriesListEditor({
   addLabel = "シリーズを追加",
   allowAdd = true,
   showExec = true,
+  common = false,
 }: Props) {
   const score = result ?? computeScore(series, apparatus, { junior });
 
@@ -113,6 +116,7 @@ export function SeriesListEditor({
           isDupSignature={score.dupSignatureFlags[sIdx]}
           canRemove={series.length > 1}
           showExec={showExec}
+          common={common}
           templateOptions={templateOptions}
           onLoadTemplate={onLoadTemplate && ((id) => onLoadTemplate(sIdx, id))}
           onSaveTemplate={onSaveTemplate && (() => onSaveTemplate(sIdx))}
