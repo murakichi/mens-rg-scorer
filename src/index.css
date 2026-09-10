@@ -1218,3 +1218,69 @@ input[type="checkbox"] {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ---- 画面下に貼り付く操作バー（個人モード） ---- */
+.action-bar {
+  position: sticky;
+  bottom: 10px;
+  z-index: 50;
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(18px) saturate(180%);
+  box-shadow: 0 12px 30px -12px rgba(40, 40, 90, 0.35);
+}
+.action-bar-score {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  padding-left: 6px;
+}
+.action-bar-score b {
+  font-size: 18px;
+  color: var(--ink);
+}
+.action-bar-sub {
+  font-size: 11px;
+}
+.action-bar-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 560px) {
+  /* 画面を塞がないよう1行に収める */
+  .action-bar {
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    flex-wrap: nowrap;
+  }
+  .action-bar-sub {
+    display: none;
+  }
+  .action-bar-score {
+    padding-left: 2px;
+    font-size: 12px;
+  }
+  .action-bar-score b {
+    font-size: 16px;
+  }
+  .action-bar-btns {
+    flex-wrap: nowrap;
+  }
+  .action-bar .io-btn {
+    padding: 7px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}

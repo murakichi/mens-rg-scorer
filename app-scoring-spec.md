@@ -390,6 +390,10 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
   編集シート（`.tpl-sheet`）を重ねて「← 一覧」で戻る
 - 壊れた保存データは `normalizeTemplateStore()` が項目単位で捨てる（読み込みで落ちない）。
   端末をまたぐ場合は管理画面の書き出し／読み込み（JSON）を使う
+- 「構成をテンプレートに保存」は管理画面を開かずに実行できる。上部のツールバーと、
+  画面下に貼り付く**操作バー**（`.action-bar`：合計点＋構成を保存＋テンプレート）の両方に置く。
+  操作バーは `position: sticky; bottom` で、入力の途中でも上に戻らず保存・スコア確認ができる
+  （狭い画面では内訳を隠して1行に収める）
 
 手具に無関係な加点行は表示しない：二つ投げ4動作加点は `hasTwoThrow(apparatus)`（＝リング・クラブ）のとき、
 様々な跳び加点は `apparatus === "rope"` のときだけ表示する（`ScoreSummary` の集計と `SeriesCard` の内訳の両方）。
