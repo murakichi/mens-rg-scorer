@@ -466,3 +466,30 @@ export function seriesSignature(series: Series): string {
     }),
   );
 }
+
+
+// ---- シリーズのタグ（検索・一覧表示用）----
+
+export type SeriesTagId = "throw" | "throwTum" | "salto3" | "connect";
+
+/** シリーズに付くタグの定義（表示順） */
+export const SERIES_TAGS: { id: SeriesTagId; name: string; title: string }[] = [
+  { id: "throw", name: "投げ", title: "投げ上げを含む" },
+  { id: "throwTum", name: "投げタン", title: "転回系の投げ受け（投げタン）を含む" },
+  { id: "salto3", name: "三宙", title: "宙返りを3回以上連続" },
+  { id: "connect", name: "つなぎ", title: "宙返りの間にA難度のつなぎ技を挟む" },
+];
+
+/** シリーズの内容から付くタグを求める（入力から自動判定。順序は SERIES_TAGS） */
+export function seriesTags(series: Series, junior = false): SeriesTagId[] {
+  const a = analyzeSeries(series, junior);
+  const tags: SeriesTagId[] = [];
+  if (a.throwCount > 0) tags.push("throw");
+  if (a.units.some((u) => u.isThrowTumbling)) tags.push("throwTum");
+  if (a.units.some((u) => maxSaltoChain(u.skills.map((s) => s.skillId)) >= SALTO_CHAIN_TAG_MIN)) tags.push("salto3");
+  if (a.units.some((u) => hasConnect(u.skills))) tags.push("connect");
+  return tags;
+}
+
+/** 「三宙」とみなす連続宙返りの回数 */
+export const SALTO_CHAIN_TAG_MIN = 3;

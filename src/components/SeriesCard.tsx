@@ -19,7 +19,7 @@ import {
   DEFAULT_HANDS_TYPE,
   ROPE_JUMPS,
 } from "../scoring/constants";
-import { checkApparatusFlow, maxSaltoChain } from "../scoring/analysis";
+import { checkApparatusFlow, maxSaltoChain, SERIES_TAGS, seriesTags } from "../scoring/analysis";
 import type { ApparatusKey, Item, Series, SeriesAnalysis } from "../scoring/types";
 import type { DiffRow, SeriesBreakdown } from "../scoring/score";
 import type { SeriesTemplateOption } from "./SeriesListEditor";
@@ -311,6 +311,21 @@ function ItemEditor({
   );
 }
 
+/** シリーズの内容から自動で付くタグ（投げ／投げタン／三宙／つなぎ） */
+export function SeriesTags({ series, junior }: { series: Series; junior: boolean }) {
+  const tags = seriesTags(series, junior);
+  if (tags.length === 0) return null;
+  return (
+    <span className="tag-row">
+      {SERIES_TAGS.filter((t) => tags.includes(t.id)).map((t) => (
+        <span key={t.id} className="tag" title={t.title}>
+          {t.name}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function SeriesCard({
   series: ser,
   sIdx,
@@ -341,6 +356,7 @@ export function SeriesCard({
         <span>
           シリーズ {sIdx + 1}
           {isDup ? "（重複：D・本数・投げ回数に不算入）" : isDupSignature ? "（重複扱いを解除中）" : ""}
+          <SeriesTags series={ser} junior={junior} />
         </span>
         {canRemove && (
           <button className="remove-btn-sm" onClick={onRemoveSeries}>

@@ -392,6 +392,14 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
   編集シート（`.tpl-sheet`）を重ねて「← 一覧」で戻る
 - 壊れた保存データは `normalizeTemplateStore()` が項目単位で捨てる（読み込みで落ちない）。
   端末をまたぐ場合は管理画面の書き出し／読み込み（JSON）を使う
+- **シリーズのタグ**（`SERIES_TAGS` / `seriesTags()` in `analysis.ts`）はシリーズの入力から自動判定する：
+  投げ（投げ上げあり）／投げタン（`Unit.isThrowTumbling`）／三宙（`maxSaltoChain >= SALTO_CHAIN_TAG_MIN`＝3）／
+  つなぎ（`hasConnect`）。採点画面の各シリーズの見出しと、テンプレートのカードに表示する
+- **テンプレートの検索**（管理画面）：フリーワード（名前・手具・`describeSeries` の中身、空白区切りのAND）、
+  タグ（選んだタグをすべて含む）、**難度と点数(D)の範囲**で絞り込む。難度・点数は
+  `templateMetrics(series[], apparatus, junior)`（最高難度と、そのテンプレート単体で採点したときのD）で求め、
+  カードにも「難度 C・D 0.3」として出す。絞り込みは構成テンプレートにも同じ条件で効く
+  （構成はどれかのシリーズがタグを持てば一致、難度・点数は構成全体の値）
 - 「構成をテンプレートに保存」は管理画面を開かずに実行できる。上部のツールバーと、
   画面下に貼り付く**操作バー**（`.action-bar`：合計点＋構成を保存＋テンプレート）の両方に置く。
   操作バーは `position: sticky; bottom` で、入力の途中でも上に戻らず保存・スコア確認ができる
