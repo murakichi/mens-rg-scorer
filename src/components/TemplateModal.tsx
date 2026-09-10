@@ -5,6 +5,7 @@ import {
   addSeriesTemplate,
   apparatusName,
   commonBlockers,
+  defaultTemplateApparatus,
   describeSeries,
   isCommonApparatus,
   removeTemplate,
@@ -135,7 +136,8 @@ export function TemplateModal({
   const addRoutine = () => {
     const name = window.prompt("新しい構成テンプレートの名前");
     if (!name?.trim()) return;
-    const next = addRoutineTemplate(store, name, apparatus, [emptySeries()]);
+    const blank = [emptySeries()];
+    const next = addRoutineTemplate(store, name, defaultTemplateApparatus(blank, apparatus), blank);
     onChange(next);
     setSel({ kind: "routine", id: next.routines[0].id });
   };
@@ -143,7 +145,8 @@ export function TemplateModal({
   const addSeries = () => {
     const name = window.prompt("新しいシリーズテンプレートの名前");
     if (!name?.trim()) return;
-    const next = addSeriesTemplate(store, name, apparatus, emptySeries());
+    const blank = emptySeries();
+    const next = addSeriesTemplate(store, name, defaultTemplateApparatus([blank], apparatus), blank);
     onChange(next);
     setSel({ kind: "series", id: next.series[0].id });
   };

@@ -13,6 +13,7 @@ import {
   addRoutineTemplate,
   addSeriesTemplate,
   apparatusName,
+  defaultTemplateApparatus,
   isCommonApparatus,
   loadTemplates,
   normalizeTemplateStore,
@@ -172,7 +173,10 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const saveSeriesTemplate = (sIdx: number) => {
     const name = window.prompt("テンプレート名", `シリーズ${sIdx + 1}`);
     if (!name?.trim()) return;
-    updateTemplates(addSeriesTemplate(templates, name, apparatus, series[sIdx]));
+    // 手具固有の要素が無ければ「共通」で保存する
+    updateTemplates(
+      addSeriesTemplate(templates, name, defaultTemplateApparatus([series[sIdx]], apparatus), series[sIdx]),
+    );
   };
   const loadSeriesTemplate = (sIdx: number, id: string) => {
     const t = templates.series.find((x) => x.id === id);
@@ -185,7 +189,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const saveCurrentRoutine = () => {
     const name = window.prompt("テンプレート名", `${apparatusName(apparatus)}の構成`);
     if (!name?.trim()) return;
-    updateTemplates(addRoutineTemplate(templates, name, apparatus, series));
+    updateTemplates(addRoutineTemplate(templates, name, defaultTemplateApparatus(series, apparatus), series));
   };
   const loadRoutineTemplate = (id: string) => {
     const t = templates.routines.find((x) => x.id === id);

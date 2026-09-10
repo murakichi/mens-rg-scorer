@@ -3,6 +3,7 @@ import {
   addRoutineTemplate,
   apparatusName,
   commonBlockers,
+  defaultTemplateApparatus,
   describeSeries,
   scoringApparatus,
   addSeriesTemplate,
@@ -217,5 +218,31 @@ describe("共通テンプレート", () => {
       routines: [],
     });
     expect(store.series[0].apparatus).toBe("common");
+  });
+});
+
+describe("保存時の既定の手具", () => {
+  it("手具に依らない内容なら共通", () => {
+    expect(defaultTemplateApparatus([ser("b_front")], "clubs")).toBe("common");
+    // 空のシリーズ（新規作成）も共通
+    expect(defaultTemplateApparatus([{ executionDeduction: 0, items: [] }], "rope")).toBe("common");
+  });
+
+  it("手具固有の要素があれば実際の手具", () => {
+    const lefthand: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" }],
+    };
+    expect(defaultTemplateApparatus([lefthand], "stick")).toBe("stick");
+    const jump: Series = { executionDeduction: 0, items: [{ kind: "ropeJump", jumpId: "2f" }] };
+    expect(defaultTemplateApparatus([jump], "rope")).toBe("rope");
+  });
+
+  it("構成テンプレートは1シリーズでも手具固有なら実際の手具", () => {
+    const lefthand: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" }],
+    };
+    expect(defaultTemplateApparatus([ser("b_front"), lefthand], "stick")).toBe("stick");
   });
 });
