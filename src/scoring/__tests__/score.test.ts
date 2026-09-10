@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeScore } from "../score";
+import { ART_DEDUCTION_ITEMS } from "../constants";
 import type { Series, Item } from "../types";
 
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
@@ -937,5 +938,35 @@ describe("computeScore — 必須要素チェックの不足も減点する", ()
       r.apparatusElementDeduction +
       r.violationDeduction;
     expect(sum).toBeCloseTo(r.aDeduction, 5);
+  });
+});
+
+describe("§3.5.6.4 芸術と多様性の欠点テーブル（手入力）", () => {
+  it("入力した分だけA減点に加算される", () => {
+    const base = computeScore([], "stick");
+    const r = computeScore([], "stick", { artDeductions: { rhythm: 0.2, volume: 0.1 } });
+    expect(r.artDeduction).toBeCloseTo(0.3, 5);
+    expect(r.aDeduction - base.aDeduction).toBeCloseTo(0.3, 5);
+    expect(base.aScore - r.aScore).toBeCloseTo(0.3, 5);
+  });
+
+  it("項目ごとの上限で丸める", () => {
+    const r = computeScore([], "stick", { artDeductions: { rhythm: 1.5, handVariety: 1.5 } });
+    // リズムは上限0.5、徒手系の多様性は上限1.0
+    expect(r.artRows.find((x) => x.id === "rhythm")?.value).toBeCloseTo(0.5, 5);
+    expect(r.artRows.find((x) => x.id === "handVariety")?.value).toBeCloseTo(1.0, 5);
+    expect(r.artDeduction).toBeCloseTo(1.5, 5);
+  });
+
+  it("負値・不明な項目・未入力は0", () => {
+    const r = computeScore([], "stick", { artDeductions: { rhythm: -1, unknownItem: 0.3 } });
+    expect(r.artDeduction).toBe(0);
+    expect(r.artRows.every((x) => x.value === 0)).toBe(true);
+  });
+
+  it("全項目を内訳として返す（未入力も含む）", () => {
+    const r = computeScore([], "stick");
+    expect(r.artRows).toHaveLength(ART_DEDUCTION_ITEMS.length);
+    expect(r.artRows.map((x) => x.id)).toContain("appInTumbling");
   });
 });

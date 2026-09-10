@@ -150,5 +150,7 @@ export interface SaveData {
   violations?: string[];
   /** ジュニア適用規則（§10 変更規則1）で採点するか。未指定は false 扱い。 */
   junior?: boolean;
+  /** §3.5.6.4 芸術と多様性の欠点テーブル（項目id → 減点）。 */
+  artDeductions?: Record<string, number>;
   series: Series[];
 }

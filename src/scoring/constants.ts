@@ -167,6 +167,44 @@ export const APPARATUS_REQUIRED_ELEMENTS: Record<
 };
 
 /** §3.5.6.3 審判判断による違反・欠如（各 −0.30）。実施＝該当あり。 */
+/**
+ * §3.5.6.4 芸術と多様性（A）の欠点テーブル。審判の主観評価なので手入力する。
+ * `max` はその項目の配点上限、`step` は刻み。`note` は規則の減点幅。
+ * 「投げ受けの操作」は投げ方・受け方の種類不足として自動判定するのでここには含めない。
+ */
+export interface ArtDeductionItem {
+  id: string;
+  group: string;
+  name: string;
+  max: number;
+  note: string;
+}
+export const ART_DEDUCTION_STEP = 0.1;
+export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
+  { id: "handVariety", group: "多様性と技術価値", name: "徒手系の種類・組み合わせの多様性", max: 1.0, note: "0.1 / 0.2" },
+  { id: "tumVariety", group: "多様性と技術価値", name: "転回系の種類・組み合わせの多様性", max: 0.5, note: "0.1 / 0.2" },
+  { id: "appVariety", group: "多様性と技術価値", name: "さまざまな操作", max: 1.0, note: "0.1 / 0.2" },
+  { id: "appInTumbling", group: "手具操作の多様性", name: "転回中の操作", max: 0.5, note: "0〜0.4" },
+  { id: "rhythm", group: "芸術性と技術価値", name: "リズム変化・ダイナミズムによる表現", max: 0.5, note: "0.1 / 0.2" },
+  { id: "space", group: "芸術性と技術価値", name: "空間使用による表現", max: 0.5, note: "0.1 / 0.2" },
+  { id: "originality", group: "芸術性と技術価値", name: "独創性の高い内容と表現", max: 0.5, note: "0.1 / 0.2" },
+  { id: "handRatio", group: "その他の技術的価値", name: "徒手の割合", max: 0.5, note: "0〜0.5" },
+  { id: "volume", group: "その他の技術的価値", name: "運動量", max: 0.5, note: "0.1 / 0.2" },
+];
+
+export function artDeductionItem(id: string): ArtDeductionItem | undefined {
+  return ART_DEDUCTION_ITEMS.find((x) => x.id === id);
+}
+
+/** 欠点テーブル1項目の減点を 0〜上限 に丸める（未知のidは0） */
+export function clampArtDeduction(id: string, value: unknown): number {
+  const item = artDeductionItem(id);
+  if (!item) return 0;
+  const v = Number(value);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  return Math.min(Math.round(v * 10) / 10, item.max);
+}
+
 export const VIOLATION_OPTIONS = [
   { id: "handBasic", name: "徒手系基礎要素1群が全くない" },
   { id: "start", name: "演技の開始違反" },
