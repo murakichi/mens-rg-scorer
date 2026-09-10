@@ -22,6 +22,7 @@ import {
 import { checkApparatusFlow, maxSaltoChain } from "../scoring/analysis";
 import type { ApparatusKey, Item, Series, SeriesAnalysis } from "../scoring/types";
 import type { DiffRow, SeriesBreakdown } from "../scoring/score";
+import type { SeriesTemplateOption } from "./SeriesListEditor";
 
 type ItemKind = Item["kind"];
 
@@ -40,6 +41,12 @@ interface Props {
   /** 構成が既出のシリーズと一致したか（解除チェックの表示条件） */
   isDupSignature: boolean;
   canRemove: boolean;
+  /** 実施減点の行を出すか（テンプレート編集では出さない） */
+  showExec?: boolean;
+  /** テンプレート読み込みプルダウンの選択肢（省略時はプルダウンを出さない） */
+  templateOptions?: SeriesTemplateOption[];
+  onLoadTemplate?: (templateId: string) => void;
+  onSaveTemplate?: () => void;
   onUpdateField: (patch: Partial<Series>) => void;
   onAddItem: (kind: ItemKind) => void;
   onUpdateItem: (iIdx: number, patch: Partial<Item>) => void;
@@ -315,6 +322,10 @@ export function SeriesCard({
   isDup,
   isDupSignature,
   canRemove,
+  showExec = true,
+  templateOptions,
+  onLoadTemplate,
+  onSaveTemplate,
   onUpdateField,
   onAddItem,
   onUpdateItem,
@@ -337,18 +348,61 @@ export function SeriesCard({
           </button>
         )}
       </div>
-      <label className="exec-label">
-        実施減点(E)：
-        <input
-          className="exec-input"
-          type="number"
-          step="0.1"
-          min="0"
-          value={ser.executionDeduction || 0}
-          onChange={(e) => onUpdateField({ executionDeduction: parseFloat(e.target.value) || 0 })}
-        />
-        点
-      </label>
+      {showExec && (
+      <div className="exec-row">
+        <label className="exec-label">
+          実施減点(E)：
+          <input
+            className="exec-input"
+            type="number"
+            step="0.1"
+            min="0"
+            value={ser.executionDeduction || 0}
+            onChange={(e) => onUpdateField({ executionDeduction: parseFloat(e.target.value) || 0 })}
+          />
+          点
+        </label>
+        {onLoadTemplate && (
+          <select
+            className="select tpl-select"
+            value=""
+            onChange={(e) => {
+              if (e.target.value) onLoadTemplate(e.target.value);
+              e.target.value = "";
+            }}
+          >
+            <option value="">テンプレートから読込</option>
+            {templateOptions?.some((t) => !t.otherApparatus) && (
+              <optgroup label="この手具">
+                {templateOptions
+                  .filter((t) => !t.otherApparatus)
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+              </optgroup>
+            )}
+            {templateOptions?.some((t) => t.otherApparatus) && (
+              <optgroup label="他の手具">
+                {templateOptions
+                  .filter((t) => t.otherApparatus)
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}（{t.otherApparatus}）
+                    </option>
+                  ))}
+              </optgroup>
+            )}
+          </select>
+        )}
+        {onSaveTemplate && (
+          <button className="io-btn" onClick={onSaveTemplate}>
+            テンプレートに保存
+          </button>
+        )}
+      </div>
+      )}
       {isDupSignature && (
         <div className="dup-override">
           <label className="check-req">

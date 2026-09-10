@@ -360,8 +360,36 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 |---------------|------|
 | `App.tsx` | モード切替（個人/団体）のシェル |
 | `IndividualScorer` | 個人モードの全UI・state管理 |
+| `SeriesListEditor` | 個人モードのシリーズ一覧の編集UI（採点画面とテンプレート管理画面で共用） |
+| `SeriesCard` | 1シリーズ分の入力・内訳表示 |
 | `TeamScorer` | 団体モードの全UI・state管理 |
 | `JsonModal` | インポート/エクスポート（個人のみ） |
+| `TemplateModal` | テンプレート管理画面（左に一覧、右に `SeriesListEditor` の編集欄） |
+
+### 9.1 テンプレート（個人モード）
+
+よく使うシリーズ／演技構成を保存して呼び出す機能。保存先はブラウザの **localStorage**
+（キー `mens-rg-scorer:templates:v1`、`src/scoring/templates.ts`）。
+
+| 種類 | 中身 | 保存する場所 | 呼び出す場所 |
+|------|------|-------------|-------------|
+| シリーズ | 手具 + `Series` 1つ | 各シリーズの「テンプレートに保存」 | 実施減点の横のプルダウン（そのシリーズを置き換え）／管理画面の「採点画面に追加」 |
+| 演技構成 | 手具 + `Series[]` | 管理画面の「現在の構成を保存」 | 管理画面の「採点画面に読み込む」（手具ごと差し替え・確認あり） |
+
+- テンプレートが持つのは**構成だけ**。`executionDeduction` は保存時に0にし、読み込んでも
+  そのシリーズの実施減点は現在の値を残す（採点のたびに入れるものなので）
+- 同じ名前で保存すると上書き（`upsert`）。一覧は更新日時の新しい順
+- プルダウンは登録時の手具で「この手具」「他の手具」に分ける（`splitByApparatus`）。
+  他の手具のテンプレートも読み込めるが、手具固有の入力はそのまま残る
+- 管理画面はテンプレートを**カード**で並べる（名前・手具・シリーズ数・更新日と、
+  `describeSeries()` による中身の要約「投げ→前宙→キャッチ」）。カードを選ぶと
+  名前・手具・シリーズ内容を**採点画面と同じ `SeriesListEditor`／`SeriesCard`** で編集でき、
+  変更はそのまま保存される（実施減点の行は出さない）
+- レイアウトは画面幅で切り替える（`useNarrow()` ＝ `matchMedia("(max-width: 900px)")`）。
+  広い画面は左カード・右編集欄の2ペイン、狭い画面はカードのみを出し、選んだら
+  編集シート（`.tpl-sheet`）を重ねて「← 一覧」で戻る
+- 壊れた保存データは `normalizeTemplateStore()` が項目単位で捨てる（読み込みで落ちない）。
+  端末をまたぐ場合は管理画面の書き出し／読み込み（JSON）を使う
 
 手具に無関係な加点行は表示しない：二つ投げ4動作加点は `hasTwoThrow(apparatus)`（＝リング・クラブ）のとき、
 様々な跳び加点は `apparatus === "rope"` のときだけ表示する（`ScoreSummary` の集計と `SeriesCard` の内訳の両方）。
@@ -369,6 +397,10 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 
 トグルスイッチは `.switch` / `.switch-knob` / `.switch-row` / `.switch-label`（`src/index.css`）。
 `role="switch"` + `aria-checked` を持つ `button` で実装する。
+
+シリーズ入力（`.skill-row` / `.skill-block`）は広い画面では横並び、**720px以下では縦積み**にする
+（`@media (max-width: 720px)`：ブロックを幅いっぱいにし、間の矢印 `.arrow` を下向きに回す）。
+横幅の狭い端末で採点画面・テンプレート編集シートが横スクロールしないようにするため。
 
 - スタイリングは **glassmorphism デザインシステム**（`src/index.css`）
 - State 更新は `structuredClone` でイミュータブル
