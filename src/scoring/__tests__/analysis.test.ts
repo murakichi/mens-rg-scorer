@@ -369,9 +369,17 @@ describe("縦回転の徒手を3動作分つなげると縦3動作（E難度）"
 describe("徒手動作の連続回数", () => {
   const unit = (ser: Series) => analyzeSeries(ser).units[0];
 
+  it("0回にした動作は数えない（構成にも入らない）", () => {
+    expect(motionTimes(0)).toBe(0);
+    expect(motionTimes(-2)).toBe(0);
+    const zero = unit(S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 0 }, { kind: "catch" }));
+    const none = unit(S({ kind: "throw" }, { kind: "catch" }));
+    expect(zero.finalDiff).toBe(none.finalDiff);
+    expect(zero.signatures).toEqual(none.signatures);
+  });
+
   it("未指定は1回、2以上でその回数分の動作数になる", () => {
     expect(motionTimes(undefined)).toBe(1);
-    expect(motionTimes(0)).toBe(1);
     expect(motionTimes(4)).toBe(4);
     const u = unit(
       S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4 }, { kind: "catch" }),

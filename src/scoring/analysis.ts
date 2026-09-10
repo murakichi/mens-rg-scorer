@@ -122,9 +122,15 @@ export function motionDef(
 }
 
 /** 徒手動作アイテムの連続回数（未指定・不正値は1回） */
+/**
+ * 徒手動作の実施回数。未指定（新規追加した直後）は1回、0を入れたら0回として扱う。
+ * 0回の動作は難度にも技の構成にも数えない。
+ */
 export function motionTimes(count: number | undefined): number {
+  if (count === undefined || count === null) return 1;
   const n = Math.floor(Number(count));
-  return Number.isFinite(n) && n > 1 ? n : 1;
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(0, n);
 }
 
 /** skillIds 内の最大連続宙返り数 */
@@ -348,8 +354,9 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
     } else if (item.kind === "motion") {
       if (!buf) buf = newBuf();
       const m = motionDef(item.motionId, junior);
-      if (m) {
-        const times = motionTimes(item.count);
+      const times = motionTimes(item.count);
+      // 0回の動作は何も数えない（構成にも入れない）
+      if (m && times > 0) {
         buf.motionCount += m.motions * times;
         buf.verticalCount += m.vertical * times;
         if (m.verticalThree) buf.verticalThree = true;
