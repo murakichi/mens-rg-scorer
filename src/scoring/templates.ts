@@ -11,11 +11,53 @@ import type { ApparatusKey, Difficulty, Item, Series } from "./types";
 
 export const TEMPLATE_STORAGE_KEY = "mens-rg-scorer:templates:v1";
 
+/** テンプレート専用の「共通」手具。どの手具でも使える内容だけを持つ。 */
+export const COMMON_APPARATUS = "common";
+export type TemplateApparatus = ApparatusKey | typeof COMMON_APPARATUS;
+
+/** テンプレートの手具の選択肢（共通を含む） */
+export const TEMPLATE_APPARATUS_OPTIONS: { id: TemplateApparatus; name: string }[] = [
+  ...(Object.entries(APPARATUS) as [ApparatusKey, { name: string }][]).map(([id, v]) => ({ id, name: v.name })),
+  { id: COMMON_APPARATUS, name: "共通" },
+];
+
+export const isCommonApparatus = (a: TemplateApparatus): a is typeof COMMON_APPARATUS => a === COMMON_APPARATUS;
+
+/** 共通テンプレートを採点・編集するときに使う手具（手具固有の入力を持たないので何でもよい） */
+export const scoringApparatus = (a: TemplateApparatus): ApparatusKey => (isCommonApparatus(a) ? "stick" : a);
+
+/**
+ * 「共通」で保存できない要素（手具固有の入力）を挙げる。
+ * 二つ投げ・左手投げ・手具を使った投げ／キャッチ・二つ同時キャッチ・ロープ跳びが対象。
+ */
+export function commonBlockers(list: Series[]): string[] {
+  const reasons = new Set<string>();
+  list.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "throw") {
+        (item.reqTypes || []).forEach((t) => {
+          if (t === "lefthand") reasons.add("左手投げ");
+          else if (t === "twothrow") reasons.add("二つ投げ");
+          else reasons.add(t);
+        });
+        if ((item.throwTypes || []).includes("useapp")) reasons.add("手具を使った投げ");
+      }
+      if (item.kind === "skill" && (item.throwTypes || []).includes("useapp")) reasons.add("手具を使った投げ");
+      if (item.kind === "catch") {
+        if ((item.catchTypes || []).includes("useapp")) reasons.add("手具を使ったキャッチ");
+        if (item.catchTwo) reasons.add("2つ同時キャッチ");
+      }
+      if (item.kind === "ropeJump") reasons.add("ロープ跳び");
+    }),
+  );
+  return [...reasons];
+}
+
 interface TemplateBase {
   id: string;
   name: string;
-  /** 登録したときの手具（読み込み時の目安として表示する） */
-  apparatus: ApparatusKey;
+  /** 登録したときの手具（"common" ＝ どの手具でも使える） */
+  apparatus: TemplateApparatus;
   updatedAt: number;
 }
 /** 1シリーズ分のテンプレート */
@@ -38,7 +80,8 @@ export const emptyTemplateStore = (): TemplateStore => ({ version: 1, series: []
 export const newTemplateId = (): string =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `t${Date.now()}${Math.random()}`;
 
-const isApparatus = (v: unknown): v is ApparatusKey => typeof v === "string" && v in APPARATUS;
+const isApparatus = (v: unknown): v is TemplateApparatus =>
+  typeof v === "string" && (v in APPARATUS || v === COMMON_APPARATUS);
 
 /** items を持つシリーズらしきオブジェクトか */
 const isSeriesLike = (v: unknown): v is Series =>
@@ -103,7 +146,12 @@ function upsert<T extends TemplateBase>(list: T[], item: T): T[] {
 /** テンプレートは構成だけを持つ（実施減点は採点のたびに入れるものなので落とす） */
 const stripExec = (s: Series): Series => ({ ...structuredClone(s), executionDeduction: 0 });
 
-export function addSeriesTemplate(store: TemplateStore, name: string, apparatus: ApparatusKey, series: Series): TemplateStore {
+export function addSeriesTemplate(
+  store: TemplateStore,
+  name: string,
+  apparatus: TemplateApparatus,
+  series: Series,
+): TemplateStore {
   const item: SeriesTemplate = {
     id: newTemplateId(),
     name: name.trim(),
@@ -114,7 +162,12 @@ export function addSeriesTemplate(store: TemplateStore, name: string, apparatus:
   return { ...store, series: upsert(store.series, item) };
 }
 
-export function addRoutineTemplate(store: TemplateStore, name: string, apparatus: ApparatusKey, series: Series[]): TemplateStore {
+export function addRoutineTemplate(
+  store: TemplateStore,
+  name: string,
+  apparatus: TemplateApparatus,
+  series: Series[],
+): TemplateStore {
   const item: RoutineTemplate = {
     id: newTemplateId(),
     name: name.trim(),
@@ -140,18 +193,23 @@ export function renameTemplate(store: TemplateStore, kind: TemplateKind, id: str
 }
 
 /**
- * シリーズテンプレートを「同じ手具のもの」「他の手具のもの」に分ける。
+ * シリーズテンプレートを「共通」「同じ手具のもの」「他の手具のもの」に分ける。
  * 他の手具のテンプレートも読み込めるが、手具固有の入力（ロープ跳び等）は
  * そのまま残るので、プルダウンでは別の見出しに分ける。
  */
-export function splitByApparatus<T extends TemplateBase>(list: T[], apparatus: ApparatusKey): { same: T[]; other: T[] } {
+export function splitByApparatus<T extends TemplateBase>(
+  list: T[],
+  apparatus: ApparatusKey,
+): { common: T[]; same: T[]; other: T[] } {
   return {
+    common: list.filter((t) => isCommonApparatus(t.apparatus)),
     same: list.filter((t) => t.apparatus === apparatus),
-    other: list.filter((t) => t.apparatus !== apparatus),
+    other: list.filter((t) => !isCommonApparatus(t.apparatus) && t.apparatus !== apparatus),
   };
 }
 
-export const apparatusName = (key: ApparatusKey): string => APPARATUS[key]?.name ?? key;
+export const apparatusName = (key: TemplateApparatus): string =>
+  isCommonApparatus(key) ? "共通" : APPARATUS[key]?.name ?? key;
 
 
 /** カード表示用：アイテム1つの短い名前 */
@@ -184,8 +242,8 @@ export interface TemplateMetrics {
 }
 
 /** テンプレート（シリーズ1つ／構成まるごと）の難度と点数を求める */
-export function templateMetrics(list: Series[], apparatus: ApparatusKey, junior = false): TemplateMetrics {
-  const r = computeScore(list, apparatus, { junior });
+export function templateMetrics(list: Series[], apparatus: TemplateApparatus, junior = false): TemplateMetrics {
+  const r = computeScore(list, scoringApparatus(apparatus), { junior });
   let v = 0;
   r.analysis.forEach((a) => a.units.forEach((u) => (v = Math.max(v, DIFF_VALUE[u.finalDiff]))));
   return { diff: v > 0 ? VALUE_DIFF[v] : null, diffValue: v, dScore: r.dScore };

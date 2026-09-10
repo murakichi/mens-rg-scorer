@@ -1376,3 +1376,30 @@ input[type="checkbox"] {
   font-size: 12px;
   padding: 5px 8px;
 }
+
+
+/* ---- ランダム生成ダイアログ ---- */
+.gen-body {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gen-result {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--glass-soft);
+  padding: 12px;
+}
+.gen-list {
+  margin: 6px 0 8px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.gen-list-detail {
+  color: var(--ink-soft);
+  margin-left: 8px;
+}
