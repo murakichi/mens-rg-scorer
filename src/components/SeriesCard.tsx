@@ -259,10 +259,14 @@ function ItemEditor({
           <input
             className="count-input"
             type="number"
-            min="1"
+            min="0"
             step="1"
-            value={item.count ?? 1}
-            onChange={(e) => onUpdate({ count: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+            // 0回は空欄で表示する（バックスペースで消してそのまま入力し直せる）
+            value={item.count === 0 ? "" : item.count ?? 1}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10);
+              onUpdate({ count: Number.isNaN(n) ? 0 : Math.max(0, n) });
+            }}
           />
           回
         </label>
