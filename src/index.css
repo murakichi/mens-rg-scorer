@@ -1189,3 +1189,32 @@ input[type="checkbox"] {
 .tpl-editor {
   min-width: 0;
 }
+
+
+/* ---- 狭い画面：シリーズ入力を縦積みにする ---- */
+@media (max-width: 720px) {
+  .skill-row {
+    flex-direction: column;
+    gap: 22px;
+  }
+  .skill-block {
+    width: 100%;
+  }
+  /* プルダウンは幅いっぱいに（最小幅で横にはみ出さないように） */
+  .skill-block .select,
+  .skill-block .sel-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  /* 矢印はブロックの下に向ける */
+  .arrow {
+    right: auto;
+    left: 50%;
+    top: auto;
+    bottom: -19px;
+    transform: translateX(-50%) rotate(90deg);
+  }
+  .tpl-cards {
+    grid-template-columns: 1fr;
+  }
+}

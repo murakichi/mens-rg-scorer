@@ -398,6 +398,10 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 トグルスイッチは `.switch` / `.switch-knob` / `.switch-row` / `.switch-label`（`src/index.css`）。
 `role="switch"` + `aria-checked` を持つ `button` で実装する。
 
+シリーズ入力（`.skill-row` / `.skill-block`）は広い画面では横並び、**720px以下では縦積み**にする
+（`@media (max-width: 720px)`：ブロックを幅いっぱいにし、間の矢印 `.arrow` を下向きに回す）。
+横幅の狭い端末で採点画面・テンプレート編集シートが横スクロールしないようにするため。
+
 - スタイリングは **glassmorphism デザインシステム**（`src/index.css`）
 - State 更新は `structuredClone` でイミュータブル
 - `SaveData` 型（`{ version: 1, apparatus, junior, series, ... }`）でファイル/JSON保存
