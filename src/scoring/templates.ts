@@ -178,6 +178,14 @@ export function addRoutineTemplate(
   return { ...store, routines: upsert(store.routines, item) };
 }
 
+/**
+ * テンプレートを保存するときの既定の手具。
+ * どの手具でも使える内容なら「共通」、手具固有の要素があれば実際の手具。
+ */
+export function defaultTemplateApparatus(list: Series[], apparatus: ApparatusKey): TemplateApparatus {
+  return commonBlockers(list).length === 0 ? COMMON_APPARATUS : apparatus;
+}
+
 export type TemplateKind = "series" | "routine";
 
 export function removeTemplate(store: TemplateStore, kind: TemplateKind, id: string): TemplateStore {
