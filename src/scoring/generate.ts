@@ -7,11 +7,13 @@
 //  - Dスコアの範囲を指定できる。指定がなければ最大を目指す
 //  - 評価されない要素は入れない（入れても評価が上がらないシリーズは最後に取り除く）
 //    例：4本目のタンブリング、ジュニアの6回目以降の投げ、まったく同じ内容の重複シリーズ
+//  - 投げタンは1本まで（必須要素は1本で満たせるため）
+//  - 同じ宙返りの繰り返しは避ける（前宙は例外）。必須ではないので弱い重み付けにとどめる
 // =====================================================================
 
 import { computeScore } from "./score";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
-import { APPARATUS } from "./constants";
+import { APPARATUS, skillDef } from "./constants";
 import type { ApparatusKey, Series } from "./types";
 
 export interface GenerateOptions {
@@ -24,6 +26,8 @@ export interface GenerateOptions {
   attempts?: number;
   /** シリーズ数の上限 */
   maxSeries?: number;
+  /** 投げタン（転回系の投げ受け）の本数の上限。既定は1本。 */
+  maxThrowTumbling?: number;
   /** 乱数（テスト用に差し替え可能） */
   random?: () => number;
 }
@@ -36,6 +40,35 @@ export interface GenerateResult {
   aScore: number;
   /** 満たせなかった必須要素のラベル */
   missing: string[];
+}
+
+/** 生成する構成に入れる投げタンの本数の上限（必須要素は1本で満たせる） */
+export const DEFAULT_MAX_THROW_TUMBLING = 1;
+
+/**
+ * 同じ宙返りを繰り返したときの1回あたりの減点（評価用の重み）。
+ * 上級者ほど同じ宙返りを演技中に何度も実施しないため、多様な宙返りを選ばせる。
+ * 難度点の最小単位（0.1）より小さくして、点数を犠牲にしてまで多様性を取らないようにする。
+ */
+export const SALTO_VARIETY_WEIGHT = 0.02;
+
+/** 演技中に何度実施しても不自然でない宙返り（前宙） */
+export const REPEATABLE_SALTOS = ["b_front"];
+
+/** 演技全体で同じ宙返りを繰り返した回数（2回目以降を数える。前宙は数えない）。 */
+export function saltoRepeatCount(series: Series[]): number {
+  const counts = new Map<string, number>();
+  series.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind !== "skill" || !item.skillId) return;
+      if (REPEATABLE_SALTOS.includes(item.skillId)) return;
+      if (!skillDef(item.skillId)?.isSalto) return;
+      counts.set(item.skillId, (counts.get(item.skillId) ?? 0) + 1);
+    }),
+  );
+  let repeats = 0;
+  counts.forEach((n) => (repeats += Math.max(0, n - 1)));
+  return repeats;
 }
 
 /** 範囲から外れた分のペナルティ。範囲内なら0。 */
@@ -61,8 +94,17 @@ interface Evaluation {
 function evaluate(series: Series[], opts: GenerateOptions): Evaluation {
   const r = computeScore(series, opts.apparatus, { junior: !!opts.junior });
   const penalty = rangePenalty(r.dScore, opts.minScore, opts.maxScore);
+  // 投げタンの本数制限（既定1本）。超えた分は範囲外と同じ強さで嫌う。
+  const maxThrowTum = opts.maxThrowTumbling ?? DEFAULT_MAX_THROW_TUMBLING;
+  const throwTumCount = r.analysis.reduce(
+    (n, a) => n + a.units.filter((u) => u.isThrowTumbling).length,
+    0,
+  );
+  const overThrowTum = Math.max(0, throwTumCount - maxThrowTum);
+  // 同じ宙返りの繰り返しは弱く嫌う（同点のときに多様な構成が選ばれる程度）
+  const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
   return {
-    value: -penalty * 100 + r.dScore + r.aScore,
+    value: -(penalty + overThrowTum) * 100 + r.dScore + r.aScore - variety,
     dScore: r.dScore,
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),

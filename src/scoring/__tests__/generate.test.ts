@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateRoutine, usableTemplates } from "../generate";
+import { generateRoutine, saltoRepeatCount, usableTemplates } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
 import type { ApparatusKey, Item, Series } from "../types";
@@ -29,11 +29,19 @@ const triple = () => S(skill("b_backsalto"), skill("b_backsalto"), skill("b_back
 const connect = () => S(skill("b_backsalto"), skill("a_flicflac"), skill("b_backsalto"), { kind: "catch" });
 const cheap = () => S(skill("a_cartwheel"), { kind: "catch" });
 
+/** 投げタンではない投げ（投げ→徒手動作→キャッチ） */
+const throwMotion = (motionId: string, count: number) =>
+  S({ kind: "throw" }, { kind: "motion", motionId, count }, { kind: "catch" });
+
 const pool = (): SeriesTemplate[] => [
   tpl("投げ前", "common", throwFront()),
   tpl("投げ側", "common", throwSide()),
+  tpl("投げ4シェネ", "common", throwMotion("chene", 4)),
+  tpl("投げ3前転", "common", throwMotion("fwd_roll", 3)),
   tpl("投げ後", "common", throwBack()),
   tpl("三宙", "common", triple()),
+  tpl("前方タンブリング", "common", S(skill("a_handspring"), skill("b_front"), { kind: "catch" })),
+  tpl("側方タンブリング", "common", S(skill("a_roundoff"), skill("b_sidesalto"), { kind: "catch" })),
   tpl("つなぎ", "common", connect()),
   tpl("側転だけ", "common", cheap()),
   tpl("左手投げ", "stick", S({ kind: "throw", reqTypes: ["lefthand"] }, skill("b_front"), { kind: "catch" })),
@@ -66,6 +74,9 @@ describe("ランダム生成", () => {
     expect(passed("connect")).toBe(true);
     expect(passed("dir")).toBe(true);
     expect(score.dScore).toBeCloseTo(r.dScore, 5);
+    // 投げタンは1本まで
+    const throwTum = score.analysis.reduce((n, a) => n + a.units.filter((u) => u.isThrowTumbling).length, 0);
+    expect(throwTum).toBe(1);
   });
 
   it("評価が上がらないシリーズは入れない（空のシリーズは残らない）", () => {
@@ -104,6 +115,30 @@ describe("ランダム生成", () => {
     expect(r.dScore).toBeGreaterThanOrEqual(1.0 - 1e-9);
   });
 
+  it("投げタンは1本までにする（必須要素は1本で満たせる）", () => {
+    // 投げタンだけのテンプレートを大量に置いても1本しか使わない
+    const many = ["b_front", "b_sidesalto", "b_backsalto", "b_backtuck", "b_tempo"].map((id, i) =>
+      tpl(`投げタン${i}`, "common", S({ kind: "throw" }, skill(id), { kind: "catch" })),
+    );
+    const r = generateRoutine([...many, ...pool()], { apparatus: "stick", random: seeded(23) })!;
+    const score = computeScore(r.series, "stick");
+    const throwTum = score.analysis.reduce((n, a) => n + a.units.filter((u) => u.isThrowTumbling).length, 0);
+    expect(throwTum).toBe(1);
+  });
+
+  it("上限を変えれば投げタンを増やせる", () => {
+    const many = ["b_front", "b_sidesalto", "b_backsalto", "b_backtuck", "b_tempo"].map((id, i) =>
+      tpl(`投げタン${i}`, "common", S({ kind: "throw" }, skill(id), { kind: "catch" })),
+    );
+    const count = (r: { series: Series[] }) =>
+      computeScore(r.series, "stick").analysis.reduce(
+        (n, a) => n + a.units.filter((u) => u.isThrowTumbling).length,
+        0,
+      );
+    expect(count(generateRoutine(many, { apparatus: "stick", random: seeded(23) })!)).toBe(1);
+    expect(count(generateRoutine(many, { apparatus: "stick", maxThrowTumbling: 3, random: seeded(23) })!)).toBe(3);
+  });
+
   it("ジュニアでは投げが5回を超えない", () => {
     const many = Array.from({ length: 8 }, (_, i) =>
       tpl(`投げ${i}`, "common", S({ kind: "throw" }, skill(["b_front", "b_sidesalto", "b_backsalto"][i % 3]), { kind: "catch" })),
@@ -119,5 +154,35 @@ describe("ランダム生成", () => {
     const score = computeScore(r.series, "stick");
     const leftThrow = score.apparatusElementChecks.find((c) => c.key === "appEl_stick_left");
     expect(leftThrow?.passed).toBe(true);
+  });
+});
+
+
+describe("宙返りの多様性", () => {
+  it("同じ宙返りの2回目以降を数える（前宙は数えない）", () => {
+    expect(saltoRepeatCount([S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto"))])).toBe(2);
+    expect(saltoRepeatCount([S(skill("b_backsalto"), skill("b_sidesalto"), skill("b_front"))])).toBe(0);
+    // 前宙は何度実施しても数えない
+    expect(saltoRepeatCount([S(skill("b_front"), skill("b_front"), skill("b_front"))])).toBe(0);
+    // シリーズをまたいでも数える
+    expect(saltoRepeatCount([S(skill("b_backsalto")), S(skill("b_backsalto"))])).toBe(1);
+    // A難度（宙返りではない）は対象外
+    expect(saltoRepeatCount([S(skill("a_flicflac"), skill("a_flicflac"))])).toBe(0);
+  });
+
+  it("同じ点数なら宙返りが多様な構成を選ぶ", () => {
+    // どちらも B+1+1 = D難度（0.5）だが、片方は後方宙返りの3連続
+    const same = tpl("後宙3連続", "common", S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto")));
+    const varied = tpl("いろいろ3連続", "common", S(skill("b_backsalto"), skill("b_sidesalto"), skill("b_backtuck")));
+    const r = generateRoutine([same, varied], { apparatus: "stick", maxSeries: 1, random: seeded(31) })!;
+    expect(r.used.map((t) => t.name)).toEqual(["いろいろ3連続"]);
+  });
+
+  it("点数が上がるなら繰り返しも許す（必須ではない）", () => {
+    // 後宙3連続（D難度・0.5）と 前宙1本（B難度・0.2）なら、繰り返しがあっても前者を採る
+    const strong = tpl("後宙3連続", "common", S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto")));
+    const weak = tpl("前宙1本", "common", S(skill("b_front")));
+    const r = generateRoutine([strong, weak], { apparatus: "stick", maxSeries: 1, random: seeded(31) })!;
+    expect(r.used.map((t) => t.name)).toEqual(["後宙3連続"]);
   });
 });
