@@ -29,11 +29,19 @@ const triple = () => S(skill("b_backsalto"), skill("b_backsalto"), skill("b_back
 const connect = () => S(skill("b_backsalto"), skill("a_flicflac"), skill("b_backsalto"), { kind: "catch" });
 const cheap = () => S(skill("a_cartwheel"), { kind: "catch" });
 
+/** 投げタンではない投げ（投げ→徒手動作→キャッチ） */
+const throwMotion = (motionId: string, count: number) =>
+  S({ kind: "throw" }, { kind: "motion", motionId, count }, { kind: "catch" });
+
 const pool = (): SeriesTemplate[] => [
   tpl("投げ前", "common", throwFront()),
   tpl("投げ側", "common", throwSide()),
+  tpl("投げ4シェネ", "common", throwMotion("chene", 4)),
+  tpl("投げ3前転", "common", throwMotion("fwd_roll", 3)),
   tpl("投げ後", "common", throwBack()),
   tpl("三宙", "common", triple()),
+  tpl("前方タンブリング", "common", S(skill("a_handspring"), skill("b_front"), { kind: "catch" })),
+  tpl("側方タンブリング", "common", S(skill("a_roundoff"), skill("b_sidesalto"), { kind: "catch" })),
   tpl("つなぎ", "common", connect()),
   tpl("側転だけ", "common", cheap()),
   tpl("左手投げ", "stick", S({ kind: "throw", reqTypes: ["lefthand"] }, skill("b_front"), { kind: "catch" })),
@@ -66,6 +74,9 @@ describe("ランダム生成", () => {
     expect(passed("connect")).toBe(true);
     expect(passed("dir")).toBe(true);
     expect(score.dScore).toBeCloseTo(r.dScore, 5);
+    // 投げタンは1本まで
+    const throwTum = score.analysis.reduce((n, a) => n + a.units.filter((u) => u.isThrowTumbling).length, 0);
+    expect(throwTum).toBe(1);
   });
 
   it("評価が上がらないシリーズは入れない（空のシリーズは残らない）", () => {
@@ -102,6 +113,30 @@ describe("ランダム生成", () => {
   it("下限を指定すると、その範囲まで積む", () => {
     const r = generateRoutine(pool(), { apparatus: "stick", minScore: 1.0, random: seeded(9) })!;
     expect(r.dScore).toBeGreaterThanOrEqual(1.0 - 1e-9);
+  });
+
+  it("投げタンは1本までにする（必須要素は1本で満たせる）", () => {
+    // 投げタンだけのテンプレートを大量に置いても1本しか使わない
+    const many = ["b_front", "b_sidesalto", "b_backsalto", "b_backtuck", "b_tempo"].map((id, i) =>
+      tpl(`投げタン${i}`, "common", S({ kind: "throw" }, skill(id), { kind: "catch" })),
+    );
+    const r = generateRoutine([...many, ...pool()], { apparatus: "stick", random: seeded(23) })!;
+    const score = computeScore(r.series, "stick");
+    const throwTum = score.analysis.reduce((n, a) => n + a.units.filter((u) => u.isThrowTumbling).length, 0);
+    expect(throwTum).toBe(1);
+  });
+
+  it("上限を変えれば投げタンを増やせる", () => {
+    const many = ["b_front", "b_sidesalto", "b_backsalto", "b_backtuck", "b_tempo"].map((id, i) =>
+      tpl(`投げタン${i}`, "common", S({ kind: "throw" }, skill(id), { kind: "catch" })),
+    );
+    const count = (r: { series: Series[] }) =>
+      computeScore(r.series, "stick").analysis.reduce(
+        (n, a) => n + a.units.filter((u) => u.isThrowTumbling).length,
+        0,
+      );
+    expect(count(generateRoutine(many, { apparatus: "stick", random: seeded(23) })!)).toBe(1);
+    expect(count(generateRoutine(many, { apparatus: "stick", maxThrowTumbling: 3, random: seeded(23) })!)).toBe(3);
   });
 
   it("ジュニアでは投げが5回を超えない", () => {

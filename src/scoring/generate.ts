@@ -7,6 +7,7 @@
 //  - Dスコアの範囲を指定できる。指定がなければ最大を目指す
 //  - 評価されない要素は入れない（入れても評価が上がらないシリーズは最後に取り除く）
 //    例：4本目のタンブリング、ジュニアの6回目以降の投げ、まったく同じ内容の重複シリーズ
+//  - 投げタンは1本まで（必須要素は1本で満たせるため）
 // =====================================================================
 
 import { computeScore } from "./score";
@@ -24,6 +25,8 @@ export interface GenerateOptions {
   attempts?: number;
   /** シリーズ数の上限 */
   maxSeries?: number;
+  /** 投げタン（転回系の投げ受け）の本数の上限。既定は1本。 */
+  maxThrowTumbling?: number;
   /** 乱数（テスト用に差し替え可能） */
   random?: () => number;
 }
@@ -37,6 +40,9 @@ export interface GenerateResult {
   /** 満たせなかった必須要素のラベル */
   missing: string[];
 }
+
+/** 生成する構成に入れる投げタンの本数の上限（必須要素は1本で満たせる） */
+export const DEFAULT_MAX_THROW_TUMBLING = 1;
 
 /** 範囲から外れた分のペナルティ。範囲内なら0。 */
 function rangePenalty(d: number, min?: number | null, max?: number | null): number {
@@ -61,8 +67,15 @@ interface Evaluation {
 function evaluate(series: Series[], opts: GenerateOptions): Evaluation {
   const r = computeScore(series, opts.apparatus, { junior: !!opts.junior });
   const penalty = rangePenalty(r.dScore, opts.minScore, opts.maxScore);
+  // 投げタンの本数制限（既定1本）。超えた分は範囲外と同じ強さで嫌う。
+  const maxThrowTum = opts.maxThrowTumbling ?? DEFAULT_MAX_THROW_TUMBLING;
+  const throwTumCount = r.analysis.reduce(
+    (n, a) => n + a.units.filter((u) => u.isThrowTumbling).length,
+    0,
+  );
+  const overThrowTum = Math.max(0, throwTumCount - maxThrowTum);
   return {
-    value: -penalty * 100 + r.dScore + r.aScore,
+    value: -(penalty + overThrowTum) * 100 + r.dScore + r.aScore,
     dScore: r.dScore,
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),
