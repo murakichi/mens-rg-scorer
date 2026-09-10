@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateRoutine, usableTemplates } from "../generate";
+import { generateRoutine, saltoRepeatCount, usableTemplates } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
 import type { ApparatusKey, Item, Series } from "../types";
@@ -154,5 +154,35 @@ describe("ランダム生成", () => {
     const score = computeScore(r.series, "stick");
     const leftThrow = score.apparatusElementChecks.find((c) => c.key === "appEl_stick_left");
     expect(leftThrow?.passed).toBe(true);
+  });
+});
+
+
+describe("宙返りの多様性", () => {
+  it("同じ宙返りの2回目以降を数える（前宙は数えない）", () => {
+    expect(saltoRepeatCount([S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto"))])).toBe(2);
+    expect(saltoRepeatCount([S(skill("b_backsalto"), skill("b_sidesalto"), skill("b_front"))])).toBe(0);
+    // 前宙は何度実施しても数えない
+    expect(saltoRepeatCount([S(skill("b_front"), skill("b_front"), skill("b_front"))])).toBe(0);
+    // シリーズをまたいでも数える
+    expect(saltoRepeatCount([S(skill("b_backsalto")), S(skill("b_backsalto"))])).toBe(1);
+    // A難度（宙返りではない）は対象外
+    expect(saltoRepeatCount([S(skill("a_flicflac"), skill("a_flicflac"))])).toBe(0);
+  });
+
+  it("同じ点数なら宙返りが多様な構成を選ぶ", () => {
+    // どちらも B+1+1 = D難度（0.5）だが、片方は後方宙返りの3連続
+    const same = tpl("後宙3連続", "common", S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto")));
+    const varied = tpl("いろいろ3連続", "common", S(skill("b_backsalto"), skill("b_sidesalto"), skill("b_backtuck")));
+    const r = generateRoutine([same, varied], { apparatus: "stick", maxSeries: 1, random: seeded(31) })!;
+    expect(r.used.map((t) => t.name)).toEqual(["いろいろ3連続"]);
+  });
+
+  it("点数が上がるなら繰り返しも許す（必須ではない）", () => {
+    // 後宙3連続（D難度・0.5）と 前宙1本（B難度・0.2）なら、繰り返しがあっても前者を採る
+    const strong = tpl("後宙3連続", "common", S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto")));
+    const weak = tpl("前宙1本", "common", S(skill("b_front")));
+    const r = generateRoutine([strong, weak], { apparatus: "stick", maxSeries: 1, random: seeded(31) })!;
+    expect(r.used.map((t) => t.name)).toEqual(["後宙3連続"]);
   });
 });

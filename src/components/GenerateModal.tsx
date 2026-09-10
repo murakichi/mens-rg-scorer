@@ -89,7 +89,8 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
           </div>
           <p className="hint">
             未指定なら最大を目指します。必須要素をできるだけ満たし、評価されない要素（4本目のタンブリング、
-            ジュニアの6回目以降の投げ、重複するシリーズなど）は入れません。
+            ジュニアの6回目以降の投げ、重複するシリーズなど）は入れません。投げタンは1本まで、
+            同じ宙返りの繰り返し（前宙を除く）はできるだけ避けます。
           </p>
 
           <button className="add-btn" onClick={run}>
