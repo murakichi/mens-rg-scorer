@@ -5,8 +5,8 @@
 // 保持するのは入力データ（Series / Series[] と手具）だけ。
 // =====================================================================
 
-import { APPARATUS } from "./constants";
-import type { ApparatusKey, Series } from "./types";
+import { APPARATUS, HAND_MOTIONS, MOTION_OPTIONS, ropeJumpDef, skillDef } from "./constants";
+import type { ApparatusKey, Item, Series } from "./types";
 
 export const TEMPLATE_STORAGE_KEY = "mens-rg-scorer:templates:v1";
 
@@ -151,3 +151,23 @@ export function splitByApparatus<T extends TemplateBase>(list: T[], apparatus: A
 }
 
 export const apparatusName = (key: ApparatusKey): string => APPARATUS[key]?.name ?? key;
+
+
+/** カード表示用：アイテム1つの短い名前 */
+function itemLabel(item: Item): string {
+  if (item.kind === "throw") return "投げ";
+  if (item.kind === "catch") return "キャッチ";
+  if (item.kind === "skill") return skillDef(item.skillId)?.name ?? "技";
+  if (item.kind === "ropeJump") return ropeJumpDef(item.jumpId)?.name ?? "ロープ跳び";
+  const m = MOTION_OPTIONS.find((o) => o.id === item.motionId) ?? HAND_MOTIONS.find((x) => x.id === item.motionId);
+  const name = m?.name ?? skillDef(item.motionId)?.name ?? "徒手";
+  const n = Number(item.count);
+  return Number.isFinite(n) && n > 1 ? `${name}×${n}` : name;
+}
+
+/** カード表示用：シリーズの中身を「投げ→前宙→キャッチ」のように短くまとめる */
+export function describeSeries(series: Series, max = 6): string {
+  const labels = series.items.map(itemLabel);
+  if (labels.length === 0) return "（空）";
+  return labels.length > max ? `${labels.slice(0, max).join("→")}→…` : labels.join("→");
+}

@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { X, Trash2, Download, Upload, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { X, Trash2, Download, Upload, Plus, ChevronLeft } from "lucide-react";
 import { APPARATUS } from "../scoring/constants";
 import {
   addRoutineTemplate,
   apparatusName,
+  describeSeries,
   removeTemplate,
   type TemplateKind,
   type TemplateStore,
@@ -31,11 +32,23 @@ interface Props {
 
 type Selection = { kind: TemplateKind; id: string } | null;
 
-const stamp = (t: number) => new Date(t).toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" });
+const stamp = (t: number) => new Date(t).toLocaleDateString("ja-JP");
+
+/** 画面が狭いか（狭いときは一覧だけを出し、編集は上に重ねる） */
+function useNarrow(query = "(max-width: 900px)") {
+  const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = () => setNarrow(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [query]);
+  return narrow;
+}
 
 /**
- * テンプレート管理画面。左に一覧、右に選択中のテンプレートの編集欄（採点画面と同じ
- * シリーズ編集コンポーネント）を出す。編集内容はそのまま保存される。
+ * テンプレート管理画面。テンプレートはカードで並べ、
+ * 広い画面では右側、狭い画面では重ねたシートで、採点画面と同じ入力欄で編集する。
  */
 export function TemplateModal({
   open,
@@ -51,6 +64,7 @@ export function TemplateModal({
   onImport,
 }: Props) {
   const [sel, setSel] = useState<Selection>(null);
+  const narrow = useNarrow();
   if (!open) return null;
 
   const selected =
@@ -61,7 +75,7 @@ export function TemplateModal({
         : undefined;
   const selectedSeries: Series[] = selected
     ? Array.isArray((selected as { series: Series | Series[] }).series)
-      ? ((selected as { series: Series[] }).series)
+      ? (selected as { series: Series[] }).series
       : [(selected as { series: Series }).series]
     : [];
 
@@ -106,40 +120,105 @@ export function TemplateModal({
     setSel({ kind: "routine", id: next.routines[0].id });
   };
 
-  const list = (kind: TemplateKind) => {
+  const cards = (kind: TemplateKind) => {
     const items = kind === "series" ? store.series : store.routines;
     if (items.length === 0) {
       return (
         <p className="hint">
           {kind === "series"
             ? "各シリーズの「テンプレートに保存」から登録します。"
-            : "下のボタンから現在の演技構成を登録できます。"}
+            : "「現在の構成を保存」から登録します。"}
         </p>
       );
     }
-    return items.map((t) => (
-      <div
-        key={t.id}
-        className={`tpl-row${sel?.kind === kind && sel.id === t.id ? " is-active" : ""}`}
-        onClick={() => setSel({ kind, id: t.id })}
-      >
-        <span className="tpl-row-name">{t.name}</span>
-        <button
-          className="remove-btn-sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            remove(kind, t.id, t.name);
-          }}
-        >
-          <Trash2 size={13} />
-        </button>
-        <span className="tpl-row-meta">
-          {apparatusName(t.apparatus)}
-          {kind === "routine" && `・${(t as { series: Series[] }).series.length}シリーズ`}／{stamp(t.updatedAt)}
-        </span>
+    return (
+      <div className="tpl-cards">
+        {items.map((t) => {
+          const list: Series[] = kind === "routine" ? (t as { series: Series[] }).series : [(t as { series: Series }).series];
+          return (
+            <button
+              key={t.id}
+              type="button"
+              className={`tpl-card${sel?.kind === kind && sel.id === t.id ? " is-active" : ""}`}
+              onClick={() => setSel({ kind, id: t.id })}
+            >
+              <span className="tpl-card-head">
+                <span className="tpl-card-name">{t.name}</span>
+                <span
+                  className="tpl-card-del"
+                  role="button"
+                  tabIndex={-1}
+                  aria-label="削除"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    remove(kind, t.id, t.name);
+                  }}
+                >
+                  <Trash2 size={13} />
+                </span>
+              </span>
+              <span className="tpl-card-meta">
+                {apparatusName(t.apparatus)}
+                {kind === "routine" && `・${list.length}シリーズ`}／{stamp(t.updatedAt)}
+              </span>
+              <span className="tpl-card-body">
+                {list.slice(0, 3).map((ser, i) => (
+                  <span key={i} className="tpl-card-line">
+                    {kind === "routine" && <b>{i + 1}. </b>}
+                    {describeSeries(ser)}
+                  </span>
+                ))}
+                {list.length > 3 && <span className="tpl-card-line">…ほか{list.length - 3}シリーズ</span>}
+              </span>
+            </button>
+          );
+        })}
       </div>
-    ));
+    );
   };
+
+  const editor = selected && (
+    <>
+      <div className="tpl-editor-head">
+        {narrow && (
+          <button className="io-btn" onClick={() => setSel(null)}>
+            <ChevronLeft size={14} /> 一覧
+          </button>
+        )}
+        <input
+          className="tpl-name-input"
+          value={selected.name}
+          onChange={(e) => patchSelected({ name: e.target.value })}
+          placeholder="テンプレート名"
+        />
+        <button
+          className="io-btn"
+          onClick={() => (sel!.kind === "routine" ? onLoadRoutine(sel!.id) : onAppendSeries(sel!.id))}
+        >
+          {sel!.kind === "routine" ? "採点画面に読み込む" : "採点画面に追加"}
+        </button>
+      </div>
+      <div className="app-wrap">
+        {(Object.entries(APPARATUS) as [ApparatusKey, { name: string }][]).map(([k, v]) => (
+          <button
+            key={k}
+            className={k === selected.apparatus ? "app-btn is-active" : "app-btn"}
+            onClick={() => patchSelected({ apparatus: k })}
+          >
+            {v.name}
+          </button>
+        ))}
+      </div>
+      <SeriesListEditor
+        series={selectedSeries}
+        apparatus={selected.apparatus}
+        junior={junior}
+        allowAdd={sel!.kind === "routine"}
+        showExec={false}
+        onChange={(next) => patchSelected({ series: next })}
+      />
+    </>
+  );
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -151,10 +230,10 @@ export function TemplateModal({
           </button>
         </div>
 
-        <div className="tpl-panes">
+        <div className={narrow ? "tpl-panes is-narrow" : "tpl-panes"}>
           <div className="tpl-list">
-            <div className="line-head">演技構成</div>
-            {list("routine")}
+            <div className="line-head">演技構成のテンプレート</div>
+            {cards("routine")}
             <div className="tpl-list-actions">
               <button className="io-btn" onClick={onSaveCurrentRoutine}>
                 現在の構成を保存
@@ -164,52 +243,22 @@ export function TemplateModal({
               </button>
             </div>
 
-            <div className="line-head">シリーズ</div>
-            {list("series")}
+            <div className="line-head">シリーズのテンプレート</div>
+            {cards("series")}
           </div>
 
-          <div className="tpl-editor">
-            {!selected ? (
-              <p className="hint">左の一覧からテンプレートを選ぶと、採点画面と同じ入力欄で編集できます。</p>
-            ) : (
-              <>
-                <div className="tpl-editor-head">
-                  <input
-                    className="tpl-name-input"
-                    value={selected.name}
-                    onChange={(e) => patchSelected({ name: e.target.value })}
-                    placeholder="テンプレート名"
-                  />
-                  <button
-                    className="io-btn"
-                    onClick={() => (sel!.kind === "routine" ? onLoadRoutine(sel!.id) : onAppendSeries(sel!.id))}
-                  >
-                    {sel!.kind === "routine" ? "採点画面に読み込む" : "採点画面に追加"}
-                  </button>
-                </div>
-                <div className="app-wrap">
-                  {(Object.entries(APPARATUS) as [ApparatusKey, { name: string }][]).map(([k, v]) => (
-                    <button
-                      key={k}
-                      className={k === selected.apparatus ? "app-btn is-active" : "app-btn"}
-                      onClick={() => patchSelected({ apparatus: k })}
-                    >
-                      {v.name}
-                    </button>
-                  ))}
-                </div>
-                <SeriesListEditor
-                  series={selectedSeries}
-                  apparatus={selected.apparatus}
-                  junior={junior}
-                  allowAdd={sel!.kind === "routine"}
-                  showExec={false}
-                  onChange={(next) => patchSelected({ series: next })}
-                />
-              </>
-            )}
-          </div>
+          {!narrow && (
+            <div className="tpl-editor">
+              {selected ? editor : <p className="hint">カードを選ぶと、採点画面と同じ入力欄で編集できます。</p>}
+            </div>
+          )}
         </div>
+
+        {narrow && selected && (
+          <div className="tpl-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="tpl-sheet-inner">{editor}</div>
+          </div>
+        )}
 
         <p className="hint">
           テンプレートはこのブラウザに保存され、編集内容はそのまま反映されます（端末をまたぐときは書き出し／読み込みを使ってください）。

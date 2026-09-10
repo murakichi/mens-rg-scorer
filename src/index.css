@@ -1040,18 +1040,25 @@ input[type="checkbox"] {
 }
 .tpl-panes {
   display: grid;
-  grid-template-columns: minmax(220px, 300px) 1fr;
+  grid-template-columns: minmax(260px, 360px) 1fr;
   gap: 16px;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+.tpl-panes.is-narrow {
+  grid-template-columns: 1fr;
+  overflow-y: auto;
 }
 .tpl-list {
   overflow-y: auto;
   padding-right: 6px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+}
+.tpl-panes.is-narrow .tpl-list {
+  overflow: visible;
 }
 .tpl-list .line-head {
   margin-top: 4px;
@@ -1060,7 +1067,6 @@ input[type="checkbox"] {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: 6px;
 }
 .tpl-editor {
   overflow-y: auto;
@@ -1071,9 +1077,11 @@ input[type="checkbox"] {
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 .tpl-name-input {
   flex: 1;
+  min-width: 160px;
   font-family: inherit;
   background: rgba(255, 255, 255, 0.85);
   border: 1px solid rgba(150, 150, 190, 0.35);
@@ -1088,44 +1096,96 @@ input[type="checkbox"] {
   border-color: var(--accent);
   box-shadow: var(--ring);
 }
-.tpl-row {
+
+/* テンプレートのカード一覧 */
+.tpl-cards {
   display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 4px 8px;
-  padding: 8px 10px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.tpl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 10px 12px;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-xs);
   background: var(--glass-soft);
   cursor: pointer;
-  transition: border-color 0.16s ease, background 0.16s ease;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
-.tpl-row:hover {
+.tpl-card:hover {
   border-color: var(--accent);
+  transform: translateY(-1px);
 }
-.tpl-row.is-active {
+.tpl-card.is-active {
   border-color: var(--accent);
   box-shadow: var(--ring);
 }
-.tpl-row-name {
+.tpl-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.tpl-card-name {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
   word-break: break-word;
 }
-.tpl-row-meta {
-  grid-column: 1 / -1;
+.tpl-card-del {
+  flex: none;
+  color: var(--red);
+  opacity: 0.6;
+  line-height: 0;
+  padding: 2px;
+  border-radius: 6px;
+}
+.tpl-card-del:hover {
+  opacity: 1;
+  background: rgba(230, 100, 130, 0.14);
+}
+.tpl-card-meta {
   font-size: 11px;
   color: var(--ink-soft);
 }
+.tpl-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.tpl-card-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-@media (max-width: 900px) {
-  .tpl-panes {
-    grid-template-columns: 1fr;
-    overflow-y: auto;
-  }
-  .tpl-list,
-  .tpl-editor {
-    overflow: visible;
-  }
+/* 狭い画面：カードを選ぶと編集シートを重ねる */
+.tpl-sheet {
+  position: absolute;
+  inset: 0;
+  background: var(--glass-strong);
+  border-radius: var(--radius);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(24px) saturate(180%);
+  animation: fade-in 0.16s ease;
+}
+.tpl-sheet-inner {
+  overflow: auto;
+  padding: 16px;
+}
+.modal {
+  position: relative;
+  /* フレックス子要素が中身の幅で広がらないようにする（狭い画面でのはみ出し防止） */
+  min-width: 0;
+}
+.tpl-list,
+.tpl-editor {
+  min-width: 0;
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   addRoutineTemplate,
+  describeSeries,
   addSeriesTemplate,
   emptyTemplateStore,
   normalizeTemplateStore,
@@ -78,5 +79,39 @@ describe("保存データの正規化", () => {
   it("何もないデータは空のテンプレート集合になる", () => {
     expect(normalizeTemplateStore(null)).toEqual({ version: 1, series: [], routines: [] });
     expect(normalizeTemplateStore({ series: "x" })).toEqual({ version: 1, series: [], routines: [] });
+  });
+});
+
+describe("カード表示用のシリーズ要約", () => {
+  it("アイテムを矢印でつなぐ", () => {
+    const s: Series = {
+      executionDeduction: 0,
+      items: [
+        { kind: "throw", throwTypes: [], reqTypes: [] },
+        { kind: "skill", skillId: "b_front", hasApparatus: false, isThrow: false },
+        { kind: "catch", catchTypes: [], catchTwo: false },
+      ],
+    };
+    expect(describeSeries(s)).toBe("投げ→前宙→キャッチ");
+  });
+
+  it("徒手動作は回数付き、ロープ跳びは跳びの名前", () => {
+    const s: Series = {
+      executionDeduction: 0,
+      items: [
+        { kind: "motion", motionId: "chene", count: 3 },
+        { kind: "ropeJump", jumpId: "2f", isMoving6m: false },
+      ],
+    };
+    expect(describeSeries(s)).toBe("シェネ×3→2重跳び（前）");
+  });
+
+  it("長いシリーズは途中で省略し、空なら（空）", () => {
+    const many: Series = {
+      executionDeduction: 0,
+      items: Array.from({ length: 8 }, () => ({ kind: "throw" as const, throwTypes: [], reqTypes: [] })),
+    };
+    expect(describeSeries(many)).toBe("投げ→投げ→投げ→投げ→投げ→投げ→…");
+    expect(describeSeries({ executionDeduction: 0, items: [] })).toBe("（空）");
   });
 });
