@@ -3,6 +3,7 @@ import { X, Trash2, Download, Upload, Plus, ChevronLeft } from "lucide-react";
 import { APPARATUS } from "../scoring/constants";
 import {
   addRoutineTemplate,
+  addSeriesTemplate,
   apparatusName,
   describeSeries,
   removeTemplate,
@@ -110,14 +111,25 @@ export function TemplateModal({
     if (sel?.id === id) setSel(null);
   };
 
+  const emptySeries = (): Series => ({
+    executionDeduction: 0,
+    items: [{ kind: "skill", skillId: "", hasApparatus: false, isThrow: false }],
+  });
+
   const addRoutine = () => {
     const name = window.prompt("新しい構成テンプレートの名前");
     if (!name?.trim()) return;
-    const next = addRoutineTemplate(store, name, apparatus, [
-      { executionDeduction: 0, items: [{ kind: "skill", skillId: "", hasApparatus: false, isThrow: false }] },
-    ]);
+    const next = addRoutineTemplate(store, name, apparatus, [emptySeries()]);
     onChange(next);
     setSel({ kind: "routine", id: next.routines[0].id });
+  };
+
+  const addSeries = () => {
+    const name = window.prompt("新しいシリーズテンプレートの名前");
+    if (!name?.trim()) return;
+    const next = addSeriesTemplate(store, name, apparatus, emptySeries());
+    onChange(next);
+    setSel({ kind: "series", id: next.series[0].id });
   };
 
   const cards = (kind: TemplateKind) => {
@@ -126,7 +138,7 @@ export function TemplateModal({
       return (
         <p className="hint">
           {kind === "series"
-            ? "各シリーズの「テンプレートに保存」から登録します。"
+            ? "採点画面の各シリーズの「テンプレートに保存」か、下の「新規」から登録します。"
             : "「現在の構成を保存」から登録します。"}
         </p>
       );
@@ -245,6 +257,11 @@ export function TemplateModal({
 
             <div className="line-head">シリーズのテンプレート</div>
             {cards("series")}
+            <div className="tpl-list-actions">
+              <button className="io-btn" onClick={addSeries}>
+                <Plus size={13} /> 新規
+              </button>
+            </div>
           </div>
 
           {!narrow && (
