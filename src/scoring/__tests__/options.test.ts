@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CATEGORY,
+  hasTwoThrow,
   MOTION_OPTIONS,
   motionOptionGroupsFor,
   motionOptionsFor,
@@ -50,5 +51,16 @@ describe("徒手動作の選択肢は縦回転・横回転でまとめる", () =
     const ordered = motionOptionsFor("chene").map((o) => o.id);
     const vertical = motionOptionGroupsFor("chene").find((g) => g.name === "縦回転")!.options.map((o) => o.id);
     expect(vertical).toEqual(ordered.filter((id) => vertical.includes(id)));
+  });
+});
+
+describe("二つ投げが必須投げの手具", () => {
+  it("リング・クラブは二つ投げが必須投げ", () => {
+    expect(hasTwoThrow("ring")).toBe(true);
+    expect(hasTwoThrow("clubs")).toBe(true);
+  });
+  it("スティック・ロープは二つ投げを持たない", () => {
+    expect(hasTwoThrow("stick")).toBe(false);
+    expect(hasTwoThrow("rope")).toBe(false);
   });
 });
