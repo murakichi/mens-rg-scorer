@@ -8,7 +8,7 @@ import {
   skillAllowed,
   skillDef,
   skillDifficulty,
-  skillOptions,
+  skillOptionGroups,
 } from "../scoring/constants";
 import {
   computeTeamScore,
@@ -510,10 +510,15 @@ export function TeamScorer({ initialData }: Props = {}) {
                                       {skillDef(cell.skillId)?.name}（ジュニア禁止）
                                     </option>
                                   )}
-                                  {skillOptions(junior).map((sk) => (
-                                    <option key={sk.id} value={sk.id}>
-                                      {sk.name}（{skillDifficulty(sk.id, junior)}）
-                                    </option>
+                                  {/* 前方系・側方系・後方系に分けて表示 */}
+                                  {skillOptionGroups(junior).map((g) => (
+                                    <optgroup key={g.name} label={g.name}>
+                                      {g.skills.map((sk) => (
+                                        <option key={sk.id} value={sk.id}>
+                                          {sk.name}（{skillDifficulty(sk.id, junior)}）
+                                        </option>
+                                      ))}
+                                    </optgroup>
                                   ))}
                                 </select>
                                 <button

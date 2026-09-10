@@ -44,6 +44,12 @@
 | 徒手動作（1〜4動作 + 縦3動作） | `HAND_MOTIONS` | `constants.ts` |
 | 徒手動作の選択肢（動作数 + 徒手扱いの転回技） | `MOTION_OPTIONS` / `MOTION_SKILLS` | `constants.ts` |
 
+UIのプルダウンは見出し（`optgroup`）で分類する。タンブリング技は**前方系・側方系・後方系**
+（`skillOptionGroups(junior)`、系統の順は `SKILL_CATEGORY_ORDER`）、徒手動作は
+**縦回転・横回転**（`motionOptionGroupsFor(prevMotionId)`、`MOTION_AXIS_GROUPS`）。徒手扱いの
+転回技はすべて縦の一回転なので縦回転側に入る（`motionDef()` の扱いと同じ）。群の中の並び順は
+それぞれ `SKILL_LIST` / `motionOptionsFor()` の優先順を保つ。
+
 タッチダウンライズは**縦回転の徒手としてのみ**判定するため、`SKILL_LIST`（タンブリング技）には入れず
 `HAND_MOTIONS` に1動作の項目（`td_rise`）として持つ。方向系の網羅判定にも影響しない。
 | ロープ跳びの難度表 | `ROPE_JUMPS` | `constants.ts` |

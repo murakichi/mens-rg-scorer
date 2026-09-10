@@ -363,6 +363,19 @@ export function skillOptions(junior = false): Skill[] {
   return SKILL_LIST.filter((s) => skillAllowed(s.id, junior));
 }
 
+/** タンブリング技のプルダウンをまとめる系統の表示順 */
+export const SKILL_CATEGORY_ORDER: string[] = [CATEGORY.FORWARD, CATEGORY.SIDE, CATEGORY.BACKWARD, CATEGORY.OTHER];
+
+/** タンブリング技の選択肢を系統（前方系・側方系・後方系）ごとにまとめる。空の系統は返さない。 */
+export function skillOptionGroups(junior = false): { name: string; skills: Skill[] }[] {
+  const opts = skillOptions(junior);
+  const groups = SKILL_CATEGORY_ORDER.map((name) => ({ name, skills: opts.filter((s) => s.category === name) }));
+  // 表示順に無いカテゴリが増えても落とさない
+  const rest = opts.filter((s) => !SKILL_CATEGORY_ORDER.includes(s.category));
+  if (rest.length > 0) groups.push({ name: CATEGORY.OTHER, skills: rest });
+  return groups.filter((g) => g.skills.length > 0);
+}
+
 /**
  * 徒手として扱うことがある転回技（A難度技ときりもみ系）。徒手動作の選択肢にも出す。
  * 動作数は難度をそのまま徒手系難度に読み替えた値（A/きりもみ＝1動作、きりもみ転回＝2動作）。
@@ -410,14 +423,31 @@ export function legacyMotionDef(id: string): HandMotion | undefined {
 }
 
 /** 徒手動作アイテムの選択肢（回転系の徒手。汎用の「n動作」は含まない） */
-export const MOTION_OPTIONS: { id: string; name: string; hasHandsOption?: boolean }[] = [
+export const MOTION_OPTIONS: { id: string; name: string; hasHandsOption?: boolean; vertical?: boolean }[] = [
   ...HAND_MOTIONS.filter((m) => !m.legacy).map((m) => ({
     id: m.id,
     name: m.name,
     hasHandsOption: m.hasHandsOption,
+    vertical: !!m.vertical,
   })),
-  ...MOTION_SKILLS.map((s) => ({ id: s.id, name: s.name })),
+  // 徒手扱いの転回技はすべて縦の一回転（motionDef と同じ扱い）
+  ...MOTION_SKILLS.map((s) => ({ id: s.id, name: s.name, vertical: true })),
 ];
+
+/** 徒手動作のプルダウンをまとめる回転軸（表示順） */
+export const MOTION_AXIS_GROUPS = [
+  { id: "vertical", name: "縦回転" },
+  { id: "horizontal", name: "横回転" },
+] as const;
+
+/** 徒手動作の選択肢を縦回転・横回転ごとにまとめる（各群の中の並び順は motionOptionsFor と同じ） */
+export function motionOptionGroupsFor(prevMotionId?: string): { name: string; options: typeof MOTION_OPTIONS }[] {
+  const opts = motionOptionsFor(prevMotionId);
+  return MOTION_AXIS_GROUPS.map((g) => ({
+    name: g.name,
+    options: opts.filter((o) => (g.id === "vertical" ? !!o.vertical : !o.vertical)),
+  })).filter((g) => g.options.length > 0);
+}
 
 // ---- ジュニア適用規則（変更規則1）----
 

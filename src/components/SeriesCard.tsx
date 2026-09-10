@@ -9,10 +9,11 @@ import {
   APPARATUS_USE,
   skillDef,
   skillAllowed,
-  skillOptions,
+  skillOptionGroups,
   skillDifficulty,
   hasTwoThrow,
   motionOptionsFor,
+  motionOptionGroupsFor,
   legacyMotionDef,
   HANDS_TYPES,
   DEFAULT_HANDS_TYPE,
@@ -159,10 +160,15 @@ function ItemEditor({
                 {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}・ジュニア禁止）
               </option>
             )}
-            {skillOptions(junior).map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}（{skillDifficulty(s.id, junior)}）
-              </option>
+            {/* 前方系・側方系・後方系に分けて表示 */}
+            {skillOptionGroups(junior).map((g) => (
+              <optgroup key={g.name} label={g.name}>
+                {g.skills.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}（{skillDifficulty(s.id, junior)}）
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>
@@ -236,10 +242,15 @@ function ItemEditor({
       >
         <option value="">徒手動作</option>
         {legacy && <option value={legacy.id}>{legacy.name}（旧）</option>}
-        {options.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.name}
-          </option>
+        {/* 縦回転・横回転に分けて表示 */}
+        {motionOptionGroupsFor(prevMotionId).map((g) => (
+          <optgroup key={g.name} label={g.name}>
+            {g.options.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
       {item.motionId && (

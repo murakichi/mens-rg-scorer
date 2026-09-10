@@ -37,7 +37,7 @@ The data model is a flat **list of `Series`**, each an ordered list of `items` (
 
 ### The scoring pipeline (`src/scoring/`)
 
-- **`constants.ts`** — all definition tables and tunable rule values (`SKILL_LIST`, `HAND_MOTIONS`, `DIFF_SCORE`, `*_BONUS`, `*_DEDUCTION`, `*_CAP`, `ADOPT_COUNT`, …). Change scoring values **here only**.
+- **`constants.ts`** — all definition tables and tunable rule values (`SKILL_LIST`, `HAND_MOTIONS`, `DIFF_SCORE`, `*_BONUS`, `*_DEDUCTION`, `*_CAP`, `ADOPT_COUNT`, …). Change scoring values **here only**. Dropdown grouping lives here too: `skillOptionGroups(junior)` splits tumbling skills into 前方系/側方系/後方系 (`SKILL_CATEGORY_ORDER`) and `motionOptionGroupsFor(prevMotionId)` splits 徒手動作 into 縦回転/横回転 (`MOTION_AXIS_GROUPS`; every 転回技 used as 徒手 is vertical) — both keep the existing within-group ordering, and the pickers render them as `optgroup`s.
 - **`analysis.ts`** — per-series functions. `analyzeSeries(series)` is the heart: it walks `items` left-to-right and flushes a buffer into **units** whenever a `catch` is seen.
   - A run with **no throw** → a `tumbling` unit; `calcTumblingDifficulty` = first skill's value, +1 per additional non-A skill, +1 if any throw, capped at E.
   - A run **containing a throw** → a `throw` unit; difficulty is `max(handDiff, tumblingDiff)`. `calcHandDifficulty` derives hand difficulty from accumulated motion count (縦3動作 → forced E). A throw unit that also contains a skill is a **投げタン** (`isThrowTumbling`) and counts toward tumbling, not hand.
