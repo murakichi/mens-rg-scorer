@@ -4,10 +4,11 @@
 // 投げ方（左手投げ・視野外・手以外…）を全パターン網羅したテンプレートを
 // 手で登録するのは大変なので、よくある投げシリーズの形をシステム側で組む。
 //
-// 形は AUTO_THROW_PATTERNS の5種類：
+// 形は AUTO_THROW_PATTERNS の6種類：
 //   投げ→1〜2回シェネ→前転→転がり→キャッチ
 //   投げ→1〜3回シェネ→前転→キャッチ（＋視野外の投げ受け）
 //   投げ→3〜4回シェネ→キャッチ（＋視野外の投げ受け）
+//   投げ→前転3回→キャッチ（縦3動作でE難度）
 // これに「投げ方」「受け方」「シェネの手」「シェネの回数」を割り当てた候補を作り、
 // ランダム生成（generate.ts）の候補に足す。**必ず使われるわけではなく**、
 // 評価が上がるものだけが構成に入る。
@@ -20,10 +21,10 @@ import type { ApparatusKey, Item, Series } from "./types";
 /** 自動生成した投げシリーズの形 */
 export interface AutoThrowPattern {
   id: string;
-  /** シェネの回数（最小・最大とも含む） */
+  /** シェネの回数（最小・最大とも含む。0〜0＝シェネなし） */
   chene: { min: number; max: number };
-  /** シェネのあとに続ける徒手動作（MOTION_OPTIONS の id） */
-  after: string[];
+  /** シェネのあとに続ける徒手動作（MOTION_OPTIONS の id と回数） */
+  after: { motionId: string; count: number }[];
   /** キャッチのあとに「視野外の投げ→視野外のキャッチ」を足すか */
   noViewPair: boolean;
 }
@@ -33,12 +34,16 @@ const CHENE = "chene";
 const FWD_ROLL = "fwd_roll";
 const ROLL = "roll";
 
+const times = (motionId: string, count: number) => ({ motionId, count });
+
 export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
-  { id: "cheneRollRoll", chene: { min: 1, max: 2 }, after: [FWD_ROLL, ROLL], noViewPair: false },
-  { id: "cheneRoll", chene: { min: 1, max: 3 }, after: [FWD_ROLL], noViewPair: false },
-  { id: "cheneRollNoView", chene: { min: 1, max: 3 }, after: [FWD_ROLL], noViewPair: true },
+  { id: "cheneRollRoll", chene: { min: 1, max: 2 }, after: [times(FWD_ROLL, 1), times(ROLL, 1)], noViewPair: false },
+  { id: "cheneRoll", chene: { min: 1, max: 3 }, after: [times(FWD_ROLL, 1)], noViewPair: false },
+  { id: "cheneRollNoView", chene: { min: 1, max: 3 }, after: [times(FWD_ROLL, 1)], noViewPair: true },
   { id: "chene", chene: { min: 3, max: 4 }, after: [], noViewPair: false },
   { id: "cheneNoView", chene: { min: 3, max: 4 }, after: [], noViewPair: true },
+  // シェネなし。前転3回＝縦3動作でE難度（§3.5.5.3）
+  { id: "rolls", chene: { min: 0, max: 0 }, after: [times(FWD_ROLL, 3)], noViewPair: false },
 ];
 
 /** 自動生成で使う投げ方 */
@@ -78,6 +83,9 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   return styles;
 }
 
+/** 手具で押さえつけてキャッチ（手具を使ったキャッチ）のid */
+export const CATCH_USE_APPARATUS = "useapp";
+
 /** その手具で使える受け方（2つ同時キャッチは二つ投げに付くので選択肢には出さない） */
 export function autoCatchStyles(apparatus: ApparatusKey): AutoCatchStyle[] {
   const styles: AutoCatchStyle[] = [
@@ -86,9 +94,19 @@ export function autoCatchStyles(apparatus: ApparatusKey): AutoCatchStyle[] {
     { id: "nonhand", name: "手以外のキャッチ", catchTypes: ["nonhand"] },
     { id: "other", name: "その他のキャッチ", catchTypes: ["other"] },
   ];
+  // クラブ・リングは、もう一方の手具で押さえつけて受けられる
   if (APPARATUS_USE[apparatus])
-    styles.push({ id: "useapp", name: "手具を使ったキャッチ", catchTypes: ["useapp"] });
+    styles.push({ id: CATCH_USE_APPARATUS, name: "手具で押さえつけてキャッチ", catchTypes: [CATCH_USE_APPARATUS] });
   return styles;
+}
+
+/**
+ * その投げ方で使える受け方。
+ * 二つ投げは手具が2つとも空中にあるので、手具で押さえつけてキャッチはできない。
+ */
+export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean): AutoCatchStyle[] {
+  const styles = autoCatchStyles(apparatus);
+  return twoThrow ? styles.filter((c) => c.id !== CATCH_USE_APPARATUS) : styles;
 }
 
 /** シェネの手の使い方（null＝手なし。手ありは HANDS_TYPES の種類ごとに別の技） */
@@ -124,7 +142,7 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
       hands: spec.hands !== null,
       ...(spec.hands !== null ? { handsType: spec.hands } : {}),
     });
-  pattern.after.forEach((motionId) => items.push({ kind: "motion", motionId, count: 1 }));
+  pattern.after.forEach((m) => items.push({ kind: "motion", motionId: m.motionId, count: m.count }));
   items.push({
     kind: "catch",
     ...(catchStyle.catchTypes ? { catchTypes: [...catchStyle.catchTypes] } : {}),
@@ -143,9 +161,9 @@ export function autoThrowName(spec: AutoThrowSpec): string {
   const parts = [
     ...(spec.throwStyle.id === "normal" ? [] : [spec.throwStyle.name]),
     ...(spec.catchStyle.id === "normal" ? [] : [spec.catchStyle.name]),
-    `シェネ${handsName(spec.hands)}`,
+    ...(spec.cheneCount > 0 ? [`シェネ${handsName(spec.hands)}`] : []),
   ];
-  return `自動生成の投げ（${parts.join("・")}）`;
+  return parts.length > 0 ? `自動生成の投げ（${parts.join("・")}）` : "自動生成の投げ";
 }
 
 function shuffled<T>(list: T[], rand: () => number): T[] {
@@ -189,7 +207,9 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     rand,
   );
   const limit = Math.max(0, opts.limit ?? combos.length);
-  const nextCatch = cycler(autoCatchStyles(apparatus), rand);
+  const nextCatch = cycler(catchStylesForThrow(apparatus, false), rand);
+  // 二つ投げは受け方が1つ少ないので、別に配って偏らせない
+  const nextTwoThrowCatch = cycler(catchStylesForThrow(apparatus, true), rand);
   const nextHands = cycler(autoHandsVariants(), rand);
   // シェネの回数は形ごとに配る（その形で取り得る回数がひととおり出るように）
   const nextCount = new Map<string, () => number>();
@@ -201,12 +221,14 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       counts = cycler(range, rand);
       nextCount.set(pattern.id, counts);
     }
+    const cheneCount = counts();
     return {
       pattern,
-      cheneCount: counts(),
-      hands: nextHands(),
+      cheneCount,
+      // シェネが無い形では手の種類は使わない（順番も消費しない）
+      hands: cheneCount > 0 ? nextHands() : null,
       throwStyle,
-      catchStyle: nextCatch(),
+      catchStyle: throwStyle.two ? nextTwoThrowCatch() : nextCatch(),
     };
   });
 }

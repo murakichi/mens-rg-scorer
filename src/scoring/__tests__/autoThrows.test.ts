@@ -8,6 +8,8 @@ import {
   autoThrowStyles,
   autoThrowTemplates,
   buildAutoThrowSeries,
+  catchStylesForThrow,
+  CATCH_USE_APPARATUS,
   type AutoThrowSpec,
 } from "../autoThrows";
 import { analyzeSeries, checkApparatusFlow } from "../analysis";
@@ -55,24 +57,29 @@ const shape = (series: Series): string[] =>
   series.items.map((item) => {
     if (item.kind === "throw") return "投げ";
     if (item.kind === "catch") return "キャッチ";
-    if (item.kind === "motion") return item.motionId === "chene" ? `chene×${item.count}` : item.motionId;
+    if (item.kind === "motion") return `${item.motionId}×${item.count}`;
     return item.kind;
   });
 
 describe("自動生成の投げの形", () => {
   it("投げ→シェネ→前転→転がり→キャッチ", () => {
     const s = buildAutoThrowSeries(spec("cheneRollRoll", { cheneCount: 2 }));
-    expect(shape(s)).toEqual(["投げ", "chene×2", "fwd_roll", "roll", "キャッチ"]);
+    expect(shape(s)).toEqual(["投げ", "chene×2", "fwd_roll×1", "roll×1", "キャッチ"]);
   });
 
   it("投げ→シェネ→前転→キャッチ", () => {
     const s = buildAutoThrowSeries(spec("cheneRoll", { cheneCount: 3 }));
-    expect(shape(s)).toEqual(["投げ", "chene×3", "fwd_roll", "キャッチ"]);
+    expect(shape(s)).toEqual(["投げ", "chene×3", "fwd_roll×1", "キャッチ"]);
   });
 
   it("投げ→シェネ→キャッチ", () => {
     const s = buildAutoThrowSeries(spec("chene", { cheneCount: 4 }));
     expect(shape(s)).toEqual(["投げ", "chene×4", "キャッチ"]);
+  });
+
+  it("投げ→前転3回→キャッチ（シェネなし）", () => {
+    const s = buildAutoThrowSeries(spec("rolls"));
+    expect(shape(s)).toEqual(["投げ", "fwd_roll×3", "キャッチ"]);
   });
 
   it("視野外のパターンはキャッチのあとに視野外の投げ受けを足す", () => {
@@ -115,6 +122,18 @@ describe("投げ方・受け方の網羅", () => {
     });
   });
 
+  it("手具で押さえつけてキャッチはクラブ・リングだけ（二つ投げには付けない）", () => {
+    // 手具が2つとも空中にある二つ投げでは、押さえつける手具が手元に無い
+    expect(catchStylesForThrow("clubs", false).map((c) => c.id)).toContain(CATCH_USE_APPARATUS);
+    expect(catchStylesForThrow("clubs", true).map((c) => c.id)).not.toContain(CATCH_USE_APPARATUS);
+    expect(catchStylesForThrow("stick", false).map((c) => c.id)).not.toContain(CATCH_USE_APPARATUS);
+    (["clubs", "ring"] as ApparatusKey[]).forEach((app) => {
+      autoThrowSpecs(app, { random: seeded(41) }).forEach((sp) => {
+        if (sp.throwStyle.two) expect(sp.catchStyle.id).not.toBe(CATCH_USE_APPARATUS);
+      });
+    });
+  });
+
   it("二つ投げは2つ同時キャッチで受ける（手具の流れが破綻しない）", () => {
     APPARATUS_KEYS.forEach((app) => {
       autoThrowTemplates(app, { random: seeded(17) }).forEach((t) => {
@@ -126,17 +145,31 @@ describe("投げ方・受け方の網羅", () => {
 
 describe("シェネの手", () => {
   it("手なしと手ありの各種類を使う", () => {
-    const hands = autoThrowSpecs("clubs", { random: seeded(3) }).map((s) => s.hands);
+    const hands = autoThrowSpecs("clubs", { random: seeded(3) })
+      .filter((s) => s.cheneCount > 0)
+      .map((s) => s.hands);
     autoHandsVariants().forEach((v) => expect(hands).toContain(v));
   });
 
   it("できる限り被らせない（ひと回りするまで同じ手を使わない）", () => {
     const variants = autoHandsVariants().length;
-    const hands = autoThrowSpecs("stick", { random: seeded(29) }).map((s) => s.hands);
+    // シェネのある形だけが手の種類を消費する
+    const hands = autoThrowSpecs("stick", { random: seeded(29) })
+      .filter((s) => s.cheneCount > 0)
+      .map((s) => s.hands);
     // 連続する variants 個を切り出すと、どの周も同じ手は1回ずつ
     for (let i = 0; i + variants <= hands.length; i += variants) {
       expect(new Set(hands.slice(i, i + variants)).size).toBe(variants);
     }
+  });
+
+  it("シェネのない形は手の種類を持たない（名前にも出さない）", () => {
+    const specs = autoThrowSpecs("stick", { random: seeded(3) }).filter((s) => s.cheneCount === 0);
+    expect(specs.length).toBeGreaterThan(0);
+    specs.forEach((sp) => {
+      expect(sp.hands).toBeNull();
+      expect(autoThrowName(sp)).not.toContain("シェネ");
+    });
   });
 
   it("手ありのシェネには種類が付く（手なしには付かない）", () => {
@@ -159,6 +192,11 @@ describe("自動生成の投げの採点", () => {
 
   it("シェネ2回→前転→転がりは4動作でE難度", () => {
     const a = analyzeSeries(buildAutoThrowSeries(spec("cheneRollRoll", { cheneCount: 2 })));
+    expect(a.units.map((u) => u.finalDiff)).toEqual(["E"]);
+  });
+
+  it("前転3回は縦3動作でE難度", () => {
+    const a = analyzeSeries(buildAutoThrowSeries(spec("rolls")));
     expect(a.units.map((u) => u.finalDiff)).toEqual(["E"]);
   });
 
