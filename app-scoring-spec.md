@@ -80,9 +80,19 @@
     ロンダートを挟まずそのまま後方系に入れる）
   - 側転・側宙・ハンドスプリングなど → false
 - `skillFlowAfter(prevSkillId)` → `SkillFlow`（`backward` / `forward` / `side`） …
-  **後ろ向きで終わった直後は後方系しか選べない**（ロンダートからは後方系のみ）。
-  それ以外の位置では全部選べる。`skillOptions(junior, flow)` / `skillOptionGroups(junior, flow)` が
-  絞り込みを行い、既に入っている技が選択肢から外れるときは選択値として残す（ジュニア禁止の技と同じ扱い）
+  **ロンダート・バク転からは後方系しか選べない**。それ以外の位置は全部選べる
+  （宙返りの後に前方系へ戻るのは実用的ではないが可能）。
+  `skillOptions(junior, flow)` / `skillOptionGroups(junior, flow)` が絞り込みを行い、
+  既に入っている技が選択肢から外れるときは選択値として残す（ジュニア禁止の技と同じ扱い）
+
+  | 直前の技 | 後方系 | 前方系 |
+  | --- | --- | --- |
+  | ロンダート・バク転 | 可 | 不可（非表示） |
+  | 前方の半ひねり系 | 可 | 可（実用的ではない） |
+  | 前方の0〜整数ひねり | ロンダートを挟む | 可 |
+  | 後方の半ひねり系・ダイビング前宙 | ロンダートを挟む | 可 |
+  | 後方の0〜整数ひねり | 可 | 可 |
+
 - `needsRoundoffBefore(items, iIdx)`（`analysis.ts`） … 後方系を選んだ位置が `leadsBackward` を
   満たさないとき true。`SeriesListEditor` の `updateItem` がこれを見て手前に `roundoffItem()` を挿し込む。
   何も無いところでの**立ちバク転はそのまま**（宙返りのときだけ補う）

@@ -514,7 +514,8 @@ export function isBackwardSkill(id: string): boolean {
 }
 
 /**
- * その技の直後に、そのまま後方系へ入れるか（進行方向に対して後ろ向きで終わるか）。
+ * その技の直後に、ロンダートを挟まずそのまま後方系へ入れるか
+ * （進行方向に対して後ろ向きで終わるか）。
  *  - ロンダート・バク転 → 後ろ向きで終わる
  *  - 後方の宙返り → ひねりなし／整数ひねりは後ろ向き。n回半ひねりと
  *    ダイビング前宙（`FORWARD_LANDING_BACK_SALTOS`）は前向きで終わる
@@ -546,13 +547,15 @@ export const ANY_SKILL_FLOW: SkillFlow = { backward: true, forward: true, side: 
 
 /**
  * 直前の技から、その位置で選べる系統を決める。
- *  - 後ろ向きで終わる技（ロンダート・バク転・後方の宙返り・前方の半ひねり）の後は
- *    **後方系しか実施できない**
- *  - それ以外の位置では全部選べる。後方系をそのまま実施できない位置で選んだときは
- *    手前にロンダートを補う（needsRoundoffBefore）
+ *  - ロンダート・バク転からは**後方系しか実施できない**
+ *  - それ以外の位置は全部選べる（宙返りの後に前方系へ戻るのは、実用的でなくても可能）。
+ *    後方系をそのまま実施できない位置で選んだときは手前にロンダートを補う
+ *    （`leadsBackward` / `needsRoundoffBefore`）
  */
 export function skillFlowAfter(prevSkillId: string | undefined): SkillFlow {
-  if (leadsBackward(prevSkillId)) return { backward: true, forward: false, side: false };
+  if (prevSkillId && BACKWARD_ENTRY_SKILLS.includes(prevSkillId)) {
+    return { backward: true, forward: false, side: false };
+  }
   return ANY_SKILL_FLOW;
 }
 
