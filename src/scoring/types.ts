@@ -86,6 +86,19 @@ export interface Skill {
   isConnectA?: boolean;
   /** 2回宙返り系か（ジュニア適用規則では禁止のため選択肢に出さない） */
   isDoubleSalto?: boolean;
+  /** ひねり・姿勢から組み立てられる宙返りか（`TwistParams` と1対1） */
+  twist?: TwistParams;
+}
+
+/** 宙返りの姿勢（§3.6.2 の「かかえ込み・屈身・伸身」） */
+export type Posture = "tuck" | "pike" | "layout";
+
+/** ひねり回数と姿勢で表す宙返り。base は前方系／後方系の区別。 */
+export interface TwistParams {
+  base: "back" | "front";
+  /** ひねり回数（0・0.5・1 …）。0.5 が半ひねり。 */
+  twist: number;
+  posture: Posture;
 }
 
 export interface HandMotion {

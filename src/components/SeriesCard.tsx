@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Trash2, X } from "lucide-react";
 import {
   THROW_OPTIONS_COMMON,
@@ -18,13 +19,40 @@ import {
   HANDS_TYPES,
   DEFAULT_HANDS_TYPE,
   ROPE_JUMPS,
+  POSTURE_OPTIONS,
+  TWIST_BASES,
+  TWIST_OPTIONS,
+  TWIST_ID_PREFIX,
+  buildTwistSkillId,
+  parseTwistSkillId,
+  twistLabel,
 } from "../scoring/constants";
 import { checkApparatusFlow, maxSaltoChain, SERIES_TAGS, seriesTags } from "../scoring/analysis";
-import type { ApparatusKey, Item, Series, SeriesAnalysis } from "../scoring/types";
+import type { ApparatusKey, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
 import type { DiffRow, SeriesBreakdown } from "../scoring/score";
 import type { SeriesTemplateOption } from "./SeriesListEditor";
 
 type ItemKind = Item["kind"];
+
+/** ひねり指定に切り替えたときの初期値（後方宙返り・抱え込み・ひねりなし＝後方宙返り） */
+const DEFAULT_TWIST: TwistParams = { base: "back", twist: 0, posture: "tuck" };
+
+/** 入力パターン（一覧／ひねり指定）の記憶。端末ごとに覚えておく。 */
+const TWIST_MODE_KEY = "mens-rg-scorer:skillInputTwist:v1";
+const loadTwistMode = (): boolean => {
+  try {
+    return localStorage.getItem(TWIST_MODE_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const saveTwistMode = (on: boolean) => {
+  try {
+    localStorage.setItem(TWIST_MODE_KEY, on ? "1" : "0");
+  } catch {
+    /* 保存できなくても動作に影響しない */
+  }
+};
 
 interface Props {
   series: Series;
@@ -90,6 +118,8 @@ function ItemEditor({
   apparatus,
   junior,
   common,
+  twistMode,
+  onTwistModeChange,
   prevMotionId,
   onUpdate,
 }: {
@@ -98,6 +128,9 @@ function ItemEditor({
   junior: boolean;
   /** 共通テンプレートの編集か（手具固有の入力を出さない） */
   common?: boolean;
+  /** タンブリング技をひねり・姿勢で指定するモードか */
+  twistMode: boolean;
+  onTwistModeChange: (on: boolean) => void;
   /** 直前の徒手動作アイテムで選ばれていた動作（選択肢の並べ替えに使う） */
   prevMotionId?: string;
   onUpdate: (patch: Partial<Item>) => void;
@@ -157,33 +190,97 @@ function ItemEditor({
     );
   }
   if (item.kind === "skill") {
+    const params = parseTwistSkillId(item.skillId);
+    const setTwist = (patch: Partial<TwistParams>) =>
+      onUpdate({ skillId: buildTwistSkillId({ ...(params ?? DEFAULT_TWIST), ...patch }) });
     return (
       <>
         <div className="sel-wrap">
-          <select
-            className="select"
-            value={item.skillId}
-            onChange={(e) => onUpdate({ skillId: e.target.value })}
+          <button
+            type="button"
+            className="mode-btn"
+            title={twistMode ? "一覧から技を選ぶ" : "ひねり回数と姿勢で指定する"}
+            onClick={() => {
+              // ひねり指定に切り替えるときは、今の技をひねり・姿勢に置き換える
+              if (!twistMode) onUpdate({ skillId: buildTwistSkillId(params ?? DEFAULT_TWIST) });
+              onTwistModeChange(!twistMode);
+            }}
           >
-            <option value="">タンブリング技</option>
-            {/* ジュニアで禁止の技（2回宙返り系）が既に選ばれている場合は、消さずに印を付けて残す */}
-            {item.skillId && !skillAllowed(item.skillId, junior) && (
-              <option value={item.skillId}>
-                {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}・ジュニア禁止）
-              </option>
-            )}
-            {/* 前方系・側方系・後方系に分けて表示 */}
-            {skillOptionGroups(junior).map((g) => (
-              <optgroup key={g.name} label={g.name}>
-                {g.skills.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}（{skillDifficulty(s.id, junior)}）
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+            {twistMode ? "一覧" : "ひねり"}
+          </button>
         </div>
+        {twistMode ? (
+          <div className="twist-row">
+            <select
+              className="select twist-select"
+              value={(params ?? DEFAULT_TWIST).base}
+              onChange={(e) => setTwist({ base: e.target.value as TwistParams["base"] })}
+            >
+              {TWIST_BASES.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="select twist-select"
+              value={(params ?? DEFAULT_TWIST).posture}
+              onChange={(e) => setTwist({ posture: e.target.value as TwistParams["posture"] })}
+            >
+              {POSTURE_OPTIONS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="select twist-select"
+              value={(params ?? DEFAULT_TWIST).twist}
+              onChange={(e) => setTwist({ twist: Number(e.target.value) })}
+            >
+              {TWIST_OPTIONS.map((t) => (
+                <option key={t} value={t}>
+                  {twistLabel(t)}
+                </option>
+              ))}
+            </select>
+            <span className="twist-name">
+              {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}）
+            </span>
+          </div>
+        ) : (
+          <div className="sel-wrap">
+            <select
+              className="select"
+              value={item.skillId}
+              onChange={(e) => onUpdate({ skillId: e.target.value })}
+            >
+              <option value="">タンブリング技</option>
+              {/* ジュニアで禁止の技（2回宙返り系）が既に選ばれている場合は、消さずに印を付けて残す */}
+              {item.skillId && !skillAllowed(item.skillId, junior) && (
+                <option value={item.skillId}>
+                  {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}・ジュニア禁止）
+                </option>
+              )}
+              {/* 一覧に無いひねりの組み合わせが入っている場合も選択値として残す */}
+              {item.skillId && item.skillId.startsWith(TWIST_ID_PREFIX) && (
+                <option value={item.skillId}>
+                  {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}）
+                </option>
+              )}
+              {/* 前方系・側方系・後方系に分けて表示 */}
+              {skillOptionGroups(junior).map((g) => (
+                <optgroup key={g.name} label={g.name}>
+                  {g.skills.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}（{skillDifficulty(s.id, junior)}）
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        )}
         <label className="check">
           <input
             type="checkbox"
@@ -355,6 +452,12 @@ export function SeriesCard({
 }: Props) {
   const seriesQualifies = a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus);
   const flowErrors = checkApparatusFlow(ser, apparatus);
+  // タンブリング技の入力パターン（一覧／ひねり指定）。選んだパターンは端末に覚えておく。
+  const [twistMode, setTwistModeState] = useState(loadTwistMode);
+  const setTwistMode = (on: boolean) => {
+    setTwistModeState(on);
+    saveTwistMode(on);
+  };
 
   return (
     <section className="card">
@@ -449,6 +552,8 @@ export function SeriesCard({
               apparatus={apparatus}
               junior={junior}
               common={common}
+              twistMode={twistMode}
+              onTwistModeChange={setTwistMode}
               prevMotionId={prevMotionId(ser.items, iIdx)}
               onUpdate={(patch) => onUpdateItem(iIdx, patch)}
             />
