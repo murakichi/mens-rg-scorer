@@ -45,7 +45,7 @@ type ItemKind = Item["kind"];
 
 /** ひねり指定に切り替えたときの初期値（後方宙返り・抱え込み・ひねりなし＝後方宙返り） */
 const DEFAULT_TWIST: TwistParams = { base: "back", twist: 0, posture: "tuck" };
-/** ロンダート前など、後方の宙返りを選べない位置での初期値（前宙） */
+/** 前方系も選べる位置での初期値（前宙）。ロンダートが勝手に補われないようにこちらを使う。 */
 const DEFAULT_TWIST_FORWARD: TwistParams = { base: "front", twist: 0, posture: "tuck" };
 
 /**
@@ -196,8 +196,8 @@ function ItemEditor({
   }
   if (item.kind === "skill") {
     const params = parseTwistSkillId(item.skillId);
-    // ロンダート前は後方の宙返りを、ロンダート後は前方系を出さない（初期値もそれに合わせる）
-    const fallbackTwist = flow.backward ? DEFAULT_TWIST : DEFAULT_TWIST_FORWARD;
+    // 後ろ向きで終わった後は後方系しか出さない（初期値もそれに合わせる）
+    const fallbackTwist = flow.forward ? DEFAULT_TWIST_FORWARD : DEFAULT_TWIST;
     const cur = params ?? fallbackTwist;
     const setTwist = (patch: Partial<TwistParams>) =>
       onUpdate({ skillId: buildTwistSkillId({ ...cur, ...patch }) });

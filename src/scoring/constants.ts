@@ -514,53 +514,57 @@ export function isBackwardSkill(id: string): boolean {
 }
 
 /**
- * その技の直後に、そのまま後方系へ入れるか（後ろ向きのまま降りるか）。
- *  - ロンダート・バク転・ひねりなし／整数ひねりの後方宙返り → そのまま続けられる
- *  - 前方系、n回半ひねり、ダイビング前宙 → 前向きに降りるのでロンダートを挟む
+ * その技の直後に、そのまま後方系へ入れるか（進行方向に対して後ろ向きで終わるか）。
+ *  - ロンダート・バク転 → 後ろ向きで終わる
+ *  - 後方の宙返り → ひねりなし／整数ひねりは後ろ向き。n回半ひねりと
+ *    ダイビング前宙（`FORWARD_LANDING_BACK_SALTOS`）は前向きで終わる
+ *  - 前方の宙返り → n回半ひねりだけ後ろ向きで終わるので、その後に後方系を実施できる
+ *  - それ以外（側転・側宙・ハンドスプリング等）は前向き
  */
 export function leadsBackward(prevSkillId: string | undefined): boolean {
   if (!prevSkillId) return false;
   if (BACKWARD_ENTRY_SKILLS.includes(prevSkillId)) return true;
-  if (!isBackwardSalto(prevSkillId)) return false;
-  if (FORWARD_LANDING_BACK_SALTOS.includes(prevSkillId)) return false;
-  const p = parseTwistSkillId(prevSkillId);
-  return !p || p.twist % 1 === 0;
+  if (!skillDef(prevSkillId)?.isSalto) return false;
+  // 半ひねりで向きが入れ替わる（後方は後ろ向きで入り、前方は前向きで入る）
+  const flips = (parseTwistSkillId(prevSkillId)?.twist ?? 0) % 1 !== 0;
+  if (isBackwardSalto(prevSkillId)) return !flips && !FORWARD_LANDING_BACK_SALTOS.includes(prevSkillId);
+  return flips;
 }
 
 /** その位置で選べる系統 */
 export interface SkillFlow {
-  /** 後方系の宙返りを選べるか */
+  /** 後方系を選べるか */
   backward: boolean;
   /** 前方系を選べるか */
   forward: boolean;
+  /** 側方系を選べるか */
+  side: boolean;
 }
 
 /** 制限なし（テストや位置が分からない場合の既定） */
-export const ANY_SKILL_FLOW: SkillFlow = { backward: true, forward: true };
+export const ANY_SKILL_FLOW: SkillFlow = { backward: true, forward: true, side: true };
 
 /**
  * 直前の技から、その位置で選べる系統を決める。
- *  - 後方系はどこでも選べる。そのまま入れない位置（シリーズの頭、前方系や
- *    半ひねり系の後）で選んだときは、手前にロンダートを補う（needsRoundoffBefore）
- *  - ロンダート・バク転など後ろ向きに入った後に前方系を実施することはないので、
- *    そこでだけ前方系を出さない
+ *  - 後ろ向きで終わる技（ロンダート・バク転・後方の宙返り・前方の半ひねり）の後は
+ *    **後方系しか実施できない**
+ *  - それ以外の位置では全部選べる。後方系をそのまま実施できない位置で選んだときは
+ *    手前にロンダートを補う（needsRoundoffBefore）
  */
 export function skillFlowAfter(prevSkillId: string | undefined): SkillFlow {
-  return { backward: true, forward: !leadsBackward(prevSkillId) };
+  if (leadsBackward(prevSkillId)) return { backward: true, forward: false, side: false };
+  return ANY_SKILL_FLOW;
 }
 
 /**
  * 適用規則に応じたタンブリング技の選択肢。
- * `flow` を渡すと、その位置で実施しない系統（ロンダート前の後方宙返り、
- * ロンダート後の前方系）を選択肢から外す。
+ * `flow` を渡すと、その位置で実施しない系統（後ろ向きで終わった後の前方系・側方系）を
+ * 選択肢から外す。
  */
 export function skillOptions(junior = false, flow: SkillFlow = ANY_SKILL_FLOW): Skill[] {
-  return SKILL_LIST.filter((s) => {
-    if (!skillAllowed(s.id, junior)) return false;
-    if (!flow.backward && isBackwardSalto(s.id)) return false;
-    if (!flow.forward && s.category === CATEGORY.FORWARD) return false;
-    return true;
-  });
+  const allows = (category: string) =>
+    category === CATEGORY.BACKWARD ? flow.backward : category === CATEGORY.SIDE ? flow.side : flow.forward;
+  return SKILL_LIST.filter((s) => skillAllowed(s.id, junior) && allows(s.category));
 }
 
 /** タンブリング技のプルダウンをまとめる系統の表示順 */

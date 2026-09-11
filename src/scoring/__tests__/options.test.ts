@@ -44,14 +44,24 @@ describe("実施できる向きで選択肢を絞る", () => {
     });
   });
 
-  it("ロンダート・バク転・後ろ向きに降りる宙返りの後に前方系は出さない", () => {
+  it("後ろ向きで終わった後は後方系しか出さない", () => {
     ["a_roundoff", "a_flicflac", "b_backsalto", "b_backlayout", "d_back2twist"].forEach((prev) => {
       expect(leadsBackward(prev)).toBe(true);
-      const ids = idsAfter(prev);
-      expect(ids).not.toContain("b_front");
-      expect(ids).not.toContain("a_handspring");
-      expect(ids).toContain("b_backlayout");
+      const groups = skillOptionGroups(false, skillFlowAfter(prev)).map((g) => g.name);
+      expect(groups).toEqual([CATEGORY.BACKWARD]);
+      expect(idsAfter(prev)).toContain("b_backlayout");
     });
+  });
+
+  it("前方の半ひねりは後ろ向きで終わるので、その後は後方系を実施できる", () => {
+    ["b_fronthalf", "tw:front:1.5:layout"].forEach((prev) => {
+      expect(leadsBackward(prev)).toBe(true);
+      expect(skillOptionGroups(false, skillFlowAfter(prev)).map((g) => g.name)).toEqual([CATEGORY.BACKWARD]);
+    });
+    // 前方でも整数ひねりは前向きで終わるので後方系には入れない
+    expect(leadsBackward("b_front")).toBe(false);
+    expect(leadsBackward("c_front1full")).toBe(false);
+    expect(leadsBackward("d_frontlay1")).toBe(false);
   });
 
   it("テンポ宙返り・テンポひねり（1回ひねり）は後ろ向きに降りる", () => {
@@ -60,10 +70,13 @@ describe("実施できる向きで選択肢を絞る", () => {
     expect(idsAfter("c_tempotwist")).not.toContain("b_front");
   });
 
-  it("半ひねり系・ダイビング前宙・前方系の後は前方系も選べる", () => {
-    ["b_backhalf", "c_back15", "d_backlay25", "b_divefront", "a_handspring", undefined].forEach((prev) => {
+  it("後方の半ひねり系・ダイビング前宙・前方系の後は前方系も側方系も選べる", () => {
+    ["b_backhalf", "c_back15", "d_backlay25", "b_divefront", "a_handspring", "b_front", undefined].forEach((prev) => {
       expect(leadsBackward(prev)).toBe(false);
-      expect(idsAfter(prev)).toContain("b_front");
+      const ids = idsAfter(prev);
+      expect(ids).toContain("b_front");
+      expect(ids).toContain("a_roundoff");
+      expect(ids).toContain("b_sidesalto");
     });
   });
 
@@ -108,6 +121,11 @@ describe("後方系に入るときはロンダートを補う", () => {
     expect(needs([skill("a_roundoff"), skill("a_flicflac")])).toBe(false);
     expect(needs([skill("a_roundoff"), skill("b_backsalto")])).toBe(false);
     expect(needs([skill("a_roundoff"), skill("b_backsalto"), skill("b_backlayout")])).toBe(false);
+  });
+
+  it("前方の半ひねりの後はそのまま後方系に入れる", () => {
+    expect(needs([skill("a_handspring"), skill("b_fronthalf"), skill("b_backsalto")])).toBe(false);
+    expect(needs([skill("b_fronthalf"), skill("a_flicflac")])).toBe(false);
   });
 
   it("前方系・半ひねり系・ダイビング前宙の後に後方系を選んだら補う", () => {
