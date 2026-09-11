@@ -55,6 +55,9 @@ const spec = (patternId: string, over: Partial<AutoThrowSpec> = {}): AutoThrowSp
   ...over,
 });
 
+/** 自動生成のタンブリングを混ぜずに、投げの挙動だけを見る */
+const noTumblings = { autoTumblings: false } as const;
+
 const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
 
 /** 構成に入っているシェネの回数（シリーズごとの合計ではなく1つずつ） */
@@ -233,7 +236,7 @@ describe("自動生成の投げの採点", () => {
 
 describe("ランダム生成への組み込み", () => {
   it("タンブリングのテンプレートだけでも投げの必須要素を満たせる", () => {
-    const r = generateRoutine(tumblingOnly(), { apparatus: "stick", random: seeded(7) })!;
+    const r = generateRoutine(tumblingOnly(), { apparatus: "stick", ...noTumblings, random: seeded(7) })!;
     const score = computeScore(r.series, "stick");
     const passed = (key: string) => score.required.find((x) => x.key === key)?.passed;
     // 3回以上の投げ上げ・左投げ左受け・右投げ右受けは自動生成の投げで満たす
@@ -246,20 +249,20 @@ describe("ランダム生成への組み込み", () => {
 
   it("投げ方・受け方の多様性（各3種類）も満たしやすくなる", () => {
     const score = computeScore(
-      generateRoutine(tumblingOnly(), { apparatus: "clubs", random: seeded(11) })!.series,
+      generateRoutine(tumblingOnly(), { apparatus: "clubs", ...noTumblings, random: seeded(11) })!.series,
       "clubs",
     );
     expect(score.varietyDeduction).toBe(0);
   });
 
   it("入れる本数は上限まで（テンプレートを押しのけない）", () => {
-    const r = generateRoutine(tumblingOnly(), { apparatus: "stick", random: seeded(23) })!;
+    const r = generateRoutine(tumblingOnly(), { apparatus: "stick", ...noTumblings, random: seeded(23) })!;
     expect(r.used.filter((t) => t.auto).length).toBeLessThanOrEqual(DEFAULT_MAX_AUTO_THROWS);
     expect(r.used.some((t) => !t.auto)).toBe(true);
   });
 
   it("上限は変えられる", () => {
-    const r = generateRoutine(tumblingOnly(), { apparatus: "stick", maxAutoThrows: 1, random: seeded(23) })!;
+    const r = generateRoutine(tumblingOnly(), { apparatus: "stick", ...noTumblings, maxAutoThrows: 1, random: seeded(23) })!;
     expect(r.used.filter((t) => t.auto).length).toBe(1);
   });
 
@@ -269,14 +272,14 @@ describe("ランダム生成への組み込み", () => {
   });
 
   it("ジュニアでも投げの上限（5回）を超えない", () => {
-    const r = generateRoutine(tumblingOnly(), { apparatus: "stick", junior: true, random: seeded(19) })!;
+    const r = generateRoutine(tumblingOnly(), { apparatus: "stick", ...noTumblings, junior: true, random: seeded(19) })!;
     expect(computeScore(r.series, "stick", { junior: true }).totalThrowCount).toBeLessThanOrEqual(5);
   });
 
   it("Dスコアの上限を指定すると、シェネの回数を減らして収める", () => {
     const seeds = [3, 7, 11, 19, 23];
     const run = (maxScore: number | null) =>
-      seeds.map((seed) => generateRoutine(tumblingOnly(), { apparatus: "stick", maxScore, random: seeded(seed) })!);
+      seeds.map((seed) => generateRoutine(tumblingOnly(), { apparatus: "stick", ...noTumblings, maxScore, random: seeded(seed) })!);
     const free = run(null);
     const capped = run(2.5);
     // 上限内に収まる
@@ -288,7 +291,7 @@ describe("ランダム生成への組み込み", () => {
   it("シェネの回数は形ごとの範囲から外れない（調整後も）", () => {
     [null, 3.0, 2.0].forEach((maxScore) => {
       [3, 7, 11].forEach((seed) => {
-        const r = generateRoutine(tumblingOnly(), { apparatus: "stick", maxScore, random: seeded(seed) })!;
+        const r = generateRoutine(tumblingOnly(), { apparatus: "stick", ...noTumblings, maxScore, random: seeded(seed) })!;
         r.used.forEach((t, i) => {
           if (!isAutoThrowTemplate(t)) return;
           expect(cheneCountRange(t.spec.pattern)).toContain(t.spec.cheneCount);
@@ -314,10 +317,6 @@ describe("ランダム生成への組み込み", () => {
 
   it("autoThrows: false なら使わない", () => {
     const r = generateRoutine(tumblingOnly(), { apparatus: "stick", autoThrows: false, random: seeded(7) })!;
-    expect(r.used.some((t) => t.auto)).toBe(false);
-  });
-
-  it("テンプレートが1つも無ければ生成しない（投げだけの構成にはしない）", () => {
-    expect(generateRoutine([], { apparatus: "stick", random: seeded(7) })).toBeNull();
+    expect(r.used.some(isAutoThrowTemplate)).toBe(false);
   });
 });

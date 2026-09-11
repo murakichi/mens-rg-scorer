@@ -8,17 +8,27 @@
 //  - 評価されない要素は入れない（入れても評価が上がらないシリーズは最後に取り除く）
 //    例：4本目のタンブリング、ジュニアの6回目以降の投げ、まったく同じ内容の重複シリーズ
 //  - 投げタンは1本まで（必須要素は1本で満たせるため）
-//  - 投げ方（左手投げ・視野外・手以外…）を網羅したテンプレートを登録しなくても済むよう、
-//    よくある投げシリーズはシステム側で組んで候補に足す（autoThrows.ts）。
-//    あくまで候補なので、評価が上がらなければ使われない
-//  - 自動生成の投げはシェネの回数を調整できる。Dスコアの範囲を指定したときに
-//    シリーズを丸ごと落とさず「回数を減らして収める」（下限なら増やす）を選べる
+//  - よくある投げシリーズ（autoThrows.ts）とタンブリング（autoTumblings.ts）は
+//    システム側で組んで候補に足す。投げ方や技の組み合わせを網羅したテンプレートを
+//    登録しなくて済む。あくまで候補なので、評価が上がらなければ使われない
+//  - 登録テンプレートが主役。先に見て、足りないところを自動生成で補う。
+//    自動生成のタンブリングはテンプレートに出てくる技だけで組む
+//  - 自動生成のシリーズは量を調整できる（投げ＝シェネの回数、タンブリング＝宙返りの本数）。
+//    Dスコアの範囲を指定したときに、シリーズを丸ごと落とさず「減らして収める」
+//    （下限なら増やす）を選べる
 //  - 投げとタンブリングは交互に並べる（実際の演技の構成に合わせる。点数には影響しない）
 //  - 同じ宙返りの繰り返しは避ける（前宙は例外）。必須ではないので弱い重み付けにとどめる
 // =====================================================================
 
 import { analyzeSeries } from "./analysis";
 import { autoThrowTemplates, cheneCountRange, isAutoThrowTemplate, withCheneCount } from "./autoThrows";
+import {
+  autoTumblingTemplates,
+  isAutoTumblingTemplate,
+  saltoCountRange,
+  usedSkillIds,
+  withSaltoCount,
+} from "./autoTumblings";
 import { computeScore } from "./score";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
 import { APPARATUS, skillDef } from "./constants";
@@ -42,6 +52,17 @@ export interface GenerateOptions {
   maxAutoThrows?: number;
   /** 自動生成の投げシリーズの候補数の上限（既定＝全組み合わせ） */
   autoThrowLimit?: number;
+  /** 自動生成のタンブリングを候補に加えるか（既定 true） */
+  autoTumblings?: boolean;
+  /** 1つの構成に入れる自動生成のタンブリングの本数の上限。既定は3本。 */
+  maxAutoTumblings?: number;
+  /** 自動生成のタンブリングの候補数の上限（既定＝全組み合わせ） */
+  autoTumblingLimit?: number;
+  /**
+   * 自動生成のタンブリングに使ってよい転回技のid。
+   * 既定は登録テンプレートで実際に使っている技（テンプレートが無ければ技の一覧すべて）。
+   */
+  autoTumblingSkills?: string[];
   /** 乱数（テスト用に差し替え可能） */
   random?: () => number;
 }
@@ -66,6 +87,22 @@ export const DEFAULT_MAX_THROW_TUMBLING = 1;
  * 「テンプレートで足りない投げ方を補う」本数にとどめる。
  */
 export const DEFAULT_MAX_AUTO_THROWS = 3;
+
+/**
+ * 生成する構成に入れる自動生成のタンブリングの本数の上限。
+ * 難度に採用されるのは上位3本（`ADOPT_COUNT`）までだが、4本目は
+ * 必須要素（三宙・つなぎ技・方向系・投げタン）を担うことがあるので1本ぶん余裕を持たせる。
+ * 点数に効かない4本目は刈り込みで落ちる。
+ */
+export const DEFAULT_MAX_AUTO_TUMBLINGS = 4;
+
+/**
+ * 自動生成のシリーズ1本あたりの評価の重み。
+ * 登録したテンプレートは「その選手が実際に実施できる構成」なので、
+ * 同じ点数なら自動生成より優先する。難度点の最小単位（0.1）より小さくして、
+ * 点数を犠牲にしてまでテンプレートを選ぶことはしない。
+ */
+export const AUTO_SERIES_WEIGHT = 0.02;
 
 /**
  * 同じ宙返りを繰り返したときの1回あたりの減点（評価用の重み）。
@@ -113,7 +150,7 @@ interface Evaluation {
  * 必須要素の不足・ジュニアの投げ超過はA減点として効くので、これだけで
  * 「必須要素を満たしつつ難度を上げる」方向に進む。
  */
-function evaluate(series: Series[], opts: GenerateOptions): Evaluation {
+function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evaluation {
   const r = computeScore(series, opts.apparatus, { junior: !!opts.junior });
   const penalty = rangePenalty(r.dScore, opts.minScore, opts.maxScore);
   // 投げタンの本数制限（既定1本）。超えた分は範囲外と同じ強さで嫌う。
@@ -125,8 +162,10 @@ function evaluate(series: Series[], opts: GenerateOptions): Evaluation {
   const overThrowTum = Math.max(0, throwTumCount - maxThrowTum);
   // 同じ宙返りの繰り返しは弱く嫌う（同点のときに多様な構成が選ばれる程度）
   const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
+  // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
+  const auto = autoCount * AUTO_SERIES_WEIGHT;
   return {
-    value: -(penalty + overThrowTum) * 100 + r.dScore + r.aScore - variety,
+    value: -(penalty + overThrowTum) * 100 + r.dScore + r.aScore - variety - auto,
     dScore: r.dScore,
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),
@@ -145,24 +184,59 @@ function shuffled<T>(list: T[], rand: () => number): T[] {
 /** テンプレートの並びを、採点できるシリーズの並びに直す */
 const seriesOf = (list: SeriesTemplate[]): Series[] => list.map((t) => structuredClone(t.series));
 
+/** テンプレートの並びを評価する（自動生成の本数もここで数える） */
+const evaluateUsed = (list: SeriesTemplate[], opts: GenerateOptions): Evaluation =>
+  evaluate(seriesOf(list), opts, list.filter((t) => t.auto).length);
+
 /** 指定した手具で使えるシリーズテンプレート（その手具のもの＋共通） */
 export function usableTemplates(templates: SeriesTemplate[], apparatus: ApparatusKey): SeriesTemplate[] {
   return templates.filter((t) => isCommonApparatus(t.apparatus) || t.apparatus === apparatus);
 }
 
-/** 自動生成の投げシリーズの候補（`autoThrows: false` なら空） */
-function autoThrowPool(opts: GenerateOptions, rand: () => number): SeriesTemplate[] {
-  if (opts.autoThrows === false) return [];
-  return autoThrowTemplates(opts.apparatus, { random: rand, limit: opts.autoThrowLimit });
+/**
+ * 自動生成のシリーズの候補（それぞれ `autoThrows` / `autoTumblings` で切れる）。
+ * タンブリングは**登録テンプレートに出てくる技だけ**で組む（`skillIds`）。
+ * テンプレートが1つも無いときだけ、技の一覧から自由に組む。
+ */
+function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () => number): SeriesTemplate[] {
+  const pool: SeriesTemplate[] = [];
+  if (opts.autoThrows !== false)
+    pool.push(...autoThrowTemplates(opts.apparatus, { random: rand, limit: opts.autoThrowLimit }));
+  if (opts.autoTumblings !== false)
+    pool.push(
+      ...autoTumblingTemplates(opts.apparatus, {
+        junior: !!opts.junior,
+        skillIds: opts.autoTumblingSkills ?? usedSkillIds(own.map((t) => t.series)),
+        random: rand,
+        limit: opts.autoTumblingLimit,
+      }),
+    );
+  return pool;
+}
+
+/** その候補が1つの構成に入れられる本数の上限（登録したテンプレートは無制限） */
+function autoLimitOf(t: SeriesTemplate, opts: GenerateOptions): number | null {
+  if (isAutoThrowTemplate(t)) return opts.maxAutoThrows ?? DEFAULT_MAX_AUTO_THROWS;
+  if (isAutoTumblingTemplate(t)) return opts.maxAutoTumblings ?? DEFAULT_MAX_AUTO_TUMBLINGS;
+  return null;
+}
+
+/** 自動生成の候補の「量」を変えた別案（投げ＝シェネの回数、タンブリング＝宙返りの本数） */
+function autoVariants(t: SeriesTemplate): SeriesTemplate[] {
+  if (isAutoThrowTemplate(t))
+    return cheneCountRange(t.spec.pattern).flatMap((n) => withCheneCount(t, n) ?? []);
+  if (isAutoTumblingTemplate(t))
+    return saltoCountRange(t.spec.pattern).flatMap((n) => withSaltoCount(t, n) ?? []);
+  return [];
 }
 
 /**
- * 自動生成の投げのシェネの回数を、評価が上がるあいだ増減する。
+ * 自動生成のシリーズの量（シェネの回数・宙返りの本数）を、評価が上がるあいだ増減する。
  * Dスコアの上限を指定したときは「シリーズを丸ごと落とす」より先に
- * 「回数を減らして範囲に収める」が選べるようになり、下限を指定したときは
- * 逆に回数を増やして届かせる。形ごとの範囲（`cheneCountRange`）は外れない。
+ * 「減らして範囲に収める」が選べるようになり、下限を指定したときは
+ * 逆に増やして届かせる。形ごとの範囲は外れない。
  */
-function tuneAutoThrows(
+function tuneAutoSeries(
   used: SeriesTemplate[],
   cur: Evaluation,
   opts: GenerateOptions,
@@ -172,13 +246,9 @@ function tuneAutoThrows(
   for (let improved = true; improved; ) {
     improved = false;
     for (let i = 0; i < list.length; i++) {
-      const t = list[i];
-      if (!isAutoThrowTemplate(t)) continue;
-      for (const n of cheneCountRange(t.spec.pattern)) {
-        const tuned = withCheneCount(t, n);
-        if (!tuned) continue;
+      for (const tuned of autoVariants(list[i])) {
         const next = list.map((x, k) => (k === i ? tuned : x));
-        const e = evaluate(seriesOf(next), opts);
+        const e = evaluateUsed(next, opts);
         if (e.value > ev.value + 1e-9) {
           list = next;
           ev = e;
@@ -227,7 +297,7 @@ function orderSeries(
   if (tumbling.length === 0 || throws.length === 0) return { used, ev: cur };
   const ordered =
     tumbling.length >= throws.length ? interleave(tumbling, throws) : interleave(throws, tumbling);
-  const ev = evaluate(seriesOf(ordered), opts);
+  const ev = evaluateUsed(ordered, opts);
   return ev.value >= cur.value - 1e-9 ? { used: ordered, ev } : { used, ev: cur };
 }
 
@@ -237,38 +307,41 @@ function orderSeries(
  */
 export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptions): GenerateResult | null {
   const rand = opts.random ?? Math.random;
-  // テンプレートが1つも無いときは生成しない（投げだけの構成になってしまうため）
+  // 登録したテンプレートが無くても、自動生成の候補だけで組める
   const own = usableTemplates(templates, opts.apparatus);
-  if (own.length === 0) return null;
-  const pool = [...own, ...autoThrowPool(opts, rand)];
+  const auto = autoPool(opts, own, rand);
+  if (own.length + auto.length === 0) return null;
 
   const attempts = opts.attempts ?? 40;
   const maxSeries = opts.maxSeries ?? 8;
-  const maxAuto = opts.maxAutoThrows ?? DEFAULT_MAX_AUTO_THROWS;
 
   let best: { used: SeriesTemplate[]; ev: Evaluation } | null = null;
 
   for (let a = 0; a < attempts; a++) {
     let used: SeriesTemplate[] = [];
-    let cur = evaluate([], opts);
-    let autoUsed = 0;
+    let cur = evaluateUsed([], opts);
+    /** 自動生成の候補を種類ごとに何本使ったか */
+    const autoUsed = new Map<string, number>();
 
-    // ① ランダムな順に見て、評価が上がるものだけ足す
-    for (const t of shuffled(pool, rand)) {
+    // ① ランダムな順に見て、評価が上がるものだけ足す。
+    //    登録テンプレートを先に見て、足りないところを自動生成で補う。
+    for (const t of [...shuffled(own, rand), ...shuffled(auto, rand)]) {
       if (used.length >= maxSeries) break;
-      // 自動生成の投げは補いの本数まで（テンプレートを押しのけないように）
-      if (t.auto && autoUsed >= maxAuto) continue;
+      // 自動生成のシリーズは補いの本数まで（テンプレートを押しのけないように）
+      const limit = autoLimitOf(t, opts);
+      const kind = isAutoThrowTemplate(t) ? "throw" : "tumbling";
+      if (limit !== null && (autoUsed.get(kind) ?? 0) >= limit) continue;
       const next = [...used, t];
-      const ev = evaluate(seriesOf(next), opts);
+      const ev = evaluateUsed(next, opts);
       if (ev.value > cur.value + 1e-9) {
         used = next;
         cur = ev;
-        if (t.auto) autoUsed += 1;
+        if (limit !== null) autoUsed.set(kind, (autoUsed.get(kind) ?? 0) + 1);
       }
     }
 
-    // ② 自動生成の投げはシェネの回数を調整する（範囲指定に収めるため）
-    const tuned = tuneAutoThrows(used, cur, opts);
+    // ② 自動生成のシリーズは量（シェネの回数・宙返りの本数）を調整する
+    const tuned = tuneAutoSeries(used, cur, opts);
     used = tuned.used;
     cur = tuned.ev;
 
@@ -277,7 +350,7 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
       improved = false;
       for (let i = 0; i < used.length; i++) {
         const next = used.filter((_, k) => k !== i);
-        const ev = evaluate(seriesOf(next), opts);
+        const ev = evaluateUsed(next, opts);
         if (ev.value >= cur.value - 1e-9) {
           used = next;
           cur = ev;

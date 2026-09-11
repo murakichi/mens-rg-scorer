@@ -3,6 +3,7 @@ import { X, Shuffle } from "lucide-react";
 import { APPARATUS } from "../scoring/constants";
 import {
   DEFAULT_MAX_AUTO_THROWS,
+  DEFAULT_MAX_AUTO_TUMBLINGS,
   generateForApparatus,
   usableTemplates,
   type GenerateResult,
@@ -27,6 +28,7 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
   const [minScore, setMinScore] = useState("");
   const [maxScore, setMaxScore] = useState("");
   const [autoThrows, setAutoThrows] = useState(true);
+  const [autoTumblings, setAutoTumblings] = useState(true);
   const [result, setResult] = useState<(GenerateResult & { apparatus: ApparatusKey }) | null>(null);
   const [note, setNote] = useState("");
   if (!open) return null;
@@ -38,11 +40,16 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
       apparatus: target || null,
       junior,
       autoThrows,
+      autoTumblings,
       minScore: minScore ? parseFloat(minScore) : null,
       maxScore: maxScore ? parseFloat(maxScore) : null,
     });
     setResult(r);
-    setNote(r ? "" : "使えるテンプレートがありません（手具を変えるか、シリーズテンプレートを登録してください）。");
+    setNote(
+      r
+        ? ""
+        : "組める候補がありません（自動生成をオンにするか、シリーズテンプレートを登録してください）。",
+    );
   };
 
   return (
@@ -72,17 +79,22 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
             指定なしのときは全手具で組んで、いちばん良かったものを出します。
           </p>
 
-          <div className="line-head">投げシリーズ</div>
+          <div className="line-head">自動生成で補う</div>
           <label className="check">
             <input type="checkbox" checked={autoThrows} onChange={(e) => setAutoThrows(e.target.checked)} />
-            投げシリーズを自動で足す（最大{DEFAULT_MAX_AUTO_THROWS}本）
+            投げシリーズ（最大{DEFAULT_MAX_AUTO_THROWS}本）
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={autoTumblings} onChange={(e) => setAutoTumblings(e.target.checked)} />
+            タンブリング（最大{DEFAULT_MAX_AUTO_TUMBLINGS}本）
           </label>
           <p className="hint">
-            投げ→シェネ→前転→キャッチ、投げ→前転3回→キャッチ のような投げシリーズを、
-            投げ方（左手投げ・二つ投げ・視野外・手以外…）と受け方（クラブ・リングは手具で押さえつけてキャッチも）、
-            シェネの手を変えながらシステム側で組んで候補に加えます。
-            テンプレートで投げ方を網羅しなくても必須要素や多様性を満たしやすくなります。
-            点数が上がらなければ使われません。
+            テンプレートを先に使い、足りないところをシステム側で組んだシリーズで補います（点数が上がらなければ使われません）。
+            投げは 投げ→シェネ→前転→キャッチ などの形を、投げ方（左手投げ・二つ投げ・視野外・手以外…）と
+            受け方（クラブ・リングは手具で押さえつけてキャッチも）、シェネの手を変えて組みます。
+            タンブリングは<b>テンプレートに出てくる技だけ</b>を使い、入力画面と同じ制約
+            （後方系はロンダートから入る、ロンダート・バク転の直後は後方系）で並べます。
+            テンプレートが1つも無いときは技の一覧から組みます。
           </p>
 
           <div className="line-head">Dスコアの範囲</div>
@@ -110,7 +122,7 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
           <p className="hint">
             未指定なら最大を目指します。必須要素をできるだけ満たし、評価されない要素（4本目のタンブリング、
             ジュニアの6回目以降の投げ、重複するシリーズなど）は入れません。
-            範囲を指定したときは、自動生成の投げのシェネの回数も増減して範囲に合わせます。
+            範囲を指定したときは、自動生成の量（シェネの回数・宙返りの本数）も増減して範囲に合わせます。
           </p>
 
           <button className="add-btn" onClick={run}>
