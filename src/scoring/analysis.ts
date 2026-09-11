@@ -13,13 +13,57 @@ import {
   skillDef,
   skillDifficulty,
   ropeJumpDef,
+  isBackwardSalto,
+  isBackwardSkill,
+  leadsBackward,
+  ROUNDOFF_SKILL_ID,
 } from "./constants";
 import type {
   Difficulty,
+  Item,
   Series,
   SeriesAnalysis,
   Unit,
 } from "./types";
+
+/**
+ * iIdx の直前に実施する技のid。投げ・キャッチはタンブリングの流れを切らないので飛ばす。
+ * 徒手として入れた転回技（ロンダート等）も技として見る。
+ */
+export function prevSkillId(items: Item[], iIdx: number): string | undefined {
+  for (let i = iIdx - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === "skill") return it.skillId || undefined;
+    if (it.kind === "motion") return it.motionId || undefined;
+    if (it.kind === "ropeJump") return undefined;
+  }
+  return undefined;
+}
+
+/** 自動で補うロンダートのアイテム */
+export const roundoffItem = (): Item => ({
+  kind: "skill",
+  skillId: ROUNDOFF_SKILL_ID,
+  hasApparatus: false,
+  isThrow: false,
+});
+
+/**
+ * 手前にロンダートを補う位置か。後方系はロンダート・バク転から入るか、
+ * 後ろ向きに降りる宙返りに続けてしか実施できないので、そうでない位置で
+ * 後方系を選んだときはロンダートを挟む。
+ *  - 何も無いところ（直前に技が無い）でいきなり後方の宙返りを選んだとき
+ *    （バク転は立ちバク転があるのでそのまま）
+ *  - 前方系や半ひねり系・ダイビング前宙（前向きに降りる技）の後に後方系を選んだとき
+ */
+export function needsRoundoffBefore(items: Item[], iIdx: number): boolean {
+  const it = items[iIdx];
+  if (!it || it.kind !== "skill" || !it.skillId) return false;
+  if (!isBackwardSkill(it.skillId)) return false;
+  const prev = prevSkillId(items, iIdx);
+  if (!prev) return isBackwardSalto(it.skillId);
+  return !leadsBackward(prev);
+}
 
 /** タンブリング塊の難度を算出。先頭技の値 + 以降の非A技ごとに +1、投げ含みで +1、E止め。 */
 export function calcTumblingDifficulty(
