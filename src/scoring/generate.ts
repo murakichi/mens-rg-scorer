@@ -11,10 +11,12 @@
 //  - 投げ方（左手投げ・視野外・手以外…）を網羅したテンプレートを登録しなくても済むよう、
 //    よくある投げシリーズはシステム側で組んで候補に足す（autoThrows.ts）。
 //    あくまで候補なので、評価が上がらなければ使われない
+//  - 自動生成の投げはシェネの回数を調整できる。Dスコアの範囲を指定したときに
+//    シリーズを丸ごと落とさず「回数を減らして収める」（下限なら増やす）を選べる
 //  - 同じ宙返りの繰り返しは避ける（前宙は例外）。必須ではないので弱い重み付けにとどめる
 // =====================================================================
 
-import { autoThrowTemplates } from "./autoThrows";
+import { autoThrowTemplates, cheneCountRange, isAutoThrowTemplate, withCheneCount } from "./autoThrows";
 import { computeScore } from "./score";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
 import { APPARATUS, skillDef } from "./constants";
@@ -138,6 +140,9 @@ function shuffled<T>(list: T[], rand: () => number): T[] {
   return a;
 }
 
+/** テンプレートの並びを、採点できるシリーズの並びに直す */
+const seriesOf = (list: SeriesTemplate[]): Series[] => list.map((t) => structuredClone(t.series));
+
 /** 指定した手具で使えるシリーズテンプレート（その手具のもの＋共通） */
 export function usableTemplates(templates: SeriesTemplate[], apparatus: ApparatusKey): SeriesTemplate[] {
   return templates.filter((t) => isCommonApparatus(t.apparatus) || t.apparatus === apparatus);
@@ -147,6 +152,40 @@ export function usableTemplates(templates: SeriesTemplate[], apparatus: Apparatu
 function autoThrowPool(opts: GenerateOptions, rand: () => number): SeriesTemplate[] {
   if (opts.autoThrows === false) return [];
   return autoThrowTemplates(opts.apparatus, { random: rand, limit: opts.autoThrowLimit });
+}
+
+/**
+ * 自動生成の投げのシェネの回数を、評価が上がるあいだ増減する。
+ * Dスコアの上限を指定したときは「シリーズを丸ごと落とす」より先に
+ * 「回数を減らして範囲に収める」が選べるようになり、下限を指定したときは
+ * 逆に回数を増やして届かせる。形ごとの範囲（`cheneCountRange`）は外れない。
+ */
+function tuneAutoThrows(
+  used: SeriesTemplate[],
+  cur: Evaluation,
+  opts: GenerateOptions,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  let list = used;
+  let ev = cur;
+  for (let improved = true; improved; ) {
+    improved = false;
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      if (!isAutoThrowTemplate(t)) continue;
+      for (const n of cheneCountRange(t.spec.pattern)) {
+        const tuned = withCheneCount(t, n);
+        if (!tuned) continue;
+        const next = list.map((x, k) => (k === i ? tuned : x));
+        const e = evaluate(seriesOf(next), opts);
+        if (e.value > ev.value + 1e-9) {
+          list = next;
+          ev = e;
+          improved = true;
+        }
+      }
+    }
+  }
+  return { used: list, ev };
 }
 
 /**
@@ -163,7 +202,6 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   const attempts = opts.attempts ?? 40;
   const maxSeries = opts.maxSeries ?? 8;
   const maxAuto = opts.maxAutoThrows ?? DEFAULT_MAX_AUTO_THROWS;
-  const seriesOf = (list: SeriesTemplate[]) => list.map((t) => structuredClone(t.series));
 
   let best: { used: SeriesTemplate[]; ev: Evaluation } | null = null;
 
@@ -186,7 +224,12 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
       }
     }
 
-    // ② 抜いても評価が下がらないシリーズを取り除く（＝評価されない要素を入れない）
+    // ② 自動生成の投げはシェネの回数を調整する（範囲指定に収めるため）
+    const tuned = tuneAutoThrows(used, cur, opts);
+    used = tuned.used;
+    cur = tuned.ev;
+
+    // ③ 抜いても評価が下がらないシリーズを取り除く（＝評価されない要素を入れない）
     for (let improved = true; improved && used.length > 0; ) {
       improved = false;
       for (let i = 0; i < used.length; i++) {

@@ -187,6 +187,13 @@ function cycler<T>(list: T[], rand: () => number): () => T {
   };
 }
 
+/** その形で取り得るシェネの回数 */
+export function cheneCountRange(pattern: AutoThrowPattern): number[] {
+  const range: number[] = [];
+  for (let n = pattern.chene.min; n <= pattern.chene.max; n++) range.push(n);
+  return range;
+}
+
 export interface AutoThrowOptions {
   /** 乱数（テスト用に差し替え可能） */
   random?: () => number;
@@ -216,9 +223,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   return combos.slice(0, limit).map(({ pattern, throwStyle }) => {
     let counts = nextCount.get(pattern.id);
     if (!counts) {
-      const range: number[] = [];
-      for (let n = pattern.chene.min; n <= pattern.chene.max; n++) range.push(n);
-      counts = cycler(range, rand);
+      counts = cycler(cheneCountRange(pattern), rand);
       nextCount.set(pattern.id, counts);
     }
     const cheneCount = counts();
@@ -233,14 +238,39 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   });
 }
 
+/**
+ * ランダム生成の候補として渡す自動生成の投げ。
+ * 組み立てた内容（`spec`）を持たせて、生成側がシェネの回数を調整できるようにする。
+ */
+export interface AutoThrowTemplate extends SeriesTemplate {
+  auto: true;
+  apparatus: ApparatusKey;
+  spec: AutoThrowSpec;
+}
+
+const autoTemplate = (apparatus: ApparatusKey, spec: AutoThrowSpec, id = newTemplateId()): AutoThrowTemplate => ({
+  id,
+  name: autoThrowName(spec),
+  apparatus,
+  updatedAt: 0,
+  auto: true,
+  spec,
+  series: buildAutoThrowSeries(spec),
+});
+
 /** 自動生成の投げシリーズを、ランダム生成の候補（シリーズテンプレート）として返す */
-export function autoThrowTemplates(apparatus: ApparatusKey, opts: AutoThrowOptions = {}): SeriesTemplate[] {
-  return autoThrowSpecs(apparatus, opts).map((spec) => ({
-    id: newTemplateId(),
-    name: autoThrowName(spec),
-    apparatus,
-    updatedAt: 0,
-    auto: true,
-    series: buildAutoThrowSeries(spec),
-  }));
+export function autoThrowTemplates(apparatus: ApparatusKey, opts: AutoThrowOptions = {}): AutoThrowTemplate[] {
+  return autoThrowSpecs(apparatus, opts).map((spec) => autoTemplate(apparatus, spec));
+}
+
+/** 自動生成の投げの候補か（シェネの回数を調整できるのはこれだけ） */
+export function isAutoThrowTemplate(t: SeriesTemplate): t is AutoThrowTemplate {
+  return !!t.auto && !!(t as AutoThrowTemplate).spec;
+}
+
+/** シェネの回数だけを変えた候補。形の範囲外・変化なしなら null。 */
+export function withCheneCount(t: AutoThrowTemplate, cheneCount: number): AutoThrowTemplate | null {
+  if (cheneCount === t.spec.cheneCount) return null;
+  if (!cheneCountRange(t.spec.pattern).includes(cheneCount)) return null;
+  return autoTemplate(t.apparatus, { ...t.spec, cheneCount }, t.id);
 }

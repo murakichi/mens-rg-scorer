@@ -110,6 +110,7 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
           <p className="hint">
             未指定なら最大を目指します。必須要素をできるだけ満たし、評価されない要素（4本目のタンブリング、
             ジュニアの6回目以降の投げ、重複するシリーズなど）は入れません。
+            範囲を指定したときは、自動生成の投げのシェネの回数も増減して範囲に合わせます。
           </p>
 
           <button className="add-btn" onClick={run}>

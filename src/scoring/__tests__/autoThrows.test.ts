@@ -9,6 +9,9 @@ import {
   autoThrowTemplates,
   buildAutoThrowSeries,
   catchStylesForThrow,
+  cheneCountRange,
+  isAutoThrowTemplate,
+  withCheneCount,
   CATCH_USE_APPARATUS,
   type AutoThrowSpec,
 } from "../autoThrows";
@@ -51,6 +54,14 @@ const spec = (patternId: string, over: Partial<AutoThrowSpec> = {}): AutoThrowSp
   catchStyle: autoCatchStyles("stick")[0],
   ...over,
 });
+
+const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
+
+/** 構成に入っているシェネの回数（シリーズごとの合計ではなく1つずつ） */
+const cheneCounts = (r: { series: Series[] }): number[] =>
+  r.series.flatMap((ser) =>
+    ser.items.flatMap((item) => (item.kind === "motion" && item.motionId === "chene" ? [item.count ?? 1] : [])),
+  );
 
 /** シリーズの中身を「投げ/シェネ×n/前転/…」の並びで表す */
 const shape = (series: Series): string[] =>
@@ -260,6 +271,45 @@ describe("ランダム生成への組み込み", () => {
   it("ジュニアでも投げの上限（5回）を超えない", () => {
     const r = generateRoutine(tumblingOnly(), { apparatus: "stick", junior: true, random: seeded(19) })!;
     expect(computeScore(r.series, "stick", { junior: true }).totalThrowCount).toBeLessThanOrEqual(5);
+  });
+
+  it("Dスコアの上限を指定すると、シェネの回数を減らして収める", () => {
+    const seeds = [3, 7, 11, 19, 23];
+    const run = (maxScore: number | null) =>
+      seeds.map((seed) => generateRoutine(tumblingOnly(), { apparatus: "stick", maxScore, random: seeded(seed) })!);
+    const free = run(null);
+    const capped = run(2.5);
+    // 上限内に収まる
+    capped.forEach((r) => expect(r.dScore).toBeLessThanOrEqual(2.5 + 1e-9));
+    // シェネの回数の合計は上限ありのほうが少ない（丸ごと落とすのではなく回数で調整する）
+    expect(sum(capped.map(cheneCounts).map(sum))).toBeLessThan(sum(free.map(cheneCounts).map(sum)));
+  });
+
+  it("シェネの回数は形ごとの範囲から外れない（調整後も）", () => {
+    [null, 3.0, 2.0].forEach((maxScore) => {
+      [3, 7, 11].forEach((seed) => {
+        const r = generateRoutine(tumblingOnly(), { apparatus: "stick", maxScore, random: seeded(seed) })!;
+        r.used.forEach((t, i) => {
+          if (!isAutoThrowTemplate(t)) return;
+          expect(cheneCountRange(t.spec.pattern)).toContain(t.spec.cheneCount);
+          // 組み立てた内容とシリーズの中身が食い違わない
+          const item = r.series[i].items.find((x) => x.kind === "motion" && x.motionId === "chene");
+          if (item?.kind === "motion") expect(item.count).toBe(t.spec.cheneCount);
+        });
+      });
+    });
+  });
+
+  it("シェネの回数だけを差し替えられる（範囲外・変化なしは null）", () => {
+    const t = autoThrowTemplates("stick").find((x) => x.spec.pattern.id === "chene")!; // シェネ3〜4回
+    const other = t.spec.cheneCount === 3 ? 4 : 3;
+    const tuned = withCheneCount(t, other)!;
+    expect(tuned.spec.cheneCount).toBe(other);
+    expect(tuned.id).toBe(t.id); // 同じ候補として扱う
+    const chene = tuned.series.items.find((x) => x.kind === "motion");
+    expect(chene?.kind === "motion" && chene.count).toBe(other);
+    expect(withCheneCount(t, t.spec.cheneCount)).toBeNull();
+    expect(withCheneCount(t, 1)).toBeNull(); // この形の範囲外
   });
 
   it("autoThrows: false なら使わない", () => {
