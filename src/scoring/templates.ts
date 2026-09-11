@@ -63,6 +63,11 @@ interface TemplateBase {
 /** 1シリーズ分のテンプレート */
 export interface SeriesTemplate extends TemplateBase {
   series: Series;
+  /**
+   * ランダム生成がその場で組んだ候補（`autoThrows.ts`）。保存はされない。
+   * 生成結果の表示で「登録したテンプレート」と区別するためのフラグ。
+   */
+  auto?: boolean;
 }
 /** 演技構成全体（手具 + 全シリーズ）のテンプレート */
 export interface RoutineTemplate extends TemplateBase {

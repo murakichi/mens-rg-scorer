@@ -62,6 +62,7 @@ describe("使えるテンプレートの絞り込み", () => {
   });
 });
 
+// 候補を登録したテンプレートだけに固定したいテストは autoThrows: false を渡す
 describe("ランダム生成", () => {
   it("必須要素をできるだけ満たす（投げ3回・投げタン・三宙・つなぎ・方向系）", () => {
     const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(7) })!;
@@ -89,13 +90,13 @@ describe("ランダム生成", () => {
     const tums = ["b_backsalto", "b_backtuck", "b_backlayout", "b_tempo", "b_sidesalto"].map((id, i) =>
       tpl(`タンブリング${i}`, "common", S(skill(id), skill("a_flicflac"), skill(id), { kind: "catch" })),
     );
-    const r = generateRoutine(tums, { apparatus: "stick", random: seeded(17) })!;
+    const r = generateRoutine(tums, { apparatus: "stick", autoThrows: false, random: seeded(17) })!;
     expect(r.used.length).toBeLessThanOrEqual(3);
   });
 
   it("同じ内容のテンプレートを重ねない（重複はDに寄与しないので落ちる）", () => {
     const dup = [tpl("A", "common", throwFront()), tpl("Aのコピー", "common", throwFront())];
-    const r = generateRoutine(dup, { apparatus: "stick", random: seeded(11) })!;
+    const r = generateRoutine(dup, { apparatus: "stick", autoThrows: false, random: seeded(11) })!;
     expect(r.used).toHaveLength(1);
   });
 
@@ -174,7 +175,7 @@ describe("宙返りの多様性", () => {
     // どちらも B+1+1 = D難度（0.5）だが、片方は後方宙返りの3連続
     const same = tpl("後宙3連続", "common", S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto")));
     const varied = tpl("いろいろ3連続", "common", S(skill("b_backsalto"), skill("b_sidesalto"), skill("b_backtuck")));
-    const r = generateRoutine([same, varied], { apparatus: "stick", maxSeries: 1, random: seeded(31) })!;
+    const r = generateRoutine([same, varied], { apparatus: "stick", maxSeries: 1, autoThrows: false, random: seeded(31) })!;
     expect(r.used.map((t) => t.name)).toEqual(["いろいろ3連続"]);
   });
 
@@ -182,7 +183,7 @@ describe("宙返りの多様性", () => {
     // 後宙3連続（D難度・0.5）と 前宙1本（B難度・0.2）なら、繰り返しがあっても前者を採る
     const strong = tpl("後宙3連続", "common", S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto")));
     const weak = tpl("前宙1本", "common", S(skill("b_front")));
-    const r = generateRoutine([strong, weak], { apparatus: "stick", maxSeries: 1, random: seeded(31) })!;
+    const r = generateRoutine([strong, weak], { apparatus: "stick", maxSeries: 1, autoThrows: false, random: seeded(31) })!;
     expect(r.used.map((t) => t.name)).toEqual(["後宙3連続"]);
   });
 });

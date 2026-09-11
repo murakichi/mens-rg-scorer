@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { X, Shuffle } from "lucide-react";
 import { APPARATUS } from "../scoring/constants";
-import { generateForApparatus, usableTemplates, type GenerateResult } from "../scoring/generate";
+import {
+  DEFAULT_MAX_AUTO_THROWS,
+  generateForApparatus,
+  usableTemplates,
+  type GenerateResult,
+} from "../scoring/generate";
 import { apparatusName, describeSeries, type SeriesTemplate } from "../scoring/templates";
 import type { ApparatusKey } from "../scoring/types";
 
@@ -21,6 +26,7 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
   const [target, setTarget] = useState<ApparatusKey | "">(apparatus);
   const [minScore, setMinScore] = useState("");
   const [maxScore, setMaxScore] = useState("");
+  const [autoThrows, setAutoThrows] = useState(true);
   const [result, setResult] = useState<(GenerateResult & { apparatus: ApparatusKey }) | null>(null);
   const [note, setNote] = useState("");
   if (!open) return null;
@@ -31,6 +37,7 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
     const r = generateForApparatus(templates, {
       apparatus: target || null,
       junior,
+      autoThrows,
       minScore: minScore ? parseFloat(minScore) : null,
       maxScore: maxScore ? parseFloat(maxScore) : null,
     });
@@ -63,6 +70,18 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
           <p className="hint">
             指定した手具のテンプレートと「共通」テンプレートから選びます（使えるテンプレート {usable} 件）。
             指定なしのときは全手具で組んで、いちばん良かったものを出します。
+          </p>
+
+          <div className="line-head">投げシリーズ</div>
+          <label className="check">
+            <input type="checkbox" checked={autoThrows} onChange={(e) => setAutoThrows(e.target.checked)} />
+            投げシリーズを自動で足す（最大{DEFAULT_MAX_AUTO_THROWS}本）
+          </label>
+          <p className="hint">
+            投げ→シェネ→前転→キャッチ のような投げシリーズを、投げ方（左手投げ・二つ投げ・視野外・手以外…）
+            と受け方、シェネの手を変えながらシステム側で組んで候補に加えます。
+            テンプレートで投げ方を網羅しなくても必須要素や多様性を満たしやすくなります。
+            点数が上がらなければ使われません。
           </p>
 
           <div className="line-head">Dスコアの範囲</div>
@@ -110,6 +129,7 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
                 {result.series.map((ser, i) => (
                   <li key={i}>
                     <b>{result.used[i]?.name}</b>
+                    {result.used[i]?.auto && <span className="tag">自動</span>}
                     <span className="gen-list-detail">{describeSeries(ser)}</span>
                   </li>
                 ))}
