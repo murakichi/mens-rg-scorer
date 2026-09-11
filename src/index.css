@@ -325,10 +325,42 @@ button {
   flex-direction: column;
   gap: 8px;
   position: relative;
-  padding: 12px 26px 12px 12px;
+  padding: 12px 18px;
   background: rgba(255, 255, 255, 0.45);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
+}
+/* 技ごとの操作列：両端が入れ替え矢印、中央が削除 */
+.item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+}
+.move-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(150, 150, 190, 0.35);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+.move-btn:hover:not(:disabled) {
+  background: #fff;
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: scale(1.12);
+}
+.move-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
 }
 .sel-wrap {
   display: flex;
@@ -1205,6 +1237,10 @@ input[type="checkbox"] {
   .skill-block .sel-wrap {
     width: 100%;
     min-width: 0;
+  }
+  /* 縦積みでは前後＝上下なので、入れ替え矢印も上下を向ける */
+  .move-btn {
+    rotate: 90deg;
   }
   /* 矢印はブロックの下に向ける */
   .arrow {

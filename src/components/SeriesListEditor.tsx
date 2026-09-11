@@ -86,6 +86,14 @@ export function SeriesListEditor({
     edit((n) => {
       n[sIdx].items[iIdx] = { ...n[sIdx].items[iIdx], ...patch } as Item;
     });
+  /** 技を隣の技と入れ替える（両端では何もしない） */
+  const moveItem = (sIdx: number, iIdx: number, dir: -1 | 1) =>
+    edit((n) => {
+      const items = n[sIdx].items;
+      const j = iIdx + dir;
+      if (j < 0 || j >= items.length) return;
+      [items[iIdx], items[j]] = [items[j], items[iIdx]];
+    });
   const removeItem = (sIdx: number, iIdx: number) =>
     edit((n) => {
       n[sIdx].items.splice(iIdx, 1);
@@ -124,6 +132,7 @@ export function SeriesListEditor({
           onAddItem={(kind) => addItem(sIdx, kind)}
           onUpdateItem={(iIdx, patch) => updateItem(sIdx, iIdx, patch)}
           onRemoveItem={(iIdx) => removeItem(sIdx, iIdx)}
+          onMoveItem={(iIdx, dir) => moveItem(sIdx, iIdx, dir)}
           onRemoveSeries={() => removeSeries(sIdx)}
         />
       ))}

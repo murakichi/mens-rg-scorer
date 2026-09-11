@@ -1,4 +1,4 @@
-import { Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
@@ -53,6 +53,8 @@ interface Props {
   onAddItem: (kind: ItemKind) => void;
   onUpdateItem: (iIdx: number, patch: Partial<Item>) => void;
   onRemoveItem: (iIdx: number) => void;
+  /** 技を隣の技と入れ替える（dir: -1 で前、+1 で後ろ） */
+  onMoveItem: (iIdx: number, dir: -1 | 1) => void;
   onRemoveSeries: () => void;
 }
 
@@ -351,6 +353,7 @@ export function SeriesCard({
   onAddItem,
   onUpdateItem,
   onRemoveItem,
+  onMoveItem,
   onRemoveSeries,
 }: Props) {
   const seriesQualifies = a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus);
@@ -452,9 +455,30 @@ export function SeriesCard({
               prevMotionId={prevMotionId(ser.items, iIdx)}
               onUpdate={(patch) => onUpdateItem(iIdx, patch)}
             />
-            <button className="remove-btn-xs" onClick={() => onRemoveItem(iIdx)} aria-label="削除">
-              <X size={12} />
-            </button>
+            {/* 技の両端：隣の技と入れ替える矢印（中央は削除） */}
+            <div className="item-actions">
+              <button
+                className="move-btn"
+                onClick={() => onMoveItem(iIdx, -1)}
+                disabled={iIdx === 0}
+                aria-label="前の技と入れ替え"
+                title="前の技と入れ替え"
+              >
+                <ChevronLeft size={15} />
+              </button>
+              <button className="remove-btn-xs" onClick={() => onRemoveItem(iIdx)} aria-label="削除">
+                <X size={12} />
+              </button>
+              <button
+                className="move-btn"
+                onClick={() => onMoveItem(iIdx, 1)}
+                disabled={iIdx === ser.items.length - 1}
+                aria-label="次の技と入れ替え"
+                title="次の技と入れ替え"
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
             {iIdx < ser.items.length - 1 && <div className="arrow">→</div>}
           </div>
         ))}
