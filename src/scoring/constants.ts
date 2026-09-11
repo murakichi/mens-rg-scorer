@@ -504,6 +504,7 @@ export function isBackwardSalto(id: string): boolean {
  * 後方の宙返りでも前向きに降りる技（続けて後方系に入るにはロンダートを挟む）。
  * 半ひねり系（n回半ひねり）は `twist` から判定するので、ここに挙げるのは
  * ひねりで表せないものだけ。
+ * テンポひねり（テンポ宙返りで1回ひねり）は整数ひねりで後ろ向きに降りるので入れない。
  */
 export const FORWARD_LANDING_BACK_SALTOS: string[] = ["b_divefront"];
 

@@ -54,6 +54,12 @@ describe("実施できる向きで選択肢を絞る", () => {
     });
   });
 
+  it("テンポ宙返り・テンポひねり（1回ひねり）は後ろ向きに降りる", () => {
+    expect(leadsBackward("b_tempo")).toBe(true);
+    expect(leadsBackward("c_tempotwist")).toBe(true);
+    expect(idsAfter("c_tempotwist")).not.toContain("b_front");
+  });
+
   it("半ひねり系・ダイビング前宙・前方系の後は前方系も選べる", () => {
     ["b_backhalf", "c_back15", "d_backlay25", "b_divefront", "a_handspring", undefined].forEach((prev) => {
       expect(leadsBackward(prev)).toBe(false);
