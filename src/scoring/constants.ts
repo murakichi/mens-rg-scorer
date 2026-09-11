@@ -9,7 +9,9 @@ import type {
   ApparatusKey,
   Difficulty,
   HandMotion,
+  Posture,
   Skill,
+  TwistParams,
 } from "./types";
 
 export const CATEGORY = {
@@ -357,31 +359,31 @@ export const SKILL_LIST: Skill[] = [
   { id: "a_handspring", name: "ハンドスプリング", category: CATEGORY.FORWARD, difficulty: "A", isSalto: false, isConnectA: true },
   { id: "a_frontroll", name: "とび前転", category: CATEGORY.FORWARD, difficulty: "A", isSalto: false, isConnectA: true },
   { id: "b_sidesalto", name: "側宙", category: CATEGORY.SIDE, difficulty: "B", isSalto: true },
-  { id: "b_backsalto", name: "後方宙返り", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true },
-  { id: "b_backtuck", name: "後方屈伸宙返り", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true },
-  { id: "b_backlayout", name: "後方伸身宙返り", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true },
-  { id: "b_backhalf", name: "後方宙返り半ひねり", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true },
-  { id: "b_backlayhalf", name: "後方伸身宙返り半ひねり", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true },
+  { id: "b_backsalto", name: "後方宙返り", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true, twist: { base: "back", twist: 0, posture: "tuck" } },
+  { id: "b_backtuck", name: "後方屈伸宙返り", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true, twist: { base: "back", twist: 0, posture: "pike" } },
+  { id: "b_backlayout", name: "後方伸身宙返り", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true, twist: { base: "back", twist: 0, posture: "layout" } },
+  { id: "b_backhalf", name: "後方宙返り半ひねり", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true, twist: { base: "back", twist: 0.5, posture: "tuck" } },
+  { id: "b_backlayhalf", name: "後方伸身宙返り半ひねり", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true, twist: { base: "back", twist: 0.5, posture: "layout" } },
   { id: "b_tempo", name: "テンポ宙返り", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true },
   { id: "b_divefront", name: "ダイビング前宙", category: CATEGORY.BACKWARD, difficulty: "B", isSalto: true },
-  { id: "b_front", name: "前宙", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true },
-  { id: "b_fronthalf", name: "前宙半ひねり", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true },
+  { id: "b_front", name: "前宙", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true, twist: { base: "front", twist: 0, posture: "tuck" } },
+  { id: "b_fronthalf", name: "前宙半ひねり", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true, twist: { base: "front", twist: 0.5, posture: "tuck" } },
   { id: "b_tenchu", name: "転宙", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true },
   { id: "b_kirimomi", name: "きりもみ", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true, saltoOnlyInChain: true },
-  { id: "c_front1full", name: "前方宙返り1回ひねり", category: CATEGORY.FORWARD, difficulty: "C", isSalto: true },
+  { id: "c_front1full", name: "前方宙返り1回ひねり", category: CATEGORY.FORWARD, difficulty: "C", isSalto: true, twist: { base: "front", twist: 1, posture: "tuck" } },
   { id: "c_kirimomiten", name: "きりもみ転回", category: CATEGORY.FORWARD, difficulty: "C", isSalto: true, saltoOnlyInChain: true },
-  { id: "c_back15", name: "後方宙返り1回半ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true },
-  { id: "c_backlay15", name: "後方伸身宙返り1回半ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true },
-  { id: "c_back1full", name: "後方宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true },
-  { id: "c_backtuck1full", name: "後方屈伸宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true },
-  { id: "c_backlay1full", name: "後方伸身宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true },
+  { id: "c_back15", name: "後方宙返り1回半ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true, twist: { base: "back", twist: 1.5, posture: "tuck" } },
+  { id: "c_backlay15", name: "後方伸身宙返り1回半ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true, twist: { base: "back", twist: 1.5, posture: "layout" } },
+  { id: "c_back1full", name: "後方宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true, twist: { base: "back", twist: 1, posture: "tuck" } },
+  { id: "c_backtuck1full", name: "後方屈伸宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true, twist: { base: "back", twist: 1, posture: "pike" } },
+  { id: "c_backlay1full", name: "後方伸身宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true, twist: { base: "back", twist: 1, posture: "layout" } },
   { id: "c_tempotwist", name: "テンポひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true },
-  { id: "d_frontlay1", name: "伸身前宙1回ひねり", category: CATEGORY.FORWARD, difficulty: "D", isSalto: true },
-  { id: "e_frontlay2", name: "伸身前宙2回ひねり", category: CATEGORY.FORWARD, difficulty: "E", isSalto: true },
-  { id: "d_back2twist", name: "後方宙返り2回ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true },
-  { id: "d_backlay25", name: "後方伸身宙返り2回半ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true },
-  { id: "e_backlay3twist", name: "後方伸身宙返り3回ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true },
-  { id: "e_backlay35twist", name: "後方伸身宙返り3回半ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true },
+  { id: "d_frontlay1", name: "伸身前宙1回ひねり", category: CATEGORY.FORWARD, difficulty: "D", isSalto: true, twist: { base: "front", twist: 1, posture: "layout" } },
+  { id: "e_frontlay2", name: "伸身前宙2回ひねり", category: CATEGORY.FORWARD, difficulty: "E", isSalto: true, twist: { base: "front", twist: 2, posture: "layout" } },
+  { id: "d_back2twist", name: "後方宙返り2回ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, twist: { base: "back", twist: 2, posture: "tuck" } },
+  { id: "d_backlay25", name: "後方伸身宙返り2回半ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, twist: { base: "back", twist: 2.5, posture: "layout" } },
+  { id: "e_backlay3twist", name: "後方伸身宙返り3回ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, twist: { base: "back", twist: 3, posture: "layout" } },
+  { id: "e_backlay35twist", name: "後方伸身宙返り3回半ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, twist: { base: "back", twist: 3.5, posture: "layout" } },
   { id: "d_doubleback", name: "後方2回宙返り", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, isDoubleSalto: true },
   { id: "e_doublelay", name: "後方伸身2回宙返り", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
   { id: "e_divedouble", name: "ダイビングダブル", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
@@ -389,8 +391,96 @@ export const SKILL_LIST: Skill[] = [
   { id: "e_rudolph", name: "後方2回宙返り2回ひねり（ルドルフ）", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
 ];
 
+// ---- ひねり・姿勢で組み立てる宙返り（§3.6.2 の表を素直に表現する） ----
+
+/** ひねり回数の選択肢（0.5 が半ひねり） */
+export const TWIST_OPTIONS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
+/** 姿勢の選択肢 */
+export const POSTURE_OPTIONS: { id: Posture; name: string }[] = [
+  { id: "tuck", name: "抱え込み" },
+  { id: "pike", name: "屈伸" },
+  { id: "layout", name: "伸身" },
+];
+/** 前方系・後方系のどちらを組み立てるか */
+export const TWIST_BASES: { id: TwistParams["base"]; name: string; category: string }[] = [
+  { id: "back", name: "後方宙返り", category: CATEGORY.BACKWARD },
+  { id: "front", name: "前宙", category: CATEGORY.FORWARD },
+];
+
+/** 組み立てた宙返りのidの接頭辞（SKILL_LIST に無い組み合わせだけこの形式になる） */
+export const TWIST_ID_PREFIX = "tw:";
+
+export const twistLabel = (twist: number): string => {
+  if (twist === 0) return "なし";
+  if (twist === 0.5) return "半ひねり";
+  const full = Math.floor(twist);
+  return `${full}回${twist % 1 ? "半" : ""}ひねり`;
+};
+
+/**
+ * ひねり回数と姿勢から基礎難度を求める（§3.6.2）。
+ * 後方系は姿勢によらずひねり回数だけで決まる（#7・#12〜#17）。
+ * 前方系は伸身が1段階上（#7/#8/#11/#12〜#14）。
+ */
+export function twistDifficulty({ base, twist, posture }: TwistParams): Difficulty {
+  const steps = [DIFF_VALUE.B, DIFF_VALUE.B, DIFF_VALUE.C, DIFF_VALUE.C, DIFF_VALUE.D, DIFF_VALUE.D, DIFF_VALUE.E];
+  const i = Math.min(Math.max(Math.round(twist * 2), 0), steps.length - 1);
+  let v = steps[i];
+  if (base === "front" && posture === "layout") v += 1;
+  return VALUE_DIFF[Math.min(v, MAX_DIFF)];
+}
+
+/** 組み立てた宙返りの名前（例：後方伸身宙返り1回半ひねり／伸身前宙1回ひねり） */
+export function twistName({ base, twist, posture }: TwistParams): string {
+  const tw = twist === 0 ? "" : twistLabel(twist);
+  if (base === "back") {
+    const body = posture === "pike" ? "後方屈伸宙返り" : posture === "layout" ? "後方伸身宙返り" : "後方宙返り";
+    return body + tw;
+  }
+  const body = posture === "pike" ? "屈伸前宙" : posture === "layout" ? "伸身前宙" : "前宙";
+  return body + tw;
+}
+
+const sameTwist = (a: TwistParams, b: TwistParams) =>
+  a.base === b.base && a.twist === b.twist && a.posture === b.posture;
+
+/**
+ * ひねり・姿勢から技idを作る。`SKILL_LIST` に同じ内容の技があればそのidを返し、
+ * 無い組み合わせのときだけ `tw:` 形式の合成idにする（重複判定が食い違わないように）。
+ */
+export function buildTwistSkillId(params: TwistParams): string {
+  const known = SKILL_LIST.find((sk) => sk.twist && sameTwist(sk.twist, params));
+  if (known) return known.id;
+  return `${TWIST_ID_PREFIX}${params.base}:${params.twist}:${params.posture}`;
+}
+
+/** 技idをひねり・姿勢に戻す（組み立てで表せない技は null） */
+export function parseTwistSkillId(id: string): TwistParams | null {
+  if (id.startsWith(TWIST_ID_PREFIX)) {
+    const [base, twist, posture] = id.slice(TWIST_ID_PREFIX.length).split(":");
+    const t = Number(twist);
+    if ((base === "back" || base === "front") && Number.isFinite(t) && POSTURE_OPTIONS.some((p) => p.id === posture)) {
+      return { base, twist: t, posture: posture as Posture };
+    }
+    return null;
+  }
+  return SKILL_LIST.find((x) => x.id === id)?.twist ?? null;
+}
+
 export function skillDef(id: string): Skill | undefined {
-  return SKILL_LIST.find((x) => x.id === id);
+  const found = SKILL_LIST.find((x) => x.id === id);
+  if (found) return found;
+  // SKILL_LIST に無いひねりの組み合わせは、その場で技として組み立てる
+  const params = id.startsWith(TWIST_ID_PREFIX) ? parseTwistSkillId(id) : null;
+  if (!params) return undefined;
+  return {
+    id,
+    name: twistName(params),
+    category: params.base === "back" ? CATEGORY.BACKWARD : CATEGORY.FORWARD,
+    difficulty: twistDifficulty(params),
+    isSalto: true,
+    twist: params,
+  };
 }
 
 /** 適用規則で実施できる技か。ジュニアは2回宙返り系が禁止（§10 変更規則1）。 */
@@ -398,17 +488,90 @@ export function skillAllowed(id: string, junior = false): boolean {
   return !(junior && skillDef(id)?.isDoubleSalto);
 }
 
-/** 適用規則に応じたタンブリング技の選択肢 */
-export function skillOptions(junior = false): Skill[] {
-  return SKILL_LIST.filter((s) => skillAllowed(s.id, junior));
+/** ロンダートの技id（後方の宙返りに入るときに自動で補う） */
+export const ROUNDOFF_SKILL_ID = "a_roundoff";
+
+/** 後方に入る転回（ロンダート・バク転）。この直後は後方系を続けて実施する。 */
+export const BACKWARD_ENTRY_SKILLS: string[] = [ROUNDOFF_SKILL_ID, "a_flicflac"];
+
+/** 後方系の宙返りか（ロンダート等の後でしか実施できない技） */
+export function isBackwardSalto(id: string): boolean {
+  const s = skillDef(id);
+  return !!s && !!s.isSalto && s.category === CATEGORY.BACKWARD;
+}
+
+/**
+ * 後方の宙返りでも前向きに降りる技（続けて後方系に入るにはロンダートを挟む）。
+ * 半ひねり系（n回半ひねり）は `twist` から判定するので、ここに挙げるのは
+ * ひねりで表せないものだけ。
+ * テンポひねり（テンポ宙返りで1回ひねり）は整数ひねりで後ろ向きに降りるので入れない。
+ */
+export const FORWARD_LANDING_BACK_SALTOS: string[] = ["b_divefront"];
+
+/** 後方系か（バク転・後方の宙返り） */
+export function isBackwardSkill(id: string): boolean {
+  return skillDef(id)?.category === CATEGORY.BACKWARD;
+}
+
+/**
+ * その技の直後に、そのまま後方系へ入れるか（後ろ向きのまま降りるか）。
+ *  - ロンダート・バク転・ひねりなし／整数ひねりの後方宙返り → そのまま続けられる
+ *  - 前方系、n回半ひねり、ダイビング前宙 → 前向きに降りるのでロンダートを挟む
+ */
+export function leadsBackward(prevSkillId: string | undefined): boolean {
+  if (!prevSkillId) return false;
+  if (BACKWARD_ENTRY_SKILLS.includes(prevSkillId)) return true;
+  if (!isBackwardSalto(prevSkillId)) return false;
+  if (FORWARD_LANDING_BACK_SALTOS.includes(prevSkillId)) return false;
+  const p = parseTwistSkillId(prevSkillId);
+  return !p || p.twist % 1 === 0;
+}
+
+/** その位置で選べる系統 */
+export interface SkillFlow {
+  /** 後方系の宙返りを選べるか */
+  backward: boolean;
+  /** 前方系を選べるか */
+  forward: boolean;
+}
+
+/** 制限なし（テストや位置が分からない場合の既定） */
+export const ANY_SKILL_FLOW: SkillFlow = { backward: true, forward: true };
+
+/**
+ * 直前の技から、その位置で選べる系統を決める。
+ *  - 後方系はどこでも選べる。そのまま入れない位置（シリーズの頭、前方系や
+ *    半ひねり系の後）で選んだときは、手前にロンダートを補う（needsRoundoffBefore）
+ *  - ロンダート・バク転など後ろ向きに入った後に前方系を実施することはないので、
+ *    そこでだけ前方系を出さない
+ */
+export function skillFlowAfter(prevSkillId: string | undefined): SkillFlow {
+  return { backward: true, forward: !leadsBackward(prevSkillId) };
+}
+
+/**
+ * 適用規則に応じたタンブリング技の選択肢。
+ * `flow` を渡すと、その位置で実施しない系統（ロンダート前の後方宙返り、
+ * ロンダート後の前方系）を選択肢から外す。
+ */
+export function skillOptions(junior = false, flow: SkillFlow = ANY_SKILL_FLOW): Skill[] {
+  return SKILL_LIST.filter((s) => {
+    if (!skillAllowed(s.id, junior)) return false;
+    if (!flow.backward && isBackwardSalto(s.id)) return false;
+    if (!flow.forward && s.category === CATEGORY.FORWARD) return false;
+    return true;
+  });
 }
 
 /** タンブリング技のプルダウンをまとめる系統の表示順 */
 export const SKILL_CATEGORY_ORDER: string[] = [CATEGORY.FORWARD, CATEGORY.SIDE, CATEGORY.BACKWARD, CATEGORY.OTHER];
 
 /** タンブリング技の選択肢を系統（前方系・側方系・後方系）ごとにまとめる。空の系統は返さない。 */
-export function skillOptionGroups(junior = false): { name: string; skills: Skill[] }[] {
-  const opts = skillOptions(junior);
+export function skillOptionGroups(
+  junior = false,
+  flow: SkillFlow = ANY_SKILL_FLOW,
+): { name: string; skills: Skill[] }[] {
+  const opts = skillOptions(junior, flow);
   const groups = SKILL_CATEGORY_ORDER.map((name) => ({ name, skills: opts.filter((s) => s.category === name) }));
   // 表示順に無いカテゴリが増えても落とさない
   const rest = opts.filter((s) => !SKILL_CATEGORY_ORDER.includes(s.category));
@@ -506,6 +669,9 @@ export function skillDifficulty(id: string, junior = false): Difficulty | undefi
   if (junior) {
     const j = JUNIOR_SKILL_DIFFICULTY[id];
     if (j) return j;
+    // 組み立てた後方宙返り半ひねりも同じ認定（§10 変更規則1-4：伸身を含む）
+    const p = parseTwistSkillId(id);
+    if (p && p.base === "back" && p.twist === 0.5) return "C";
   }
   return skillDef(id)?.difficulty;
 }

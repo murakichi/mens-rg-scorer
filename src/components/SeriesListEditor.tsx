@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
 import { SeriesCard } from "./SeriesCard";
+import { needsRoundoffBefore, roundoffItem } from "../scoring/analysis";
 import { computeScore } from "../scoring/score";
 import type { ApparatusKey, Item, Series } from "../scoring/types";
 
@@ -84,7 +85,10 @@ export function SeriesListEditor({
     });
   const updateItem = (sIdx: number, iIdx: number, patch: Partial<Item>) =>
     edit((n) => {
-      n[sIdx].items[iIdx] = { ...n[sIdx].items[iIdx], ...patch } as Item;
+      const items = n[sIdx].items;
+      items[iIdx] = { ...items[iIdx], ...patch } as Item;
+      // 何もないところでいきなり後方の宙返りを選んだら、手前にロンダートを補う
+      if (needsRoundoffBefore(items, iIdx)) items.splice(iIdx, 0, roundoffItem());
     });
   /** 技を隣の技と入れ替える（両端では何もしない） */
   const moveItem = (sIdx: number, iIdx: number, dir: -1 | 1) =>

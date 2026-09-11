@@ -46,8 +46,48 @@
 | ロープ跳びの難度表 | `ROPE_JUMPS` | `constants.ts` |
 | 徒手系難度表（§3.6.1 跳躍・バランス・倒立・柔軟） | `HAND_ELEMENTS` / `HAND_ELEMENT_GROUPS` | `constants.ts` |
 
+### タンブリング技の入力パターン
+
+技は**一覧から選ぶ**ほかに、**ひねり回数と姿勢で組み立てる**こともできる（シリーズカードの技ブロックの
+「ひねり／一覧」ボタンで切り替え。選んだパターンは `localStorage` に覚える）。
+
+- 選択肢：`TWIST_BASES`（後方宙返り／前宙）× `POSTURE_OPTIONS`（抱え込み・屈伸・伸身）×
+  `TWIST_OPTIONS`（なし〜3回半ひねり、0.5刻み）
+- 難度は §3.6.2 の表どおり `twistDifficulty()` で決める
+  - **後方系は姿勢によらずひねり回数だけ**：0・半＝B／1回・1回半＝C／2回・2回半＝D／3回以上＝E（#7・#12〜#17）
+  - **前方系は伸身が1段階上**：かかえ込み・屈身は後方系と同じ表、伸身は 0＝C／1回・1回半＝D／2回以上＝E（#8・#11〜#14）
+- idは `buildTwistSkillId()` が組み立てる。**`SKILL_LIST` に同じ内容の技があればそのidを返す**ので、
+  一覧から選んでもひねり指定で選んでも同じidになり、重複判定（§3.4.4）が食い違わない。
+  一覧に無い組み合わせ（前方伸身宙返り、後方屈伸宙返り半ひねりなど）だけ `tw:<base>:<twist>:<posture>` の
+  合成idになり、`skillDef()` が `twistName()` / `twistDifficulty()` から技として解決する
+- 既存idからは `parseTwistSkillId()` でひねり・姿勢に戻せる（`Skill.twist`）。組み立てで表せない技
+  （側宙・テンポ・きりもみ・2回宙返り系など）は `null`
+- ジュニアの難度認定は合成idにも効く（後方宙返り半ひねりは姿勢を問わずC）
+
+入力パターンは**技ブロックごと**に持つ（1つを切り替えても他の技は一覧のまま）。既定は中身で決まり、
+一覧に無い合成idはひねり指定、まだ技を選んでいないブロックは前回選んだパターン、
+すでに技が入っているブロックは一覧。ボタンで切り替えたブロックだけが例外になる。
+
+### 実施できる向き（選択肢の絞り込みとロンダートの自動挿入）
+
+立った状態からいきなり実施できる宙返りは前方系と側宙だけで、後方系はロンダート・バク転から入る。
+入力を楽にするため、**選択肢は隠さずロンダートを自動で挟む**方向で実装している（採点には影響しない、入力補助）。
+
+- `leadsBackward(prevSkillId)` … その技の直後にそのまま後方系へ入れるか。ロンダート・バク転
+  （`BACKWARD_ENTRY_SKILLS`）と、**後ろ向きに降りる**後方宙返り（ひねりなし／整数ひねり）が true。
+  n回半ひねり（`twist` の小数部が0.5）とダイビング前宙（`FORWARD_LANDING_BACK_SALTOS`）は前向きに降りるので false
+- `needsRoundoffBefore(items, iIdx)`（`analysis.ts`） … 後方系を選んだ位置が上の条件を満たさないとき true。
+  `SeriesListEditor` の `updateItem` がこれを見て手前に `roundoffItem()` を挿し込む。
+  何も無いところでの**立ちバク転はそのまま**（宙返りのときだけ補う）
+- `skillFlowAfter(prevSkillId)` → `SkillFlow` … 後方系はどこでも選べる（`backward: true`）。
+  ロンダート・バク転など後ろ向きに入った直後だけ**前方系を選択肢から外す**。
+  `skillOptions(junior, flow)` / `skillOptionGroups(junior, flow)` が絞り込みを行い、
+  既に入っている技が選択肢から外れるときは選択値として残す（ジュニア禁止の技と同じ扱い）
+- ひねり指定のベース（後方宙返り／前宙）も同じ `flow` で絞る
+- 団体モードは同じ `skillFlowAfter` で前方系だけ絞る（グリッドなのでロンダートの自動挿入はしない）
+
 UIのプルダウンは見出し（`optgroup`）で分類する。タンブリング技は**前方系・側方系・後方系**
-（`skillOptionGroups(junior)`、系統の順は `SKILL_CATEGORY_ORDER`）、徒手動作は
+（`skillOptionGroups(junior, flow)`、系統の順は `SKILL_CATEGORY_ORDER`）、徒手動作は
 **縦回転・横回転**（`motionOptionGroupsFor(prevMotionId)`、`MOTION_AXIS_GROUPS`）。徒手扱いの
 転回技はすべて縦の一回転なので縦回転側に入る（`motionDef()` の扱いと同じ）。群の中の並び順は
 それぞれ `SKILL_LIST` / `motionOptionsFor()` の優先順を保つ。

@@ -9,6 +9,7 @@ import {
   skillDef,
   skillDifficulty,
   skillOptionGroups,
+  skillFlowAfter,
 } from "../scoring/constants";
 import {
   computeTeamScore,
@@ -467,6 +468,14 @@ export function TeamScorer({ initialData }: Props = {}) {
                           ? (pick!.kind === "cross" ? ser.crossGroups : ser.unionGroups).find((g) => g.id === pick!.gid)
                           : undefined;
                         const inActiveGroup = activeGroup?.cells.some((c) => c.lane === laneIdx && c.slot === slot);
+                        // 後方の宙返りはロンダート・バク転の直後だけ、その後に前方系は出さない
+                        // （隣のスロットが直前の技）
+                        const prev = slot > 0 ? lane[slot - 1] : undefined;
+                        const skillGroups = skillOptionGroups(
+                          junior,
+                          skillFlowAfter(prev?.type === "skill" ? prev.skillId : undefined),
+                        );
+                        const skillListed = skillGroups.some((g) => g.skills.some((sk) => sk.id === cell.skillId));
                         return (
                           <td
                             key={slot}
@@ -504,14 +513,15 @@ export function TeamScorer({ initialData }: Props = {}) {
                                   onChange={(e) => updateCell(sIdx, laneIdx, slot, { skillId: e.target.value })}
                                 >
                                   <option value="">技</option>
-                                  {/* ジュニアで禁止の技（2回宙返り系）が既に選ばれている場合は印を付けて残す */}
-                                  {cell.skillId && !skillAllowed(cell.skillId, junior) && (
+                                  {/* 選択肢に無い技が入っている場合は、消さずに選択値として残す */}
+                                  {cell.skillId && !skillListed && (
                                     <option value={cell.skillId}>
-                                      {skillDef(cell.skillId)?.name}（ジュニア禁止）
+                                      {skillDef(cell.skillId)?.name}
+                                      {skillAllowed(cell.skillId, junior) ? "" : "（ジュニア禁止）"}
                                     </option>
                                   )}
                                   {/* 前方系・側方系・後方系に分けて表示 */}
-                                  {skillOptionGroups(junior).map((g) => (
+                                  {skillGroups.map((g) => (
                                     <optgroup key={g.name} label={g.name}>
                                       {g.skills.map((sk) => (
                                         <option key={sk.id} value={sk.id}>
