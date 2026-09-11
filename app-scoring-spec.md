@@ -480,13 +480,14 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 
 技そのものではなく**組み合わせ**を自動化する。並びの正しさは**入力画面と同じ制約**で決める。
 
-- **制約**（`tumblingFlowErrors` で検算できる）
+- **制約**（`tumblingFlowErrors` で検算できる。判定は入力画面のプルダウンと同じ
+  `skillOptions(junior, skillFlowAfter(prev))` を使うので、系統の絞り込みが変わっても追随する）
   - 後方系はロンダート・バク転から入るか、後ろ向きに降りる宙返りに続けてのみ実施
     （`needsRoundoffBefore`。足りなければ入力画面と同じようにロンダートを補う）
   - ロンダート・バク転の直後は後方系だけ（`skillFlowAfter`）
   - 宙返りを続けられるのは同じ向きで降りる技だけ（`canChainAfter` ＝ `leadsBackward`）。
     半ひねりで向きが変わる技は連続の最後にだけ使う
-  - ジュニアは2回宙返り系を実施しない（`skillAllowed`）
+  - ジュニアは2回宙返り系を実施しない（`skillOptions` の選択肢に出ない）
 - **形**（`AUTO_TUMBLING_PATTERNS`）：後方系・前方系の連続（1〜3本。3本で三宙）、
   つなぎ技入り（宙返りの間にバク転・ハンドスプリング等）、側方系、投げ受け（投げタン）
 - **使う技は登録テンプレートに出てくる技だけ**（`usedSkillIds` → `skillIds`）。

@@ -7,7 +7,7 @@
 //    実施できない（`needsRoundoffBefore`。足りなければロンダートを補う）
 //  - ロンダート・バク転の直後は後方系しか実施できない（`skillFlowAfter`）
 //  - 宙返りを続けるには、前の宙返りが同じ向きで降りていること（`leadsBackward`）
-//  - ジュニアは2回宙返り系を実施しない（`skillAllowed`）
+//  - ジュニアは2回宙返り系を実施しない（`skillOptions` の選択肢に出ない）
 // 組み立てたシリーズは `tumblingFlowErrors` で上の制約を満たすか検算できる。
 // =====================================================================
 
@@ -15,9 +15,9 @@ import {
   CATEGORY,
   ROUNDOFF_SKILL_ID,
   leadsBackward,
-  skillAllowed,
   skillDef,
   skillFlowAfter,
+  skillOptions,
 } from "./constants";
 import { needsRoundoffBefore, prevSkillId } from "./analysis";
 import { newTemplateId, type SeriesTemplate } from "./templates";
@@ -99,7 +99,9 @@ export function canChainAfter(skillId: string, category: string): boolean {
 
 /** その形・その適用規則で使える宙返り（`last` は連続の最後に置く技か） */
 export function saltoOptions(pattern: AutoTumblingPattern, junior: boolean, last: boolean): string[] {
-  const list = (TUMBLING_SALTOS[pattern.category] ?? []).filter((id) => skillAllowed(id, junior));
+  // 入力画面の選択肢に出る技だけを使う（ジュニアの2回宙返り系などはここで落ちる）
+  const offered = new Set(skillOptions(junior).map((s) => s.id));
+  const list = (TUMBLING_SALTOS[pattern.category] ?? []).filter((id) => offered.has(id));
   // つなぎ技を挟む場合も、つなぎ技のあとは同じ系統に入り直すので向きの条件は同じ
   return last ? list : list.filter((id) => canChainAfter(id, pattern.category));
 }
@@ -145,24 +147,22 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec): Series {
 
 /**
  * 入力画面の制約に反する並びを挙げる（空なら入力画面でもそのまま入力できる）。
- *  - ロンダート・バク転の直後は後方系だけ（`skillFlowAfter`）
+ * 判定は入力画面のプルダウンと同じ関数で行う（系統の絞り込みが変わっても追随する）。
+ *  - その位置の選択肢に出る技か（`skillOptions(junior, skillFlowAfter(prev))`。
+ *    ロンダート・バク転の直後は後方系だけ、ジュニアは2回宙返り系なし）
  *  - 後方系はロンダートを補わずに実施できる位置にあること（`needsRoundoffBefore`）
- *  - ジュニアで実施しない技を使っていないこと（`skillAllowed`）
  */
 export function tumblingFlowErrors(series: Series, junior = false): string[] {
   const errors: string[] = [];
   series.items.forEach((item, i) => {
     if (item.kind !== "skill" || !item.skillId) return;
-    const def = skillDef(item.skillId);
-    const name = def?.name ?? item.skillId;
-    if (!skillAllowed(item.skillId, junior)) errors.push(`${i + 1}番目の${name}：ジュニアでは実施しない技`);
+    const name = skillDef(item.skillId)?.name ?? item.skillId;
     if (needsRoundoffBefore(series.items, i)) errors.push(`${i + 1}番目の${name}：手前にロンダートが必要`);
     const prev = prevSkillId(series.items, i);
-    const flow = skillFlowAfter(prev);
-    const category = def?.category;
-    const ok =
-      category === CATEGORY.BACKWARD ? flow.backward : category === CATEGORY.SIDE ? flow.side : flow.forward;
-    if (!ok) errors.push(`${i + 1}番目の${name}：${skillDef(prev ?? "")?.name}の直後には実施しない系統`);
+    if (!skillOptions(junior, skillFlowAfter(prev)).some((s) => s.id === item.skillId)) {
+      const prevName = prev ? skillDef(prev)?.name ?? prev : "先頭";
+      errors.push(`${i + 1}番目の${name}：${prevName}の位置では選べない技`);
+    }
   });
   return errors;
 }

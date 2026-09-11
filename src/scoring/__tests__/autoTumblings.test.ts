@@ -14,8 +14,8 @@ import {
   withSaltoCount,
   type AutoTumblingSpec,
 } from "../autoTumblings";
-import { analyzeSeries, hasConnect, maxSaltoChain } from "../analysis";
-import { CATEGORY, ROUNDOFF_SKILL_ID, skillDef } from "../constants";
+import { analyzeSeries, hasConnect, maxSaltoChain, prevSkillId } from "../analysis";
+import { CATEGORY, ROUNDOFF_SKILL_ID, skillDef, skillFlowAfter, skillOptions } from "../constants";
 import { DEFAULT_MAX_AUTO_TUMBLINGS, generateRoutine } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
@@ -94,6 +94,20 @@ describe("入力画面の制約", () => {
     });
   });
 
+  it("どの技も入力画面のプルダウンに出る（その位置の選択肢に含まれる）", () => {
+    [false, true].forEach((junior) => {
+      [3, 7, 11].forEach((seed) => {
+        autoTumblingTemplates("stick", { junior, random: seeded(seed) }).forEach((t) => {
+          t.series.items.forEach((item, i) => {
+            if (item.kind !== "skill") return;
+            const options = skillOptions(junior, skillFlowAfter(prevSkillId(t.series.items, i)));
+            expect(options.map((s) => s.id)).toContain(item.skillId);
+          });
+        });
+      });
+    });
+  });
+
   it("ジュニアは2回宙返り系を使わない", () => {
     autoTumblingTemplates("stick", { junior: true, random: seeded(5) }).forEach((t) =>
       t.series.items.forEach((item) => {
@@ -105,7 +119,11 @@ describe("入力画面の制約", () => {
   it("制約に反する並びは検出できる", () => {
     // ロンダート無しでいきなり後方宙返り／バク転の直後に前方系
     expect(tumblingFlowErrors(S(skill("b_backsalto")))).toHaveLength(1);
+    // バク転の直後は後方系だけ（`skillFlowAfter`）なので前宙は選べない
     expect(tumblingFlowErrors(S(skill("a_flicflac"), skill("b_front")))).toHaveLength(1);
+    // ジュニアで実施しない技も選択肢に出ない
+    expect(tumblingFlowErrors(S(skill("a_roundoff"), skill("d_doubleback")), true)).toHaveLength(1);
+    expect(tumblingFlowErrors(S(skill("a_roundoff"), skill("d_doubleback")), false)).toEqual([]);
     expect(tumblingFlowErrors(S(skill("a_roundoff"), skill("b_backsalto")))).toEqual([]);
   });
 });
