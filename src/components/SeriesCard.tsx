@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
@@ -105,6 +105,8 @@ interface Props {
   onAddItem: (kind: ItemKind) => void;
   onUpdateItem: (iIdx: number, patch: Partial<Item>) => void;
   onRemoveItem: (iIdx: number) => void;
+  /** 技を隣の技と入れ替える（dir: -1 で前、+1 で後ろ） */
+  onMoveItem: (iIdx: number, dir: -1 | 1) => void;
   onRemoveSeries: () => void;
 }
 
@@ -482,6 +484,7 @@ export function SeriesCard({
   onAddItem,
   onUpdateItem,
   onRemoveItem,
+  onMoveItem,
   onRemoveSeries,
 }: Props) {
   const seriesQualifies = a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus);
@@ -512,6 +515,19 @@ export function SeriesCard({
   const removeItemAt = (iIdx: number) => {
     shiftTwistModes(iIdx, -1);
     onRemoveItem(iIdx);
+  };
+  // 技を入れ替えたら、位置で覚えている入力パターンも一緒に入れ替える
+  const moveItemAt = (iIdx: number, dir: -1 | 1) => {
+    const j = iIdx + dir;
+    setTwistModes((m) => {
+      const next = { ...m };
+      if (m[j] === undefined) delete next[iIdx];
+      else next[iIdx] = m[j];
+      if (m[iIdx] === undefined) delete next[j];
+      else next[j] = m[iIdx];
+      return next;
+    });
+    onMoveItem(iIdx, dir);
   };
   // 手前にロンダートが補われる更新か（補われるとこのブロックは1つ後ろにずれる）
   const updateItemAt = (iIdx: number, patch: Partial<Item>) => {
@@ -620,9 +636,30 @@ export function SeriesCard({
               prevMotionId={prevMotionId(ser.items, iIdx)}
               onUpdate={(patch) => updateItemAt(iIdx, patch)}
             />
-            <button className="remove-btn-xs" onClick={() => removeItemAt(iIdx)} aria-label="削除">
-              <X size={12} />
-            </button>
+            {/* 技の両端：隣の技と入れ替える矢印（中央は削除） */}
+            <div className="item-actions">
+              <button
+                className="move-btn"
+                onClick={() => moveItemAt(iIdx, -1)}
+                disabled={iIdx === 0}
+                aria-label="前の技と入れ替え"
+                title="前の技と入れ替え"
+              >
+                <ChevronLeft size={15} />
+              </button>
+              <button className="remove-btn-xs" onClick={() => removeItemAt(iIdx)} aria-label="削除">
+                <X size={12} />
+              </button>
+              <button
+                className="move-btn"
+                onClick={() => moveItemAt(iIdx, 1)}
+                disabled={iIdx === ser.items.length - 1}
+                aria-label="次の技と入れ替え"
+                title="次の技と入れ替え"
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
             {iIdx < ser.items.length - 1 && <div className="arrow">→</div>}
           </div>
         ))}
