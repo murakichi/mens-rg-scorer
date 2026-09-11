@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateRoutine, saltoRepeatCount, usableTemplates } from "../generate";
+import { analyzeSeries, seriesSignature } from "../analysis";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
 import type { ApparatusKey, Item, Series } from "../types";
@@ -158,6 +159,37 @@ describe("ランダム生成", () => {
   });
 });
 
+
+describe("並び順", () => {
+  /** 転回系（宙返り・投げタン）を含むシリーズか */
+  const isTum = (ser: Series) =>
+    analyzeSeries(ser).units.some((u) => u.type === "tumbling" || u.isThrowTumbling);
+  const kinds = (list: Series[]) => list.map((s) => (isTum(s) ? "T" : "H")).join("");
+
+  it("投げとタンブリングが交互に並ぶ（投げが続かない）", () => {
+    [3, 7, 11, 19, 23].forEach((seed) => {
+      const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
+      expect(kinds(r.series)).not.toMatch(/HH/);
+    });
+  });
+
+  it("並べ替えても返す点数は実際の採点と一致する（ジュニアも）", () => {
+    [false, true].forEach((junior) => {
+      [5, 13, 29].forEach((seed) => {
+        const r = generateRoutine(pool(), { apparatus: "stick", junior, random: seeded(seed) })!;
+        const score = computeScore(r.series, "stick", { junior });
+        expect(score.dScore).toBeCloseTo(r.dScore, 5);
+        expect(score.aScore).toBeCloseTo(r.aScore, 5);
+      });
+    });
+  });
+
+  it("使ったテンプレートの並びは生成結果と対応している", () => {
+    const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(7) })!;
+    expect(r.used).toHaveLength(r.series.length);
+    r.used.forEach((t, i) => expect(seriesSignature(t.series)).toBe(seriesSignature(r.series[i])));
+  });
+});
 
 describe("宙返りの多様性", () => {
   it("同じ宙返りの2回目以降を数える（前宙は数えない）", () => {

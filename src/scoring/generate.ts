@@ -13,9 +13,11 @@
 //    あくまで候補なので、評価が上がらなければ使われない
 //  - 自動生成の投げはシェネの回数を調整できる。Dスコアの範囲を指定したときに
 //    シリーズを丸ごと落とさず「回数を減らして収める」（下限なら増やす）を選べる
+//  - 投げとタンブリングは交互に並べる（実際の演技の構成に合わせる。点数には影響しない）
 //  - 同じ宙返りの繰り返しは避ける（前宙は例外）。必須ではないので弱い重み付けにとどめる
 // =====================================================================
 
+import { analyzeSeries } from "./analysis";
 import { autoThrowTemplates, cheneCountRange, isAutoThrowTemplate, withCheneCount } from "./autoThrows";
 import { computeScore } from "./score";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
@@ -188,6 +190,47 @@ function tuneAutoThrows(
   return { used: list, ev };
 }
 
+/** 転回系（宙返り・投げタン）を含むシリーズか。並べ替えの区分に使う。 */
+function isTumblingSeries(series: Series, junior: boolean): boolean {
+  return analyzeSeries(series, junior).units.some((u) => u.type === "tumbling" || u.isThrowTumbling);
+}
+
+/** 多いほうの並びに、少ないほうを均等に挟み込む */
+function interleave<T>(many: T[], few: T[]): T[] {
+  const out: T[] = [];
+  let k = 0;
+  many.forEach((item, i) => {
+    out.push(item);
+    // i番目まで来たら、少ないほうを「ここまでに入れておきたい数」まで入れる
+    const want = Math.ceil(((i + 1) * few.length) / many.length);
+    while (k < want && k < few.length) out.push(few[k++]);
+  });
+  while (k < few.length) out.push(few[k++]);
+  return out;
+}
+
+/**
+ * 投げ（徒手系）とタンブリングが交互になるように並べ替える。
+ * 貪欲法は評価が上がった順に足すだけなので、そのままだと投げが先頭に固まる。
+ * 実際の演技は投げとタンブリングを交互に構成するので、採点画面にそのまま
+ * 持っていける並びにする。並びで点数は変わらないが、ジュニアの投げ上限は
+ * 前から数えるので、評価が下がる並びになったときは元の順のままにする。
+ */
+function orderSeries(
+  used: SeriesTemplate[],
+  cur: Evaluation,
+  opts: GenerateOptions,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  const junior = !!opts.junior;
+  const tumbling = used.filter((t) => isTumblingSeries(t.series, junior));
+  const throws = used.filter((t) => !isTumblingSeries(t.series, junior));
+  if (tumbling.length === 0 || throws.length === 0) return { used, ev: cur };
+  const ordered =
+    tumbling.length >= throws.length ? interleave(tumbling, throws) : interleave(throws, tumbling);
+  const ev = evaluate(seriesOf(ordered), opts);
+  return ev.value >= cur.value - 1e-9 ? { used: ordered, ev } : { used, ev: cur };
+}
+
 /**
  * ランダムな貪欲法を何度も試して、いちばん評価の高い構成を返す。
  * 使えるテンプレートが無ければ null。
@@ -243,6 +286,11 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
         }
       }
     }
+
+    // ④ 投げとタンブリングを交互に並べる
+    const ordered = orderSeries(used, cur, opts);
+    used = ordered.used;
+    cur = ordered.ev;
 
     if (!best || cur.value > best.ev.value + 1e-9) best = { used, ev: cur };
   }
