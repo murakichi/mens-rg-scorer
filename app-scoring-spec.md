@@ -72,18 +72,32 @@
 立った状態からいきなり実施できる宙返りは前方系と側宙だけで、後方系はロンダート・バク転から入る。
 入力を楽にするため、**選択肢は隠さずロンダートを自動で挟む**方向で実装している（採点には影響しない、入力補助）。
 
-- `leadsBackward(prevSkillId)` … その技の直後にそのまま後方系へ入れるか。ロンダート・バク転
-  （`BACKWARD_ENTRY_SKILLS`）と、**後ろ向きに降りる**後方宙返り（ひねりなし／整数ひねり）が true。
-  n回半ひねり（`twist` の小数部が0.5）とダイビング前宙（`FORWARD_LANDING_BACK_SALTOS`）は前向きに降りるので false
-- `needsRoundoffBefore(items, iIdx)`（`analysis.ts`） … 後方系を選んだ位置が上の条件を満たさないとき true。
-  `SeriesListEditor` の `updateItem` がこれを見て手前に `roundoffItem()` を挿し込む。
-  何も無いところでの**立ちバク転はそのまま**（宙返りのときだけ補う）
-- `skillFlowAfter(prevSkillId)` → `SkillFlow` … 後方系はどこでも選べる（`backward: true`）。
-  ロンダート・バク転など後ろ向きに入った直後だけ**前方系を選択肢から外す**。
+- `leadsBackward(prevSkillId)` … その技が**進行方向に対して後ろ向きで終わる**か。
+  - ロンダート・バク転（`BACKWARD_ENTRY_SKILLS`）→ true
+  - 後方の宙返り → ひねりなし／整数ひねりは true。n回半ひねり（`twist` の小数部が0.5）と
+    ダイビング前宙（`FORWARD_LANDING_BACK_SALTOS`）は前向きで終わるので false
+  - **前方の宙返り → n回半ひねりだけ true**（前方で半ひねりすると後ろ向きで終わるので、
+    ロンダートを挟まずそのまま後方系に入れる）
+  - 側転・側宙・ハンドスプリングなど → false
+- `skillFlowAfter(prevSkillId)` → `SkillFlow`（`backward` / `forward` / `side`） …
+  **ロンダート・バク転からは後方系しか選べない**。それ以外の位置は全部選べる
+  （宙返りの後に前方系へ戻るのは実用的ではないが可能）。
   `skillOptions(junior, flow)` / `skillOptionGroups(junior, flow)` が絞り込みを行い、
   既に入っている技が選択肢から外れるときは選択値として残す（ジュニア禁止の技と同じ扱い）
+
+  | 直前の技 | 後方系 | 前方系 |
+  | --- | --- | --- |
+  | ロンダート・バク転 | 可 | 不可（非表示） |
+  | 前方の半ひねり系 | 可 | 可（実用的ではない） |
+  | 前方の0〜整数ひねり | ロンダートを挟む | 可 |
+  | 後方の半ひねり系・ダイビング前宙 | ロンダートを挟む | 可 |
+  | 後方の0〜整数ひねり | 可 | 可 |
+
+- `needsRoundoffBefore(items, iIdx)`（`analysis.ts`） … 後方系を選んだ位置が `leadsBackward` を
+  満たさないとき true。`SeriesListEditor` の `updateItem` がこれを見て手前に `roundoffItem()` を挿し込む。
+  何も無いところでの**立ちバク転はそのまま**（宙返りのときだけ補う）
 - ひねり指定のベース（後方宙返り／前宙）も同じ `flow` で絞る
-- 団体モードは同じ `skillFlowAfter` で前方系だけ絞る（グリッドなのでロンダートの自動挿入はしない）
+- 団体モードは同じ `skillFlowAfter` で絞るだけ（グリッドなのでロンダートの自動挿入はしない）
 
 UIのプルダウンは見出し（`optgroup`）で分類する。タンブリング技は**前方系・側方系・後方系**
 （`skillOptionGroups(junior, flow)`、系統の順は `SKILL_CATEGORY_ORDER`）、徒手動作は
