@@ -48,35 +48,13 @@ const DEFAULT_TWIST: TwistParams = { base: "back", twist: 0, posture: "tuck" };
 /** ロンダート前など、後方の宙返りを選べない位置での初期値（前宙） */
 const DEFAULT_TWIST_FORWARD: TwistParams = { base: "front", twist: 0, posture: "tuck" };
 
-/** 入力パターン（一覧／ひねり指定）の記憶。新しく足した技ブロックの初期値として使う。 */
-const TWIST_MODE_KEY = "mens-rg-scorer:skillInputTwist:v1";
-const loadTwistMode = (): boolean => {
-  try {
-    return localStorage.getItem(TWIST_MODE_KEY) === "1";
-  } catch {
-    return false;
-  }
-};
-const saveTwistMode = (on: boolean) => {
-  try {
-    localStorage.setItem(TWIST_MODE_KEY, on ? "1" : "0");
-  } catch {
-    /* 保存できなくても動作に影響しない */
-  }
-};
-
 /**
- * 技ブロックの既定の入力パターン。ブロックごとに中身から決めるので、
- * 1つをひねり指定に切り替えても、すでに選んである他の技まで巻き込まれない。
- *  - 一覧に無いひねりの組み合わせ（合成id）はひねり指定でしか編集できないので、ひねり指定
- *  - まだ技を選んでいない空のブロックは、前回選んだ入力パターン
- *  - すでに技が入っているブロックは一覧（ボタンで切り替えたときだけひねり指定になる）
+ * 技ブロックの既定の入力パターン。既定は一覧で、ブロックごとに中身から決める。
+ * 一覧に無いひねりの組み合わせ（合成id）だけは一覧から編集できないので手動入力にする。
+ * ボタンで切り替えたブロックだけがそのブロック限りで手動入力になる。
  */
-const defaultTwistMode = (item: Item, pref: boolean): boolean => {
-  if (item.kind !== "skill") return false;
-  if (item.skillId.startsWith(TWIST_ID_PREFIX)) return true;
-  return pref && !item.skillId;
-};
+const defaultTwistMode = (item: Item): boolean =>
+  item.kind === "skill" && item.skillId.startsWith(TWIST_ID_PREFIX);
 
 interface Props {
   series: Series;
@@ -239,7 +217,7 @@ function ItemEditor({
           <button
             type="button"
             className="mode-btn"
-            title={twistMode ? "一覧から技を選ぶ" : "ひねり回数と姿勢で指定する"}
+            title={twistMode ? "一覧から技を選ぶ" : "ひねり回数と姿勢を指定して技を組み立てる"}
             onClick={() => {
               // ひねり指定に切り替えるとき、ひねりで表せない技（ロンダート等）だけ既定値に置き換える。
               // このブロックだけが切り替わり、他の技はそのまま。
@@ -247,7 +225,7 @@ function ItemEditor({
               onTwistModeChange(!twistMode);
             }}
           >
-            {twistMode ? "一覧" : "ひねり"}
+            {twistMode ? "一覧入力に切り替え" : "手動入力に切り替え"}
           </button>
         </div>
         {twistMode ? (
@@ -489,18 +467,11 @@ export function SeriesCard({
 }: Props) {
   const seriesQualifies = a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus);
   const flowErrors = checkApparatusFlow(ser, apparatus);
-  // タンブリング技の入力パターン（一覧／ひねり指定）。
-  // ボタンで切り替えたブロックだけを覚えておき（キーはアイテムの位置）、
-  // 他のブロックは中身から決める（defaultTwistMode）。最後に選んだパターンは
-  // 新しく足すブロックの初期値として端末に覚えておく。
-  const [twistPref, setTwistPref] = useState(loadTwistMode);
+  // タンブリング技の入力パターン（一覧／手動入力）。既定は一覧で、
+  // ボタンで切り替えたブロックだけを覚えておく（キーはアイテムの位置）。
   const [twistModes, setTwistModes] = useState<Record<number, boolean>>({});
-  const twistModeOf = (iIdx: number, item: Item) => twistModes[iIdx] ?? defaultTwistMode(item, twistPref);
-  const setTwistModeOf = (iIdx: number, on: boolean) => {
-    setTwistModes((m) => ({ ...m, [iIdx]: on }));
-    setTwistPref(on);
-    saveTwistMode(on);
-  };
+  const twistModeOf = (iIdx: number, item: Item) => twistModes[iIdx] ?? defaultTwistMode(item);
+  const setTwistModeOf = (iIdx: number, on: boolean) => setTwistModes((m) => ({ ...m, [iIdx]: on }));
   // アイテムが増減すると位置がずれるので、覚えている入力パターンも合わせてずらす
   const shiftTwistModes = (from: number, by: number) =>
     setTwistModes((m) => {
