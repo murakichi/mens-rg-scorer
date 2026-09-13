@@ -15,6 +15,8 @@ import {
   preferredThrowCount,
   throwCountPenalty,
   extraThrowOperation,
+  verticalThreeThrowCount,
+  VERTICAL_THREE_THROW_WEIGHT,
   shortfallPenalty,
   usableTemplates,
 } from "../generate";
@@ -552,4 +554,48 @@ describe("投げ上げの回数", () => {
     // 3本以下なら全部採用されるので0
     expect(extraThrowOperation(computeScore([cheneThrow(4), cheneThrow(3)], "stick"))).toBe(0);
   });
+});
+
+describe("前転3回（縦3動作）の投げ", () => {
+  const rolls = (catchTypes?: string[]): Series =>
+    S(
+      { kind: "throw" },
+      { kind: "motion", motionId: "fwd_roll", count: 3 },
+      { kind: "catch", ...(catchTypes ? { catchTypes } : {}) },
+    );
+
+  it("手具を使ったキャッチ以外の縦3動作の投げを数える", () => {
+    expect(verticalThreeThrowCount([rolls()])).toBe(1);
+    // 手具で押さえつけて受ける形は主流なので数えない
+    expect(verticalThreeThrowCount([rolls(["useapp"])])).toBe(0);
+    // 視野外・手以外は「それ以外の操作」なので数える
+    expect(verticalThreeThrowCount([rolls(["noview"])])).toBe(1);
+    // 横回転（シェネ）は縦3動作ではない
+    expect(
+      verticalThreeThrowCount([
+        S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4 }, { kind: "catch" }),
+      ]),
+    ).toBe(0);
+    // 前転2回では足りない
+    expect(
+      verticalThreeThrowCount([
+        S({ kind: "throw" }, { kind: "motion", motionId: "fwd_roll", count: 2 }, { kind: "catch" }),
+      ]),
+    ).toBe(0);
+  });
+
+  it("重みは難度点より大きい（Dスコアの範囲に必要なときだけ入る）", () => {
+    // 難度の刻み（0.1）より大きく、範囲外のペナルティ（×100）より小さい
+    expect(VERTICAL_THREE_THROW_WEIGHT).toBeGreaterThan(0.1);
+    expect(VERTICAL_THREE_THROW_WEIGHT).toBeLessThan(1);
+  });
+
+  it("基本的には構成に入らない", () => {
+    let count = 0;
+    [3, 7, 11, 13].forEach((seed) => {
+      const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
+      count += verticalThreeThrowCount(r.series);
+    });
+    expect(count).toBe(0);
+  }, 60_000);
 });
