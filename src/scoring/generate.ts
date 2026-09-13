@@ -4,7 +4,9 @@
 // 方針：
 //  - 使えるのは「指定した手具」と「共通」のシリーズテンプレート
 //  - 必須要素をできるだけ満たす（不足はA減点に出るので、D + A残点 を最大化すれば満たしにいく）。
-//    3点以上のDスコアを狙う構成では、必須要素を必ず満たす（REQUIRE_ALL_ELEMENTS_MIN_SCORE）
+//    3点以上のDスコアを狙う構成では、必須要素を必ず満たす（REQUIRE_ALL_ELEMENTS_MIN_SCORE）。
+//    全部は満たせないときに何から満たすかは A_PRIORITY の順（投げの回数＝必須投げ受け＞
+//    投げタン＞D難度＞多様な投げ受け＞つなぎ＞三宙＞つなぎの手具操作）
 //  - Dスコアの範囲を指定できる。指定がなければ最大を目指す
 //  - 評価されない要素は入れない（入れても評価が上がらないシリーズは最後に取り除く）
 //    例：4本目のタンブリング、ジュニアの6回目以降の投げ、まったく同じ内容の重複シリーズ
@@ -30,9 +32,9 @@ import {
   usedSkillIds,
   withSaltoCount,
 } from "./autoTumblings";
-import { computeScore } from "./score";
+import { computeScore, type ScoreResult } from "./score";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
-import { APPARATUS, skillDef } from "./constants";
+import { APPARATUS, APPARATUS_REQUIRED_ELEMENTS, skillDef } from "./constants";
 import type { ApparatusKey, Series } from "./types";
 
 export interface GenerateOptions {
@@ -121,6 +123,44 @@ export const BASIC_LEVEL_MAX_SCORE = 2.0;
 export const REQUIRE_ALL_ELEMENTS_MIN_SCORE = 3.0;
 
 /**
+ * A側の要求を満たす優先順位（現実の感覚）。大きいほど先に満たす。
+ *
+ *   投げの回数 ＝ 各手具の必須投げ・受け ＞ 投げタン ＞ **D難度** ＞ 多様な投げ受け
+ *   ＞ つなぎ ＞ 三宙 ＞ つなぎの手具操作
+ *
+ * D難度（難度点そのもの）は評価の `dScore` が担うので表には持たず、投げタンと多様性の間の
+ * 位置づけになる。表に無い要求（方向系・タンブリング本数）は `other` を使う。
+ * 規則どおりの減点額（投げ回数・投げタン・つなぎ 0.30／多様性 0.10〜0.50／三宙 0.10〜0.20／
+ * つなぎの手具操作 0.20）がすでにこの順序をおおむね表しているので、
+ * ここの重みは**同点のときにどちらを残すか**を決めるだけにとどめる。
+ */
+export const A_PRIORITY = {
+  /** 投げの回数（ジュニアの投げ超過も同じ扱い） */
+  throwCount: 7,
+  /** 各手具の必須投げ・受け（左投げ左受け・右投げ右受け・二つ投げ） */
+  apparatusThrow: 7,
+  /** 転回系の投げ受け（投げタン） */
+  throwTumbling: 6,
+  // D難度＝5 相当（`dScore` が担当）
+  /** 多様な投げ方・受け方 */
+  variety: 4,
+  /** つなぎ技 */
+  connect: 3,
+  /** 三宙（宙返り3回以上連続） */
+  triple: 2,
+  /** つなぎ技の手具操作 */
+  connectApparatus: 1,
+  /** 表に無い要求（方向系・タンブリング本数） */
+  other: 3,
+} as const;
+
+/**
+ * 優先順位1つあたりの評価の重み。
+ * 難度点の最小単位（0.1）より小さくして、順位は**同点のときのタイブレーク**にだけ効かせる。
+ */
+export const A_PRIORITY_WEIGHT = 0.01;
+
+/**
  * 必須要素を必ず満たす構成での、不足1つあたりの評価の重み。
  * 難度点（最大でも1本0.7）より十分大きく、Dスコアの範囲外ペナルティ（×100）よりは小さい。
  * 範囲に収めることを優先しつつ、その中では要求を満たす構成を選ぶ。
@@ -204,8 +244,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   const overThrowTum = Math.max(0, throwTumCount - maxThrowTum);
   // 同じ宙返りの繰り返しは弱く嫌う（同点のときに多様な構成が選ばれる程度）
   const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
-  // ある程度のDスコアを狙う構成では、必須要素の不足を強く嫌う
-  const shortfall = requiresAllElements(opts) ? r.missing.length * REQUIRED_ELEMENT_WEIGHT : 0;
+  // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
+  const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
   const auto = autoCount * AUTO_SERIES_WEIGHT;
   return {
@@ -214,6 +254,37 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),
   };
+}
+
+/**
+ * 満たせていないA側の要求に対する評価の引き算。
+ * `mandatory` なら1つにつき `REQUIRED_ELEMENT_WEIGHT`（必ず満たしにいく）、
+ * それに加えて優先順位ぶんの小さな重み（同点のときのタイブレーク）を足す。
+ * 手動チェックの手具別必須要素（ころがし等）とロープ跳びは生成では満たせないので数えない。
+ */
+export function shortfallPenalty(r: ScoreResult, apparatus: ApparatusKey, mandatory: boolean): number {
+  let total = 0;
+  const add = (unmet: boolean, priority: number) => {
+    if (unmet) total += (mandatory ? REQUIRED_ELEMENT_WEIGHT : 0) + priority * A_PRIORITY_WEIGHT;
+  };
+  const failed = (key: string) => r.required.some((c) => c.key === key && c.passed === false);
+  add(failed("count3") || failed("countMax"), A_PRIORITY.throwCount);
+  APPARATUS_REQUIRED_ELEMENTS[apparatus].forEach((el) => {
+    // 投げ・受けの要求だけ（ロープ跳び・手動チェックの項目は生成では動かせない）
+    if (el.auto !== "rightThrow" && el.auto !== "leftThrow" && el.auto !== "twoThrow") return;
+    add(
+      r.apparatusElementChecks.some((c) => c.key === `appEl_${el.id}` && !c.passed),
+      A_PRIORITY.apparatusThrow,
+    );
+  });
+  add(failed("throwTum"), A_PRIORITY.throwTumbling);
+  add(r.varietyDeduction > 0, A_PRIORITY.variety);
+  add(failed("connect"), A_PRIORITY.connect);
+  add(failed("triple"), A_PRIORITY.triple);
+  add(r.connectNoApparatus, A_PRIORITY.connectApparatus);
+  add(failed("dir"), A_PRIORITY.other);
+  add(failed("tumCount"), A_PRIORITY.other);
+  return total;
 }
 
 function shuffled<T>(list: T[], rand: () => number): T[] {

@@ -19,7 +19,10 @@
 //    候補には残して選ばれにくくするだけにする
 //  - 投げ受け（投げタン）は手具の滞空時間の都合で 前方系→前転／前方系→側宙（転宙）。
 //    投げたあとにロンダートを入れる形は作らない
-//  - ジュニアは2回宙返り系を実施しない（`skillOptions` の選択肢に出ない）
+//  - ジュニアは2回宙返り系を実施しない（`skillOptions` の選択肢に出ない）。
+//    一般でも個人で2回宙返り系を実施することはほぼないので、テンプレートに出てくる
+//    ときだけ使う。2回宙返りの後に連続・つなぎを続けることもない（後ろ向きに降りる
+//    テンポ以外の後方系なので、連続もつなぎも自然に止まる）
 //  - Dスコアの低い選手は、ルールの要求を満たしきれない単純なタンブリングを実施する
 //    （ロンダート→宙返り1本で終わり／三宙なし／つなぎなし／D難度なし）ので、
 //    低いDスコアを狙う構成では候補もそれに寄せる（`basicLevel`）
@@ -363,7 +366,10 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     ids.filter(
       (id) =>
         (!allowed || allowed.has(id)) &&
-        (!basicLevel || difficultyValue(id, junior) <= BASIC_LEVEL_MAX_DIFF),
+        (!basicLevel || difficultyValue(id, junior) <= BASIC_LEVEL_MAX_DIFF) &&
+        // 個人で2回宙返り系を実施することはほぼない。実際に実施している（テンプレートに
+        // 出てくる）ときだけ使い、技の一覧からは組み立てない
+        (!skillDef(id)?.isDoubleSalto || !!allowed?.has(id)),
     );
 
   const specs: AutoTumblingSpec[] = [];

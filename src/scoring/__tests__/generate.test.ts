@@ -1,11 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
+  A_PRIORITY,
+  A_PRIORITY_WEIGHT,
   REQUIRE_ALL_ELEMENTS_MIN_SCORE,
   generateRoutine,
   requiresAllElements,
   saltoRepeatCount,
+  shortfallPenalty,
   usableTemplates,
 } from "../generate";
+import { DIFF_SCORE } from "../constants";
 import { analyzeSeries, seriesSignature } from "../analysis";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
@@ -219,6 +223,47 @@ describe("DとAの損失の比較", () => {
     const gain = tpl("手具操作なし三宙", "common", S(noApp("b_tempo"), noApp("b_tempo"), noApp("b_tempo")));
     const r = generateRoutine([gain], { apparatus: "stick", maxSeries: 1, ...noAuto, random: seeded(3) })!;
     expect(r.used.map((t) => t.name)).toEqual(["手具操作なし三宙"]);
+  });
+});
+
+describe("A側の要求を満たす優先順位", () => {
+  const penalty = (ser: Series[], mandatory = false) =>
+    shortfallPenalty(computeScore(ser, "stick"), "stick", mandatory);
+  /** その要求だけを落とした構成を作るのは難しいので、空の構成からの差で順位を見る */
+  const only = (key: keyof typeof A_PRIORITY) => A_PRIORITY[key];
+
+  it("現実の感覚の順（投げの回数＝必須投げ受け＞投げタン＞多様性＞つなぎ＞三宙＞つなぎの手具操作）", () => {
+    expect(only("throwCount")).toBe(only("apparatusThrow"));
+    expect(only("apparatusThrow")).toBeGreaterThan(only("throwTumbling"));
+    expect(only("throwTumbling")).toBeGreaterThan(only("variety"));
+    expect(only("variety")).toBeGreaterThan(only("connect"));
+    expect(only("connect")).toBeGreaterThan(only("triple"));
+    expect(only("triple")).toBeGreaterThan(only("connectApparatus"));
+  });
+
+  it("順位の重みは難度点の刻み（0.1）より小さい＝同点のときだけ効く", () => {
+    expect(A_PRIORITY.throwCount * A_PRIORITY_WEIGHT).toBeLessThan(DIFF_SCORE.A);
+  });
+
+  it("満たした要求が多いほど引き算が小さい", () => {
+    const nothing = penalty([]);
+    const withThrows = penalty([throwFront(), throwSide(), throwBack()]);
+    expect(withThrows).toBeLessThan(nothing);
+    expect(penalty(pool().map((t) => t.series))).toBeLessThan(withThrows);
+  });
+
+  it("必ず満たす設定では、要求1つにつき難度点より大きく引く", () => {
+    const one = penalty([], true) - penalty([], false);
+    expect(one).toBeGreaterThan(1);
+  });
+
+  it("同じ点数の不足なら優先順位の低いほうを落とす（三宙よりつなぎを残す）", () => {
+    // つなぎだけ欠けた構成と、三宙だけ欠けた構成を比べる
+    const base = [throwFront(), throwSide(), throwBack(), triple(), connect()];
+    const noConnect = base.filter((s) => s !== base[4]);
+    const noTriple = base.filter((s) => s !== base[3]);
+    // どちらも1つ欠けだが、つなぎ（優先度3）を落とすほうが損が大きい
+    expect(penalty(noConnect)).toBeGreaterThan(penalty(noTriple));
   });
 });
 

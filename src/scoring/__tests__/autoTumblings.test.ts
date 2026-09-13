@@ -97,6 +97,26 @@ describe("入力画面の制約", () => {
     expect(tumblingFlowErrors(s)).toEqual([]);
   });
 
+  it("個人では2回宙返り系を組み立てない（テンプレートに出てくるときだけ使う）", () => {
+    const isDouble = (id: string) => !!skillDef(id)?.isDoubleSalto;
+    // 技の一覧から組むときは使わない
+    allTemplates().forEach((t) =>
+      t.series.items.forEach((item) => {
+        if (item.kind === "skill") expect(isDouble(item.skillId)).toBe(false);
+      }),
+    );
+    // 実際に実施している（テンプレートにある）なら使う
+    const own = autoTumblingSpecs({ skillIds: ["d_doubleback", "a_roundoff", "a_flicflac"], random: seeded(3) });
+    expect(own.some((sp) => sp.saltoIds.some(isDouble))).toBe(true);
+  });
+
+  it("2回宙返りの後は連続もつなぎも続かない", () => {
+    ["d_doubleback", "e_doublelay", "e_divedouble", "e_moonsault", "e_rudolph"].forEach((id) => {
+      expect(nextSaltoOptions(id)).toEqual([]);
+      expect(connectOptionsAfter(id)).toEqual([]);
+    });
+  });
+
   it("ジュニアは2回宙返り系を使わない", () => {
     allTemplates(true).forEach((t) =>
       t.series.items.forEach((item) => {

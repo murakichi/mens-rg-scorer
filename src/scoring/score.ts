@@ -333,8 +333,12 @@ export function computeScore(
       };
     });
     const handDiff = handRows.reduce((s, r) => s + (r.adopted && r.inTop ? r.score : 0), 0);
+    // 上限超過（ジュニアの6回目以降）の投げは加点にも数えない
+    const countedThrows = a.units.reduce((n, u, j) => n + (overLimitUnit[i][j] ? 0 : u.throwCount), 0);
     const sBonus =
-      !isDup && a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus)
+      !isDup &&
+      countedThrows >= 2 &&
+      a.units.some((u, j) => !overLimitUnit[i][j] && u.type === "throw" && u.hasDPlus)
         ? SERIES_BONUS
         : 0;
 
@@ -353,7 +357,10 @@ export function computeScore(
     if (!isDup) {
       const ops = ser.items.filter((item) => item.kind === "skill" && item.hasApparatus).length;
       if (ops >= 2) {
-        const maxD = a.units.reduce((m, u) => Math.max(m, DIFF_VALUE[u.finalDiff] || 0), 0);
+        const maxD = a.units.reduce(
+          (m, u, j) => (overLimitUnit[i][j] ? m : Math.max(m, DIFF_VALUE[u.finalDiff] || 0)),
+          0,
+        );
         if (maxD === DIFF_VALUE.E) appOp = APPARATUS_OP_BONUS;
       }
     }
@@ -372,10 +379,11 @@ export function computeScore(
         motSum = 0;
         added = false;
       };
-      ser.items.forEach((item) => {
+      ser.items.forEach((item, j) => {
         if (item.kind === "throw") {
           fin();
-          if ((item.reqTypes || []).includes("twothrow")) inTwo = true;
+          // 上限超過（ジュニアの6回目以降）の二つ投げは加点に数えない
+          if (!itemOver[i][j] && (item.reqTypes || []).includes("twothrow")) inTwo = true;
         } else if (item.kind === "catch") {
           fin();
         } else if (item.kind === "motion" && inTwo) {
@@ -420,11 +428,8 @@ export function computeScore(
     return s + base + eB;
   }, 0);
   const handScore = topHand.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
-  const seriesBonus = analysis.some(
-    (a, i) => !dupFlags[i] && a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus),
-  )
-    ? SERIES_BONUS
-    : 0;
+  // シリーズ内訳（sBonus）と同じ条件。上限超過の投げ・ユニットは数えない
+  const seriesBonus = seriesBreakdowns.some((b) => b.sBonus > 0) ? SERIES_BONUS : 0;
 
   const techniqueBonus = seriesBreakdowns.reduce((s, b) => s + b.tech, 0);
   const techniqueCount = Math.round(techniqueBonus / TECHNIQUE_BONUS);
