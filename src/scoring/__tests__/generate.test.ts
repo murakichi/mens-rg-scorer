@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { LIMITED_SKILL_MAX } from "../autoTumblings";
 import {
   A_PRIORITY,
+  limitedSkillCounts,
   A_PRIORITY_WEIGHT,
   REQUIRE_ALL_ELEMENTS_MIN_SCORE,
   generateRoutine,
@@ -226,6 +228,41 @@ describe("DとAの損失の比較", () => {
     const gain = tpl("手具操作なし三宙", "common", S(noApp("b_tempo"), noApp("b_tempo"), noApp("b_tempo")));
     const r = generateRoutine([gain], { apparatus: "stick", maxSeries: 1, ...noAuto, random: seeded(3) })!;
     expect(r.used.map((t) => t.name)).toEqual(["手具操作なし三宙"]);
+  });
+});
+
+describe("実施が少ない技（ハンドスプリング・転宙）", () => {
+  it("演技内で1回まで", () => {
+    [3, 7, 11, 19].forEach((seed) => {
+      [null, 3.0, 4.5].forEach((maxScore) => {
+        const r = generateRoutine([], { apparatus: "stick", maxScore, random: seeded(seed) })!;
+        limitedSkillCounts(r.series).forEach((n) => expect(n).toBeLessThanOrEqual(LIMITED_SKILL_MAX));
+      });
+    });
+  });
+
+  it("技としても徒手動作としても数える", () => {
+    const counts = limitedSkillCounts([
+      S(skill("a_handspring"), skill("b_front")),
+      S({ kind: "motion", motionId: "a_handspring", count: 1 }, skill("b_tenchu")),
+    ]);
+    expect(counts.get("a_handspring")).toBe(2);
+    expect(counts.get("b_tenchu")).toBe(1);
+  });
+
+  it("同じ点数なら使わない構成を選ぶ", () => {
+    // 前宙2連続（D 0.3）と 転宙→前宙（同じくD 0.3）なら、転宙を使わないほうを採る
+    const plain = tpl("前宙2連続", "common", S(skill("b_front"), skill("b_front")));
+    const limited = tpl("転宙入り", "common", S(skill("b_tenchu"), skill("b_front")));
+    [3, 7, 11].forEach((seed) => {
+      const r = generateRoutine([plain, limited], {
+        apparatus: "stick",
+        maxSeries: 1,
+        ...noAuto,
+        random: seeded(seed),
+      })!;
+      expect(r.used.map((t) => t.name)).toEqual(["前宙2連続"]);
+    });
   });
 });
 

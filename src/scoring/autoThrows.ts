@@ -4,11 +4,12 @@
 // 投げ方（左手投げ・視野外・手以外…）を全パターン網羅したテンプレートを
 // 手で登録するのは大変なので、よくある投げシリーズの形をシステム側で組む。
 //
-// 形は AUTO_THROW_PATTERNS の6種類：
+// 形は AUTO_THROW_PATTERNS の8種類：
 //   投げ→1〜2回シェネ→前転→転がり→キャッチ
 //   投げ→1〜3回シェネ→前転→キャッチ（＋視野外の投げ受け）
 //   投げ→3〜4回シェネ→キャッチ（＋視野外の投げ受け）
 //   投げ→前転3回→キャッチ（縦3動作でE難度）
+//   投げ→シェネ→キャッチ／投げ→前転→キャッチ（必須要素を最低限の操作で満たす形）
 // これに「投げ方」「受け方」「シェネの手」「シェネの回数」を割り当てた候補を作り、
 // ランダム生成（generate.ts）の候補に足す。**必ず使われるわけではなく**、
 // 評価が上がるものだけが構成に入る。
@@ -44,6 +45,11 @@ export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
   { id: "cheneNoView", chene: { min: 3, max: 4 }, after: [], noViewPair: true },
   // シェネなし。前転3回＝縦3動作でE難度（§3.5.5.3）
   { id: "rolls", chene: { min: 0, max: 0 }, after: [times(FWD_ROLL, 3)], noViewPair: false },
+  // 最低限の操作で必須要素（左手投げ・二つ投げ）を満たす形。
+  // スティックの「1シェネキャッチ」、クラブ・リングの「二つ投げ→前転／シェネ→キャッチ」。
+  // 難度は低いのでDスコアを抑えたいときに使われやすいが、上級者も普通に実施する。
+  { id: "minimalChene", chene: { min: 1, max: 1 }, after: [], noViewPair: false },
+  { id: "minimalRoll", chene: { min: 0, max: 0 }, after: [times(FWD_ROLL, 1)], noViewPair: false },
 ];
 
 /** 自動生成で使う投げ方 */

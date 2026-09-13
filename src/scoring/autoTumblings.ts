@@ -22,6 +22,7 @@
 //  - とび前転・きりもみ（首から背中にかけて着地する）・きりもみ転回・側宙は連続の最後だけ。
 //    その後に技を続けない（入りの技・つなぎ技にも使わない）
 //  - 側転は徒手扱いなので、つなぎ技には使わない（側宙への入りには使う）
+//  - ハンドスプリング・転宙は実施が少ないので選ばれにくくし、演技内で1回までにする
 //  - ジュニアは2回宙返り系を実施しない（`skillOptions` の選択肢に出ない）。
 //    一般でも個人で2回宙返り系を実施することはほぼないので、テンプレートに出てくる
 //    ときだけ使う。2回宙返りの後に連続・つなぎを続けることもない（後ろ向きに降りる
@@ -94,8 +95,9 @@ export const AFTER_BACK_LAYOUT_SALTOS: { id: string; weight: number }[] = [
 
 /** 実施する技の選ばれやすさ（直前の技で変わる。表に無い技は1） */
 export function saltoWeights(prevId: string): Record<string, number> {
-  if (!isBackLayoutSalto(prevId)) return {};
-  return Object.fromEntries(AFTER_BACK_LAYOUT_SALTOS.map((x) => [x.id, x.weight]));
+  const weights = limitedWeights();
+  if (!isBackLayoutSalto(prevId)) return weights;
+  return { ...weights, ...Object.fromEntries(AFTER_BACK_LAYOUT_SALTOS.map((x) => [x.id, x.weight])) };
 }
 
 /** 後方伸身宙返り系（ひねりを含む）か */
@@ -117,12 +119,23 @@ export const CONNECT_FINISH_RARE: string[] = ["b_backsalto"];
 export const RARE_PICK_WEIGHT = 0.2;
 
 /**
+ * 実施が少ない技。選ばれにくくし、**演技内で1回まで**にする（`LIMITED_SKILL_MAX`）。
+ * ハンドスプリング・転宙は、実施されることはあっても繰り返し使う技ではない。
+ */
+export const LIMITED_SKILLS: string[] = ["a_handspring", "b_tenchu"];
+/** 実施が少ない技を演技内で実施してよい回数 */
+export const LIMITED_SKILL_MAX = 1;
+const limitedWeights = (): Record<string, number> =>
+  Object.fromEntries(LIMITED_SKILLS.map((id) => [id, RARE_PICK_WEIGHT]));
+
+/**
  * つなぎ技のあとの技の選ばれやすさ。
  * 基本技も普通に実施する選手（ジュニア・基本的な構成）には重みを付けない。
  */
 export function connectFinishWeights(basicLevel = false): Record<string, number> {
-  if (basicLevel) return {};
-  return Object.fromEntries(CONNECT_FINISH_RARE.map((id) => [id, RARE_PICK_WEIGHT]));
+  const weights = limitedWeights();
+  if (basicLevel) return weights;
+  return { ...weights, ...Object.fromEntries(CONNECT_FINISH_RARE.map((id) => [id, RARE_PICK_WEIGHT])) };
 }
 
 /**
@@ -420,7 +433,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         let cid = "";
         // つなぎ技は1本目の後
         if (pattern.connect) {
-          cid = pickDifferent(usable(connectOptionsAfter(first, junior)), [], rand) ?? "";
+          cid = pickDifferent(usable(connectOptionsAfter(first, junior)), [], rand, limitedWeights()) ?? "";
           if (!cid) continue;
           const after = pickDifferent(
             usable(saltoOptionsAfterConnect(cid, junior)),

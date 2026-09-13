@@ -12,6 +12,7 @@
 //    例：4本目のタンブリング、ジュニアの6回目以降の投げ、まったく同じ内容の重複シリーズ
 //  - 投げタンは1本まで（必須要素は1本で満たせるため）
 //  - タンブリングは投げタンを含めて3本まで（上位3本しか難度に採用されないため）
+//  - ハンドスプリング・転宙は実施が少ないので優先度を下げ、演技内で1回までにする
 //  - よくある投げシリーズ（autoThrows.ts）とタンブリング（autoTumblings.ts）は
 //    システム側で組んで候補に足す。投げ方や技の組み合わせを網羅したテンプレートを
 //    登録しなくて済む。あくまで候補なので、評価が上がらなければ使われない
@@ -27,6 +28,8 @@
 import { analyzeSeries } from "./analysis";
 import { autoThrowTemplates, cheneCountRange, isAutoThrowTemplate, withCheneCount } from "./autoThrows";
 import {
+  LIMITED_SKILLS,
+  LIMITED_SKILL_MAX,
   autoTumblingTemplates,
   isAutoTumblingTemplate,
   saltoCountRange,
@@ -200,6 +203,28 @@ export const AUTO_SERIES_WEIGHT = 0.02;
  */
 export const SALTO_VARIETY_WEIGHT = 0.02;
 
+/**
+ * 実施が少ない技（ハンドスプリング・転宙）を使ったときの評価の重み。
+ * 難度点の最小単位（0.1）より小さくして、同じ点数なら別の技の構成を選ばせる。
+ * 演技内の回数そのものは `LIMITED_SKILL_MAX` で1回までに制限する。
+ */
+export const LIMITED_SKILL_WEIGHT = 0.02;
+
+/** 演技全体での、実施が少ない技の回数（技idごと） */
+export function limitedSkillCounts(series: Series[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  const add = (id: string) => {
+    if (LIMITED_SKILLS.includes(id)) counts.set(id, (counts.get(id) ?? 0) + 1);
+  };
+  series.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "skill" && item.skillId) add(item.skillId);
+      if (item.kind === "motion" && item.motionId) add(item.motionId);
+    }),
+  );
+  return counts;
+}
+
 /** 演技中に何度実施しても不自然でない宙返り（前宙） */
 export const REPEATABLE_SALTOS = ["b_front"];
 
@@ -251,6 +276,14 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   const overThrowTum = Math.max(0, throwTumCount - maxThrowTum);
   // タンブリングは投げタンを含めて3本までしか評価されない。4本目は入れない
   const overTumbling = Math.max(0, r.nonDupTumblingCount - (opts.maxTumblings ?? DEFAULT_MAX_TUMBLINGS));
+  // 実施が少ない技（ハンドスプリング・転宙）は演技内で1回まで。使うこと自体も弱く嫌う
+  const limited = limitedSkillCounts(series);
+  let limitedUsed = 0;
+  let overLimited = 0;
+  limited.forEach((n) => {
+    limitedUsed += n;
+    overLimited += Math.max(0, n - LIMITED_SKILL_MAX);
+  });
   // 同じ宙返りの繰り返しは弱く嫌う（同点のときに多様な構成が選ばれる程度）
   const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
@@ -259,7 +292,13 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   const auto = autoCount * AUTO_SERIES_WEIGHT;
   return {
     value:
-      -(penalty + overThrowTum + overTumbling) * 100 - shortfall + r.dScore + r.aScore - variety - auto,
+      -(penalty + overThrowTum + overTumbling + overLimited) * 100 -
+      shortfall +
+      r.dScore +
+      r.aScore -
+      variety -
+      auto -
+      limitedUsed * LIMITED_SKILL_WEIGHT,
     dScore: r.dScore,
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),

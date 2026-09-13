@@ -96,6 +96,19 @@ describe("自動生成の投げの形", () => {
     expect(shape(s)).toEqual(["投げ", "fwd_roll×3", "キャッチ"]);
   });
 
+  it("最低限の操作で必須投げを満たす形（1シェネキャッチ／前転キャッチ）", () => {
+    expect(shape(buildAutoThrowSeries(spec("minimalChene")))).toEqual(["投げ", "chene×1", "キャッチ"]);
+    expect(shape(buildAutoThrowSeries(spec("minimalRoll")))).toEqual(["投げ", "fwd_roll×1", "キャッチ"]);
+    // 手具の必須投げ（左手投げ・二つ投げ）とも組み合わせて出る
+    const minimalWith = (app: ApparatusKey, throwId: string) =>
+      autoThrowSpecs(app, { random: seeded(3) }).some(
+        (sp) => sp.pattern.id.startsWith("minimal") && sp.throwStyle.id === throwId,
+      );
+    expect(minimalWith("stick", "lefthand")).toBe(true);
+    expect(minimalWith("clubs", "twothrow")).toBe(true);
+    expect(minimalWith("ring", "twothrow")).toBe(true);
+  });
+
   it("視野外のパターンはキャッチのあとに視野外の投げ受けを足す", () => {
     const s = buildAutoThrowSeries(spec("cheneNoView", { cheneCount: 3 }));
     expect(shape(s)).toEqual(["投げ", "chene×3", "キャッチ", "投げ", "キャッチ"]);
