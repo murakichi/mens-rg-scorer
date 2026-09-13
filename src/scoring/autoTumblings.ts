@@ -47,7 +47,7 @@ import {
   skillFlowAfter,
   skillOptions,
 } from "./constants";
-import { needsRoundoffBefore, prevSkillId } from "./analysis";
+import { needsRoundoffBefore, prevSkillId, stripForApparatus } from "./analysis";
 import { newTemplateId, type SeriesTemplate } from "./templates";
 import type { ApparatusKey, Difficulty, Item, Series } from "./types";
 
@@ -857,7 +857,8 @@ const autoTemplate = (
   updatedAt: 0,
   auto: true,
   spec,
-  series: buildAutoTumblingSeries(spec),
+  // 手具が1つの種目では投げている間に手具操作ができないので、その手具に合わせて落とす
+  series: stripForApparatus([buildAutoTumblingSeries(spec)], apparatus)[0],
 });
 
 /** 自動生成のタンブリングを、ランダム生成の候補（シリーズテンプレート）として返す */

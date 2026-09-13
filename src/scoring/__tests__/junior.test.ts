@@ -213,8 +213,13 @@ describe("ジュニア適用規則 — 6回目以降の投げは加点にも数�
   });
 
   it("手具操作加点：上限超過のユニットの難度は見ない", () => {
-    // 投げ＋C難度2本＝E難度、手具操作2回 → 手具操作加点の条件を満たす
-    const target = S({ kind: "throw" }, skill("c_back15"), skill("c_front1full"), { kind: "catch" });
+    // C難度2本＝E難度で、1本目の最中に投げる → 手具操作加点の条件を満たす
+    // （スティックは投げてしまうと手元が空になるので、技の最中に投げる形で見る）
+    const target = S(
+      { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: true },
+      skill("c_front1full"),
+      { kind: "catch" },
+    );
     expect(computeScore([target], "stick", { junior: true }).apparatusOpBonus).toBeCloseTo(0.1, 5);
     expect(computeScore([...fillers(5), target], "stick", { junior: true }).apparatusOpBonus).toBe(0);
     expect(computeScore([...fillers(5), target], "stick").apparatusOpBonus).toBeCloseTo(0.1, 5);

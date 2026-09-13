@@ -13,6 +13,7 @@ import {
   seriesSignature,
   apparatusBlockers,
   stripForApparatus,
+  handsEmptyFlags,
 } from "../analysis";
 import { ropeJumpDef, MOTION_OPTIONS, SKILL_LIST, legacyMotionDef, motionOptionsFor } from "../constants";
 import type { Series, Item } from "../types";
@@ -576,6 +577,48 @@ describe("その手具では入力できない内容", () => {
     const left = [S({ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" })];
     expect(apparatusBlockers(left, "stick")).toEqual([]);
     expect(apparatusBlockers(left, "clubs")).toEqual(["左手投げ"]);
+  });
+
+  it("投げている間は手元に手具が無い（その間の技に手具操作は付けられない）", () => {
+    const items: Item[] = [
+      { kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: false },
+      { kind: "throw" },
+      { kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: false },
+      { kind: "catch" },
+      { kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: false },
+    ];
+    // スティックは1つなので、投げてからキャッチするまでは手元が空
+    expect(handsEmptyFlags(items, "stick")).toEqual([false, false, true, false, false]);
+    // クラブは2つあるので、1つ投げても手元に残っている
+    expect(handsEmptyFlags(items, "clubs")).toEqual([false, false, false, false, false]);
+    // 二つ投げなら手元は空
+    const two: Item[] = [
+      { kind: "throw", reqTypes: ["twothrow"] },
+      { kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: false },
+      { kind: "catch", catchTwo: true },
+    ];
+    expect(handsEmptyFlags(two, "clubs")).toEqual([false, true, false]);
+    // 技の最中の投げは開始時は手元にあるので、その技自体は手具操作あり
+    const inSkill: Item[] = [
+      { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: true },
+      { kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: false },
+      { kind: "catch" },
+    ];
+    expect(handsEmptyFlags(inSkill, "stick")).toEqual([false, true, false]);
+  });
+
+  it("投げている間の手具操作は落とす", () => {
+    const list = [
+      S({ kind: "throw" }, { kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: false }, { kind: "catch" }),
+    ];
+    expect(apparatusBlockers(list, "stick")).toEqual(["投げている間の手具操作"]);
+    // クラブは手元に残るので問題ない
+    expect(apparatusBlockers(list, "clubs")).toEqual([]);
+    const [stripped] = stripForApparatus(list, "stick");
+    const skill = stripped.items[1];
+    expect(skill.kind === "skill" && skill.hasApparatus).toBe(false);
+    // 元のシリーズは書き換えない
+    expect(list[0].items[1].kind === "skill" && list[0].items[1].hasApparatus).toBe(true);
   });
 
   it("落としたシリーズを返す（落とすものが無ければ同じ配列）", () => {
