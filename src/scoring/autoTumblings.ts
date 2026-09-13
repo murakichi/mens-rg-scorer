@@ -19,6 +19,8 @@
 //    候補には残して選ばれにくくするだけにする
 //  - 投げ受け（投げタン）は手具の滞空時間の都合で 前方系→前転／前方系→側宙（転宙）。
 //    投げたあとにロンダートを入れる形は作らない
+//  - とび前転・きりもみは首から背中にかけて着地するので、その後に技を続けない
+//    （入りの技・つなぎ技にも使わない）
 //  - ジュニアは2回宙返り系を実施しない（`skillOptions` の選択肢に出ない）。
 //    一般でも個人で2回宙返り系を実施することはほぼないので、テンプレートに出てくる
 //    ときだけ使う。2回宙返りの後に連続・つなぎを続けることもない（後ろ向きに降りる
@@ -129,10 +131,19 @@ export function connectFinishWeights(basicLevel = false): Record<string, number>
 export const TEMPO_SKILLS: string[] = ["b_tempo", "c_tempotwist"];
 export const isTempoSalto = (id: string): boolean => TEMPO_SKILLS.includes(id);
 
+/**
+ * 首から背中にかけて着地する技（とび前転・きりもみ）。
+ * 着地の形として実施するので、**この後に技を続けて実施することはできない**。
+ * 入りの技にもつなぎ技にも使わない。
+ */
+export const CHAIN_END_SKILLS: string[] = ["a_frontroll", "b_kirimomi"];
+export const endsChain = (id: string): boolean => CHAIN_END_SKILLS.includes(id);
+
 /** 系統ごとの入りの技（空＝助走から直接入る） */
 export const TUMBLING_ENTRIES: Record<string, string[][]> = {
   [CATEGORY.BACKWARD]: [[ROUNDOFF_SKILL_ID], [ROUNDOFF_SKILL_ID, "a_flicflac"]],
-  [CATEGORY.FORWARD]: [[], ["a_handspring"], ["a_frontroll"]],
+  // とび前転は首から背中にかけて着地するので、入りの技には使えない
+  [CATEGORY.FORWARD]: [[], ["a_handspring"]],
   [CATEGORY.SIDE]: [[], ["a_cartwheel"]],
 };
 
@@ -144,7 +155,6 @@ export const TUMBLING_CONNECTS: { id: string; next: string }[] = [
   { id: ROUNDOFF_SKILL_ID, next: CATEGORY.BACKWARD },
   { id: "a_flicflac", next: CATEGORY.BACKWARD },
   { id: "a_handspring", next: CATEGORY.FORWARD },
-  { id: "a_frontroll", next: CATEGORY.FORWARD },
   { id: "a_cartwheel", next: CATEGORY.SIDE },
 ];
 
@@ -172,6 +182,8 @@ export function firstSaltoOptions(junior = false): string[] {
  *  - テンポ以外の後方系のあとは続けない（後方系の連続は実際には少ない）
  */
 export function nextSaltoOptions(prevId: string, junior = false): string[] {
+  // 首から背中にかけて着地する技（とび前転・きりもみ）の後には続けられない
+  if (endsChain(prevId)) return [];
   const offered = new Set(skillOptions(junior, skillFlowAfter(prevId)).map((s) => s.id));
   // 後方伸身宙返り（ひねりを含む）の後は 前宙・きりもみ・きりもみ転回
   if (isBackLayoutSalto(prevId))
@@ -192,6 +204,7 @@ export function nextSaltoOptions(prevId: string, junior = false): string[] {
  *  - それ以外（後ろ向きに降りる宙返りの後）は無し
  */
 export function connectOptionsAfter(prevId: string, junior = false): string[] {
+  if (endsChain(prevId)) return [];
   const offered = new Set(skillOptions(junior, skillFlowAfter(prevId)).map((s) => s.id));
   if (isTempoSalto(prevId)) return ["a_flicflac"].filter((id) => offered.has(id));
   if (leadsBackward(prevId)) return [];

@@ -2,6 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   AUTO_TUMBLING_PATTERNS,
   BASIC_LEVEL_MAX_DIFF,
+  CHAIN_END_SKILLS,
+  TUMBLING_CONNECTS,
+  TUMBLING_ENTRIES,
+  endsChain,
   BASIC_LEVEL_MAX_SALTOS,
   CONNECT_FINISH_RARE,
   connectFinishWeights,
@@ -108,6 +112,29 @@ describe("入力画面の制約", () => {
     // 実際に実施している（テンプレートにある）なら使う
     const own = autoTumblingSpecs({ skillIds: ["d_doubleback", "a_roundoff", "a_flicflac"], random: seeded(3) });
     expect(own.some((sp) => sp.saltoIds.some(isDouble))).toBe(true);
+  });
+
+  it("とび前転・きりもみの後には技を続けない（首から背中にかけて着地する技）", () => {
+    CHAIN_END_SKILLS.forEach((id) => {
+      expect(endsChain(id)).toBe(true);
+      expect(nextSaltoOptions(id)).toEqual([]);
+      expect(connectOptionsAfter(id)).toEqual([]);
+    });
+    // 入りの技・つなぎ技にも使わない
+    Object.values(TUMBLING_ENTRIES).forEach((entries) =>
+      entries.forEach((entry) => entry.forEach((id) => expect(endsChain(id)).toBe(false))),
+    );
+    TUMBLING_CONNECTS.forEach((c) => expect(endsChain(c.id)).toBe(false));
+    // 組み立てた並びでも、着地技の後に技が来ない
+    [false, true].forEach((junior) =>
+      allTemplates(junior).forEach((t) => {
+        const ids = t.series.items.flatMap((item) => (item.kind === "skill" ? [item.skillId] : []));
+        ids.forEach((id, i) => {
+          if (i === 0) return;
+          expect(endsChain(ids[i - 1])).toBe(false);
+        });
+      }),
+    );
   });
 
   it("2回宙返りの後は連続もつなぎも続かない", () => {
@@ -244,9 +271,9 @@ describe("つなぎ技", () => {
     expect(connectOptionsAfter("b_backsalto")).toEqual([]);
   });
 
-  it("前向きに降りた後はロンダート・側転・ハンドスプリング・とび前転", () => {
+  it("前向きに降りた後はロンダート・側転・ハンドスプリング（とび前転は着地技なので使わない）", () => {
     expect(connectOptionsAfter("b_front").sort()).toEqual(
-      ["a_cartwheel", "a_frontroll", "a_handspring", ROUNDOFF_SKILL_ID].sort(),
+      ["a_cartwheel", "a_handspring", ROUNDOFF_SKILL_ID].sort(),
     );
   });
 
@@ -288,11 +315,12 @@ describe("つなぎ技", () => {
       if (!isAutoTumblingTemplate(t)) return;
       t.spec.saltoIds.slice(0, t.spec.saltoCount).forEach((id) => expect(diff(id)).toBeLessThanOrEqual(BASIC_LEVEL_MAX_DIFF));
     });
-    // 2点台以上を狙うなら上級者の構成のまま
+    // 2点台以上を狙うなら上級者の構成のまま（候補にD難度以上が残る）
     expect(BASIC_LEVEL_MAX_SCORE).toBe(2.0);
-    const hi = generateRoutine([], { apparatus: "stick", maxScore: 4.0, random: seeded(5) })!;
     expect(
-      hi.used.some((t) => isAutoTumblingTemplate(t) && t.spec.saltoIds.some((id) => diff(id) > BASIC_LEVEL_MAX_DIFF)),
+      autoTumblingSpecs({ random: seeded(5) }).some((sp) =>
+        sp.saltoIds.some((id) => diff(id) > BASIC_LEVEL_MAX_DIFF),
+      ),
     ).toBe(true);
   });
 
