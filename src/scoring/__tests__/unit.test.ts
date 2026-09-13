@@ -92,12 +92,21 @@ describe("不正・未知の入力は無視する", () => {
     expect(analyzeSeries(S({ kind: "ropeJump", jumpId: "no_such_jump" })).units).toHaveLength(0);
   });
 
-  it("連続回数が0・負・不正値なら1回として数える", () => {
-    expect(motionTimes(0)).toBe(1);
-    expect(motionTimes(-3)).toBe(1);
-    expect(motionTimes(undefined)).toBe(1);
+  it("連続回数は未指定なら1回、0を入れたら0回", () => {
+    expect(motionTimes(undefined)).toBe(1); // 追加した直後は1回
+    expect(motionTimes(0)).toBe(0); // 0回の動作は難度にも構成にも数えない
+    expect(motionTimes(3)).toBe(3);
+  });
+
+  it("負の回数は0回に丸め、不正値は1回として扱う", () => {
+    expect(motionTimes(-3)).toBe(0);
     expect(motionTimes(NaN)).toBe(1);
     expect(motionTimes(2.7)).toBe(2); // 小数は切り捨て
+  });
+
+  it("0回の徒手動作は動作数に数えない", () => {
+    const u = unit0(S({ kind: "throw" }, mot("chene", 0), mot("roll", 2), { kind: "catch" }));
+    expect(u.finalDiff).toBe("C"); // 2動作 = C（シェネ0回は無視）
   });
 });
 
