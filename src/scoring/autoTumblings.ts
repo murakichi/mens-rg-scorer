@@ -49,7 +49,7 @@ import {
   skillOptions,
 } from "./constants";
 import { needsRoundoffBefore, prevSkillId, stripForApparatus } from "./analysis";
-import { NON_HAND_TAG, autoThrowStyles, type AutoThrowStyle } from "./autoThrows";
+import { NON_HAND_TAG, NO_VIEW_TAG, autoThrowStyles, type AutoThrowStyle } from "./autoThrows";
 import { newTemplateId, type SeriesTemplate } from "./templates";
 import type { ApparatusKey, Difficulty, Item, Series } from "./types";
 
@@ -175,6 +175,27 @@ export const canEndChain = (id: string, allowBackwardEnd = false): boolean => {
  * 無いので稀。連続の最後で投げる形（`throwInSkill`）で側宙を引く確率を下げる。
  */
 export const THROW_IN_SIDE_SALTO_WEIGHT = 0.1;
+
+/** 前方系の宙返り（投げタンの1本目）か */
+const isForwardSalto = (id: string): boolean => skillDef(id)?.category === CATEGORY.FORWARD;
+
+/**
+ * **後ろ向きで終わる宙返り → 前方系の宙返り**の位置で投げる形か。
+ * この位置で投げた例は無いので基本作らないが、きりもみで視野外に投げる形だけは
+ * 物理的にあり得て見栄えも悪くないので、低い確率で残す
+ * （`KIRIMOMI_THROW_SKILL_ID` / `BACK_TO_FORWARD_THROW_CHANCE`）。
+ */
+export const isBackToForwardThrow = (prevId: string | undefined, skillId: string): boolean =>
+  !!prevId && leadsBackward(prevId) && isForwardSalto(skillId);
+
+/** その位置で投げてよい唯一の技（視野外投げで実施する） */
+export const KIRIMOMI_THROW_SKILL_ID = "b_kirimomi";
+/** その形を残す確率 */
+export const BACK_TO_FORWARD_THROW_CHANCE = 0.15;
+
+/** 技の最中の投げに付ける技術タグ（後ろ向き→前方系のきりもみは視野外投げ） */
+export const throwInSkillTypes = (prevId: string | undefined, skillId: string): string[] | undefined =>
+  isBackToForwardThrow(prevId, skillId) ? [NO_VIEW_TAG] : undefined;
 
 /** 投げ受けで前方系の宙返りに続けて実施する技（側宙、たまに転宙） */
 export const THROW_FINISH_SALTOS: string[] = ["b_sidesalto", "b_tenchu"];
@@ -509,9 +530,12 @@ export interface AutoTumblingSpec {
   secondThrow?: AutoThrowStyle;
   /** 稀な終わり方（後方宙返り半ひねりで終わる）をしてよい候補か */
   allowRareEnd?: boolean;
+  /** 後ろ向きで終わる宙返り→前方系の位置で投げてよい候補か（きりもみの視野外投げだけ） */
+  allowBackToForwardThrow?: boolean;
 }
 
-const skillItem = (skillId: string, isThrow = false): Item => ({
+type SkillItem = Extract<Item, { kind: "skill" }>;
+const skillItem = (skillId: string, isThrow = false): SkillItem => ({
   kind: "skill",
   skillId,
   hasApparatus: true,
@@ -529,7 +553,13 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec): Series {
   saltos.forEach((id, i) => {
     if (pattern.connect && i === 1 && spec.connectId) items.push(skillItem(spec.connectId));
     // 入力画面と同じで、そのままでは後方系に入れない位置ではロンダートを補う
-    const next = skillItem(id, pattern.throwInSkill && i === saltos.length - 1);
+    const throwsHere = !!pattern.throwInSkill && i === saltos.length - 1;
+    const next = skillItem(id, throwsHere);
+    // 後ろ向きで終わる宙返りのあとに前方系で投げるのは、きりもみの視野外投げだけ
+    if (throwsHere) {
+      const types = throwInSkillTypes(saltos[i - 1], id);
+      if (types) next.throwTypes = [...types];
+    }
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
     items.push(next);
   });
@@ -750,9 +780,6 @@ export function throwTumblingShapeRank(shape: TumblingShape, unitDiff: Difficult
   return 0;
 }
 
-/** 前方系の宙返り（投げタンの1本目）か */
-const isForwardSalto = (id: string): boolean => skillDef(id)?.category === CATEGORY.FORWARD;
-
 /**
  * タンブリングの候補を作る。形ごとに宙返りの種類・入りの技・本数を
  * できる限り被らないように配る（`cycler`）。
@@ -888,9 +915,18 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       const allowBackwardEnd = rand() < backwardEndChance(opts.targetScore);
       // 後方宙返り半ひねりで終わるのは稀（大抵そのあとに前宙か側宙を実施する）
       const allowRareEnd = basicLevel || rand() < RARE_CHAIN_END_CHANCE;
+      // 後ろ向きで終わる宙返り→前方系の位置で投げるのは、きりもみの視野外投げだけ低確率で残す
+      const allowBackToForwardThrow = rand() < BACK_TO_FORWARD_THROW_CHANCE;
+      const throwOk = (n: number) => {
+        if (!pattern.throwInSkill) return true;
+        const id = saltoIds[n - 1];
+        if (!isBackToForwardThrow(saltoIds[n - 2], id)) return true;
+        return allowBackToForwardThrow && id === KIRIMOMI_THROW_SKILL_ID;
+      };
       const endsOk = (n: number) =>
         canEndChain(saltoIds[n - 1], allowBackwardEnd) &&
-        (allowRareEnd || !RARE_CHAIN_END_SKILLS.includes(saltoIds[n - 1]));
+        (allowRareEnd || !RARE_CHAIN_END_SKILLS.includes(saltoIds[n - 1])) &&
+        throwOk(n);
       // 終われる本数を探す：まず伸ばして（前宙・側宙に続ける）、だめなら縮める
       let end = saltoCount;
       while (end < saltoIds.length && !endsOk(end)) end += 1;
@@ -913,6 +949,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         connectId,
         allowBackwardEnd,
         allowRareEnd,
+        allowBackToForwardThrow,
         ...(secondThrow ? { secondThrow } : {}),
       });
     }
@@ -1006,5 +1043,12 @@ export function withSaltoCount(t: AutoTumblingTemplate, saltoCount: number): Aut
   const last = t.spec.saltoIds[saltoCount - 1];
   if (!canEndChain(last, t.spec.allowBackwardEnd)) return null;
   if (!t.spec.allowRareEnd && RARE_CHAIN_END_SKILLS.includes(last)) return null;
+  // 後ろ向きで終わる宙返り→前方系の位置で投げる形も、候補を作ったときの抽選に従う
+  if (
+    t.spec.pattern.throwInSkill &&
+    isBackToForwardThrow(t.spec.saltoIds[saltoCount - 2], last) &&
+    !(t.spec.allowBackToForwardThrow && last === KIRIMOMI_THROW_SKILL_ID)
+  )
+    return null;
   return autoTemplate(t.apparatus, { ...t.spec, saltoCount }, t.id);
 }
