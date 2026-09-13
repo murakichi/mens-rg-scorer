@@ -524,8 +524,12 @@ describe("投げ上げの回数", () => {
     expect(throwCountPenalty(4, 4.5)).toBeGreaterThan(0);
     // 技術加点で稼げてしまうので、多い側のほうを強く嫌う
     expect(throwCountPenalty(6, 4.5)).toBeGreaterThan(throwCountPenalty(4, 4.5));
-    // Dスコア5以上は多い側を緩める（最頻値は5のまま、6回も出やすい）
-    expect(throwCountPenalty(6, 5.0)).toBeLessThan(throwCountPenalty(6, 4.5));
+    // 1回多いのは十分ありえる（4点台でも6回）。2回以上多いぶんは強く嫌う
+    expect(throwCountPenalty(7, 4.5) - throwCountPenalty(6, 4.5)).toBeGreaterThan(
+      throwCountPenalty(6, 4.5),
+    );
+    // Dスコア5以上は投げを足すほど点が伸びるので、最頻値5を保つぶん1回多い側は強くなる
+    expect(throwCountPenalty(6, 5.0)).toBeGreaterThan(throwCountPenalty(6, 4.5));
     expect(preferredThrowCount(5.0)).toBe(preferredThrowCount(4.5));
   });
 
