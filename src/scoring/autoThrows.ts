@@ -265,7 +265,8 @@ export function autoThrowTemplates(apparatus: ApparatusKey, opts: AutoThrowOptio
 
 /** 自動生成の投げの候補か（シェネの回数を調整できるのはこれだけ） */
 export function isAutoThrowTemplate(t: SeriesTemplate): t is AutoThrowTemplate {
-  return !!t.auto && !!(t as AutoThrowTemplate).spec;
+  // 自動生成のタンブリング（autoTumblings.ts）も spec を持つので、形の中身で見分ける
+  return !!t.auto && !!(t as AutoThrowTemplate).spec?.pattern?.chene;
 }
 
 /** シェネの回数だけを変えた候補。形の範囲外・変化なしなら null。 */

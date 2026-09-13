@@ -970,3 +970,50 @@ describe("§3.5.6.4 芸術と多様性の欠点テーブル（手入力）", () 
     expect(r.artRows.map((x) => x.id)).toContain("appInTumbling");
   });
 });
+
+describe("方向系の判定（側転は徒手扱い）", () => {
+  const skill = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: true, isThrow: false });
+  const dirMissing = (...ids: string[]) =>
+    computeScore([{ executionDeduction: 0, items: ids.map(skill) }], "stick").missingDirCount;
+
+  it("側転だけでは側方系を満たさない", () => {
+    // 前方系・後方系はあるが、側方系は側転しかない
+    expect(dirMissing("b_front", "a_roundoff", "b_backsalto")).toBe(0); // ロンダートは側方系
+    expect(dirMissing("b_front", "a_cartwheel", "a_flicflac", "b_backsalto")).toBe(1); // 側方系が不足
+  });
+
+  it("ロンダートと側宙は側方系に数える", () => {
+    expect(dirMissing("a_roundoff", "b_backsalto", "b_front")).toBe(0);
+    expect(dirMissing("b_sidesalto", "b_backsalto", "b_front")).toBe(0);
+  });
+
+  it("側転は徒手扱いなのでつなぎ技の要求も満たさない", () => {
+    const withCartwheel = computeScore(
+      [{ executionDeduction: 0, items: [skill("b_front"), skill("a_cartwheel"), skill("b_backsalto")] }],
+      "stick",
+    );
+    expect(withCartwheel.required.find((c) => c.key === "connect")?.passed).toBe(false);
+    const withRoundoff = computeScore(
+      [{ executionDeduction: 0, items: [skill("b_front"), skill("a_roundoff"), skill("b_backsalto")] }],
+      "stick",
+    );
+    expect(withRoundoff.required.find((c) => c.key === "connect")?.passed).toBe(true);
+  });
+});
+
+describe("内訳の見出し（徒手系ユニット）", () => {
+  const skill = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: true, isThrow: false });
+
+  it("投げを含む徒手系は「投げn」、含まないものは「徒手n」", () => {
+    const r = computeScore(
+      [
+        S(skill("b_front"), { kind: "motion", motionId: "fwd_roll", count: 1 }, skill("b_backsalto")),
+        S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 3 }, { kind: "catch" }),
+      ],
+      "stick",
+    );
+    expect(r.seriesBreakdowns[0].handRows.map((x) => x.label)).toEqual(["徒手1"]);
+    expect(r.seriesBreakdowns[0].tumRows.map((x) => x.label)).toEqual(["タンブリング1", "タンブリング2"]);
+    expect(r.seriesBreakdowns[1].handRows.map((x) => x.label)).toEqual(["投げ1"]);
+  });
+});

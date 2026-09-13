@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { generateRoutine, saltoRepeatCount, usableTemplates } from "../generate";
+import {
+  A_PRIORITY,
+  A_PRIORITY_WEIGHT,
+  REQUIRE_ALL_ELEMENTS_MIN_SCORE,
+  generateRoutine,
+  requiresAllElements,
+  saltoRepeatCount,
+  shortfallPenalty,
+  usableTemplates,
+} from "../generate";
+import { DIFF_SCORE } from "../constants";
 import { analyzeSeries, seriesSignature } from "../analysis";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
@@ -15,6 +25,9 @@ const tpl = (name: string, apparatus: TemplateApparatus, series: Series): Series
   updatedAt: Date.now(),
   series,
 });
+
+/** 候補を登録したテンプレートだけに固定する（自動生成の投げ・タンブリングを使わない） */
+const noAuto = { autoThrows: false, autoTumblings: false } as const;
 
 /** 決まった順に進む疑似乱数（テストを安定させる） */
 const seeded = (seed: number) => () => {
@@ -57,13 +70,22 @@ describe("使えるテンプレートの絞り込み", () => {
     expect(names).not.toContain("二つ投げ");
   });
 
-  it("使えるテンプレートが無ければ null", () => {
-    expect(generateRoutine([], { apparatus: "stick" })).toBeNull();
-    expect(generateRoutine([tpl("二つ投げ", "clubs", throwFront())], { apparatus: "rope" })).toBeNull();
+  it("使えるテンプレートも自動生成も無ければ null", () => {
+    expect(generateRoutine([], { apparatus: "stick", ...noAuto })).toBeNull();
+    expect(generateRoutine([tpl("二つ投げ", "clubs", throwFront())], { apparatus: "rope", ...noAuto })).toBeNull();
+  });
+
+  it("テンプレートが無くても自動生成だけで組める", () => {
+    const r = generateRoutine([], { apparatus: "stick", random: seeded(7) })!;
+    expect(r).not.toBeNull();
+    expect(r.used.every((t) => t.auto)).toBe(true);
+    // 投げもタンブリングも入る
+    expect(r.series.some((ser) => analyzeSeries(ser).units.some((u) => u.type === "tumbling"))).toBe(true);
+    expect(r.series.some((ser) => analyzeSeries(ser).throwCount > 0)).toBe(true);
+    expect(computeScore(r.series, "stick").dScore).toBeCloseTo(r.dScore, 5);
   });
 });
 
-// 候補を登録したテンプレートだけに固定したいテストは autoThrows: false を渡す
 describe("ランダム生成", () => {
   it("必須要素をできるだけ満たす（投げ3回・投げタン・三宙・つなぎ・方向系）", () => {
     const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(7) })!;
@@ -91,13 +113,13 @@ describe("ランダム生成", () => {
     const tums = ["b_backsalto", "b_backtuck", "b_backlayout", "b_tempo", "b_sidesalto"].map((id, i) =>
       tpl(`タンブリング${i}`, "common", S(skill(id), skill("a_flicflac"), skill(id), { kind: "catch" })),
     );
-    const r = generateRoutine(tums, { apparatus: "stick", autoThrows: false, random: seeded(17) })!;
+    const r = generateRoutine(tums, { apparatus: "stick", ...noAuto, random: seeded(17) })!;
     expect(r.used.length).toBeLessThanOrEqual(3);
   });
 
   it("同じ内容のテンプレートを重ねない（重複はDに寄与しないので落ちる）", () => {
     const dup = [tpl("A", "common", throwFront()), tpl("Aのコピー", "common", throwFront())];
-    const r = generateRoutine(dup, { apparatus: "stick", autoThrows: false, random: seeded(11) })!;
+    const r = generateRoutine(dup, { apparatus: "stick", ...noAuto, random: seeded(11) })!;
     expect(r.used).toHaveLength(1);
   });
 
@@ -137,8 +159,10 @@ describe("ランダム生成", () => {
         (n, a) => n + a.units.filter((u) => u.isThrowTumbling).length,
         0,
       );
-    expect(count(generateRoutine(many, { apparatus: "stick", random: seeded(23) })!)).toBe(1);
-    expect(count(generateRoutine(many, { apparatus: "stick", maxThrowTumbling: 3, random: seeded(23) })!)).toBe(3);
+    expect(count(generateRoutine(many, { apparatus: "stick", ...noAuto, random: seeded(23) })!)).toBe(1);
+    expect(
+      count(generateRoutine(many, { apparatus: "stick", ...noAuto, maxThrowTumbling: 3, random: seeded(23) })!),
+    ).toBe(3);
   });
 
   it("ジュニアでは投げが5回を超えない", () => {
@@ -159,6 +183,133 @@ describe("ランダム生成", () => {
   });
 });
 
+
+describe("DとAの損失の比較", () => {
+  /** 手具操作なしの技（シリーズ全体に手具操作が無いと A −0.2） */
+  const noApp = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: false, isThrow: false });
+
+  it("同じ難度なら、A減点の少ないほうを選ぶ", () => {
+    const withApp = tpl("手具操作あり", "common", triple());
+    const withoutApp = tpl(
+      "手具操作なし",
+      "common",
+      S(noApp("b_backsalto"), noApp("b_backsalto"), noApp("b_backsalto"), { kind: "catch" }),
+    );
+    [3, 7, 11].forEach((seed) => {
+      const r = generateRoutine([withApp, withoutApp], {
+        apparatus: "stick",
+        maxSeries: 1,
+        ...noAuto,
+        random: seeded(seed),
+      })!;
+      // Dは同じ（0.5）。A減点0.2のぶんだけ手具操作ありが勝つ
+      expect(r.used.map((t) => t.name)).toEqual(["手具操作あり"]);
+    });
+  });
+
+  it("Dの上がり分よりA減点が大きいシリーズは入れない", () => {
+    // 前宙1本（最大でもD +0.2）に手具操作が無い → A −0.2。差し引きで得にならない
+    const loss = tpl("手具操作なし前宙", "common", S(noApp("b_front")));
+    [3, 7, 11].forEach((seed) => {
+      const r = generateRoutine([...pool(), loss], { apparatus: "stick", ...noAuto, random: seeded(seed) })!;
+      expect(r.used.map((t) => t.name)).not.toContain("手具操作なし前宙");
+      // 手具操作なしのA減点を受けていない
+      expect(computeScore(r.series, "stick").noApparatusDeduction).toBe(0);
+    });
+  });
+
+  it("A減点を取り返せるだけDが上がるなら入れる", () => {
+    // 三宙（D +0.5）なら手具操作なしのA −0.2 を上回る
+    const gain = tpl("手具操作なし三宙", "common", S(noApp("b_tempo"), noApp("b_tempo"), noApp("b_tempo")));
+    const r = generateRoutine([gain], { apparatus: "stick", maxSeries: 1, ...noAuto, random: seeded(3) })!;
+    expect(r.used.map((t) => t.name)).toEqual(["手具操作なし三宙"]);
+  });
+});
+
+describe("A側の要求を満たす優先順位", () => {
+  const penalty = (ser: Series[], mandatory = false) =>
+    shortfallPenalty(computeScore(ser, "stick"), "stick", mandatory);
+  /** その要求だけを落とした構成を作るのは難しいので、空の構成からの差で順位を見る */
+  const only = (key: keyof typeof A_PRIORITY) => A_PRIORITY[key];
+
+  it("現実の感覚の順（投げの回数＝必須投げ受け＞投げタン＞多様性＞つなぎ＞三宙＞つなぎの手具操作）", () => {
+    expect(only("throwCount")).toBe(only("apparatusThrow"));
+    expect(only("apparatusThrow")).toBeGreaterThan(only("throwTumbling"));
+    expect(only("throwTumbling")).toBeGreaterThan(only("variety"));
+    expect(only("variety")).toBeGreaterThan(only("connect"));
+    expect(only("connect")).toBeGreaterThan(only("triple"));
+    expect(only("triple")).toBeGreaterThan(only("connectApparatus"));
+  });
+
+  it("順位の重みは難度点の刻み（0.1）より小さい＝同点のときだけ効く", () => {
+    expect(A_PRIORITY.throwCount * A_PRIORITY_WEIGHT).toBeLessThan(DIFF_SCORE.A);
+  });
+
+  it("満たした要求が多いほど引き算が小さい", () => {
+    const nothing = penalty([]);
+    const withThrows = penalty([throwFront(), throwSide(), throwBack()]);
+    expect(withThrows).toBeLessThan(nothing);
+    expect(penalty(pool().map((t) => t.series))).toBeLessThan(withThrows);
+  });
+
+  it("必ず満たす設定では、要求1つにつき難度点より大きく引く", () => {
+    const one = penalty([], true) - penalty([], false);
+    expect(one).toBeGreaterThan(1);
+  });
+
+  it("同じ点数の不足なら優先順位の低いほうを落とす（三宙よりつなぎを残す）", () => {
+    // つなぎだけ欠けた構成と、三宙だけ欠けた構成を比べる
+    const base = [throwFront(), throwSide(), throwBack(), triple(), connect()];
+    const noConnect = base.filter((s) => s !== base[4]);
+    const noTriple = base.filter((s) => s !== base[3]);
+    // どちらも1つ欠けだが、つなぎ（優先度3）を落とすほうが損が大きい
+    expect(penalty(noConnect)).toBeGreaterThan(penalty(noTriple));
+  });
+});
+
+describe("必須要素を必ず満たす構成", () => {
+  it("狙うDスコアで切り替わる（3点以上・上限なしは必ず満たす）", () => {
+    expect(requiresAllElements({ maxScore: null })).toBe(true);
+    expect(requiresAllElements({})).toBe(true);
+    expect(requiresAllElements({ maxScore: REQUIRE_ALL_ELEMENTS_MIN_SCORE })).toBe(true);
+    expect(requiresAllElements({ maxScore: REQUIRE_ALL_ELEMENTS_MIN_SCORE - 0.1 })).toBe(false);
+  });
+
+  it("3点以上を狙うと必須要素をすべて満たす", () => {
+    [3.5, 4.5].forEach((maxScore) => {
+      [3, 7, 11].forEach((seed) => {
+        const r = generateRoutine(pool(), { apparatus: "stick", maxScore, random: seeded(seed) })!;
+        expect(computeScore(r.series, "stick").missing).toEqual([]);
+        expect(r.dScore).toBeLessThanOrEqual(maxScore + 1e-9);
+      });
+    });
+  });
+
+  it("上限を指定しないときも必ず満たす", () => {
+    [3, 7, 11].forEach((seed) => {
+      const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
+      expect(computeScore(r.series, "stick").missing).toEqual([]);
+    });
+  });
+
+  it("requireAllElements で明示的に切り替えられる", () => {
+    expect(requiresAllElements({ maxScore: 1.0, requireAllElements: true })).toBe(true);
+    expect(requiresAllElements({ maxScore: null, requireAllElements: false })).toBe(false);
+    // 切ってもDの範囲は守る（必須要素の不足はA減点としてだけ効く）
+    const r = generateRoutine(pool(), {
+      apparatus: "stick",
+      maxScore: 4.0,
+      requireAllElements: false,
+      random: seeded(3),
+    })!;
+    expect(r.dScore).toBeLessThanOrEqual(4.0 + 1e-9);
+  });
+
+  it("低いDスコアを狙うときは満たせなくてもよい（範囲を優先する）", () => {
+    const r = generateRoutine([], { apparatus: "stick", maxScore: 1.5, random: seeded(5) })!;
+    expect(r.dScore).toBeLessThanOrEqual(1.5 + 1e-9);
+  });
+});
 
 describe("並び順", () => {
   /** 転回系（宙返り・投げタン）を含むシリーズか */
@@ -207,7 +358,7 @@ describe("宙返りの多様性", () => {
     // どちらも B+1+1 = D難度（0.5）だが、片方は後方宙返りの3連続
     const same = tpl("後宙3連続", "common", S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto")));
     const varied = tpl("いろいろ3連続", "common", S(skill("b_backsalto"), skill("b_sidesalto"), skill("b_backtuck")));
-    const r = generateRoutine([same, varied], { apparatus: "stick", maxSeries: 1, autoThrows: false, random: seeded(31) })!;
+    const r = generateRoutine([same, varied], { apparatus: "stick", maxSeries: 1, ...noAuto, random: seeded(31) })!;
     expect(r.used.map((t) => t.name)).toEqual(["いろいろ3連続"]);
   });
 
@@ -215,7 +366,7 @@ describe("宙返りの多様性", () => {
     // 後宙3連続（D難度・0.5）と 前宙1本（B難度・0.2）なら、繰り返しがあっても前者を採る
     const strong = tpl("後宙3連続", "common", S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto")));
     const weak = tpl("前宙1本", "common", S(skill("b_front")));
-    const r = generateRoutine([strong, weak], { apparatus: "stick", maxSeries: 1, autoThrows: false, random: seeded(31) })!;
+    const r = generateRoutine([strong, weak], { apparatus: "stick", maxSeries: 1, ...noAuto, random: seeded(31) })!;
     expect(r.used.map((t) => t.name)).toEqual(["後宙3連続"]);
   });
 });

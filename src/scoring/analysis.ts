@@ -356,6 +356,68 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   };
 }
 
+/** 徒手として数える要素か（徒手動作アイテム・徒手扱いの技＝側転） */
+function isHandItem(item: Item): boolean {
+  if (item.kind === "motion") return !!item.motionId && motionTimes(item.count) > 0;
+  return item.kind === "skill" && !!item.skillId && !!skillDef(item.skillId)?.isHandElement;
+}
+
+/** 転回技か（徒手扱いの技は除く） */
+function isTumblingItem(item: Item): boolean {
+  return item.kind === "skill" && !!item.skillId && !skillDef(item.skillId)?.isHandElement;
+}
+
+/** 投げ上げか（技の最中の投げを含む） */
+function isThrowItem(item: Item): boolean {
+  return item.kind === "throw" || (item.kind === "skill" && !!item.isThrow);
+}
+
+/**
+ * ユニットを区切る位置（その手前で区切る）を返す。
+ *
+ * キャッチで区切るほかに、**タンブリングの合間の徒手（側転・徒手動作）でも区切る**。
+ * 前宙→前転→前宙 なら「前宙（タンブリング）／前転（徒手）／前宙（タンブリング）」の
+ * 3つとしてそれぞれ評価する。徒手の前後どちらかに転回技が無いとき（着地の前転など）は区切らない。
+ *
+ * **投げ上げている間は区切らない**（投げ〜キャッチの間で徒手とタンブリングが混ざった
+ * ときの裁定は従来どおり1つの塊のまま）。
+ */
+export function unitSplitFlags(items: Item[]): boolean[] {
+  const split = items.map(() => false);
+  // キャッチで区切られた区間ごとに見る
+  const segments: [number, number][] = [];
+  let from = 0;
+  items.forEach((item, i) => {
+    if (item.kind === "catch") {
+      segments.push([from, i]);
+      from = i + 1;
+    }
+  });
+  segments.push([from, items.length]);
+
+  segments.forEach(([start, end]) => {
+    /** その徒手がタンブリングの合間か（前後に転回技がある） */
+    const between = (i: number) =>
+      isHandItem(items[i]) &&
+      // 投げ上げている間（手具が空中にある間）は区切らない
+      !items.slice(start, i).some(isThrowItem) &&
+      items.slice(start, i).some(isTumblingItem) &&
+      items.slice(i + 1, end).some(isTumblingItem);
+    let last: "tumbling" | "hand" | null = null;
+    for (let i = start; i < end; i++) {
+      if (between(i)) {
+        if (last === "tumbling") split[i] = true;
+        last = "hand";
+      } else if (isTumblingItem(items[i]) || isThrowItem(items[i])) {
+        // 徒手のあとの転回技（そこに向けた投げ上げを含む）から次の塊にする
+        if (last === "hand") split[i] = true;
+        last = "tumbling";
+      }
+    }
+  });
+  return split;
+}
+
 /**
  * items を左から走査し、catch を区切りに unit へ分類する中核関数。
  * 投げを含まない連続技 → tumbling、投げを含む塊 → throw。
@@ -385,7 +447,10 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
     }
     buf = null;
   };
-  series.items.forEach((item) => {
+  const splitBefore = unitSplitFlags(series.items);
+  series.items.forEach((item, i) => {
+    // タンブリングの合間の徒手はここで区切る（徒手の手前・徒手の直後）
+    if (splitBefore[i]) flush();
     if (item.kind === "catch") {
       flush();
     } else if (item.kind === "throw") {

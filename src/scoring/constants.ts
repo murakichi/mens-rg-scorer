@@ -353,7 +353,8 @@ export const HAND_MOTIONS: HandMotion[] = [
 ];
 
 export const SKILL_LIST: Skill[] = [
-  { id: "a_cartwheel", name: "側転", category: CATEGORY.SIDE, difficulty: "A", isSalto: false, isConnectA: true },
+  // 側転は徒手扱い：つなぎ技にならず、方向系にも数えない（徒手動作としては選べる）
+  { id: "a_cartwheel", name: "側転", category: CATEGORY.SIDE, difficulty: "A", isSalto: false, isHandElement: true },
   { id: "a_roundoff", name: "ロンダート", category: CATEGORY.SIDE, difficulty: "A", isSalto: false, isConnectA: true },
   { id: "a_flicflac", name: "バク転", category: CATEGORY.BACKWARD, difficulty: "A", isSalto: false, isConnectA: true },
   { id: "a_handspring", name: "ハンドスプリング", category: CATEGORY.FORWARD, difficulty: "A", isSalto: false, isConnectA: true },

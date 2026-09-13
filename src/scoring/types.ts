@@ -84,6 +84,11 @@ export interface Skill {
   saltoOnlyInChain?: boolean;
   /** つなぎ技として宙返り間に挟めるA難度技か */
   isConnectA?: boolean;
+  /**
+   * 徒手扱いの技（側転）。転回技としては数えないので、つなぎ技にならず、
+   * 方向系（前方系・側方系・後方系）の判定にも数えない。
+   */
+  isHandElement?: boolean;
   /** 2回宙返り系か（ジュニア適用規則では禁止のため選択肢に出さない） */
   isDoubleSalto?: boolean;
   /** ひねり・姿勢から組み立てられる宙返りか（`TwistParams` と1対1） */
