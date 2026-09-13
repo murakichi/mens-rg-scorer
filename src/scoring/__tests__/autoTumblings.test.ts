@@ -28,6 +28,10 @@ import {
   apparatusHighDifficultyWeight,
   isHighDifficultySkill,
   CONNECT_RISE_WEIGHT,
+  TEMPO_CONNECT_WEIGHT,
+  TEMPO_SKILL_ID,
+  TEMPO_TWIST_SKILL_ID,
+  isTempoSalto,
   readTumblingShape,
   tumblingShapeRank,
   throwTumblingShapeRank,
@@ -385,6 +389,37 @@ describe("宙返りの連続の組み方", () => {
 });
 
 describe("つなぎ技", () => {
+  it("テンポひねりの次は テンポ ＞ それ以外の宙返り ＞ バク転", () => {
+    const w = saltoWeights(TEMPO_TWIST_SKILL_ID);
+    const weightOf = (id: string) => w[id] ?? 1;
+    // テンポ宙返りがいちばん選ばれやすい
+    nextSaltoOptions(TEMPO_TWIST_SKILL_ID)
+      .filter((id) => id !== TEMPO_SKILL_ID)
+      .forEach((id) => expect(weightOf(TEMPO_SKILL_ID)).toBeGreaterThan(weightOf(id)));
+    // バク転を挟む形（つなぎがバク転になるのはテンポ系の後だけ）は更に少ない
+    expect(TEMPO_CONNECT_WEIGHT).toBeLessThan(1);
+    let tempoFirst = 0;
+    let otherFirst = 0;
+    for (let seed = 0; seed < 40; seed++)
+      autoTumblingSpecs({ random: seeded(seed) })
+        .filter((sp) => sp.pattern.connect)
+        .forEach((sp) => {
+          if (isTempoSalto(sp.saltoIds[0])) tempoFirst += 1;
+          else otherFirst += 1;
+        });
+    expect(tempoFirst).toBeLessThan(otherFirst);
+  });
+
+  it("バク転は入りの技には使わない（合理的な理由が無ければ実施しない）", () => {
+    Object.values(TUMBLING_ENTRIES).forEach((entries) =>
+      entries.forEach((entry) => expect(entry).not.toContain("a_flicflac")),
+    );
+    for (let seed = 0; seed < 20; seed++)
+      autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) =>
+        expect(sp.entry).not.toContain("a_flicflac"),
+      );
+  });
+
   it("宙返りのあとのバク転はテンポの後だけ", () => {
     expect(connectOptionsAfter("b_tempo")).toEqual(["a_flicflac"]);
     expect(connectOptionsAfter("b_front")).not.toContain("a_flicflac");
