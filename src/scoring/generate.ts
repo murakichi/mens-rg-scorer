@@ -31,6 +31,7 @@ import { autoThrowTemplates, cheneCountRange, isAutoThrowTemplate, withCheneCoun
 import {
   LIMITED_SKILLS,
   LIMITED_SKILL_MAX,
+  apparatusHighDifficultyWeight,
   isHighDifficultySkill,
   autoTumblingTemplates,
   isAutoTumblingTemplate,
@@ -238,6 +239,9 @@ export function limitedSkillCounts(series: Series[]): Map<string, number> {
  * それだけで最大を狙う構成でも 0個23%／1個43%／2個28%／3個以上5% に収まる。
  * ここは難度点の刻み（0.1）より小さくして、同じ点数なら易しい技の構成を選ぶ程度にする
  * （0.1 にすると0個が35%まで増えて、1〜2つという実態から外れる）。
+ *
+ * 手具によって出やすさが違う分は `apparatusHighDifficultyWeight` で割る
+ * （リングは重く持ったままひねりにくいので、他の手具より更に嫌う）。
  */
 export const HIGH_DIFFICULTY_WEIGHT = 0.02;
 
@@ -328,7 +332,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       variety -
       auto -
       limitedUsed * LIMITED_SKILL_WEIGHT -
-      highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT),
+      (highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT)) /
+        apparatusHighDifficultyWeight(opts.apparatus),
     dScore: r.dScore,
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),

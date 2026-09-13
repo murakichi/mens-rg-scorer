@@ -96,8 +96,12 @@ export const AFTER_BACK_LAYOUT_SALTOS: { id: string; weight: number }[] = [
 ];
 
 /** 実施する技の選ばれやすさ（直前の技で変わる。表に無い技は1） */
-export function saltoWeights(prevId: string, junior = false): Record<string, number> {
-  const weights = baseSkillWeights(junior);
+export function saltoWeights(
+  prevId: string,
+  junior = false,
+  apparatus?: ApparatusKey,
+): Record<string, number> {
+  const weights = baseSkillWeights(junior, apparatus);
   if (!isBackLayoutSalto(prevId)) return weights;
   // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）
   return { ...weights, ...Object.fromEntries(AFTER_BACK_LAYOUT_SALTOS.map((x) => [x.id, x.weight])) };
@@ -137,6 +141,17 @@ const limitedWeights = (): Record<string, number> =>
  */
 export const SALTO_DIFFICULTY_WEIGHT: Partial<Record<Difficulty, number>> = { D: 0.6, E: 0.3 };
 
+/**
+ * 手具ごとの、単発で高難度な技の出やすさの倍率（`SALTO_DIFFICULTY_WEIGHT` に掛ける）。
+ * リングは重く、持ったままひねるのが難しいので、他の手具より更に頻度が低い。
+ * 表に無い手具は1（倍率なし）。
+ */
+export const APPARATUS_HIGH_DIFFICULTY_WEIGHT: Partial<Record<ApparatusKey, number>> = { ring: 0.4 };
+
+/** 手具ごとの単発高難度の出やすさの倍率（既定1） */
+export const apparatusHighDifficultyWeight = (apparatus?: ApparatusKey): number =>
+  (apparatus && APPARATUS_HIGH_DIFFICULTY_WEIGHT[apparatus]) ?? 1;
+
 /** 単発で高難度とみなす難度（この値以上） */
 export const HIGH_DIFFICULTY_MIN: Difficulty = "D";
 
@@ -147,12 +162,13 @@ export function isHighDifficultySkill(id: string, junior = false): boolean {
 }
 
 /** 技の選ばれやすさの土台（高難度の単発・実施が少ない技を下げる） */
-function baseSkillWeights(junior: boolean): Record<string, number> {
+function baseSkillWeights(junior: boolean, apparatus?: ApparatusKey): Record<string, number> {
   const weights = limitedWeights();
+  const factor = apparatusHighDifficultyWeight(apparatus);
   skillOptions(junior).forEach((sk) => {
     const d = skillDifficulty(sk.id, junior);
     const w = d ? SALTO_DIFFICULTY_WEIGHT[d] : undefined;
-    if (w !== undefined) weights[sk.id] = Math.min(weights[sk.id] ?? 1, w);
+    if (w !== undefined) weights[sk.id] = Math.min(weights[sk.id] ?? 1, w * factor);
   });
   return weights;
 }
@@ -161,8 +177,12 @@ function baseSkillWeights(junior: boolean): Record<string, number> {
  * つなぎ技のあとの技の選ばれやすさ。
  * 基本技も普通に実施する選手（ジュニア・基本的な構成）には重みを付けない。
  */
-export function connectFinishWeights(basicLevel = false, junior = false): Record<string, number> {
-  const weights = baseSkillWeights(junior);
+export function connectFinishWeights(
+  basicLevel = false,
+  junior = false,
+  apparatus?: ApparatusKey,
+): Record<string, number> {
+  const weights = baseSkillWeights(junior, apparatus);
   if (basicLevel) return weights;
   return { ...weights, ...Object.fromEntries(CONNECT_FINISH_RARE.map((id) => [id, RARE_PICK_WEIGHT])) };
 }
@@ -377,6 +397,11 @@ function pickDifferent(
 export interface AutoTumblingOptions {
   junior?: boolean;
   /**
+   * 組む手具。単発で高難度な技の出やすさが手具で変わる
+   * （`APPARATUS_HIGH_DIFFICULTY_WEIGHT`：リングは重く持ったままひねりにくい）。
+   */
+  apparatus?: ApparatusKey;
+  /**
    * 基本的な構成の選手か（低いDスコアを狙う構成）。
    * Dスコアの低い選手は、ルールの要求を満たしきれない単純なタンブリングを実施する：
    * ロンダート→宙返り1本で終わり／三宙なし（2本まで）／つなぎなし／D難度なし。
@@ -414,6 +439,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
   const rand = opts.random ?? Math.random;
   const junior = !!opts.junior;
   const basicLevel = !!opts.basicLevel;
+  const apparatus = opts.apparatus;
   // 使ってよい技の範囲（指定が無ければ全部）。基本的な構成ではD難度以上を使わない
   const allowed = opts.skillIds && opts.skillIds.length > 0 ? new Set(opts.skillIds) : null;
   const usable = (ids: string[]) =>
@@ -448,7 +474,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       .filter((id) => !pattern.connect || usable(connectOptionsAfter(id, junior)).length > 0);
     if (firsts.length === 0) return;
     const nextCount = cycler(saltoCountRange(pattern), rand);
-    const weights = baseSkillWeights(junior);
+    const weights = baseSkillWeights(junior, apparatus);
     /** 1本目：できるだけ別の技を使いつつ、高難度の単発・実施が少ない技は選ばれにくくする */
     const firstsUsed: string[] = [];
     const nextFirst = () => {
@@ -479,7 +505,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
             usable(saltoOptionsAfterConnect(cid, junior)),
             ids,
             rand,
-            connectFinishWeights(junior || basicLevel, junior),
+            connectFinishWeights(junior || basicLevel, junior, apparatus),
           );
           if (!after) continue;
           ids.push(after);
@@ -487,7 +513,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         // 残りは「向きと難度」のルールで続ける
         while (ids.length < pattern.saltos.max) {
           const prev = ids[ids.length - 1];
-          const next = pickDifferent(continuations(prev), ids, rand, saltoWeights(prev, junior));
+          const next = pickDifferent(continuations(prev), ids, rand, saltoWeights(prev, junior, apparatus));
           if (!next) break;
           ids.push(next);
         }
@@ -568,7 +594,7 @@ export function autoTumblingTemplates(
   apparatus: ApparatusKey,
   opts: AutoTumblingOptions = {},
 ): AutoTumblingTemplate[] {
-  return autoTumblingSpecs(opts).map((spec) => autoTemplate(apparatus, spec));
+  return autoTumblingSpecs({ apparatus, ...opts }).map((spec) => autoTemplate(apparatus, spec));
 }
 
 /** 自動生成のタンブリングの候補か */

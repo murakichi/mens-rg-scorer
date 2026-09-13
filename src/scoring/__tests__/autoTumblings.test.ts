@@ -24,6 +24,9 @@ import {
   nextSaltoOptions,
   saltoCountRange,
   SALTO_DIFFICULTY_WEIGHT,
+  APPARATUS_HIGH_DIFFICULTY_WEIGHT,
+  apparatusHighDifficultyWeight,
+  isHighDifficultySkill,
   saltoOptionsAfterConnect,
   saltoWeights,
   tumblingFlowErrors,
@@ -226,6 +229,30 @@ describe("宙返りの連続の組み方", () => {
         count.set(d, (count.get(d) ?? 0) + 1);
       });
     expect(count.get("E") ?? 0).toBeLessThan(count.get("B") ?? 0);
+  });
+
+  it("リングは単発高難度が他の手具より更に選ばれにくい", () => {
+    // リングは重く、持ったままひねりにくい
+    expect(APPARATUS_HIGH_DIFFICULTY_WEIGHT.ring!).toBeLessThan(1);
+    expect(apparatusHighDifficultyWeight("ring")).toBeLessThan(apparatusHighDifficultyWeight("clubs"));
+    expect(apparatusHighDifficultyWeight("stick")).toBe(1);
+    expect(apparatusHighDifficultyWeight()).toBe(1);
+    const ring = saltoWeights("b_front", false, "ring");
+    const stick = saltoWeights("b_front", false, "stick");
+    expect(ring["d_back2twist"]).toBeLessThan(stick["d_back2twist"]);
+    expect(ring["e_backlay3twist"]).toBeLessThan(stick["e_backlay3twist"]);
+    // C難度以下は手具で変わらない
+    expect(ring["b_backsalto"]).toBeUndefined();
+    // 実際に組み立てた候補でも、リングのD難度以上は他の手具より少ない
+    const countFor = (apparatus: "ring" | "stick") => {
+      let n = 0;
+      for (let seed = 0; seed < 40; seed++)
+        autoTumblingSpecs({ random: seeded(seed), apparatus }).forEach((sp) => {
+          n += sp.saltoIds.filter((id) => isHighDifficultySkill(id)).length;
+        });
+      return n;
+    };
+    expect(countFor("ring")).toBeLessThan(countFor("stick"));
   });
 
   it("後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回 の順に選ばれやすい", () => {

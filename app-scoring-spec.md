@@ -459,6 +459,10 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
   D＝0.6／E＝0.3）で抑えていて、上限は決めない。最大を狙う構成でも
   **D難度以上の単発は 0個18%／1個52%／2個25%／3個以上5%**（日本トップの実演技も2つ）。
   評価側の `HIGH_DIFFICULTY_WEIGHT`（0.02）は同点のときのタイブレークだけ
+- **リングは単発高難度が更に少ない**（`APPARATUS_HIGH_DIFFICULTY_WEIGHT`：ring＝0.4）。
+  リングは重く、持ったままひねるのが難しい。候補づくりの重みに掛け、評価側の
+  `HIGH_DIFFICULTY_WEIGHT` は逆に割る（＝より強く嫌う）。技の一覧すべてから組んだ実測で
+  **D難度以上の単発は 平均 スティック1.24個／クラブ0.96個／リング0.66個**（Dスコアはほぼ不変）
 - **ハンドスプリング・転宙は実施が少ない**（`LIMITED_SKILLS`）。候補としては選ばれにくくし、
   **演技内で1回まで**（`LIMITED_SKILL_MAX`）。技として入れても徒手動作として入れても数える
   （`limitedSkillCounts`）。使うこと自体も `LIMITED_SKILL_WEIGHT`（0.02）だけ弱く嫌う
