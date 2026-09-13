@@ -30,6 +30,8 @@ import {
   CONNECT_RISE_WEIGHT,
   canEndChain,
   endsFacingBackward,
+  backwardEndChance,
+  BACKWARD_END_ZERO_SCORE,
   THROW_IN_SIDE_SALTO_WEIGHT,
   TEMPO_CONNECT_WEIGHT,
   noRollAfter,
@@ -414,7 +416,38 @@ describe("つなぎ技", () => {
     expect(tempoFirst).toBeLessThan(otherFirst);
   });
 
-  it("上級者は後ろ向きで終わる後方宙返りで終わらない（基本的な構成では終わる）", () => {
+  it("後ろ向きで終わる後方宙返りで終わる確率はDスコアで指数的に下がり、3.0点で0になる", () => {
+    // 1点ごとに半分。上限なし（難度を狙いきる構成）は0
+    expect(backwardEndChance(0)).toBe(1);
+    expect(backwardEndChance(1)).toBeCloseTo(0.5);
+    expect(backwardEndChance(2)).toBeCloseTo(0.25);
+    expect(backwardEndChance(2.9)).toBeGreaterThan(0);
+    expect(backwardEndChance(BACKWARD_END_ZERO_SCORE)).toBe(0);
+    expect(backwardEndChance(4)).toBe(0);
+    expect(backwardEndChance(null)).toBe(0);
+    expect(backwardEndChance()).toBe(0);
+    // 実際に組み立てた候補でも、狙うDスコアが上がるほど後ろ向きで終わる候補が減る
+    const rate = (targetScore: number | null) => {
+      let backward = 0;
+      let total = 0;
+      for (let seed = 0; seed < 30; seed++)
+        autoTumblingSpecs({ random: seeded(seed), targetScore, basicLevel: (targetScore ?? 9) < 2 }).forEach(
+          (sp) => {
+            total += 1;
+            if (endsFacingBackward(sp.saltoIds[sp.saltoCount - 1])) backward += 1;
+          },
+        );
+      return total === 0 ? 0 : backward / total;
+    };
+    const low = rate(0.5);
+    const mid = rate(2.0);
+    expect(low).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(low);
+    expect(rate(3.0)).toBe(0);
+    expect(rate(null)).toBe(0);
+  }, 60_000);
+
+  it("連続の最後に置けない技（後ろ向きで終わる技）", () => {
     // 整数ひねりの後方宙返りは後ろ向きに降りる
     expect(endsFacingBackward("b_backsalto")).toBe(true);
     expect(endsFacingBackward("c_back1full")).toBe(true);
@@ -424,22 +457,20 @@ describe("つなぎ技", () => {
     expect(endsFacingBackward("b_divefront")).toBe(false);
     expect(endsFacingBackward("b_front")).toBe(false);
     expect(canEndChain("b_backsalto")).toBe(false);
-    expect(canEndChain("b_backsalto", true)).toBe(true); // 基本的な構成では終わる
+    expect(canEndChain("b_backsalto", true)).toBe(true); // 抽選が通った候補では終わる
+    // 前方の半ひねり・1回半ひねりは実戦でほぼ無いので、抽選が通っても終わらない
+    expect(endsFacingBackward("b_fronthalf")).toBe(true);
+    expect(canEndChain("b_fronthalf")).toBe(false);
+    expect(canEndChain("b_fronthalf", true)).toBe(false);
+    expect(canEndChain("tw:front:1.5:layout", true)).toBe(false);
     // 2回宙返り系は連続も繋ぎもせずそこで終わる
     expect(canEndChain("d_doubleback")).toBe(true);
-    // 組み立てた候補の最後も後ろ向きで終わらない
+    // 組み立てた候補の最後も後ろ向きで終わらない（上限なし＝上級者）
     for (let seed = 0; seed < 30; seed++)
       autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
         const last = sp.saltoIds[sp.saltoCount - 1];
         expect(canEndChain(last)).toBe(true);
       });
-    // 基本的な構成では後方宙返りで終わる候補も作る
-    const basic = [] as string[];
-    for (let seed = 0; seed < 30; seed++)
-      autoTumblingSpecs({ random: seeded(seed), basicLevel: true }).forEach((sp) =>
-        basic.push(sp.saltoIds[sp.saltoCount - 1]),
-      );
-    expect(basic.some((id) => endsFacingBackward(id))).toBe(true);
   });
 
   it("側宙の実施中に投げる構成は稀", () => {
@@ -684,7 +715,11 @@ describe("候補と調整", () => {
       (x) => saltoCountRange(x.spec.pattern).length > 1 && x.spec.saltoIds.length > x.spec.pattern.saltos.min,
     )!;
     const other = saltoCountRange(t.spec.pattern).find(
-      (n) => n !== t.spec.saltoCount && n <= t.spec.saltoIds.length,
+      (n) =>
+        n !== t.spec.saltoCount &&
+        n <= t.spec.saltoIds.length &&
+        // 差し替えた本数でも連続の終わり方が成り立つこと
+        canEndChain(t.spec.saltoIds[n - 1], t.spec.allowBackwardEnd),
     )!;
     const tuned = withSaltoCount(t, other)!;
     expect(tuned.spec.saltoCount).toBe(other);
