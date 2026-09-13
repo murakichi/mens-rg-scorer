@@ -251,6 +251,14 @@ describe("宙返りの連続の組み方", () => {
     expect(weightOf("c_back1full")).toBeGreaterThan(weightOf("c_backtuck1full"));
     // 前宙 ＞ 前宙半ひねり
     expect(weightOf("b_front")).toBeGreaterThan(weightOf("b_fronthalf"));
+    // テンポひねりは後方系のC難度のなかで最も少ない
+    const backwardC = skillOptions()
+      .filter((sk) => sk.category === CATEGORY.BACKWARD && skillDifficulty(sk.id) === "C")
+      .map((sk) => sk.id);
+    expect(backwardC).toContain("c_tempotwist");
+    backwardC
+      .filter((id) => id !== "c_tempotwist")
+      .forEach((id) => expect(weightOf("c_tempotwist")).toBeLessThan(weightOf(id)));
   });
 
   it("つなぎのあとに難度が上がる組み方は少ない", () => {
