@@ -10,7 +10,8 @@
 //    後ろ向きに降りれば後方系、前向きに降りれば前方系・側方系
 //  - 連続の難度は**だんだん下がる**（後方1回半ひねり→前方1回ひねり→前宙 など）。
 //    テンポ宙返り・テンポひねりだけは例外で、そのあと難度が上がってよい
-//  - 後方系を続けて実施することは少ないので、テンポ以外の後方系で連続は切る
+//  - 後方系を続けて実施することは少ないので、テンポ以外の後方系で連続は切る。
+//    ただし後方伸身宙返り（ひねりを含む）の後は 前宙・きりもみ・きりもみ転回 が主流
 //  - 宙返りのあとのバク転は（テンポの後を除いて）個人ではまず無いので、つなぎ技は
 //    前向きに降りた後のロンダート・側転・ハンドスプリング・とび前転にする
 //  - つなぎの最後にただの後方宙返りは実施しない（B難度がほしいときはダイビング前宙）。
@@ -66,6 +67,21 @@ export const THROW_ROLL_MOTION = "fwd_roll";
 
 /** 投げ受けで前方系の宙返りに続けて実施する技（側宙、たまに転宙） */
 export const THROW_FINISH_SALTOS: string[] = ["b_sidesalto", "b_tenchu"];
+
+/**
+ * 後方伸身宙返り（ひねりの有無を問わない）の後に実施する主流の技。
+ * 後ろ向きに降りる技だが、ここだけは連続が切れず前方系に続く。
+ * 側宙はこの後の前宙に続けて実施する（前宙（＋側宙））。
+ * きりもみ・きりもみ転回は宙返りの連続の中でだけ宙返りとして数える技（Q&A Q7）で、
+ * まさにこの位置で実施するので難度の上下は問わない。
+ */
+export const AFTER_BACK_LAYOUT_SALTOS: string[] = ["b_front", "b_kirimomi", "c_kirimomiten"];
+
+/** 後方伸身宙返り系（ひねりを含む）か */
+export function isBackLayoutSalto(id: string): boolean {
+  const t = skillDef(id)?.twist;
+  return t?.base === "back" && t.posture === "layout";
+}
 
 /**
  * つなぎ技のあとには実施しない技。
@@ -125,6 +141,9 @@ export function firstSaltoOptions(junior = false): string[] {
  *  - テンポ以外の後方系のあとは続けない（後方系の連続は実際には少ない）
  */
 export function nextSaltoOptions(prevId: string, junior = false): string[] {
+  const offered = new Set(skillOptions(junior, skillFlowAfter(prevId)).map((s) => s.id));
+  // 後方伸身宙返り（ひねりを含む）の後は 前宙・きりもみ・きりもみ転回
+  if (isBackLayoutSalto(prevId)) return AFTER_BACK_LAYOUT_SALTOS.filter((id) => offered.has(id));
   const backward = leadsBackward(prevId);
   if (backward && !isTempoSalto(prevId)) return [];
   const ceiling = isTempoSalto(prevId) ? MAX_DIFF : difficultyValue(prevId, junior);
@@ -152,7 +171,7 @@ export function saltoOptionsAfterConnect(connectId: string, junior = false): str
   const next = TUMBLING_CONNECTS.find((c) => c.id === connectId)?.next;
   return saltoList(junior, connectId)
     .filter((s) => (next === CATEGORY.SIDE ? s.category !== CATEGORY.BACKWARD : s.category === next))
-    // ただの後方宙返りは実施しない（B難度がほしいときはダイビング前宙）。ジュニアは除く
+    // ただの後方宙返りは実施しない（B難度がほしいときはダイビング前宙・後方伸身宙返り）。ジュニアは除く
     .filter((s) => junior || !CONNECT_FINISH_AVOID.includes(s.id))
     .map((s) => s.id);
 }

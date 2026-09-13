@@ -8,8 +8,10 @@ import {
   autoTumblingSpecs,
   autoTumblingTemplates,
   buildAutoTumblingSeries,
+  AFTER_BACK_LAYOUT_SALTOS,
   connectOptionsAfter,
   firstSaltoOptions,
+  isBackLayoutSalto,
   isAutoTumblingTemplate,
   isTempoSalto,
   nextSaltoOptions,
@@ -128,10 +130,36 @@ describe("宙返りの連続の組み方", () => {
     expect(nextSaltoOptions("b_tempo").some((id) => diff(id) > diff("b_tempo"))).toBe(true);
   });
 
-  it("後方系を続けて実施しない（テンポは例外）", () => {
+  it("後方系を続けて実施しない（テンポ・後方伸身宙返りは例外）", () => {
     expect(nextSaltoOptions("b_backsalto")).toEqual([]);
-    expect(nextSaltoOptions("b_backlayout")).toEqual([]);
+    expect(nextSaltoOptions("b_backtuck")).toEqual([]);
     expect(nextSaltoOptions("b_tempo").length).toBeGreaterThan(0);
+  });
+
+  it("後方伸身宙返りの後は 前宙・きりもみ・きりもみ転回（ひねっても同じ）", () => {
+    ["b_backlayout", "b_backlayhalf", "c_backlay1full", "d_backlay25", "e_backlay35twist"].forEach((id) => {
+      expect(isBackLayoutSalto(id)).toBe(true);
+      expect(nextSaltoOptions(id)).toEqual(AFTER_BACK_LAYOUT_SALTOS);
+    });
+    // 側宙はその前宙に続けて実施する
+    expect(nextSaltoOptions("b_front")).toContain("b_sidesalto");
+    // 伸身以外の後方宙返りは連続しない
+    expect(isBackLayoutSalto("b_backsalto")).toBe(false);
+    expect(isBackLayoutSalto("b_backtuck")).toBe(false);
+  });
+
+  it("つなぎの最後の後方伸身宙返りはそのまま前宙に続けられる", () => {
+    expect(saltoOptionsAfterConnect(ROUNDOFF_SKILL_ID)).toContain("b_backlayout");
+    const s = buildAutoTumblingSeries({
+      pattern: pattern("connect"),
+      saltoCount: 3,
+      entry: [],
+      saltoIds: ["b_front", "b_backlayout", "b_front"],
+      connectId: ROUNDOFF_SKILL_ID,
+    });
+    expect(names(s)).toEqual(["前宙", "ロンダート", "後方伸身宙返り", "前宙"]);
+    expect(tumblingFlowErrors(s)).toEqual([]);
+    expect(hasConnect(skillsOf(s))).toBe(true);
   });
 
   it("実際の連続の例どおりに組める", () => {
@@ -155,7 +183,9 @@ describe("宙返りの連続の組み方", () => {
         const chained = nextSaltoOptions(prev);
         if (chained.length === 0) return;
         if (!chained.includes(id)) return; // つなぎ後の入り直し
-        expect(diff(id)).toBeLessThanOrEqual(isTempoSalto(prev) ? 5 : diff(prev));
+        // テンポの後と後方伸身宙返りの後（前宙・きりもみ系）は難度の上下を問わない
+        if (isTempoSalto(prev) || isBackLayoutSalto(prev)) return;
+        expect(diff(id)).toBeLessThanOrEqual(diff(prev));
       });
     });
   });
