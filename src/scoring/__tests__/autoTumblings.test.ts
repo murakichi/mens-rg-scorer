@@ -28,6 +28,9 @@ import {
   apparatusHighDifficultyWeight,
   isHighDifficultySkill,
   CONNECT_RISE_WEIGHT,
+  canEndChain,
+  endsFacingBackward,
+  THROW_IN_SIDE_SALTO_WEIGHT,
   TEMPO_CONNECT_WEIGHT,
   noRollAfter,
   TEMPO_SKILL_ID,
@@ -411,8 +414,54 @@ describe("つなぎ技", () => {
     expect(tempoFirst).toBeLessThan(otherFirst);
   });
 
-  it("側宙の後に前転は実施しない", () => {
+  it("上級者は後ろ向きで終わる後方宙返りで終わらない（基本的な構成では終わる）", () => {
+    // 整数ひねりの後方宙返りは後ろ向きに降りる
+    expect(endsFacingBackward("b_backsalto")).toBe(true);
+    expect(endsFacingBackward("c_back1full")).toBe(true);
+    expect(endsFacingBackward("b_backlayout")).toBe(true);
+    // 半ひねり・ダイビング前宙・前方系は前向きに降りる
+    expect(endsFacingBackward("c_back15")).toBe(false);
+    expect(endsFacingBackward("b_divefront")).toBe(false);
+    expect(endsFacingBackward("b_front")).toBe(false);
+    expect(canEndChain("b_backsalto")).toBe(false);
+    expect(canEndChain("b_backsalto", true)).toBe(true); // 基本的な構成では終わる
+    // 2回宙返り系は連続も繋ぎもせずそこで終わる
+    expect(canEndChain("d_doubleback")).toBe(true);
+    // 組み立てた候補の最後も後ろ向きで終わらない
+    for (let seed = 0; seed < 30; seed++)
+      autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
+        const last = sp.saltoIds[sp.saltoCount - 1];
+        expect(canEndChain(last)).toBe(true);
+      });
+    // 基本的な構成では後方宙返りで終わる候補も作る
+    const basic = [] as string[];
+    for (let seed = 0; seed < 30; seed++)
+      autoTumblingSpecs({ random: seeded(seed), basicLevel: true }).forEach((sp) =>
+        basic.push(sp.saltoIds[sp.saltoCount - 1]),
+      );
+    expect(basic.some((id) => endsFacingBackward(id))).toBe(true);
+  });
+
+  it("側宙の実施中に投げる構成は稀", () => {
+    expect(THROW_IN_SIDE_SALTO_WEIGHT).toBeLessThan(1);
+    let side = 0;
+    let other = 0;
+    for (let seed = 0; seed < 40; seed++)
+      autoTumblingSpecs({ random: seeded(seed) })
+        .filter((sp) => sp.pattern.throwInSkill)
+        .forEach((sp) => {
+          if (sp.saltoIds[sp.saltoCount - 1] === "b_sidesalto") side += 1;
+          else other += 1;
+        });
+    expect(side * 3).toBeLessThan(other);
+  });
+
+  it("側宙・後ろ向きで終わる後方宙返りの後に前転は実施しない", () => {
     expect(noRollAfter("b_sidesalto")).toBe(true);
+    // 後ろ向きで終わる後方宙返りの後にも前転は入れない
+    expect(noRollAfter("b_backsalto")).toBe(true);
+    expect(noRollAfter("c_back1full")).toBe(true);
+    expect(noRollAfter("b_front")).toBe(false);
     // 側宙で投げる形はそのままキャッチする（前転を挟まない）
     const series = buildAutoTumblingSeries({
       pattern: pattern("chainThrowInSkill"),
