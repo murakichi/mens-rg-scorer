@@ -11,6 +11,7 @@ import {
   catchStylesForThrow,
   catchStylesForPattern,
   NO_VIEW_TAG,
+  VERTICAL_THREE_OTHER_CATCH_WEIGHT,
   cheneCountRange,
   isAutoThrowTemplate,
   withCheneCount,
@@ -368,6 +369,23 @@ describe("ランダム生成への組み込み", () => {
         }),
       ),
     );
+  });
+
+  it("前転3回（縦3動作）は手具を使ったキャッチが主流", () => {
+    expect(VERTICAL_THREE_OTHER_CATCH_WEIGHT).toBeLessThan(1);
+    const pattern = AUTO_THROW_PATTERNS.find((x) => x.verticalThree)!;
+    expect(pattern.id).toBe("rolls");
+    // クラブは手具で押さえつけて受けられるので、それが多くなる
+    let useapp = 0;
+    let other = 0;
+    for (let seed = 0; seed < 20; seed++)
+      autoThrowSpecs("clubs", { random: seeded(seed) })
+        .filter((sp) => sp.pattern.verticalThree)
+        .forEach((sp) => {
+          if (sp.catchStyle.id === CATCH_USE_APPARATUS) useapp += 1;
+          else other += 1;
+        });
+    expect(useapp).toBeGreaterThan(other);
   });
 
   it("autoThrows: false なら使わない", () => {

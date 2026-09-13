@@ -26,7 +26,7 @@
 //  - 同じ宙返りの繰り返しは避ける（前宙は例外）。必須ではないので弱い重み付けにとどめる
 // =====================================================================
 
-import { analyzeSeries } from "./analysis";
+import { analyzeSeries, motionDef, motionTimes } from "./analysis";
 import { autoThrowTemplates, cheneCountRange, isAutoThrowTemplate, withCheneCount } from "./autoThrows";
 import {
   LIMITED_SKILLS,
@@ -49,6 +49,7 @@ import {
   APPARATUS,
   APPARATUS_REQUIRED_ELEMENTS,
   DIFF_VALUE,
+  USE_APPARATUS_TAG,
   skillDef,
   throwCountRequired,
 } from "./constants";
@@ -292,6 +293,44 @@ export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false)
 }
 
 /**
+ * 縦3動作（前転3回など）でE難度になる投げ受けのうち、**手具を使ったキャッチ以外**の本数。
+ * 前転3回から受けるのは手具で押さえつけるのが主流で、それ以外の形は基本実施しない。
+ * 難度点より大きい重み（`VERTICAL_THREE_THROW_WEIGHT`）で嫌い、Dスコアの範囲を満たすのに
+ * どうしても必要なとき（範囲外のペナルティは×100）だけ入るようにする。
+ */
+export function verticalThreeThrowCount(series: Series[], junior = false): number {
+  let count = 0;
+  series.forEach((ser) => {
+    let vertical = 0;
+    let open = false;
+    ser.items.forEach((item) => {
+      if (item.kind === "throw") {
+        vertical = 0;
+        open = true;
+        return;
+      }
+      if (item.kind === "motion" && open) {
+        const def = motionDef(item.motionId, junior);
+        if (def) vertical += def.vertical * motionTimes(item.count);
+        return;
+      }
+      if (item.kind === "catch" && open) {
+        if (vertical >= VERTICAL_THREE_MOTIONS && !(item.catchTypes || []).includes(USE_APPARATUS_TAG))
+          count += 1;
+        open = false;
+      }
+    });
+  });
+  return count;
+}
+
+/** 縦3動作とみなす動作数（§3.5.5.3） */
+const VERTICAL_THREE_MOTIONS = 3;
+
+/** 手具を使ったキャッチ以外の縦3動作の投げ受け1本ぶんの評価の重み */
+export const VERTICAL_THREE_THROW_WEIGHT = 0.4;
+
+/**
  * 難度を狙う投げは基本4回まで（投げタン1回＋それ以外の投げ3回＝`ADOPT_COUNT` 本の
  * 徒手系ユニット）。それ以上の投げは**加点だけを狙う**ので徒手操作を足さない。
  * 難度に採用されない投げ受けに操作が入っているぶんを、難度の刻みより小さい重みで嫌う。
@@ -454,6 +493,9 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   const throwCount = throwCountPenalty(r.performedThrowCount, r.dScore, !!opts.junior);
   // 難度に採用されない投げは加点だけを狙うので、操作を足さない
   const extraOperation = extraThrowOperation(r) * EXTRA_THROW_OPERATION_WEIGHT;
+  // 前転3回（縦3動作）を手具を使ったキャッチ以外で受ける形は基本実施しない
+  const verticalThree =
+    verticalThreeThrowCount(series, !!opts.junior) * VERTICAL_THREE_THROW_WEIGHT;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
@@ -469,6 +511,7 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       throwOrder -
       throwCount -
       extraOperation -
+      verticalThree -
       auto -
       limitedUsed * LIMITED_SKILL_WEIGHT -
       (highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT)) /

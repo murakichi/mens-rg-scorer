@@ -32,6 +32,11 @@ export interface AutoThrowPattern {
   /** キャッチのあとに「視野外の投げ→視野外のキャッチ」を足すか */
   noViewPair: boolean;
   /**
+   * 徒手が**縦3動作**（前転3回）でE難度になる形か。
+   * 受けは手具を使ったキャッチ（押さえつけ）が主流で、それ以外の受け方は少ない。
+   */
+  verticalThree?: boolean;
+  /**
    * 先に最低限の投げ受け（投げ→キャッチ、徒手なし）を1本足すか。
    * 投げ方を1種類増やすのに操作を足さずに済むので、日本トップの演技でも
    * 「手以外の投げ→キャッチ→視野外の投げ→シェネ→キャッチ」のように実施する。
@@ -53,7 +58,13 @@ export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
   { id: "chene", chene: { min: 3, max: 4 }, after: [], noViewPair: false },
   { id: "cheneNoView", chene: { min: 3, max: 4 }, after: [], noViewPair: true },
   // シェネなし。前転3回＝縦3動作でE難度（§3.5.5.3）
-  { id: "rolls", chene: { min: 0, max: 0 }, after: [times(FWD_ROLL, 3)], noViewPair: false },
+  {
+    id: "rolls",
+    chene: { min: 0, max: 0 },
+    after: [times(FWD_ROLL, 3)],
+    noViewPair: false,
+    verticalThree: true,
+  },
   // 最低限の操作で必須要素（左手投げ・二つ投げ）を満たす形。
   // スティックの「1シェネキャッチ」、クラブ・リングの「二つ投げ→前転／シェネ→キャッチ」。
   // 難度は低いのでDスコアを抑えたいときに使われやすいが、上級者も普通に実施する。
@@ -131,6 +142,12 @@ export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean):
 
 /** 視野外の受け・投げの技術タグ */
 export const NO_VIEW_TAG = "noview";
+
+/**
+ * 縦3動作（前転3回）の形で、**手具を使ったキャッチ以外**の受け方を引く重み。
+ * 前転3回から受けるのは手具で押さえつけるのが主流。
+ */
+export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
 
 /**
  * その形で使える受け方。視野外の投げ受けを足す形（`noViewPair`）では、
@@ -225,6 +242,16 @@ function cycler<T>(list: T[], rand: () => number): () => T {
   };
 }
 
+/** 重み付きで1つ選ぶ（重みは1が既定） */
+function pickWeighted<T>(list: T[], rand: () => number, weightOf: (x: T) => number): T {
+  let left = rand() * list.reduce((n, x) => n + weightOf(x), 0);
+  for (const x of list) {
+    left -= weightOf(x);
+    if (left < 0) return x;
+  }
+  return list[list.length - 1];
+}
+
 /** その形で取り得るシェネの回数 */
 export function cheneCountRange(pattern: AutoThrowPattern): number[] {
   const range: number[] = [];
@@ -260,6 +287,13 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     if (!next) {
       next = cycler(catchStylesForPattern(apparatus, twoThrow, pattern), rand);
       catchCyclers.set(key, next);
+    }
+    // 縦3動作の形は手具を使ったキャッチが主流。それ以外は引きにくくする
+    if (pattern.verticalThree) {
+      const styles = catchStylesForPattern(apparatus, twoThrow, pattern);
+      return pickWeighted(styles, rand, (c) =>
+        c.id === CATCH_USE_APPARATUS ? 1 : VERTICAL_THREE_OTHER_CATCH_WEIGHT,
+      );
     }
     return next();
   };
