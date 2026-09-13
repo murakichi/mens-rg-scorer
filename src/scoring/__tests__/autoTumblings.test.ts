@@ -1,21 +1,27 @@
 import { describe, it, expect } from "vitest";
 import {
   AUTO_TUMBLING_PATTERNS,
+  CONNECT_FINISH_AVOID,
+  THROW_FINISH_SALTOS,
+  THROW_ROLL_MOTION,
   autoTumblingName,
   autoTumblingSpecs,
   autoTumblingTemplates,
   buildAutoTumblingSeries,
-  canChainAfter,
+  connectOptionsAfter,
+  firstSaltoOptions,
   isAutoTumblingTemplate,
+  isTempoSalto,
+  nextSaltoOptions,
   saltoCountRange,
-  saltoOptions,
+  saltoOptionsAfterConnect,
   tumblingFlowErrors,
   usedSkillIds,
   withSaltoCount,
   type AutoTumblingSpec,
 } from "../autoTumblings";
 import { analyzeSeries, hasConnect, maxSaltoChain, prevSkillId } from "../analysis";
-import { CATEGORY, ROUNDOFF_SKILL_ID, skillDef, skillFlowAfter, skillOptions } from "../constants";
+import { CATEGORY, DIFF_VALUE, ROUNDOFF_SKILL_ID, skillDef, skillDifficulty, skillFlowAfter, skillOptions } from "../constants";
 import { DEFAULT_MAX_AUTO_TUMBLINGS, generateRoutine } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
@@ -37,79 +43,56 @@ const tpl = (name: string, apparatus: TemplateApparatus, series: Series): Series
   series,
 });
 
-/** 後方宙返り・前宙・バク転・側転・側宙 だけを使うテンプレート群 */
+/** 後方1回半ひねり・前方1回ひねり・前宙・側宙・前転 を使うテンプレート群 */
 const myTemplates = (): SeriesTemplate[] => [
-  tpl("三宙", "common", S(skill("a_roundoff"), skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto"))),
-  tpl("つなぎ", "common", S(skill("a_roundoff"), skill("b_backsalto"), skill("a_flicflac"), skill("b_backsalto"))),
+  tpl("三宙", "common", S(skill("a_roundoff"), skill("c_back15"), skill("c_front1full"), skill("b_front"))),
+  tpl("投げタン", "common", S({ kind: "throw" }, skill("b_front"), { kind: "motion", motionId: "fwd_roll", count: 1 }, { kind: "catch" })),
   tpl("側方", "common", S(skill("a_cartwheel"), skill("b_sidesalto"))),
-  tpl("投げタン", "common", S({ kind: "throw" }, skill("b_front"), { kind: "catch" })),
 ];
 
 const pattern = (id: string) => AUTO_TUMBLING_PATTERNS.find((p) => p.id === id)!;
-const spec = (patternId: string, over: Partial<AutoTumblingSpec> = {}): AutoTumblingSpec => {
-  const p = pattern(patternId);
-  return {
-    pattern: p,
-    saltoCount: p.saltos.max,
-    entry: [],
-    saltoIds: [...Array(p.saltos.max)].map(() => saltoOptions(p, false, false)[0] ?? saltoOptions(p, false, true)[0]),
-    connectId: saltoOptions(p, false, true)[0],
-    ...over,
-  };
-};
+const diff = (id: string, junior = false) => DIFF_VALUE[skillDifficulty(id, junior)!];
 const names = (series: Series) =>
   series.items.map((it) =>
-    it.kind === "skill" ? skillDef(it.skillId)?.name ?? it.skillId : it.kind === "throw" ? "投げ" : "キャッチ",
+    it.kind === "skill"
+      ? skillDef(it.skillId)?.name ?? it.skillId
+      : it.kind === "motion"
+        ? it.motionId
+        : it.kind,
   );
 const skillsOf = (series: Series) => analyzeSeries(series).units.flatMap((u) => u.skills);
+/** 候補すべて（一般・ジュニア × いくつかの乱数） */
+const allTemplates = (junior = false) =>
+  [3, 7, 11, 19].flatMap((seed) => autoTumblingTemplates("stick", { junior, random: seeded(seed) }));
 
 describe("入力画面の制約", () => {
-  it("どの候補も入力画面でそのまま入力できる並びになっている（一般・ジュニア）", () => {
+  it("どの技もその位置のプルダウンに出る（一般・ジュニア）", () => {
     [false, true].forEach((junior) => {
-      [3, 7, 11, 19].forEach((seed) => {
-        autoTumblingTemplates("stick", { junior, random: seeded(seed) }).forEach((t) => {
-          expect(tumblingFlowErrors(t.series, junior)).toEqual([]);
+      allTemplates(junior).forEach((t) => {
+        expect(tumblingFlowErrors(t.series, junior)).toEqual([]);
+        t.series.items.forEach((item, i) => {
+          if (item.kind !== "skill") return;
+          const options = skillOptions(junior, skillFlowAfter(prevSkillId(t.series.items, i)));
+          expect(options.map((s) => s.id)).toContain(item.skillId);
         });
       });
     });
   });
 
   it("後方系はロンダートから入る（手前が無ければ補う）", () => {
-    const s = buildAutoTumblingSeries(spec("back", { entry: [], saltoIds: ["b_backsalto"], saltoCount: 1 }));
+    const s = buildAutoTumblingSeries({
+      pattern: pattern("chain"),
+      saltoCount: 1,
+      entry: [],
+      saltoIds: ["b_backsalto"],
+      connectId: "",
+    });
     expect(names(s)).toEqual(["ロンダート", "後方宙返り"]);
     expect(tumblingFlowErrors(s)).toEqual([]);
   });
 
-  it("宙返りを続けられるのは同じ向きで降りる技だけ", () => {
-    // 後方系：ひねりなし・整数ひねりは続けられる、半ひねりは最後だけ
-    expect(canChainAfter("b_backsalto", CATEGORY.BACKWARD)).toBe(true);
-    expect(canChainAfter("c_back1full", CATEGORY.BACKWARD)).toBe(true);
-    expect(canChainAfter("b_backhalf", CATEGORY.BACKWARD)).toBe(false);
-    // 前方系はその逆（半ひねりで後ろ向きになる）
-    expect(canChainAfter("b_front", CATEGORY.FORWARD)).toBe(true);
-    expect(canChainAfter("b_fronthalf", CATEGORY.FORWARD)).toBe(false);
-    // 連続の途中に使う技は続けられるものだけ
-    AUTO_TUMBLING_PATTERNS.filter((p) => p.saltos.max >= 2).forEach((p) => {
-      saltoOptions(p, false, false).forEach((id) => expect(canChainAfter(id, p.category)).toBe(true));
-    });
-  });
-
-  it("どの技も入力画面のプルダウンに出る（その位置の選択肢に含まれる）", () => {
-    [false, true].forEach((junior) => {
-      [3, 7, 11].forEach((seed) => {
-        autoTumblingTemplates("stick", { junior, random: seeded(seed) }).forEach((t) => {
-          t.series.items.forEach((item, i) => {
-            if (item.kind !== "skill") return;
-            const options = skillOptions(junior, skillFlowAfter(prevSkillId(t.series.items, i)));
-            expect(options.map((s) => s.id)).toContain(item.skillId);
-          });
-        });
-      });
-    });
-  });
-
   it("ジュニアは2回宙返り系を使わない", () => {
-    autoTumblingTemplates("stick", { junior: true, random: seeded(5) }).forEach((t) =>
+    allTemplates(true).forEach((t) =>
       t.series.items.forEach((item) => {
         if (item.kind === "skill") expect(skillDef(item.skillId)?.isDoubleSalto).toBeFalsy();
       }),
@@ -117,37 +100,147 @@ describe("入力画面の制約", () => {
   });
 
   it("制約に反する並びは検出できる", () => {
-    // ロンダート無しでいきなり後方宙返り／バク転の直後に前方系
     expect(tumblingFlowErrors(S(skill("b_backsalto")))).toHaveLength(1);
-    // バク転の直後は後方系だけ（`skillFlowAfter`）なので前宙は選べない
+    // バク転の直後は後方系だけ
     expect(tumblingFlowErrors(S(skill("a_flicflac"), skill("b_front")))).toHaveLength(1);
     // ジュニアで実施しない技も選択肢に出ない
     expect(tumblingFlowErrors(S(skill("a_roundoff"), skill("d_doubleback")), true)).toHaveLength(1);
     expect(tumblingFlowErrors(S(skill("a_roundoff"), skill("d_doubleback")), false)).toEqual([]);
-    expect(tumblingFlowErrors(S(skill("a_roundoff"), skill("b_backsalto")))).toEqual([]);
   });
 });
 
-describe("自動生成のタンブリングの形", () => {
-  it("宙返りの連続（三宙）になる", () => {
-    const s = buildAutoTumblingSeries(spec("back", { saltoIds: ["b_backsalto", "b_backsalto", "b_backsalto"], saltoCount: 3 }));
-    expect(maxSaltoChain(skillsOf(s).map((x) => x.skillId))).toBe(3);
+describe("宙返りの連続の組み方", () => {
+  it("次の系統は直前の技が降りる向きで決まる", () => {
+    // 前向きに降りる → 前方系・側方系
+    nextSaltoOptions("b_front").forEach((id) => expect(skillDef(id)?.category).not.toBe(CATEGORY.BACKWARD));
+    // 後方1回半ひねりは前向きに降りるので、次は前方系・側方系
+    nextSaltoOptions("c_back15").forEach((id) => expect(skillDef(id)?.category).not.toBe(CATEGORY.BACKWARD));
+    // テンポは後ろ向きに降りるので、次は後方系
+    nextSaltoOptions("b_tempo").forEach((id) => expect(skillDef(id)?.category).toBe(CATEGORY.BACKWARD));
+  });
+
+  it("難度はだんだん下がる（テンポだけ例外）", () => {
+    ["b_front", "c_back15", "d_backlay25", "b_sidesalto"].forEach((prev) =>
+      nextSaltoOptions(prev).forEach((id) => expect(diff(id)).toBeLessThanOrEqual(diff(prev))),
+    );
+    // テンポの後は難度が上がってよい
+    expect(isTempoSalto("b_tempo")).toBe(true);
+    expect(nextSaltoOptions("b_tempo").some((id) => diff(id) > diff("b_tempo"))).toBe(true);
+  });
+
+  it("後方系を続けて実施しない（テンポは例外）", () => {
+    expect(nextSaltoOptions("b_backsalto")).toEqual([]);
+    expect(nextSaltoOptions("b_backlayout")).toEqual([]);
+    expect(nextSaltoOptions("b_tempo").length).toBeGreaterThan(0);
+  });
+
+  it("実際の連続の例どおりに組める", () => {
+    // 後方1回半ひねり→前方1回ひねり→前宙
+    expect(nextSaltoOptions("c_back15")).toContain("c_front1full");
+    expect(nextSaltoOptions("c_front1full")).toContain("b_front");
+    // 後方2回半ひねり→前宙→側宙
+    expect(nextSaltoOptions("d_backlay25")).toContain("b_front");
+    expect(nextSaltoOptions("b_front")).toContain("b_sidesalto");
+  });
+
+  it("生成した連続も向きと難度のルールを守っている", () => {
+    allTemplates().forEach((t) => {
+      const ids = skillsOf(t.series)
+        .map((s) => s.skillId)
+        .filter((id) => skillDef(id)?.isSalto);
+      ids.forEach((id, i) => {
+        if (i === 0) return;
+        const prev = ids[i - 1];
+        // つなぎ技を挟んだ位置は勢いを作り直すので、連続しているところだけ見る
+        const chained = nextSaltoOptions(prev);
+        if (chained.length === 0) return;
+        if (!chained.includes(id)) return; // つなぎ後の入り直し
+        expect(diff(id)).toBeLessThanOrEqual(isTempoSalto(prev) ? 5 : diff(prev));
+      });
+    });
+  });
+});
+
+describe("つなぎ技", () => {
+  it("宙返りのあとのバク転はテンポの後だけ", () => {
+    expect(connectOptionsAfter("b_tempo")).toEqual(["a_flicflac"]);
+    expect(connectOptionsAfter("b_front")).not.toContain("a_flicflac");
+    expect(connectOptionsAfter("c_back15")).not.toContain("a_flicflac");
+    // 後ろ向きに降りる宙返り（テンポ以外）の後にはつなぎ技を入れない
+    expect(connectOptionsAfter("b_backsalto")).toEqual([]);
+  });
+
+  it("前向きに降りた後はロンダート・側転・ハンドスプリング・とび前転", () => {
+    expect(connectOptionsAfter("b_front").sort()).toEqual(
+      ["a_cartwheel", "a_frontroll", "a_handspring", ROUNDOFF_SKILL_ID].sort(),
+    );
+  });
+
+  it("つなぎの最後にただの後方宙返りを実施しない（ジュニアは除く）", () => {
+    expect(saltoOptionsAfterConnect(ROUNDOFF_SKILL_ID)).not.toContain("b_backsalto");
+    // B難度がほしいときはダイビング前宙
+    expect(saltoOptionsAfterConnect(ROUNDOFF_SKILL_ID)).toContain("b_divefront");
+    CONNECT_FINISH_AVOID.forEach((id) => expect(saltoOptionsAfterConnect(ROUNDOFF_SKILL_ID, true)).toContain(id));
   });
 
   it("つなぎの形は宙返りの間にA難度技が入る", () => {
-    const s = buildAutoTumblingSeries(
-      spec("backConnect", { saltoIds: ["b_backsalto", "b_backsalto"], saltoCount: 2, connectId: "a_flicflac" }),
-    );
-    expect(hasConnect(skillsOf(s))).toBe(true);
-    // つなぎ技にも手具操作を付ける（§3.5.6.3 の −0.2 を受けないように）
-    expect(skillsOf(s).every((x) => x.hasApparatus)).toBe(true);
+    const specs = autoTumblingSpecs({ random: seeded(5) }).filter((sp) => sp.pattern.connect);
+    expect(specs.length).toBeGreaterThan(0);
+    specs.forEach((sp) => {
+      const s = buildAutoTumblingSeries(sp);
+      expect(hasConnect(skillsOf(s))).toBe(true);
+      // つなぎ技にも手具操作を付ける（§3.5.6.3 の −0.2 を受けないように）
+      expect(skillsOf(s).every((x) => x.hasApparatus)).toBe(true);
+    });
+  });
+});
+
+describe("投げタン", () => {
+  it("投げのあとにロンダートを入れない（1本目は前方系）", () => {
+    autoTumblingSpecs({ random: seeded(7) })
+      .filter((sp) => sp.pattern.throwCatch)
+      .forEach((sp) => {
+        expect(skillDef(sp.saltoIds[0])?.category).toBe(CATEGORY.FORWARD);
+        expect(names(buildAutoTumblingSeries(sp))).not.toContain("ロンダート");
+      });
   });
 
-  it("投げ受けの形は投げタンになる", () => {
-    const s = buildAutoTumblingSeries(spec("throwFront", { saltoIds: ["b_front"], saltoCount: 1 }));
-    expect(names(s)[0]).toBe("投げ");
-    expect(names(s).at(-1)).toBe("キャッチ");
+  it("前方系→前転、または 前方系→側宙（転宙）", () => {
+    const roll = buildAutoTumblingSeries({
+      pattern: pattern("throwRoll"),
+      saltoCount: 1,
+      entry: [],
+      saltoIds: ["b_front"],
+      connectId: "",
+    });
+    expect(names(roll)).toEqual(["throw", "前宙", THROW_ROLL_MOTION, "catch"]);
+    autoTumblingSpecs({ random: seeded(11) })
+      .filter((sp) => sp.pattern.id === "throwSalto")
+      .forEach((sp) => expect(THROW_FINISH_SALTOS).toContain(sp.saltoIds[1]));
+  });
+
+  it("投げ受けとして数える（投げタン）", () => {
+    const s = buildAutoTumblingSeries({
+      pattern: pattern("throwSalto"),
+      saltoCount: 2,
+      entry: [],
+      saltoIds: ["b_front", "b_sidesalto"],
+      connectId: "",
+    });
     expect(analyzeSeries(s).units.some((u) => u.isThrowTumbling)).toBe(true);
+  });
+});
+
+describe("候補と調整", () => {
+  it("三宙（宙返り3回連続）を作れる", () => {
+    // つなぎ技を挟む形は連続が切れるので、連続の形だけを見る
+    const chains = autoTumblingSpecs({ random: seeded(3) }).filter(
+      (sp) => !sp.pattern.connect && sp.saltoCount >= 3,
+    );
+    expect(chains.length).toBeGreaterThan(0);
+    chains.forEach((sp) =>
+      expect(maxSaltoChain(skillsOf(buildAutoTumblingSeries(sp)).map((x) => x.skillId))).toBeGreaterThanOrEqual(3),
+    );
   });
 
   it("宙返りの本数は形ごとの範囲に収まる", () => {
@@ -159,9 +252,11 @@ describe("自動生成のタンブリングの形", () => {
 
   it("宙返りの本数だけを差し替えられる（範囲外・変化なしは null）", () => {
     const t = autoTumblingTemplates("stick", { random: seeded(3) }).find(
-      (x) => saltoCountRange(x.spec.pattern).length > 1,
+      (x) => saltoCountRange(x.spec.pattern).length > 1 && x.spec.saltoIds.length > x.spec.pattern.saltos.min,
     )!;
-    const other = saltoCountRange(t.spec.pattern).find((n) => n !== t.spec.saltoCount)!;
+    const other = saltoCountRange(t.spec.pattern).find(
+      (n) => n !== t.spec.saltoCount && n <= t.spec.saltoIds.length,
+    )!;
     const tuned = withSaltoCount(t, other)!;
     expect(tuned.spec.saltoCount).toBe(other);
     expect(tuned.id).toBe(t.id);
@@ -171,15 +266,21 @@ describe("自動生成のタンブリングの形", () => {
   });
 
   it("表示名に最後の技と連続本数が出る", () => {
-    const name = autoTumblingName(spec("back", { saltoIds: ["b_backsalto", "b_backsalto"], saltoCount: 2 }));
-    expect(name).toContain("後方宙返り");
+    const name = autoTumblingName({
+      pattern: pattern("chain"),
+      saltoCount: 2,
+      entry: [],
+      saltoIds: ["c_back15", "b_front"],
+      connectId: "",
+    } as AutoTumblingSpec);
+    expect(name).toContain("前宙");
     expect(name).toContain("2連続");
   });
 });
 
 describe("使ってよい技の範囲", () => {
   it("指定した技だけで組む（後方系に補うロンダートは除く）", () => {
-    const allowed = ["b_backsalto", "b_front", "a_flicflac", "a_cartwheel", "b_sidesalto"];
+    const allowed = ["b_front", "b_sidesalto", "c_back15", "a_cartwheel", "b_tenchu"];
     autoTumblingTemplates("stick", { skillIds: allowed, random: seeded(7) }).forEach((t) =>
       t.series.items.forEach((item) => {
         if (item.kind !== "skill") return;
@@ -188,11 +289,11 @@ describe("使ってよい技の範囲", () => {
     );
   });
 
-  it("実施する技が無い系統の形は作らない", () => {
-    // 後方系の宙返りしか使わないなら、前方系・側方系の形は出さない
-    const specs = autoTumblingSpecs({ skillIds: ["b_backsalto", "a_flicflac"], random: seeded(7) });
-    expect(specs.length).toBeGreaterThan(0);
-    specs.forEach((sp) => expect(sp.pattern.category).toBe(CATEGORY.BACKWARD));
+  it("実施する技が無ければその形は作らない", () => {
+    // 側宙しか実施しないなら、投げ受け（1本目は前方系）の形は作れない
+    const specs = autoTumblingSpecs({ skillIds: ["b_sidesalto"], random: seeded(7) });
+    expect(specs.every((sp) => !sp.pattern.throwCatch)).toBe(true);
+    expect(firstSaltoOptions()).toContain("b_sidesalto");
   });
 
   it("構成で使っている転回技を拾える（徒手として入れた技も含む）", () => {
@@ -219,9 +320,7 @@ describe("ランダム生成への組み込み", () => {
 
   it("テンプレートが無ければ技の一覧から組み、必須要素を満たす", () => {
     const r = generateRoutine([], { apparatus: "stick", random: seeded(13) })!;
-    const score = computeScore(r.series, "stick");
-    expect(score.missing).toEqual([]);
-    // 生成したタンブリングはどれも入力画面の制約を満たす
+    expect(computeScore(r.series, "stick").missing).toEqual([]);
     r.series.forEach((ser) => expect(tumblingFlowErrors(ser)).toEqual([]));
   });
 
