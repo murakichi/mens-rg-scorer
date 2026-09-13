@@ -11,6 +11,9 @@ import {
   catchStylesForThrow,
   catchStylesForPattern,
   NO_VIEW_TAG,
+  LEFT_HAND_TAG,
+  LEFT_HAND_NO_VIEW_CATCH_WEIGHT,
+  catchStyleWeight,
   NON_HAND_TAG,
   throwStylesForPattern,
   VERTICAL_THREE_OTHER_CATCH_WEIGHT,
@@ -415,6 +418,30 @@ describe("ランダム生成への組み込み", () => {
     [...count.entries()]
       .filter(([id]) => id !== CATCH_USE_APPARATUS)
       .forEach(([, n]) => expect(useapp).toBeGreaterThan(n));
+  });
+
+  it("左手投げを視野外で受ける候補はかなり少ない", () => {
+    expect(LEFT_HAND_NO_VIEW_CATCH_WEIGHT).toBeLessThan(1);
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree)!;
+    const left = autoThrowStyles("stick").find((t) => (t.reqTypes || []).includes(LEFT_HAND_TAG))!;
+    const noView = autoCatchStyles("stick").find((c) => c.id === NO_VIEW_TAG)!;
+    const normal = autoCatchStyles("stick").find((c) => c.id === "normal")!;
+    expect(catchStyleWeight(left, noView, plain)).toBe(LEFT_HAND_NO_VIEW_CATCH_WEIGHT);
+    expect(catchStyleWeight(left, normal, plain)).toBe(1);
+    // 左手投げ以外なら視野外のキャッチも普通に出る
+    const nomal = autoThrowStyles("stick").find((t) => t.id === "normal")!;
+    expect(catchStyleWeight(nomal, noView, plain)).toBe(1);
+    // 実際に組み立てた候補でも、左手投げの視野外キャッチは他の受け方より少ない
+    let noViewCatch = 0;
+    let other = 0;
+    for (let seed = 0; seed < 20; seed++)
+      autoThrowSpecs("stick", { random: seeded(seed) })
+        .filter((sp) => (sp.throwStyle.reqTypes || []).includes(LEFT_HAND_TAG))
+        .forEach((sp) => {
+          if (sp.catchStyle.id === NO_VIEW_TAG) noViewCatch += 1;
+          else other += 1;
+        });
+    expect(noViewCatch * 3).toBeLessThan(other);
   });
 
   it("autoThrows: false なら使わない", () => {

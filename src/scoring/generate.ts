@@ -327,8 +327,13 @@ export function verticalThreeThrowCount(series: Series[], junior = false): numbe
 /** 縦3動作とみなす動作数（§3.5.5.3） */
 const VERTICAL_THREE_MOTIONS = 3;
 
-/** 手具を使ったキャッチ以外の縦3動作の投げ受け1本ぶんの評価の重み */
-export const VERTICAL_THREE_THROW_WEIGHT = 0.4;
+/**
+ * 手具を使ったキャッチ以外の縦3動作の投げ受け1本ぶんの評価の重み。
+ * この形が1本増やす点数（徒手系E難度＝0.7が上限）より大きくして、
+ * **点数を稼ぐうえでどうしても必要なときだけ**実施するようにする
+ * （Dスコアの範囲外は×100、投げ回数の不足は10なので、必要なときは必ず入る）。
+ */
+export const VERTICAL_THREE_THROW_WEIGHT = 0.85;
 
 /**
  * 難度を狙う投げは基本4回まで（投げタン1回＋それ以外の投げ3回＝`ADOPT_COUNT` 本の

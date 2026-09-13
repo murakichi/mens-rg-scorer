@@ -34,6 +34,10 @@ import {
   BACKWARD_END_ZERO_SCORE,
   THROW_IN_SIDE_SALTO_WEIGHT,
   TEMPO_CONNECT_WEIGHT,
+  PAIR_AFTER_THROW_FIRST_CHANCE,
+  PAIR_AFTER_THROW_IN_SKILL_CHANCE,
+  pairAfterChance,
+  secondThrowStyles,
   noRollAfter,
   TEMPO_SKILL_ID,
   TEMPO_TWIST_SKILL_ID,
@@ -618,6 +622,38 @@ describe("つなぎ技", () => {
       expect(tumblingFlowErrors(t.series)).toEqual([]);
       expect(checkApparatusFlow(t.series, "stick")).toEqual([]);
     });
+  });
+
+  it("投げタンのキャッチのあとに連続投げを続ける形がある", () => {
+    // 投げてから宙返りする形のほうが、宙返りの最中に投げる形より多い
+    expect(PAIR_AFTER_THROW_FIRST_CHANCE).toBeGreaterThan(PAIR_AFTER_THROW_IN_SKILL_CHANCE);
+    expect(pairAfterChance(pattern("throwRoll"))).toBe(PAIR_AFTER_THROW_FIRST_CHANCE);
+    expect(pairAfterChance(pattern("chainThrowInSkill"))).toBe(PAIR_AFTER_THROW_IN_SKILL_CHANCE);
+    // スティックは2回目に左手投げもあり得る（手以外の投げは2回目には使わない）
+    const styles = secondThrowStyles("stick").map((t) => t.id);
+    expect(styles).toContain("lefthand");
+    expect(styles).not.toContain("nonhand");
+    expect(secondThrowStyles("clubs").map((t) => t.id)).toContain("twothrow");
+    // 組み立てた候補：投げ受けが2回になり、手具の流れも入力制約も崩れない
+    let paired = 0;
+    let firstKind = 0;
+    let inSkillKind = 0;
+    for (let seed = 0; seed < 20; seed++)
+      autoTumblingTemplates("stick", { random: seeded(seed) })
+        .filter((t) => t.spec.secondThrow)
+        .forEach((t) => {
+          paired += 1;
+          if (t.spec.pattern.throwInSkill) inSkillKind += 1;
+          else firstKind += 1;
+          const items = t.series.items;
+          expect(items[items.length - 1].kind).toBe("catch");
+          expect(items[items.length - 2].kind).toBe("throw");
+          expect(analyzeSeries(t.series).throwCount).toBe(2);
+          expect(checkApparatusFlow(t.series, "stick")).toEqual([]);
+          expect(tumblingFlowErrors(t.series)).toEqual([]);
+        });
+    expect(paired).toBeGreaterThan(0);
+    expect(firstKind).toBeGreaterThan(inSkillKind);
   });
 
   it("連続の最後に投げる形は三宙と投げタンを1シリーズで両立できる", () => {
