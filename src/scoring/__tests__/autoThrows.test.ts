@@ -11,6 +11,8 @@ import {
   catchStylesForThrow,
   catchStylesForPattern,
   NO_VIEW_TAG,
+  NON_HAND_TAG,
+  throwStylesForPattern,
   VERTICAL_THREE_OTHER_CATCH_WEIGHT,
   cheneCountRange,
   isAutoThrowTemplate,
@@ -371,21 +373,48 @@ describe("ランダム生成への組み込み", () => {
     );
   });
 
+  it("連続投げの前の受けは手以外にしない／2回目の投げは手以外にしない", () => {
+    const paired = AUTO_THROW_PATTERNS.find((x) => x.noViewPair)!;
+    const lead = AUTO_THROW_PATTERNS.find((x) => x.leadPair)!;
+    // 手以外のキャッチから次の投げには繋げない
+    expect(catchStylesForPattern("stick", false, paired).map((c) => c.id)).not.toContain(NON_HAND_TAG);
+    // 連続投げの2回目（先に1本置く形の本体の投げ）は手以外にしない
+    expect(throwStylesForPattern("stick", lead).map((t) => t.id)).not.toContain(NON_HAND_TAG);
+    // 1本だけの形では手以外の投げ受けも使う
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.leadPair)!;
+    expect(catchStylesForPattern("stick", false, plain).map((c) => c.id)).toContain(NON_HAND_TAG);
+    expect(throwStylesForPattern("stick", plain).map((t) => t.id)).toContain(NON_HAND_TAG);
+    // 組み立てた候補にも並びが現れない（先に置く1本目の投げが手以外なのは可）
+    (["stick", "clubs", "ring", "rope"] as ApparatusKey[]).forEach((app) =>
+      autoThrowTemplates(app).forEach((t) => {
+        const items = t.series.items;
+        items.forEach((item, i) => {
+          const next = items[i + 1];
+          if (item.kind !== "catch" || next?.kind !== "throw") return;
+          // 手以外のキャッチ → 次の投げ
+          expect((item.catchTypes || []).includes(NON_HAND_TAG)).toBe(false);
+          // 2回目の投げが手以外
+          expect((next.throwTypes || []).includes(NON_HAND_TAG)).toBe(false);
+        });
+      }),
+    );
+  });
+
   it("前転3回（縦3動作）は手具を使ったキャッチが主流", () => {
     expect(VERTICAL_THREE_OTHER_CATCH_WEIGHT).toBeLessThan(1);
     const pattern = AUTO_THROW_PATTERNS.find((x) => x.verticalThree)!;
     expect(pattern.id).toBe("rolls");
-    // クラブは手具で押さえつけて受けられるので、それが多くなる
-    let useapp = 0;
-    let other = 0;
+    // クラブは手具で押さえつけて受けられるので、受け方の中でそれが最も多くなる
+    const count = new Map<string, number>();
     for (let seed = 0; seed < 20; seed++)
       autoThrowSpecs("clubs", { random: seeded(seed) })
         .filter((sp) => sp.pattern.verticalThree)
-        .forEach((sp) => {
-          if (sp.catchStyle.id === CATCH_USE_APPARATUS) useapp += 1;
-          else other += 1;
-        });
-    expect(useapp).toBeGreaterThan(other);
+        .forEach((sp) => count.set(sp.catchStyle.id, (count.get(sp.catchStyle.id) ?? 0) + 1));
+    const useapp = count.get(CATCH_USE_APPARATUS) ?? 0;
+    expect(useapp).toBeGreaterThan(0);
+    [...count.entries()]
+      .filter(([id]) => id !== CATCH_USE_APPARATUS)
+      .forEach(([, n]) => expect(useapp).toBeGreaterThan(n));
   });
 
   it("autoThrows: false なら使わない", () => {

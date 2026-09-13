@@ -142,6 +142,8 @@ export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean):
 
 /** 視野外の受け・投げの技術タグ */
 export const NO_VIEW_TAG = "noview";
+/** 手以外の受け・投げの技術タグ */
+export const NON_HAND_TAG = "nonhand";
 
 /**
  * 縦3動作（前転3回）の形で、**手具を使ったキャッチ以外**の受け方を引く重み。
@@ -150,8 +152,10 @@ export const NO_VIEW_TAG = "noview";
 export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
 
 /**
- * その形で使える受け方。視野外の投げ受けを足す形（`noViewPair`）では、
- * その直前の受けを**視野外にしない**（視野外のキャッチから視野外の投げへは物理的に繋げない）。
+ * その形で使える受け方。**次の投げに続ける受け**（`noViewPair` の直前の受け）では、
+ * そこから投げに繋げない受け方を外す：
+ *  - 視野外のキャッチ → 視野外の投げ（物理的に実施できない）
+ *  - 手以外のキャッチ → 連続投げ（ほぼ不可能）
  */
 export function catchStylesForPattern(
   apparatus: ApparatusKey,
@@ -159,7 +163,20 @@ export function catchStylesForPattern(
   pattern: AutoThrowPattern,
 ): AutoCatchStyle[] {
   const styles = catchStylesForThrow(apparatus, twoThrow);
-  return pattern.noViewPair ? styles.filter((c) => c.id !== NO_VIEW_TAG) : styles;
+  if (!pattern.noViewPair) return styles;
+  return styles.filter((c) => c.id !== NO_VIEW_TAG && c.id !== NON_HAND_TAG);
+}
+
+/**
+ * その形で使える投げ方。先に投げ受けを1本置く形（`leadPair`）の本体の投げは
+ * **連続投げの2回目**なので、手以外の投げにはしない（ほぼ不可能）。
+ */
+export function throwStylesForPattern(
+  apparatus: ApparatusKey,
+  pattern: AutoThrowPattern,
+): AutoThrowStyle[] {
+  const styles = autoThrowStyles(apparatus);
+  return pattern.leadPair ? styles.filter((t) => t.id !== NON_HAND_TAG) : styles;
 }
 
 /** シェネの手の使い方（null＝手なし。手ありは HANDS_TYPES の種類ごとに別の技） */
@@ -275,7 +292,9 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   const rand = opts.random ?? Math.random;
   const throwStyles = autoThrowStyles(apparatus);
   const combos = shuffled(
-    AUTO_THROW_PATTERNS.flatMap((pattern) => throwStyles.map((throwStyle) => ({ pattern, throwStyle }))),
+    AUTO_THROW_PATTERNS.flatMap((pattern) =>
+      throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
+    ),
     rand,
   );
   const limit = Math.max(0, opts.limit ?? combos.length);
