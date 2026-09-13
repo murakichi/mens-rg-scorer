@@ -117,6 +117,9 @@ export function saltoWeights(
   apparatus?: ApparatusKey,
 ): Record<string, number> {
   const weights = baseSkillWeights(junior, apparatus);
+  // テンポひねりの次はテンポ宙返り＞それ以外の宙返り（難度の重みより優先する）
+  if (prevId === TEMPO_TWIST_SKILL_ID)
+    return { ...weights, [TEMPO_SKILL_ID]: AFTER_TEMPO_TWIST_WEIGHT };
   if (!isBackLayoutSalto(prevId)) return weights;
   // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）
   return { ...weights, ...Object.fromEntries(AFTER_BACK_LAYOUT_SALTOS.map((x) => [x.id, x.weight])) };
@@ -242,8 +245,24 @@ export function connectFinishWeights(
  * テンポ宙返り系。連続の「難度はだんだん下がる」の例外で、この後は難度が上がってよい。
  * 宙返りのあとにバク転を実施するのも、テンポの後だけ。
  */
-export const TEMPO_SKILLS: string[] = ["b_tempo", "c_tempotwist"];
+export const TEMPO_SKILL_ID = "b_tempo";
+export const TEMPO_TWIST_SKILL_ID = "c_tempotwist";
+export const TEMPO_SKILLS: string[] = [TEMPO_SKILL_ID, TEMPO_TWIST_SKILL_ID];
 export const isTempoSalto = (id: string): boolean => TEMPO_SKILLS.includes(id);
+
+/**
+ * テンポひねりの次の技の優先度は テンポ宙返り ＞ それ以外の宙返り ＞ バク転。
+ * テンポ宙返りだけ重みを上げ、バク転（テンポの後だけ挟めるつなぎ技）は
+ * `TEMPO_CONNECT_WEIGHT` で下げる。
+ */
+export const AFTER_TEMPO_TWIST_WEIGHT = 3;
+
+/**
+ * つなぎ技にバク転を使う形（テンポ系の後だけ）の重み。
+ * そのまま宙返りを続けるほうが多く、バク転は合理的な理由（つなぎ技の要求）が
+ * なければ実施しない。
+ */
+export const TEMPO_CONNECT_WEIGHT = 0.3;
 
 /**
  * 連続の最後にだけ実施する技。**この後に技を続けて実施することはできない**ので、
@@ -257,7 +276,9 @@ export const endsChain = (id: string): boolean => CHAIN_END_SKILLS.includes(id);
 
 /** 系統ごとの入りの技（空＝助走から直接入る） */
 export const TUMBLING_ENTRIES: Record<string, string[][]> = {
-  [CATEGORY.BACKWARD]: [[ROUNDOFF_SKILL_ID], [ROUNDOFF_SKILL_ID, "a_flicflac"]],
+  // バク転は合理的な理由が無ければ実施しない。入りに足しても難度も要求も変わらない
+  // （つなぎ技として数えるのは宙返り−A難度−宙返りの並びだけ）ので、入りには使わない
+  [CATEGORY.BACKWARD]: [[ROUNDOFF_SKILL_ID]],
   // とび前転は首から背中にかけて着地するので、入りの技には使えない
   [CATEGORY.FORWARD]: [[], ["a_handspring"]],
   [CATEGORY.SIDE]: [[], ["a_cartwheel"]],
@@ -631,8 +652,18 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     const weights = baseSkillWeights(junior, apparatus);
     /** 1本目：できるだけ別の技を使いつつ、高難度の単発・実施が少ない技は選ばれにくくする */
     const firstsUsed: string[] = [];
+    // つなぎの形でテンポ系を1本目にすると、つなぎ技はバク転しかない（`connectOptionsAfter`）。
+    // バク転を挟むより宙返りを続けるほうが多いので、その形は選ばれにくくする
+    const firstWeights = pattern.connect
+      ? {
+          ...weights,
+          ...Object.fromEntries(
+            TEMPO_SKILLS.map((id) => [id, (weights[id] ?? 1) * TEMPO_CONNECT_WEIGHT]),
+          ),
+        }
+      : weights;
     const nextFirst = () => {
-      const id = pickDifferent(firsts, firstsUsed, rand, weights);
+      const id = pickDifferent(firsts, firstsUsed, rand, firstWeights);
       if (id) firstsUsed.push(id);
       return id;
     };
