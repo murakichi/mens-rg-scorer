@@ -129,6 +129,22 @@ export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean):
   return twoThrow ? styles.filter((c) => c.id !== CATCH_USE_APPARATUS) : styles;
 }
 
+/** 視野外の受け・投げの技術タグ */
+export const NO_VIEW_TAG = "noview";
+
+/**
+ * その形で使える受け方。視野外の投げ受けを足す形（`noViewPair`）では、
+ * その直前の受けを**視野外にしない**（視野外のキャッチから視野外の投げへは物理的に繋げない）。
+ */
+export function catchStylesForPattern(
+  apparatus: ApparatusKey,
+  twoThrow: boolean,
+  pattern: AutoThrowPattern,
+): AutoCatchStyle[] {
+  const styles = catchStylesForThrow(apparatus, twoThrow);
+  return pattern.noViewPair ? styles.filter((c) => c.id !== NO_VIEW_TAG) : styles;
+}
+
 /** シェネの手の使い方（null＝手なし。手ありは HANDS_TYPES の種類ごとに別の技） */
 export type AutoHands = string | null;
 export const autoHandsVariants = (): AutoHands[] => [null, ...HANDS_TYPES.map((h) => h.id)];
@@ -178,8 +194,8 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
     ...(throwStyle.two ? { catchTwo: true } : {}),
   });
   if (pattern.noViewPair) {
-    items.push({ kind: "throw", throwTypes: ["noview"] });
-    items.push({ kind: "catch", catchTypes: ["noview"] });
+    items.push({ kind: "throw", throwTypes: [NO_VIEW_TAG] });
+    items.push({ kind: "catch", catchTypes: [NO_VIEW_TAG] });
   }
   return { executionDeduction: 0, items };
 }
@@ -236,9 +252,17 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     rand,
   );
   const limit = Math.max(0, opts.limit ?? combos.length);
-  const nextCatch = cycler(catchStylesForThrow(apparatus, false), rand);
-  // 二つ投げは受け方が1つ少ないので、別に配って偏らせない
-  const nextTwoThrowCatch = cycler(catchStylesForThrow(apparatus, true), rand);
+  // 受け方は「形 × 二つ投げかどうか」ごとに配る（使える受け方が違うので偏らせない）
+  const catchCyclers = new Map<string, () => AutoCatchStyle>();
+  const nextCatchFor = (pattern: AutoThrowPattern, twoThrow: boolean): AutoCatchStyle => {
+    const key = `${pattern.noViewPair ? "noViewPair" : "-"}:${twoThrow}`;
+    let next = catchCyclers.get(key);
+    if (!next) {
+      next = cycler(catchStylesForPattern(apparatus, twoThrow, pattern), rand);
+      catchCyclers.set(key, next);
+    }
+    return next();
+  };
   const nextHands = cycler(autoHandsVariants(), rand);
   // 先に足す投げ受けの投げ方。二つ投げは2つ同時キャッチで受ける形になるので使わない
   const nextLeadThrow = cycler(
@@ -260,7 +284,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       // シェネが無い形では手の種類は使わない（順番も消費しない）
       hands: cheneCount > 0 ? nextHands() : null,
       throwStyle,
-      catchStyle: throwStyle.two ? nextTwoThrowCatch() : nextCatch(),
+      catchStyle: nextCatchFor(pattern, !!throwStyle.two),
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
     };
   });

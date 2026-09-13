@@ -9,6 +9,8 @@ import {
   autoThrowTemplates,
   buildAutoThrowSeries,
   catchStylesForThrow,
+  catchStylesForPattern,
+  NO_VIEW_TAG,
   cheneCountRange,
   isAutoThrowTemplate,
   withCheneCount,
@@ -345,6 +347,27 @@ describe("ランダム生成への組み込み", () => {
     // 手以外の投げ→キャッチ→視野外の投げ→シェネ→キャッチ のような組み合わせが出る
     const styles = new Set(list.map((t) => t.spec.leadThrowStyle?.id));
     expect(styles.size).toBeGreaterThan(1);
+  });
+
+  it("視野外のキャッチ→視野外の投げは作らない（物理的に実施できない）", () => {
+    // 視野外の投げ受けを足す形では、その直前の受けを視野外にしない
+    const pattern = AUTO_THROW_PATTERNS.find((x) => x.noViewPair)!;
+    expect(catchStylesForPattern("stick", false, pattern).map((c) => c.id)).not.toContain(NO_VIEW_TAG);
+    // 足さない形では視野外のキャッチも使う
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair)!;
+    expect(catchStylesForPattern("stick", false, plain).map((c) => c.id)).toContain(NO_VIEW_TAG);
+    // 組み立てた候補にも並びが現れない
+    (["stick", "clubs", "ring", "rope"] as ApparatusKey[]).forEach((app) =>
+      autoThrowTemplates(app).forEach((t) =>
+        t.series.items.forEach((item, i) => {
+          const next = t.series.items[i + 1];
+          if (item.kind !== "catch" || next?.kind !== "throw") return;
+          const noViewCatch = (item.catchTypes || []).includes(NO_VIEW_TAG);
+          const noViewThrow = (next.throwTypes || []).includes(NO_VIEW_TAG);
+          expect(noViewCatch && noViewThrow).toBe(false);
+        }),
+      ),
+    );
   });
 
   it("autoThrows: false なら使わない", () => {
