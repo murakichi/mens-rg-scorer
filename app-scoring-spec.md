@@ -477,11 +477,16 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 - **投げ上げの回数の最頻値はDスコアで決まる**（`preferredThrowCount` / `throwCountPenalty`）。
   Dスコアが上がるほど多くなり、**最小はルールの回数**（一般3回・ジュニア2回）。
   `THROW_COUNT_MODE_STEPS`：2点未満＝ルールの回数／2点台〜3点台＝4回／4点以上＝5回。
-  最頻値より少ないぶんは `THROW_COUNT_UNDER_WEIGHT`（0.1）、多いぶんは
-  `THROW_COUNT_OVER_WEIGHT`（0.35。技術加点は上限が無いので多い側を強く嫌う）、
-  `THROW_COUNT_RELAXED_SCORE`（5.0）以上では `THROW_COUNT_OVER_WEIGHT_RELAXED`（0.2）に緩めて
-  **最頻値は5のまま6回も出やすく**する。実測：D1.5→3回100%／D2.5→4回100%／
-  D3.5→4回97%／D4.5→5回100%／D5.2→5回57%・6回30%・7回13%
+  最頻値より少ないぶんは `THROW_COUNT_UNDER_WEIGHT`（0.1）。多い側は技術加点に上限が無く
+  投げを足すほど点が伸びてしまうので難度の刻み（0.1）より強い重みにするが、
+  **1回多い構成は十分ありえる**（4点台でも6回を実施する）ので段を分ける：
+  1回多いぶんは `THROW_COUNT_OVER_WEIGHT`（0.12）、2回以上多いぶんは
+  `THROW_COUNT_FAR_OVER_WEIGHT`（0.3）。`THROW_COUNT_HIGH_SCORE`（5.0）以上を狙う構成では
+  投げを足すほど素直に点が伸びるので、最頻値を5に保つぶん1回多い側を
+  `THROW_COUNT_OVER_WEIGHT_HIGH`（0.2）にする。
+  実測（各30〜40構成）：D1.5→3回100%／D2.5→4回80%（3回13%・5回8%）／
+  D3.5→4回73%・5回28%／D4.5→5回70%・6回30%／D5.2→5回60%・6回35%／
+  上限なし→5回53%・6回45%
 - **ルールの投げ回数はDスコアに関係なく必ず満たす**。`shortfallPenalty` の投げ回数だけは
   `mandatory` でなくても `REQUIRED_ELEMENT_WEIGHT` を足し、詰め直し（`swapIn`／組み直し）も
   投げ回数が足りなければ走る（`Evaluation.throwCountUnmet`）。Dスコアの上限が低い構成では

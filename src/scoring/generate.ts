@@ -328,23 +328,36 @@ export function preferredThrowCount(dScore: number, junior = false): number {
 
 /** 最頻値より少ない投げ1回ぶんの評価の重み */
 export const THROW_COUNT_UNDER_WEIGHT = 0.1;
-/** 最頻値より多い投げ1回ぶんの評価の重み（技術加点で稼げるので強めに嫌う） */
-export const THROW_COUNT_OVER_WEIGHT = 0.35;
-/** このDスコア以上では多い側を緩める（最頻値は変えずに1回多い構成も出やすくする） */
-export const THROW_COUNT_RELAXED_SCORE = 5.0;
-export const THROW_COUNT_OVER_WEIGHT_RELAXED = 0.2;
+/**
+ * 最頻値より**1回多い**投げの重み。1回多い構成は十分ありえる（Dスコア4点台でも6回を
+ * 実施する）ので弱めに嫌う。それでも難度の刻み（0.1）より強くするのは、技術加点に
+ * 上限が無く、投げを足すほど点が伸びてしまうため。
+ */
+export const THROW_COUNT_OVER_WEIGHT = 0.12;
+/**
+ * Dスコアが高い構成での、最頻値より1回多い投げの重み。
+ * Dスコアの上限が低い構成では1回足すだけで上限を超えるが、`THROW_COUNT_HIGH_SCORE`
+ * 以上を狙う構成では投げを足すほど素直に点が伸びるので、最頻値を5に保つには少し強い
+ * 重みが必要になる（それでも実測では6回の割合はこちらのほうが高い）。
+ */
+export const THROW_COUNT_HIGH_SCORE = 5.0;
+export const THROW_COUNT_OVER_WEIGHT_HIGH = 0.2;
+/** 最頻値より2回以上多い投げ1回ぶんの重み（実際にはほぼ無いので強く嫌う） */
+export const THROW_COUNT_FAR_OVER_WEIGHT = 0.3;
 
 /**
  * 投げ上げの回数が最頻値から離れているぶんの評価の引き算。
- * 多い側は技術加点（上限なし）で稼げてしまうので強めに嫌い、Dスコアが高い構成では緩める。
+ * 多い側は技術加点（上限なし）で稼げてしまうので、難度の刻みより強い重みで嫌う。
+ * 1回多いだけなら弱め、2回以上多いぶんは強く。
  */
 export function throwCountPenalty(count: number, dScore: number, junior = false): number {
   const mode = preferredThrowCount(dScore, junior);
   if (count < mode) return (mode - count) * THROW_COUNT_UNDER_WEIGHT;
   const over = count - mode;
-  const weight =
-    dScore >= THROW_COUNT_RELAXED_SCORE ? THROW_COUNT_OVER_WEIGHT_RELAXED : THROW_COUNT_OVER_WEIGHT;
-  return over * weight;
+  if (over === 0) return 0;
+  const first =
+    dScore >= THROW_COUNT_HIGH_SCORE ? THROW_COUNT_OVER_WEIGHT_HIGH : THROW_COUNT_OVER_WEIGHT;
+  return first + (over - 1) * THROW_COUNT_FAR_OVER_WEIGHT;
 }
 
 /**
