@@ -422,6 +422,9 @@ function autoLimitOf(t: SeriesTemplate, opts: GenerateOptions): number | null {
   return null;
 }
 
+/** 不足を満たす候補を必ず入れて組み直す回数（足す順番で結果が変わるため） */
+const REBUILD_ATTEMPTS = 5;
+
 /** 自動生成の候補の「量」を変えた別案（投げ＝シェネの回数、タンブリング＝宙返りの本数） */
 function autoVariants(t: SeriesTemplate): SeriesTemplate[] {
   if (isAutoThrowTemplate(t))
@@ -549,6 +552,91 @@ function swapIn(
 }
 
 /**
+ * 貪欲法の1回ぶん。`start` のシリーズは必ず入れた状態から始める。
+ *  ① ランダムな順に見て、評価が上がるものだけ足す（登録テンプレートを先に見る）
+ *  ② 自動生成のシリーズは量（シェネの回数・宙返りの本数）を調整する
+ *  ③ 抜いても評価が下がらないシリーズを取り除く
+ *  ④ 投げとタンブリングを交互に並べる
+ */
+function greedyAttempt(
+  start: SeriesTemplate[],
+  own: SeriesTemplate[],
+  auto: SeriesTemplate[],
+  opts: GenerateOptions,
+  rand: () => number,
+  maxSeries: number,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  let used: SeriesTemplate[] = [...start];
+  let cur = evaluateUsed(used, opts);
+  /** 自動生成の候補を種類ごとに何本使ったか */
+  const autoUsed = new Map<string, number>();
+  const countAuto = (t: SeriesTemplate) => {
+    if (autoLimitOf(t, opts) === null) return;
+    const kind = isAutoThrowTemplate(t) ? "throw" : "tumbling";
+    autoUsed.set(kind, (autoUsed.get(kind) ?? 0) + 1);
+  };
+  start.forEach(countAuto);
+
+  // ① ランダムな順に見て、評価が上がるものだけ足す。
+  //    登録テンプレートを先に見て、足りないところを自動生成で補う。
+  const startIds = new Set(used.map((t) => t.id));
+  for (const t of [...shuffled(own, rand), ...shuffled(auto, rand)]) {
+    if (used.length >= maxSeries) break;
+    if (startIds.has(t.id)) continue;
+    // 自動生成のシリーズは補いの本数まで（テンプレートを押しのけないように）
+    const limit = autoLimitOf(t, opts);
+    const kind = isAutoThrowTemplate(t) ? "throw" : "tumbling";
+    if (limit !== null && (autoUsed.get(kind) ?? 0) >= limit) continue;
+    const next = [...used, t];
+    const ev = evaluateUsed(next, opts);
+    if (ev.value > cur.value + 1e-9) {
+      used = next;
+      cur = ev;
+      countAuto(t);
+    }
+  }
+
+  // ② 自動生成のシリーズは量（シェネの回数・宙返りの本数）を調整する
+  const tuned = tuneAutoSeries(used, cur, opts);
+  used = tuned.used;
+  cur = tuned.ev;
+
+  // ③ 抜いても評価が下がらないシリーズを取り除く（＝評価されない要素を入れない）
+  //    ただし必ず入れる指定のものは残す
+  const keep = new Set(start.map((t) => t.id));
+  for (let improved = true; improved && used.length > 0; ) {
+    improved = false;
+    for (let i = 0; i < used.length; i++) {
+      if (keep.has(used[i].id)) continue;
+      const next = used.filter((_, k) => k !== i);
+      const ev = evaluateUsed(next, opts);
+      if (ev.value >= cur.value - 1e-9) {
+        used = next;
+        cur = ev;
+        improved = true;
+        break;
+      }
+    }
+  }
+
+  // ④ 投げとタンブリングを交互に並べる
+  const ordered = orderSeries(used, cur, opts);
+  return { used: ordered.used, ev: ordered.ev };
+}
+
+/** その候補1本だけで、不足している要求のどれかを満たせるもの */
+function satisfying(
+  pool: SeriesTemplate[],
+  missing: string[],
+  opts: GenerateOptions,
+): SeriesTemplate[] {
+  return pool.filter((t) => {
+    const ev = evaluateUsed([t], opts);
+    return missing.some((m) => !ev.missing.includes(m));
+  });
+}
+
+/**
  * ランダムな貪欲法を何度も試して、いちばん評価の高い構成を返す。
  * 使えるテンプレートが無ければ null。
  */
@@ -565,64 +653,37 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   let best: { used: SeriesTemplate[]; ev: Evaluation } | null = null;
 
   for (let a = 0; a < attempts; a++) {
-    let used: SeriesTemplate[] = [];
-    let cur = evaluateUsed([], opts);
-    /** 自動生成の候補を種類ごとに何本使ったか */
-    const autoUsed = new Map<string, number>();
-
-    // ① ランダムな順に見て、評価が上がるものだけ足す。
-    //    登録テンプレートを先に見て、足りないところを自動生成で補う。
-    for (const t of [...shuffled(own, rand), ...shuffled(auto, rand)]) {
-      if (used.length >= maxSeries) break;
-      // 自動生成のシリーズは補いの本数まで（テンプレートを押しのけないように）
-      const limit = autoLimitOf(t, opts);
-      const kind = isAutoThrowTemplate(t) ? "throw" : "tumbling";
-      if (limit !== null && (autoUsed.get(kind) ?? 0) >= limit) continue;
-      const next = [...used, t];
-      const ev = evaluateUsed(next, opts);
-      if (ev.value > cur.value + 1e-9) {
-        used = next;
-        cur = ev;
-        if (limit !== null) autoUsed.set(kind, (autoUsed.get(kind) ?? 0) + 1);
-      }
-    }
-
-    // ② 自動生成のシリーズは量（シェネの回数・宙返りの本数）を調整する
-    const tuned = tuneAutoSeries(used, cur, opts);
-    used = tuned.used;
-    cur = tuned.ev;
-
-    // ③ 抜いても評価が下がらないシリーズを取り除く（＝評価されない要素を入れない）
-    for (let improved = true; improved && used.length > 0; ) {
-      improved = false;
-      for (let i = 0; i < used.length; i++) {
-        const next = used.filter((_, k) => k !== i);
-        const ev = evaluateUsed(next, opts);
-        if (ev.value >= cur.value - 1e-9) {
-          used = next;
-          cur = ev;
-          improved = true;
-          break;
-        }
-      }
-    }
-
-    // ④ 投げとタンブリングを交互に並べる
-    const ordered = orderSeries(used, cur, opts);
-    used = ordered.used;
-    cur = ordered.ev;
-
-    if (!best || cur.value > best.ev.value + 1e-9) best = { used, ev: cur };
+    const cand = greedyAttempt([], own, auto, opts, rand, maxSeries);
+    if (!best || cand.ev.value > best.ev.value + 1e-9) best = cand;
   }
 
   if (!best || best.used.length === 0) return null;
 
-  // ④ 必須要素を満たしきれていなければ、1本ずつ入れ替えて詰める
+  const pool = [...own, ...auto];
+  /** 不足が残っている構成を、1本ずつ入れ替えて詰める */
+  const repair = (cand: { used: SeriesTemplate[]; ev: Evaluation }) => {
+    if (cand.ev.missing.length === 0) return cand;
+    const fixed = swapIn(cand.used, cand.ev, pool, opts);
+    if (fixed.ev.value <= cand.ev.value + 1e-9) return cand;
+    const ordered = orderSeries(fixed.used, fixed.ev, opts);
+    return { used: ordered.used, ev: ordered.ev };
+  };
+
+  // ⑤ 必須要素を満たしきれていなければ、1本ずつ入れ替えて詰める
+  if (requiresAllElements(opts)) best = repair(best);
+
+  // ⑥ それでも足りなければ、不足を満たす候補を必ず入れた状態から組み直して詰める。
+  //    Dスコアの上限いっぱいの構成では、入れ替えだけでは不足を埋められない
+  //    （不足を満たす1本を足す代わりに1本抜く必要がある）ことがある。
   if (requiresAllElements(opts) && best.ev.missing.length > 0) {
-    const fixed = swapIn(best.used, best.ev, [...own, ...auto], opts);
-    if (fixed.ev.value > best.ev.value + 1e-9) {
-      const ordered = orderSeries(fixed.used, fixed.ev, opts);
-      best = { used: ordered.used, ev: ordered.ev };
+    for (const t of satisfying(pool, best.ev.missing, opts)) {
+      // 足す順番（乱数）で結果が変わるので、1本につき何度か組み直す
+      for (let k = 0; k < REBUILD_ATTEMPTS; k++) {
+        const cand = repair(greedyAttempt([t], own, auto, opts, rand, maxSeries));
+        if (cand.used.length > 0 && cand.ev.value > best.ev.value + 1e-9) best = cand;
+        if (best.ev.missing.length === 0) break;
+      }
+      if (best.ev.missing.length === 0) break;
     }
   }
 

@@ -60,6 +60,12 @@ export interface AutoTumblingPattern {
   connect: boolean;
   /** 投げ受け（投げタン）か */
   throwCatch: boolean;
+  /**
+   * 投げを**最後の宙返りの最中**に実施するか（`throwCatch` と併用）。
+   * 投げてから跳ぶ形は手具の滞空時間に縛られるが、連続の最後に投げるなら
+   * 前に何本入れても自由で、三宙と投げタンを1シリーズで両方満たせる。
+   */
+  throwInSkill?: boolean;
   /** 最後に前転でつなぐか（投げ受けの着地） */
   rollFinish: boolean;
 }
@@ -73,6 +79,15 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
   { id: "throwRoll", saltos: { min: 1, max: 1 }, connect: false, throwCatch: true, rollFinish: true },
   // 投げタン：投げ→前方系→側宙（転宙）→キャッチ
   { id: "throwSalto", saltos: { min: 2, max: 2 }, connect: false, throwCatch: true, rollFinish: false },
+  // 投げタン：連続の最後の宙返りの最中に投げて、前転→キャッチ（三宙と投げタンを1本で両立）
+  {
+    id: "chainThrowInSkill",
+    saltos: { min: 2, max: 3 },
+    connect: false,
+    throwCatch: true,
+    throwInSkill: true,
+    rollFinish: true,
+  },
 ];
 
 /** 投げ受けの着地でつなぐ徒手動作（前転） */
@@ -307,18 +322,25 @@ export interface AutoTumblingSpec {
   connectId: string;
 }
 
-const skillItem = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: true, isThrow: false });
+const skillItem = (skillId: string, isThrow = false): Item => ({
+  kind: "skill",
+  skillId,
+  hasApparatus: true,
+  isThrow,
+});
 
 /** 自動生成の内容からシリーズを組み立てる */
 export function buildAutoTumblingSeries(spec: AutoTumblingSpec): Series {
   const { pattern } = spec;
   const items: Item[] = [];
-  if (pattern.throwCatch) items.push({ kind: "throw" });
+  // 技の最中に投げる形では、先頭に投げを置かず最後の宙返りに投げを付ける
+  if (pattern.throwCatch && !pattern.throwInSkill) items.push({ kind: "throw" });
   spec.entry.forEach((id) => items.push(skillItem(id)));
-  spec.saltoIds.slice(0, spec.saltoCount).forEach((id, i) => {
+  const saltos = spec.saltoIds.slice(0, spec.saltoCount);
+  saltos.forEach((id, i) => {
     if (pattern.connect && i === 1 && spec.connectId) items.push(skillItem(spec.connectId));
     // 入力画面と同じで、そのままでは後方系に入れない位置ではロンダートを補う
-    const next = skillItem(id);
+    const next = skillItem(id, pattern.throwInSkill && i === saltos.length - 1);
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
     items.push(next);
   });

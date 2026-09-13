@@ -327,6 +327,26 @@ describe("ランダム生成への組み込み", () => {
     expect(withCheneCount(t, 1)).toBeNull(); // この形の範囲外
   });
 
+  it("先に最低限の投げ受けを1本置く形がある（日本トップのロープの1シリーズ目）", () => {
+    const list = autoThrowTemplates("rope").filter((t) => t.spec.pattern.leadPair);
+    expect(list.length).toBeGreaterThan(0);
+    list.forEach((t) => {
+      const items = t.series.items;
+      // 投げ→キャッチ（徒手なし）→本体の投げ→…→キャッチ
+      expect(items[0].kind).toBe("throw");
+      expect(items[1].kind).toBe("catch");
+      expect(items[2].kind).toBe("throw");
+      expect(items[1].kind === "catch" && items[1].catchTypes).toBeUndefined();
+      // 先の投げは二つ投げにしない（2つ同時キャッチが要るので通常のキャッチで受けられない）
+      expect(t.spec.leadThrowStyle?.two).toBeFalsy();
+      expect(analyzeSeries(t.series).throwCount).toBe(2);
+      expect(checkApparatusFlow(t.series, "rope")).toEqual([]);
+    });
+    // 手以外の投げ→キャッチ→視野外の投げ→シェネ→キャッチ のような組み合わせが出る
+    const styles = new Set(list.map((t) => t.spec.leadThrowStyle?.id));
+    expect(styles.size).toBeGreaterThan(1);
+  });
+
   it("autoThrows: false なら使わない", () => {
     const r = generateRoutine(tumblingOnly(), { apparatus: "stick", autoThrows: false, random: seeded(7) })!;
     expect(r.used.some(isAutoThrowTemplate)).toBe(false);

@@ -345,8 +345,9 @@ describe("必須要素を必ず満たす構成", () => {
   });
 
   it("3点以上を狙うと必須要素をすべて満たす", () => {
+    // Dスコアの上限いっぱいでも満たす（足す代わりに抜く必要がある形でも組み直して詰める）
     [3.5, 4.5].forEach((maxScore) => {
-      [3, 7, 11].forEach((seed) => {
+      [3, 7, 11, 13, 17].forEach((seed) => {
         const r = generateRoutine(pool(), { apparatus: "stick", maxScore, random: seeded(seed) })!;
         expect(computeScore(r.series, "stick").missing).toEqual([]);
         expect(r.dScore).toBeLessThanOrEqual(maxScore + 1e-9);

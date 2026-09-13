@@ -34,7 +34,7 @@ import {
   withSaltoCount,
   type AutoTumblingSpec,
 } from "../autoTumblings";
-import { analyzeSeries, hasConnect, maxSaltoChain, prevSkillId } from "../analysis";
+import { analyzeSeries, checkApparatusFlow, hasConnect, maxSaltoChain, prevSkillId } from "../analysis";
 import { CATEGORY, DIFF_VALUE, ROUNDOFF_SKILL_ID, skillDef, skillDifficulty, skillFlowAfter, skillOptions } from "../constants";
 import { BASIC_LEVEL_MAX_SCORE, DEFAULT_MAX_AUTO_TUMBLINGS, generateRoutine } from "../generate";
 import { computeScore } from "../score";
@@ -397,12 +397,40 @@ describe("つなぎ技", () => {
     ).toBe(true);
   });
 
-  it("タンブリングの実施中には投げない（投げてから実施する）", () => {
-    autoTumblingTemplates("stick", { random: seeded(9) }).forEach((t) =>
-      t.series.items.forEach((item) => {
-        if (item.kind === "skill") expect(item.isThrow).toBeFalsy();
-      }),
+  it("技の最中に投げるのは連続の最後の宙返りだけ", () => {
+    autoTumblingTemplates("stick", { random: seeded(9) }).forEach((t) => {
+      const items = t.series.items;
+      const throwIdx = items.findIndex((it) => it.kind === "skill" && it.isThrow);
+      if (!t.spec.pattern.throwInSkill) {
+        expect(throwIdx).toBe(-1);
+        return;
+      }
+      // 先頭に投げは置かず、最後の宙返りの最中に投げて前転→キャッチで終わる
+      expect(items[0].kind).toBe("skill");
+      const lastSkill = items.reduce((n, it, i) => (it.kind === "skill" ? i : n), -1);
+      expect(throwIdx).toBe(lastSkill);
+      expect(items.filter((it) => it.kind === "skill" && it.isThrow)).toHaveLength(1);
+      expect(items[items.length - 1].kind).toBe("catch");
+      // 投げタンとして数えられる（難度は連続の内容から1ランクアップ）
+      const a = analyzeSeries(t.series);
+      expect(a.units).toHaveLength(1);
+      expect(a.units[0].isThrowTumbling).toBe(true);
+      // 入力画面の制約・手具の流れとも矛盾しない
+      expect(tumblingFlowErrors(t.series)).toEqual([]);
+      expect(checkApparatusFlow(t.series, "stick")).toEqual([]);
+    });
+  });
+
+  it("連続の最後に投げる形は三宙と投げタンを1シリーズで両立できる", () => {
+    const spec = autoTumblingSpecs({ random: seeded(3) }).find(
+      (sp) => sp.pattern.throwInSkill && sp.saltoCount === 3,
     );
+    expect(spec).toBeDefined();
+    const series = buildAutoTumblingSeries(spec!);
+    const a = analyzeSeries(series);
+    expect(a.units[0].isThrowTumbling).toBe(true);
+    const ids = series.items.flatMap((it) => (it.kind === "skill" && it.skillId ? [it.skillId] : []));
+    expect(maxSaltoChain(ids)).toBe(3);
   });
 
   it("つなぎの形は宙返りの間にA難度技が入る", () => {
