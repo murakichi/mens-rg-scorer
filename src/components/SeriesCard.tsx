@@ -1,4 +1,5 @@
-import { Trash2, X } from "lucide-react";
+import { useState } from "react";
+import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
@@ -18,12 +19,42 @@ import {
   HANDS_TYPES,
   DEFAULT_HANDS_TYPE,
   ROPE_JUMPS,
+  POSTURE_OPTIONS,
+  TWIST_BASES,
+  TWIST_OPTIONS,
+  TWIST_ID_PREFIX,
+  buildTwistSkillId,
+  parseTwistSkillId,
+  twistLabel,
+  skillFlowAfter,
 } from "../scoring/constants";
-import { checkApparatusFlow, maxSaltoChain } from "../scoring/analysis";
-import type { ApparatusKey, Item, Series, SeriesAnalysis } from "../scoring/types";
+import {
+  checkApparatusFlow,
+  maxSaltoChain,
+  needsRoundoffBefore,
+  prevSkillId,
+  SERIES_TAGS,
+  seriesTags,
+} from "../scoring/analysis";
+import type { SkillFlow } from "../scoring/constants";
+import type { ApparatusKey, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
 import type { DiffRow, SeriesBreakdown } from "../scoring/score";
+import type { SeriesTemplateOption } from "./SeriesListEditor";
 
 type ItemKind = Item["kind"];
+
+/** ひねり指定に切り替えたときの初期値（後方宙返り・抱え込み・ひねりなし＝後方宙返り） */
+const DEFAULT_TWIST: TwistParams = { base: "back", twist: 0, posture: "tuck" };
+/** 前方系も選べる位置での初期値（前宙）。ロンダートが勝手に補われないようにこちらを使う。 */
+const DEFAULT_TWIST_FORWARD: TwistParams = { base: "front", twist: 0, posture: "tuck" };
+
+/**
+ * 技ブロックの既定の入力パターン。既定は一覧で、ブロックごとに中身から決める。
+ * 一覧に無いひねりの組み合わせ（合成id）だけは一覧から編集できないので手動入力にする。
+ * ボタンで切り替えたブロックだけがそのブロック限りで手動入力になる。
+ */
+const defaultTwistMode = (item: Item): boolean =>
+  item.kind === "skill" && item.skillId.startsWith(TWIST_ID_PREFIX);
 
 interface Props {
   series: Series;
@@ -40,10 +71,20 @@ interface Props {
   /** 構成が既出のシリーズと一致したか（解除チェックの表示条件） */
   isDupSignature: boolean;
   canRemove: boolean;
+  /** 実施減点の行を出すか（テンプレート編集では出さない） */
+  showExec?: boolean;
+  /** 共通テンプレートの編集か（手具固有の入力を出さない） */
+  common?: boolean;
+  /** テンプレート読み込みプルダウンの選択肢（省略時はプルダウンを出さない） */
+  templateOptions?: SeriesTemplateOption[];
+  onLoadTemplate?: (templateId: string) => void;
+  onSaveTemplate?: () => void;
   onUpdateField: (patch: Partial<Series>) => void;
   onAddItem: (kind: ItemKind) => void;
   onUpdateItem: (iIdx: number, patch: Partial<Item>) => void;
   onRemoveItem: (iIdx: number) => void;
+  /** 技を隣の技と入れ替える（dir: -1 で前、+1 で後ろ） */
+  onMoveItem: (iIdx: number, dir: -1 | 1) => void;
   onRemoveSeries: () => void;
 }
 
@@ -80,12 +121,23 @@ function ItemEditor({
   item,
   apparatus,
   junior,
+  common,
+  twistMode,
+  onTwistModeChange,
+  flow,
   prevMotionId,
   onUpdate,
 }: {
   item: Item;
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 共通テンプレートの編集か（手具固有の入力を出さない） */
+  common?: boolean;
+  /** このブロックをひねり・姿勢で指定するモードか */
+  twistMode: boolean;
+  onTwistModeChange: (on: boolean) => void;
+  /** この位置で選べる系統（ロンダート前は後方の宙返り、ロンダート後は前方系を出さない） */
+  flow: SkillFlow;
   /** 直前の徒手動作アイテムで選ばれていた動作（選択肢の並べ替えに使う） */
   prevMotionId?: string;
   onUpdate: (patch: Partial<Item>) => void;
@@ -94,7 +146,7 @@ function ItemEditor({
     return (
       <>
         <div className="throw-tag">投げ</div>
-        {[...THROW_OPTIONS_COMMON, ...(APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map((opt) => (
+        {[...THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map((opt) => (
           <label key={opt.id} className="check">
             <input
               type="checkbox"
@@ -104,7 +156,7 @@ function ItemEditor({
             {opt.name}
           </label>
         ))}
-        {REQUIRED_THROW_OPTIONS[apparatus].map((opt) => (
+        {(common ? [] : REQUIRED_THROW_OPTIONS[apparatus]).map((opt) => (
           <label key={opt.id} className="check-req">
             <input
               type="checkbox"
@@ -121,7 +173,7 @@ function ItemEditor({
     return (
       <>
         <div className="catch-tag">キャッチ</div>
-        {[...CATCH_OPTIONS_COMMON, ...(APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])].map((opt) => (
+        {[...CATCH_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])].map((opt) => (
           <label key={opt.id} className="check">
             <input
               type="checkbox"
@@ -131,7 +183,7 @@ function ItemEditor({
             {opt.name}
           </label>
         ))}
-        {APPARATUS_USE[apparatus] && (
+        {!common && APPARATUS_USE[apparatus] && (
           <label className="check-req">
             <input
               type="checkbox"
@@ -145,33 +197,104 @@ function ItemEditor({
     );
   }
   if (item.kind === "skill") {
+    const params = parseTwistSkillId(item.skillId);
+    // 後ろ向きで終わった後は後方系しか出さない（初期値もそれに合わせる）
+    const fallbackTwist = flow.forward ? DEFAULT_TWIST_FORWARD : DEFAULT_TWIST;
+    const cur = params ?? fallbackTwist;
+    const setTwist = (patch: Partial<TwistParams>) =>
+      onUpdate({ skillId: buildTwistSkillId({ ...cur, ...patch }) });
+    const groups = skillOptionGroups(junior, flow);
+    // 選択中の技が選択肢に無いとき（ジュニア禁止・その位置で実施しない系統・
+    // 一覧に無いひねりの組み合わせ）は、消さずに選択値として残す
+    const listed = groups.some((g) => g.skills.some((sk) => sk.id === item.skillId));
+    // すでに選ばれている向きは、その位置で実施しない系統でも残す
+    const bases = TWIST_BASES.filter((b) =>
+      b.id === cur.base ? true : b.id === "back" ? flow.backward : flow.forward,
+    );
     return (
       <>
         <div className="sel-wrap">
-          <select
-            className="select"
-            value={item.skillId}
-            onChange={(e) => onUpdate({ skillId: e.target.value })}
+          <button
+            type="button"
+            className="mode-btn"
+            title={twistMode ? "一覧から技を選ぶ" : "ひねり回数と姿勢を指定して技を組み立てる"}
+            onClick={() => {
+              // ひねり指定に切り替えるとき、ひねりで表せない技（ロンダート等）だけ既定値に置き換える。
+              // このブロックだけが切り替わり、他の技はそのまま。
+              if (!twistMode && !params) onUpdate({ skillId: buildTwistSkillId(fallbackTwist) });
+              onTwistModeChange(!twistMode);
+            }}
           >
-            <option value="">タンブリング技</option>
-            {/* ジュニアで禁止の技（2回宙返り系）が既に選ばれている場合は、消さずに印を付けて残す */}
-            {item.skillId && !skillAllowed(item.skillId, junior) && (
-              <option value={item.skillId}>
-                {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}・ジュニア禁止）
-              </option>
-            )}
-            {/* 前方系・側方系・後方系に分けて表示 */}
-            {skillOptionGroups(junior).map((g) => (
-              <optgroup key={g.name} label={g.name}>
-                {g.skills.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}（{skillDifficulty(s.id, junior)}）
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+            {twistMode ? "一覧入力に切り替え" : "手動入力に切り替え"}
+          </button>
         </div>
+        {twistMode ? (
+          <div className="twist-row">
+            <select
+              className="select twist-select"
+              value={cur.base}
+              onChange={(e) => setTwist({ base: e.target.value as TwistParams["base"] })}
+            >
+              {bases.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="select twist-select"
+              value={cur.posture}
+              onChange={(e) => setTwist({ posture: e.target.value as TwistParams["posture"] })}
+            >
+              {POSTURE_OPTIONS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="select twist-select"
+              value={cur.twist}
+              onChange={(e) => setTwist({ twist: Number(e.target.value) })}
+            >
+              {TWIST_OPTIONS.map((t) => (
+                <option key={t} value={t}>
+                  {twistLabel(t)}
+                </option>
+              ))}
+            </select>
+            <span className="twist-name">
+              {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}）
+            </span>
+          </div>
+        ) : (
+          <div className="sel-wrap">
+            <select
+              className="select"
+              value={item.skillId}
+              onChange={(e) => onUpdate({ skillId: e.target.value })}
+            >
+              <option value="">タンブリング技</option>
+              {/* 選択肢に無い技が入っている場合は、消さずに選択値として残す */}
+              {item.skillId && !listed && (
+                <option value={item.skillId}>
+                  {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}
+                  {skillAllowed(item.skillId, junior) ? "" : "・ジュニア禁止"}）
+                </option>
+              )}
+              {/* 前方系・側方系・後方系に分けて表示 */}
+              {groups.map((g) => (
+                <optgroup key={g.name} label={g.name}>
+                  {g.skills.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}（{skillDifficulty(s.id, junior)}）
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        )}
         <label className="check">
           <input
             type="checkbox"
@@ -191,7 +314,7 @@ function ItemEditor({
           この技の最中に投げ
         </label>
         {item.isThrow &&
-          [...SKILL_THROW_OPTIONS_COMMON, ...(APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map(
+          [...SKILL_THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map(
             (opt) => (
               <label key={opt.id} className="check">
                 <input
@@ -259,10 +382,14 @@ function ItemEditor({
           <input
             className="count-input"
             type="number"
-            min="1"
+            min="0"
             step="1"
-            value={item.count ?? 1}
-            onChange={(e) => onUpdate({ count: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+            // 0回は空欄で表示する（バックスペースで消してそのまま入力し直せる）
+            value={item.count === 0 ? "" : item.count ?? 1}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10);
+              onUpdate({ count: Number.isNaN(n) ? 0 : Math.max(0, n) });
+            }}
           />
           回
         </label>
@@ -300,6 +427,21 @@ function ItemEditor({
   );
 }
 
+/** シリーズの内容から自動で付くタグ（投げ／投げタン／三宙／つなぎ） */
+export function SeriesTags({ series, junior }: { series: Series; junior: boolean }) {
+  const tags = seriesTags(series, junior);
+  if (tags.length === 0) return null;
+  return (
+    <span className="tag-row">
+      {SERIES_TAGS.filter((t) => tags.includes(t.id)).map((t) => (
+        <span key={t.id} className="tag" title={t.title}>
+          {t.name}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function SeriesCard({
   series: ser,
   sIdx,
@@ -311,14 +453,60 @@ export function SeriesCard({
   isDup,
   isDupSignature,
   canRemove,
+  showExec = true,
+  common = false,
+  templateOptions,
+  onLoadTemplate,
+  onSaveTemplate,
   onUpdateField,
   onAddItem,
   onUpdateItem,
   onRemoveItem,
+  onMoveItem,
   onRemoveSeries,
 }: Props) {
   const seriesQualifies = a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus);
   const flowErrors = checkApparatusFlow(ser, apparatus);
+  // タンブリング技の入力パターン（一覧／手動入力）。既定は一覧で、
+  // ボタンで切り替えたブロックだけを覚えておく（キーはアイテムの位置）。
+  const [twistModes, setTwistModes] = useState<Record<number, boolean>>({});
+  const twistModeOf = (iIdx: number, item: Item) => twistModes[iIdx] ?? defaultTwistMode(item);
+  const setTwistModeOf = (iIdx: number, on: boolean) => setTwistModes((m) => ({ ...m, [iIdx]: on }));
+  // アイテムが増減すると位置がずれるので、覚えている入力パターンも合わせてずらす
+  const shiftTwistModes = (from: number, by: number) =>
+    setTwistModes((m) => {
+      const next: Record<number, boolean> = {};
+      Object.entries(m).forEach(([k, v]) => {
+        const i = Number(k);
+        if (i < from) next[i] = v;
+        else if (by > 0 || i > from) next[i + by] = v;
+      });
+      return next;
+    });
+  const removeItemAt = (iIdx: number) => {
+    shiftTwistModes(iIdx, -1);
+    onRemoveItem(iIdx);
+  };
+  // 技を入れ替えたら、位置で覚えている入力パターンも一緒に入れ替える
+  const moveItemAt = (iIdx: number, dir: -1 | 1) => {
+    const j = iIdx + dir;
+    setTwistModes((m) => {
+      const next = { ...m };
+      if (m[j] === undefined) delete next[iIdx];
+      else next[iIdx] = m[j];
+      if (m[iIdx] === undefined) delete next[j];
+      else next[j] = m[iIdx];
+      return next;
+    });
+    onMoveItem(iIdx, dir);
+  };
+  // 手前にロンダートが補われる更新か（補われるとこのブロックは1つ後ろにずれる）
+  const updateItemAt = (iIdx: number, patch: Partial<Item>) => {
+    const next = [...ser.items];
+    next[iIdx] = { ...next[iIdx], ...patch } as Item;
+    if (needsRoundoffBefore(next, iIdx)) shiftTwistModes(iIdx, 1);
+    onUpdateItem(iIdx, patch);
+  };
 
   return (
     <section className="card">
@@ -326,6 +514,7 @@ export function SeriesCard({
         <span>
           シリーズ {sIdx + 1}
           {isDup ? "（重複：D・本数・投げ回数に不算入）" : isDupSignature ? "（重複扱いを解除中）" : ""}
+          <SeriesTags series={ser} junior={junior} />
         </span>
         {canRemove && (
           <button className="remove-btn-sm" onClick={onRemoveSeries}>
@@ -333,18 +522,61 @@ export function SeriesCard({
           </button>
         )}
       </div>
-      <label className="exec-label">
-        実施減点(E)：
-        <input
-          className="exec-input"
-          type="number"
-          step="0.1"
-          min="0"
-          value={ser.executionDeduction || 0}
-          onChange={(e) => onUpdateField({ executionDeduction: parseFloat(e.target.value) || 0 })}
-        />
-        点
-      </label>
+      {showExec && (
+      <div className="exec-row">
+        <label className="exec-label">
+          実施減点(E)：
+          <input
+            className="exec-input"
+            type="number"
+            step="0.1"
+            min="0"
+            value={ser.executionDeduction || 0}
+            onChange={(e) => onUpdateField({ executionDeduction: parseFloat(e.target.value) || 0 })}
+          />
+          点
+        </label>
+        {onLoadTemplate && (
+          <select
+            className="select tpl-select"
+            value=""
+            onChange={(e) => {
+              if (e.target.value) onLoadTemplate(e.target.value);
+              e.target.value = "";
+            }}
+          >
+            <option value="">テンプレートから読込</option>
+            {templateOptions?.some((t) => !t.otherApparatus) && (
+              <optgroup label="この手具">
+                {templateOptions
+                  .filter((t) => !t.otherApparatus)
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+              </optgroup>
+            )}
+            {templateOptions?.some((t) => t.otherApparatus) && (
+              <optgroup label="他の手具">
+                {templateOptions
+                  .filter((t) => t.otherApparatus)
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}（{t.otherApparatus}）
+                    </option>
+                  ))}
+              </optgroup>
+            )}
+          </select>
+        )}
+        {onSaveTemplate && (
+          <button className="io-btn" onClick={onSaveTemplate}>
+            テンプレートに保存
+          </button>
+        )}
+      </div>
+      )}
       {isDupSignature && (
         <div className="dup-override">
           <label className="check-req">
@@ -368,12 +600,37 @@ export function SeriesCard({
               item={item}
               apparatus={apparatus}
               junior={junior}
+              common={common}
+              twistMode={twistModeOf(iIdx, item)}
+              onTwistModeChange={(on) => setTwistModeOf(iIdx, on)}
+              flow={skillFlowAfter(prevSkillId(ser.items, iIdx))}
               prevMotionId={prevMotionId(ser.items, iIdx)}
-              onUpdate={(patch) => onUpdateItem(iIdx, patch)}
+              onUpdate={(patch) => updateItemAt(iIdx, patch)}
             />
-            <button className="remove-btn-xs" onClick={() => onRemoveItem(iIdx)} aria-label="削除">
-              <X size={12} />
-            </button>
+            {/* 技の両端：隣の技と入れ替える矢印（中央は削除） */}
+            <div className="item-actions">
+              <button
+                className="move-btn"
+                onClick={() => moveItemAt(iIdx, -1)}
+                disabled={iIdx === 0}
+                aria-label="前の技と入れ替え"
+                title="前の技と入れ替え"
+              >
+                <ChevronLeft size={15} />
+              </button>
+              <button className="remove-btn-xs" onClick={() => removeItemAt(iIdx)} aria-label="削除">
+                <X size={12} />
+              </button>
+              <button
+                className="move-btn"
+                onClick={() => moveItemAt(iIdx, 1)}
+                disabled={iIdx === ser.items.length - 1}
+                aria-label="次の技と入れ替え"
+                title="次の技と入れ替え"
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
             {iIdx < ser.items.length - 1 && <div className="arrow">→</div>}
           </div>
         ))}
@@ -388,7 +645,7 @@ export function SeriesCard({
         <button className="add-btn-sm" onClick={() => onAddItem("motion")}>
           ＋ 徒手動作
         </button>
-        {apparatus === "rope" && (
+        {!common && apparatus === "rope" && (
           <button className="add-btn-sm" onClick={() => onAddItem("ropeJump")}>
             ＋ ロープ跳び
           </button>

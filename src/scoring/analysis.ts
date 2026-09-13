@@ -10,16 +10,65 @@ import {
   DEFAULT_HANDS_TYPE,
   HANDS_TYPE_OTHER,
   APPARATUS_COUNT,
+  APPARATUS_USE,
+  REQUIRED_THROW_OPTIONS,
+  USE_APPARATUS_TAG,
+  requiredThrowName,
   skillDef,
   skillDifficulty,
   ropeJumpDef,
+  isBackwardSalto,
+  isBackwardSkill,
+  leadsBackward,
+  ROUNDOFF_SKILL_ID,
 } from "./constants";
 import type {
+  ApparatusKey,
   Difficulty,
+  Item,
   Series,
   SeriesAnalysis,
   Unit,
 } from "./types";
+
+/**
+ * iIdx の直前に実施する技のid。投げ・キャッチはタンブリングの流れを切らないので飛ばす。
+ * 徒手として入れた転回技（ロンダート等）も技として見る。
+ */
+export function prevSkillId(items: Item[], iIdx: number): string | undefined {
+  for (let i = iIdx - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === "skill") return it.skillId || undefined;
+    if (it.kind === "motion") return it.motionId || undefined;
+    if (it.kind === "ropeJump") return undefined;
+  }
+  return undefined;
+}
+
+/** 自動で補うロンダートのアイテム */
+export const roundoffItem = (): Item => ({
+  kind: "skill",
+  skillId: ROUNDOFF_SKILL_ID,
+  hasApparatus: false,
+  isThrow: false,
+});
+
+/**
+ * 手前にロンダートを補う位置か。後方系はロンダート・バク転から入るか、
+ * 後ろ向きに降りる宙返りに続けてしか実施できないので、そうでない位置で
+ * 後方系を選んだときはロンダートを挟む。
+ *  - 何も無いところ（直前に技が無い）でいきなり後方の宙返りを選んだとき
+ *    （バク転は立ちバク転があるのでそのまま）
+ *  - 前方系や半ひねり系・ダイビング前宙（前向きに降りる技）の後に後方系を選んだとき
+ */
+export function needsRoundoffBefore(items: Item[], iIdx: number): boolean {
+  const it = items[iIdx];
+  if (!it || it.kind !== "skill" || !it.skillId) return false;
+  if (!isBackwardSkill(it.skillId)) return false;
+  const prev = prevSkillId(items, iIdx);
+  if (!prev) return isBackwardSalto(it.skillId);
+  return !leadsBackward(prev);
+}
 
 /** タンブリング塊の難度を算出。先頭技の値 + 以降の非A技ごとに +1、投げ含みで +1、E止め。 */
 export function calcTumblingDifficulty(
@@ -122,9 +171,15 @@ export function motionDef(
 }
 
 /** 徒手動作アイテムの連続回数（未指定・不正値は1回） */
+/**
+ * 徒手動作の実施回数。未指定（新規追加した直後）は1回、0を入れたら0回として扱う。
+ * 0回の動作は難度にも技の構成にも数えない。
+ */
 export function motionTimes(count: number | undefined): number {
+  if (count === undefined || count === null) return 1;
   const n = Math.floor(Number(count));
-  return Number.isFinite(n) && n > 1 ? n : 1;
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(0, n);
 }
 
 /** skillIds 内の最大連続宙返り数 */
@@ -306,6 +361,68 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   };
 }
 
+/** 徒手として数える要素か（徒手動作アイテム・徒手扱いの技＝側転） */
+function isHandItem(item: Item): boolean {
+  if (item.kind === "motion") return !!item.motionId && motionTimes(item.count) > 0;
+  return item.kind === "skill" && !!item.skillId && !!skillDef(item.skillId)?.isHandElement;
+}
+
+/** 転回技か（徒手扱いの技は除く） */
+function isTumblingItem(item: Item): boolean {
+  return item.kind === "skill" && !!item.skillId && !skillDef(item.skillId)?.isHandElement;
+}
+
+/** 投げ上げか（技の最中の投げを含む） */
+function isThrowItem(item: Item): boolean {
+  return item.kind === "throw" || (item.kind === "skill" && !!item.isThrow);
+}
+
+/**
+ * ユニットを区切る位置（その手前で区切る）を返す。
+ *
+ * キャッチで区切るほかに、**タンブリングの合間の徒手（側転・徒手動作）でも区切る**。
+ * 前宙→前転→前宙 なら「前宙（タンブリング）／前転（徒手）／前宙（タンブリング）」の
+ * 3つとしてそれぞれ評価する。徒手の前後どちらかに転回技が無いとき（着地の前転など）は区切らない。
+ *
+ * **投げ上げている間は区切らない**（投げ〜キャッチの間で徒手とタンブリングが混ざった
+ * ときの裁定は従来どおり1つの塊のまま）。
+ */
+export function unitSplitFlags(items: Item[]): boolean[] {
+  const split = items.map(() => false);
+  // キャッチで区切られた区間ごとに見る
+  const segments: [number, number][] = [];
+  let from = 0;
+  items.forEach((item, i) => {
+    if (item.kind === "catch") {
+      segments.push([from, i]);
+      from = i + 1;
+    }
+  });
+  segments.push([from, items.length]);
+
+  segments.forEach(([start, end]) => {
+    /** その徒手がタンブリングの合間か（前後に転回技がある） */
+    const between = (i: number) =>
+      isHandItem(items[i]) &&
+      // 投げ上げている間（手具が空中にある間）は区切らない
+      !items.slice(start, i).some(isThrowItem) &&
+      items.slice(start, i).some(isTumblingItem) &&
+      items.slice(i + 1, end).some(isTumblingItem);
+    let last: "tumbling" | "hand" | null = null;
+    for (let i = start; i < end; i++) {
+      if (between(i)) {
+        if (last === "tumbling") split[i] = true;
+        last = "hand";
+      } else if (isTumblingItem(items[i]) || isThrowItem(items[i])) {
+        // 徒手のあとの転回技（そこに向けた投げ上げを含む）から次の塊にする
+        if (last === "hand") split[i] = true;
+        last = "tumbling";
+      }
+    }
+  });
+  return split;
+}
+
 /**
  * items を左から走査し、catch を区切りに unit へ分類する中核関数。
  * 投げを含まない連続技 → tumbling、投げを含む塊 → throw。
@@ -335,7 +452,10 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
     }
     buf = null;
   };
-  series.items.forEach((item) => {
+  const splitBefore = unitSplitFlags(series.items);
+  series.items.forEach((item, i) => {
+    // タンブリングの合間の徒手はここで区切る（徒手の手前・徒手の直後）
+    if (splitBefore[i]) flush();
     if (item.kind === "catch") {
       flush();
     } else if (item.kind === "throw") {
@@ -348,8 +468,9 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
     } else if (item.kind === "motion") {
       if (!buf) buf = newBuf();
       const m = motionDef(item.motionId, junior);
-      if (m) {
-        const times = motionTimes(item.count);
+      const times = motionTimes(item.count);
+      // 0回の動作は何も数えない（構成にも入れない）
+      if (m && times > 0) {
         buf.motionCount += m.motions * times;
         buf.verticalCount += m.vertical * times;
         if (m.verticalThree) buf.verticalThree = true;
@@ -406,6 +527,86 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
   return { units, throwCount };
 }
 
+// ---- その手具では入力できない内容（別の手具から残ったもの） ----
+//
+// 手具を切り替えても、他の手具のシリーズテンプレートを読み込んでも、シリーズの中身は
+// そのまま残る。入力画面はその手具で入力できるものしか出さないので、残った内容は
+// **画面に出ないまま採点に効いてしまう**（スティックに残った「手具を使ったキャッチ」で
+// 技術加点＋0.1、ロープ跳びで難度＋0.3 など）。採点も編集もここを通して弾く。
+
+/** 手具固有の入力（その手具で入力できるものだけを true にする） */
+const canUseApparatusTag = (apparatus: ApparatusKey): boolean => APPARATUS_USE[apparatus];
+const canUseReqType = (apparatus: ApparatusKey, id: string): boolean =>
+  REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === id);
+const canUseRopeJump = (apparatus: ApparatusKey): boolean => apparatus === "rope";
+
+/** 手具固有の入力の表示名（`apparatusBlockers` が返す） */
+export const APPARATUS_INPUT_NAMES = {
+  useapp: "手具を使った投げ・キャッチ",
+  catchTwo: "2つ同時キャッチ",
+  ropeJump: "ロープ跳び",
+} as const;
+
+/** その手具では入力できない内容の一覧（無ければ空。確認ダイアログの文面に使う） */
+export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): string[] {
+  const reasons = new Set<string>();
+  const tags = canUseApparatusTag(apparatus);
+  list.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "throw") {
+        if (!tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
+          reasons.add(APPARATUS_INPUT_NAMES.useapp);
+        (item.reqTypes || []).forEach((id) => {
+          if (!canUseReqType(apparatus, id))
+            reasons.add(requiredThrowName(id));
+        });
+      }
+      if (item.kind === "skill" && !tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
+        reasons.add(APPARATUS_INPUT_NAMES.useapp);
+      if (item.kind === "catch") {
+        if (!tags && (item.catchTypes || []).includes(USE_APPARATUS_TAG))
+          reasons.add(APPARATUS_INPUT_NAMES.useapp);
+        if (!tags && item.catchTwo) reasons.add(APPARATUS_INPUT_NAMES.catchTwo);
+      }
+      if (item.kind === "ropeJump" && !canUseRopeJump(apparatus))
+        reasons.add(APPARATUS_INPUT_NAMES.ropeJump);
+    }),
+  );
+  return [...reasons];
+}
+
+/**
+ * その手具では入力できない内容を落とした構成。
+ * 何も落とすものが無ければ**同じ配列をそのまま返す**（採点のたびに複製しない）。
+ */
+export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Series[] {
+  if (apparatusBlockers(list, apparatus).length === 0) return list;
+  const tags = canUseApparatusTag(apparatus);
+  const withoutTag = (ids?: string[]) => (ids || []).filter((id) => tags || id !== USE_APPARATUS_TAG);
+  return list.map((ser) => ({
+    ...ser,
+    items: ser.items
+      .filter((item) => item.kind !== "ropeJump" || canUseRopeJump(apparatus))
+      .map((item) => {
+        if (item.kind === "throw")
+          return {
+            ...item,
+            throwTypes: withoutTag(item.throwTypes),
+            reqTypes: (item.reqTypes || []).filter((id) => canUseReqType(apparatus, id)),
+          };
+        if (item.kind === "skill" && item.throwTypes)
+          return { ...item, throwTypes: withoutTag(item.throwTypes) };
+        if (item.kind === "catch")
+          return {
+            ...item,
+            catchTypes: withoutTag(item.catchTypes),
+            catchTwo: tags ? item.catchTwo : false,
+          };
+        return item;
+      }),
+  }));
+}
+
 /** 手元/空中の手具数をシミュレートし、投げ・キャッチの過不足を警告として返す（採点には非影響） */
 export function checkApparatusFlow(series: Series, apparatusKey: keyof typeof APPARATUS_COUNT): string[] {
   const total = APPARATUS_COUNT[apparatusKey];
@@ -459,3 +660,30 @@ export function seriesSignature(series: Series): string {
     }),
   );
 }
+
+
+// ---- シリーズのタグ（検索・一覧表示用）----
+
+export type SeriesTagId = "throw" | "throwTum" | "salto3" | "connect";
+
+/** シリーズに付くタグの定義（表示順） */
+export const SERIES_TAGS: { id: SeriesTagId; name: string; title: string }[] = [
+  { id: "throw", name: "投げ", title: "投げ上げを含む" },
+  { id: "throwTum", name: "投げタン", title: "転回系の投げ受け（投げタン）を含む" },
+  { id: "salto3", name: "三宙", title: "宙返りを3回以上連続" },
+  { id: "connect", name: "つなぎ", title: "宙返りの間にA難度のつなぎ技を挟む" },
+];
+
+/** シリーズの内容から付くタグを求める（入力から自動判定。順序は SERIES_TAGS） */
+export function seriesTags(series: Series, junior = false): SeriesTagId[] {
+  const a = analyzeSeries(series, junior);
+  const tags: SeriesTagId[] = [];
+  if (a.throwCount > 0) tags.push("throw");
+  if (a.units.some((u) => u.isThrowTumbling)) tags.push("throwTum");
+  if (a.units.some((u) => maxSaltoChain(u.skills.map((s) => s.skillId)) >= SALTO_CHAIN_TAG_MIN)) tags.push("salto3");
+  if (a.units.some((u) => hasConnect(u.skills))) tags.push("connect");
+  return tags;
+}
+
+/** 「三宙」とみなす連続宙返りの回数 */
+export const SALTO_CHAIN_TAG_MIN = 3;

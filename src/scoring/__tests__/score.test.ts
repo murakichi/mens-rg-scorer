@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeScore } from "../score";
+import { ART_DEDUCTION_ITEMS } from "../constants";
 import type { Series, Item } from "../types";
 
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
@@ -937,5 +938,107 @@ describe("computeScore — 必須要素チェックの不足も減点する", ()
       r.apparatusElementDeduction +
       r.violationDeduction;
     expect(sum).toBeCloseTo(r.aDeduction, 5);
+  });
+});
+
+describe("§3.5.6.4 芸術と多様性の欠点テーブル（手入力）", () => {
+  it("入力した分だけA減点に加算される", () => {
+    const base = computeScore([], "stick");
+    const r = computeScore([], "stick", { artDeductions: { rhythm: 0.2, volume: 0.1 } });
+    expect(r.artDeduction).toBeCloseTo(0.3, 5);
+    expect(r.aDeduction - base.aDeduction).toBeCloseTo(0.3, 5);
+    expect(base.aScore - r.aScore).toBeCloseTo(0.3, 5);
+  });
+
+  it("項目ごとの上限で丸める", () => {
+    const r = computeScore([], "stick", { artDeductions: { rhythm: 1.5, handVariety: 1.5 } });
+    // リズムは上限0.5、徒手系の多様性は上限1.0
+    expect(r.artRows.find((x) => x.id === "rhythm")?.value).toBeCloseTo(0.5, 5);
+    expect(r.artRows.find((x) => x.id === "handVariety")?.value).toBeCloseTo(1.0, 5);
+    expect(r.artDeduction).toBeCloseTo(1.5, 5);
+  });
+
+  it("負値・不明な項目・未入力は0", () => {
+    const r = computeScore([], "stick", { artDeductions: { rhythm: -1, unknownItem: 0.3 } });
+    expect(r.artDeduction).toBe(0);
+    expect(r.artRows.every((x) => x.value === 0)).toBe(true);
+  });
+
+  it("全項目を内訳として返す（未入力も含む）", () => {
+    const r = computeScore([], "stick");
+    expect(r.artRows).toHaveLength(ART_DEDUCTION_ITEMS.length);
+    expect(r.artRows.map((x) => x.id)).toContain("appInTumbling");
+  });
+});
+
+describe("方向系の判定（側転は徒手扱い）", () => {
+  const skill = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: true, isThrow: false });
+  const dirMissing = (...ids: string[]) =>
+    computeScore([{ executionDeduction: 0, items: ids.map(skill) }], "stick").missingDirCount;
+
+  it("側転だけでは側方系を満たさない", () => {
+    // 前方系・後方系はあるが、側方系は側転しかない
+    expect(dirMissing("b_front", "a_roundoff", "b_backsalto")).toBe(0); // ロンダートは側方系
+    expect(dirMissing("b_front", "a_cartwheel", "a_flicflac", "b_backsalto")).toBe(1); // 側方系が不足
+  });
+
+  it("ロンダートと側宙は側方系に数える", () => {
+    expect(dirMissing("a_roundoff", "b_backsalto", "b_front")).toBe(0);
+    expect(dirMissing("b_sidesalto", "b_backsalto", "b_front")).toBe(0);
+  });
+
+  it("側転は徒手扱いなのでつなぎ技の要求も満たさない", () => {
+    const withCartwheel = computeScore(
+      [{ executionDeduction: 0, items: [skill("b_front"), skill("a_cartwheel"), skill("b_backsalto")] }],
+      "stick",
+    );
+    expect(withCartwheel.required.find((c) => c.key === "connect")?.passed).toBe(false);
+    const withRoundoff = computeScore(
+      [{ executionDeduction: 0, items: [skill("b_front"), skill("a_roundoff"), skill("b_backsalto")] }],
+      "stick",
+    );
+    expect(withRoundoff.required.find((c) => c.key === "connect")?.passed).toBe(true);
+  });
+});
+
+describe("内訳の見出し（徒手系ユニット）", () => {
+  const skill = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: true, isThrow: false });
+
+  it("投げを含む徒手系は「投げn」、含まないものは「徒手n」", () => {
+    const r = computeScore(
+      [
+        S(skill("b_front"), { kind: "motion", motionId: "fwd_roll", count: 1 }, skill("b_backsalto")),
+        S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 3 }, { kind: "catch" }),
+      ],
+      "stick",
+    );
+    expect(r.seriesBreakdowns[0].handRows.map((x) => x.label)).toEqual(["徒手1"]);
+    expect(r.seriesBreakdowns[0].tumRows.map((x) => x.label)).toEqual(["タンブリング1", "タンブリング2"]);
+    expect(r.seriesBreakdowns[1].handRows.map((x) => x.label)).toEqual(["投げ1"]);
+  });
+});
+
+describe("その手具では入力できない内容は採点しない", () => {
+  it("スティックに残った「手具を使ったキャッチ」は技術加点・受け方の種類に数えない", () => {
+    const withTag = [
+      S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4, hands: false }, { kind: "catch", catchTypes: ["useapp"] }),
+    ];
+    const without = [
+      S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4, hands: false }, { kind: "catch" }),
+    ];
+    const a = computeScore(withTag, "stick");
+    const b = computeScore(without, "stick");
+    expect(a.dScore).toBe(b.dScore);
+    expect(a.techniqueBonus).toBe(b.techniqueBonus);
+    expect(a.catchKindCount).toBe(b.catchKindCount);
+    // クラブでは入力できるので、そのまま加点される
+    const clubs = computeScore(withTag, "clubs");
+    expect(clubs.techniqueBonus).toBeGreaterThan(computeScore(without, "clubs").techniqueBonus);
+  });
+
+  it("ロープ以外に残ったロープ跳びは難度に数えない", () => {
+    const jump = [S({ kind: "ropeJump", jumpId: "3fc", isMoving6m: false })];
+    expect(computeScore(jump, "stick").dScore).toBe(0);
+    expect(computeScore(jump, "rope").dScore).toBeGreaterThan(0);
   });
 });

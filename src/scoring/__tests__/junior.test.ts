@@ -173,6 +173,54 @@ describe("ジュニア適用規則 — 投げ上げの上限回数（5回）", (
   });
 });
 
+describe("ジュニア適用規則 — 6回目以降の投げは加点にも数えない", () => {
+  const skill = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: true, isThrow: false });
+  const motion = (motionId: string, count = 1): Item => ({ kind: "motion", motionId, count });
+  /** 投げ受け1回だけのシリーズを、内容が重ならないようにn本 */
+  const fillers = (n: number): Series[] =>
+    ["m1", "m2", "m3", "m4", "mv3"]
+      .slice(0, n)
+      .map((m) => S({ kind: "throw" }, motion(m), { kind: "catch" }));
+
+  it("シリーズ加点：上限超過の投げは「投げ2回以上」に数えない", () => {
+    // 投げ2回・D難度（3動作）のシリーズ＝シリーズ加点の条件を満たす
+    const target = S(
+      { kind: "throw" },
+      motion("m3"),
+      { kind: "catch" },
+      { kind: "throw" },
+      motion("m3"),
+      { kind: "catch" },
+    );
+    expect(computeScore([target], "stick", { junior: true }).seriesBonus).toBeCloseTo(0.1, 5);
+    // 先に5回投げていれば、このシリーズの投げは6・7回目なので加点しない
+    const over = computeScore([...fillers(5), target], "stick", { junior: true });
+    expect(over.seriesBonus).toBe(0);
+    expect(over.seriesBreakdowns.at(-1)!.sBonus).toBe(0);
+    // 一般は上限が無いので加点する
+    expect(computeScore([...fillers(5), target], "stick").seriesBonus).toBeCloseTo(0.1, 5);
+  });
+
+  it("二つ投げ4動作加点：上限超過の二つ投げには付かない", () => {
+    const target = S(
+      { kind: "throw", reqTypes: ["twothrow"] },
+      motion("m4"),
+      { kind: "catch", catchTwo: true },
+    );
+    expect(computeScore([target], "clubs", { junior: true }).twoThrowMotionBonus).toBeCloseTo(0.1, 5);
+    expect(computeScore([...fillers(5), target], "clubs", { junior: true }).twoThrowMotionBonus).toBe(0);
+    expect(computeScore([...fillers(5), target], "clubs").twoThrowMotionBonus).toBeCloseTo(0.1, 5);
+  });
+
+  it("手具操作加点：上限超過のユニットの難度は見ない", () => {
+    // 投げ＋C難度2本＝E難度、手具操作2回 → 手具操作加点の条件を満たす
+    const target = S({ kind: "throw" }, skill("c_back15"), skill("c_front1full"), { kind: "catch" });
+    expect(computeScore([target], "stick", { junior: true }).apparatusOpBonus).toBeCloseTo(0.1, 5);
+    expect(computeScore([...fillers(5), target], "stick", { junior: true }).apparatusOpBonus).toBe(0);
+    expect(computeScore([...fillers(5), target], "stick").apparatusOpBonus).toBeCloseTo(0.1, 5);
+  });
+});
+
 describe("ジュニア適用規則 — 2回宙返り系は禁止", () => {
   const doubles = ["d_doubleback", "e_doublelay", "e_divedouble", "e_moonsault", "e_rudolph"];
 

@@ -1,33 +1,34 @@
 import { useState, useMemo, useRef } from "react";
-import { Download, Upload, Plus, Link2 } from "lucide-react";
-import { APPARATUS, APPARATUS_REQUIRED_ELEMENTS, VIOLATION_OPTIONS } from "../scoring/constants";
+import { Download, Upload, Link2, BookMarked, Save, Shuffle } from "lucide-react";
+import {
+  APPARATUS,
+  APPARATUS_REQUIRED_ELEMENTS,
+  ART_DEDUCTION_ITEMS,
+  ART_DEDUCTION_STEP,
+  VIOLATION_OPTIONS,
+  clampArtDeduction,
+} from "../scoring/constants";
 import { computeScore } from "../scoring/score";
-import type { ApparatusKey, Item, Series } from "../scoring/types";
+import { apparatusBlockers, stripForApparatus } from "../scoring/analysis";
+import type { ApparatusKey, Series } from "../scoring/types";
 import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
-import { SeriesCard } from "./SeriesCard";
+import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
+import { TemplateModal } from "./TemplateModal";
+import { GenerateModal } from "./GenerateModal";
 import { ScoreSummary } from "./ScoreSummary";
-
-const emptySeries = (): Series => ({
-  executionDeduction: 0,
-  items: [{ kind: "skill", skillId: "", hasApparatus: false, isThrow: false }],
-});
-
-const newItem = (kind: Item["kind"]): Item => {
-  if (kind === "throw") return { kind: "throw", throwTypes: [], reqTypes: [] };
-  if (kind === "catch") return { kind: "catch", catchTypes: [], catchTwo: false };
-  if (kind === "skill") return { kind: "skill", skillId: "", hasApparatus: false, isThrow: false };
-  if (kind === "ropeJump") return { kind: "ropeJump", jumpId: "", isMoving6m: false };
-  return { kind: "motion", motionId: "" };
-};
-
-/** 初期状態（空のskill1つだけ）かどうか — addItem 時の置き換え判定に使う */
-const isPristine = (items: Item[]) =>
-  items.length === 1 &&
-  items[0].kind === "skill" &&
-  !items[0].skillId &&
-  !items[0].hasApparatus &&
-  !items[0].isThrow;
+import {
+  addRoutineTemplate,
+  addSeriesTemplate,
+  apparatusName,
+  defaultTemplateApparatus,
+  isCommonApparatus,
+  loadTemplates,
+  normalizeTemplateStore,
+  saveTemplates,
+  splitByApparatus,
+  type TemplateStore,
+} from "../scoring/templates";
 
 interface Props {
   /** URL共有から復元する初期構成（任意） */
@@ -37,11 +38,23 @@ interface Props {
     apparatusElements?: unknown;
     violations?: unknown;
     junior?: unknown;
+    artDeductions?: unknown;
     series?: unknown;
   };
 }
 
 const asStringArray = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+
+/** 保存データの欠点テーブルを項目ごとに丸めて取り込む */
+const normalizeArt = (v: unknown): Record<string, number> => {
+  const src = (v ?? {}) as Record<string, unknown>;
+  const out: Record<string, number> = {};
+  ART_DEDUCTION_ITEMS.forEach((item) => {
+    const n = clampArtDeduction(item.id, src[item.id]);
+    if (n > 0) out[item.id] = n;
+  });
+  return out;
+};
 
 export function IndividualScorer({ initialData }: Props = {}) {
   const [apparatus, setApparatus] = useState<ApparatusKey>(() =>
@@ -58,9 +71,20 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [apparatusElements, setApparatusElements] = useState<string[]>(() => asStringArray(initialData?.apparatusElements));
   const [violations, setViolations] = useState<string[]>(() => asStringArray(initialData?.violations));
   const [junior, setJunior] = useState<boolean>(() => !!initialData?.junior);
+  const [artDeductions, setArtDeductions] = useState<Record<string, number>>(() =>
+    normalizeArt(initialData?.artDeductions),
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
   const [jsonText, setJsonText] = useState("");
+  // ---- テンプレート（localStorage 保存）----
+  const [templates, setTemplates] = useState<TemplateStore>(() => loadTemplates());
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const updateTemplates = (next: TemplateStore) => {
+    setTemplates(next);
+    if (!saveTemplates(next)) alert("テンプレートを保存できませんでした（ブラウザの設定をご確認ください）");
+  };
 
   // ---- 採点（純粋関数に委譲）----
   const result = useMemo(
@@ -70,8 +94,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
         apparatusElements,
         violations,
         junior,
+        artDeductions,
       }),
-    [series, apparatus, overallExecution, apparatusElements, violations, junior],
+    [series, apparatus, overallExecution, apparatusElements, violations, junior, artDeductions],
   );
 
   // 自動判定の要素（auto付き）は手動チェック欄に出さない
@@ -87,6 +112,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     apparatusElements,
     violations,
     junior,
+    artDeductions,
     series,
   });
   const handleExport = () => {
@@ -103,13 +129,17 @@ export function IndividualScorer({ initialData }: Props = {}) {
 
   const applyImportedData = (raw: string): boolean => {
     const data = JSON.parse(raw);
-    if (data.apparatus && APPARATUS[data.apparatus as ApparatusKey]) setApparatus(data.apparatus);
+    const ap: ApparatusKey =
+      data.apparatus && APPARATUS[data.apparatus as ApparatusKey] ? (data.apparatus as ApparatusKey) : apparatus;
+    if (ap !== apparatus) setApparatus(ap);
     setOverallExecution(Number(data.executionDeduction) || 0);
     setApparatusElements(asStringArray(data.apparatusElements));
     setViolations(asStringArray(data.violations));
     setJunior(!!data.junior);
+    setArtDeductions(normalizeArt(data.artDeductions));
     if (Array.isArray(data.series) && data.series.length > 0) {
-      setSeries(data.series);
+      // 読み込んだ内容のうち、その手具で入力できないものは落とす
+      setSeries(stripForApparatus(data.series, ap));
       return true;
     }
     return false;
@@ -162,38 +192,123 @@ export function IndividualScorer({ initialData }: Props = {}) {
     }
   };
 
-  // ---- 編集アクション ----
-  const addItem = (sIdx: number, kind: Item["kind"]) =>
-    setSeries((p) => {
-      const n = structuredClone(p);
-      const item = newItem(kind);
-      n[sIdx].items = isPristine(n[sIdx].items) ? [item] : [...n[sIdx].items, item];
-      return n;
-    });
-  const updateItem = (sIdx: number, iIdx: number, patch: Partial<Item>) =>
-    setSeries((p) => {
-      const n = structuredClone(p);
-      n[sIdx].items[iIdx] = { ...n[sIdx].items[iIdx], ...patch } as Item;
-      return n;
-    });
-  const removeItem = (sIdx: number, iIdx: number) =>
-    setSeries((p) => {
-      const n = structuredClone(p);
-      n[sIdx].items.splice(iIdx, 1);
-      if (n[sIdx].items.length === 0) n[sIdx].items.push(newItem("skill"));
-      return n;
-    });
-  const addSeries = () => setSeries((p) => [...p, emptySeries()]);
-  const removeSeries = (sIdx: number) => setSeries((p) => (p.length > 1 ? p.filter((_, i) => i !== sIdx) : p));
-  const updateSeriesField = (sIdx: number, patch: Partial<Series>) =>
-    setSeries((p) => {
-      const n = structuredClone(p);
-      n[sIdx] = { ...n[sIdx], ...patch };
-      return n;
-    });
+  /**
+   * 手具の切り替え。その手具で入力できない内容（他の手具から残ったもの）は
+   * 入力画面に出ないので、確認して落としてから切り替える。
+   */
+  const changeApparatus = (k: ApparatusKey) => {
+    if (k === apparatus) return;
+    const blockers = apparatusBlockers(series, k);
+    if (blockers.length > 0) {
+      const msg = `${APPARATUS[k].name}では入力できない内容（${blockers.join("・")}）があります。外して切り替えますか？`;
+      if (!window.confirm(msg)) return;
+      setSeries((p) => stripForApparatus(p, k));
+    }
+    setApparatus(k);
+  };
+
+  // ---- テンプレートの操作 ----
+  const { common, same, other } = splitByApparatus(templates.series, apparatus);
+  const seriesTemplateOptions = [
+    ...common.map((t) => ({ id: t.id, name: t.name })),
+    ...same.map((t) => ({ id: t.id, name: t.name })),
+    ...other.map((t) => ({ id: t.id, name: t.name, otherApparatus: apparatusName(t.apparatus) })),
+  ];
+  const saveSeriesTemplate = (sIdx: number) => {
+    const name = window.prompt("テンプレート名", `シリーズ${sIdx + 1}`);
+    if (!name?.trim()) return;
+    // 手具固有の要素が無ければ「共通」で保存する
+    updateTemplates(
+      addSeriesTemplate(templates, name, defaultTemplateApparatus([series[sIdx]], apparatus), series[sIdx]),
+    );
+  };
+  const loadSeriesTemplate = (sIdx: number, id: string) => {
+    const t = templates.series.find((x) => x.id === id);
+    if (!t) return;
+    // 他の手具のテンプレートを読み込んだときは、今の手具で入力できない内容を落とす
+    const [loaded] = stripForApparatus([structuredClone(t.series)], apparatus);
+    // 実施減点は採点ごとの入力なので、読み込んでも今の値を残す
+    setSeries((p) =>
+      p.map((ser, i) => (i === sIdx ? { ...loaded, executionDeduction: ser.executionDeduction } : ser)),
+    );
+  };
+  const saveCurrentRoutine = () => {
+    const name = window.prompt("テンプレート名", `${apparatusName(apparatus)}の構成`);
+    if (!name?.trim()) return;
+    updateTemplates(addRoutineTemplate(templates, name, defaultTemplateApparatus(series, apparatus), series));
+  };
+  const loadRoutineTemplate = (id: string) => {
+    const t = templates.routines.find((x) => x.id === id);
+    if (!t) return;
+    if (!window.confirm(`「${t.name}」を読み込みます。編集中の構成は置き換わります。`)) return;
+    // 共通テンプレートは手具を選ばないので、今の手具のまま読み込む
+    const ap = isCommonApparatus(t.apparatus) ? apparatus : t.apparatus;
+    if (ap !== apparatus) setApparatus(ap);
+    setSeries(stripForApparatus(structuredClone(t.series), ap));
+    setTemplateOpen(false);
+  };
+  const appendSeriesTemplate = (id: string) => {
+    const t = templates.series.find((x) => x.id === id);
+    if (!t) return;
+    setSeries((p) => [...p, ...stripForApparatus([structuredClone(t.series)], apparatus)]);
+    setTemplateOpen(false);
+  };
+  const exportTemplates = () => {
+    const blob = new Blob([JSON.stringify(templates, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `templates-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const importTemplates = () => {
+    const raw = window.prompt("テンプレートのJSONを貼り付けてください");
+    if (!raw?.trim()) return;
+    try {
+      const next = normalizeTemplateStore(JSON.parse(raw));
+      if (next.series.length === 0 && next.routines.length === 0) {
+        alert("テンプレートが見つかりませんでした");
+        return;
+      }
+      updateTemplates({
+        version: 1,
+        series: [...next.series, ...templates.series],
+        routines: [...next.routines, ...templates.routines],
+      });
+    } catch {
+      alert("JSONの読み込みに失敗しました");
+    }
+  };
 
   return (
     <>
+      <GenerateModal
+        open={generateOpen}
+        templates={templates.series}
+        apparatus={apparatus}
+        junior={junior}
+        onClose={() => setGenerateOpen(false)}
+        onApply={(ap, r) => {
+          if (!window.confirm("生成した構成を反映します。編集中の構成は置き換わります。")) return;
+          setApparatus(ap);
+          setSeries(structuredClone(r.series));
+          setGenerateOpen(false);
+        }}
+      />
+      <TemplateModal
+        open={templateOpen}
+        store={templates}
+        apparatus={apparatus}
+        junior={junior}
+        onChange={updateTemplates}
+        onClose={() => setTemplateOpen(false)}
+        onSaveCurrentRoutine={saveCurrentRoutine}
+        onLoadRoutine={loadRoutineTemplate}
+        onAppendSeries={appendSeriesTemplate}
+        onExport={exportTemplates}
+        onImport={importTemplates}
+      />
       <JsonModal
         mode={jsonModalMode}
         text={jsonText}
@@ -218,6 +333,15 @@ export function IndividualScorer({ initialData }: Props = {}) {
         </button>
         <button className="io-btn" onClick={handleCopyShareUrl}>
           <Link2 size={14} /> 共有URLをコピー
+        </button>
+        <button className="io-btn" onClick={saveCurrentRoutine}>
+          <Save size={14} /> 構成をテンプレートに保存
+        </button>
+        <button className="io-btn" onClick={() => setTemplateOpen(true)}>
+          <BookMarked size={14} /> テンプレート
+        </button>
+        <button className="io-btn" onClick={() => setGenerateOpen(true)}>
+          <Shuffle size={14} /> ランダム生成
         </button>
         <input
           ref={fileInputRef}
@@ -255,7 +379,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
             <button
               key={k}
               className={k === apparatus ? "app-btn is-active" : "app-btn"}
-              onClick={() => setApparatus(k)}
+              onClick={() => changeApparatus(k)}
             >
               {v.name}
             </button>
@@ -270,29 +394,16 @@ export function IndividualScorer({ initialData }: Props = {}) {
         演技をシリーズ単位で入力します。「投げ」〜「キャッチ」が1つの投げ、投げを挟まない連続したタンブリング技が1本のタンブリングとして自動分類されます。
       </p>
 
-      {series.map((ser, sIdx) => (
-        <SeriesCard
-          key={sIdx}
-          series={ser}
-          sIdx={sIdx}
-          apparatus={apparatus}
-          junior={junior}
-          analysis={result.analysis[sIdx]}
-          unitAdopted={result.unitAdopted[sIdx]}
-          breakdown={result.seriesBreakdowns[sIdx]}
-          isDup={result.dupFlags[sIdx]}
-          isDupSignature={result.dupSignatureFlags[sIdx]}
-          canRemove={series.length > 1}
-          onUpdateField={(patch) => updateSeriesField(sIdx, patch)}
-          onAddItem={(kind) => addItem(sIdx, kind)}
-          onUpdateItem={(iIdx, patch) => updateItem(sIdx, iIdx, patch)}
-          onRemoveItem={(iIdx) => removeItem(sIdx, iIdx)}
-          onRemoveSeries={() => removeSeries(sIdx)}
-        />
-      ))}
-      <button className="add-btn" onClick={addSeries}>
-        <Plus size={14} /> シリーズを追加
-      </button>
+      <SeriesListEditor
+        series={series}
+        apparatus={apparatus}
+        junior={junior}
+        result={result}
+        onChange={setSeries}
+        templateOptions={seriesTemplateOptions}
+        onLoadTemplate={loadSeriesTemplate}
+        onSaveTemplate={saveSeriesTemplate}
+      />
 
       <section className="card">
         <div className="line-head">実施減点（演技全体）</div>
@@ -340,6 +451,54 @@ export function IndividualScorer({ initialData }: Props = {}) {
       </section>
 
       <section className="card">
+        <div className="line-head">芸術と多様性の欠点（§3.5.6.4）</div>
+        {ART_DEDUCTION_ITEMS.map((item, i) => {
+          const prev = ART_DEDUCTION_ITEMS[i - 1];
+          const value = artDeductions[item.id] ?? 0;
+          return (
+            <div key={item.id}>
+              {item.group !== prev?.group && <div className="art-group">{item.group}</div>}
+              <label className="art-row">
+                <span className="art-row-name">
+                  {item.name}
+                  <span className="art-row-note">
+                    上限 {item.max.toFixed(2)}／減点幅 {item.note}
+                  </span>
+                </span>
+                <select
+                  className="select art-select"
+                  value={value}
+                  onChange={(e) =>
+                    setArtDeductions((p) => {
+                      const n = { ...p };
+                      const v = clampArtDeduction(item.id, e.target.value);
+                      if (v > 0) n[item.id] = v;
+                      else delete n[item.id];
+                      return n;
+                    })
+                  }
+                >
+                  <option value={0}>—</option>
+                  {Array.from({ length: Math.round(item.max / ART_DEDUCTION_STEP) }, (_, k) => {
+                    const v = Math.round((k + 1) * ART_DEDUCTION_STEP * 10) / 10;
+                    return (
+                      <option key={v} value={v}>
+                        -{v.toFixed(1)}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            </div>
+          );
+        })}
+        <p className="hint">
+          審判の主観評価にあたる項目です。該当する減点を選びます（A減点に加算）。
+          「投げ受けの操作（上限0.50）」はシリーズ入力から自動判定するため、ここには出しません。
+        </p>
+      </section>
+
+      <section className="card">
         <div className="line-head">違反・欠如（§3.5.6.3）</div>
         {VIOLATION_OPTIONS.map((v) => (
           <label key={v.id} className="check">
@@ -355,6 +514,24 @@ export function IndividualScorer({ initialData }: Props = {}) {
       </section>
 
       <ScoreSummary result={result} apparatus={apparatus} />
+
+      {/* 入力中どこにいても届くように、画面下に貼り付く操作バー */}
+      <div className="action-bar">
+        <span className="action-bar-score">
+          合計 <b>{result.grandTotal.toFixed(1)}</b>
+          <span className="action-bar-sub">
+            D {result.dScore.toFixed(1)}／A {result.aScore.toFixed(1)}／E {result.eScore.toFixed(1)}
+          </span>
+        </span>
+        <span className="action-bar-btns">
+          <button className="io-btn" onClick={saveCurrentRoutine}>
+            <Save size={14} /> 構成を保存
+          </button>
+          <button className="io-btn" onClick={() => setTemplateOpen(true)}>
+            <BookMarked size={14} /> テンプレート
+          </button>
+        </span>
+      </div>
     </>
   );
 }

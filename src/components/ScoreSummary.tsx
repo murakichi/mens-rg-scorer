@@ -11,6 +11,8 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
     apparatusElementDeduction,
     violationChecks,
     violationDeduction,
+    artDeduction,
+    artRows,
     connectNoApparatus,
     tumblingScore,
     handScore,
@@ -182,6 +184,19 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
         <div className="total-row">
           <span>違反・欠如減点（§3.5.6.3／開始・終了・音楽・徒手系群）</span>
           <span>-{violationDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>
+            芸術と多様性の欠点（§3.5.6.4／
+            {artRows.filter((r) => r.value > 0).length > 0
+              ? artRows
+                  .filter((r) => r.value > 0)
+                  .map((r) => `${r.name} -${r.value.toFixed(1)}`)
+                  .join("・")
+              : "該当なし"}
+            ）
+          </span>
+          <span>-{artDeduction.toFixed(1)} 点</span>
         </div>
         <div className="subtotal-row">
           <span>A 残点（10 − {aDeduction.toFixed(1)}）</span>

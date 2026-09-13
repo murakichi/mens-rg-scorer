@@ -84,8 +84,26 @@ export interface Skill {
   saltoOnlyInChain?: boolean;
   /** つなぎ技として宙返り間に挟めるA難度技か */
   isConnectA?: boolean;
+  /**
+   * 徒手扱いの技（側転）。転回技としては数えないので、つなぎ技にならず、
+   * 方向系（前方系・側方系・後方系）の判定にも数えない。
+   */
+  isHandElement?: boolean;
   /** 2回宙返り系か（ジュニア適用規則では禁止のため選択肢に出さない） */
   isDoubleSalto?: boolean;
+  /** ひねり・姿勢から組み立てられる宙返りか（`TwistParams` と1対1） */
+  twist?: TwistParams;
+}
+
+/** 宙返りの姿勢（§3.6.2 の「かかえ込み・屈身・伸身」） */
+export type Posture = "tuck" | "pike" | "layout";
+
+/** ひねり回数と姿勢で表す宙返り。base は前方系／後方系の区別。 */
+export interface TwistParams {
+  base: "back" | "front";
+  /** ひねり回数（0・0.5・1 …）。0.5 が半ひねり。 */
+  twist: number;
+  posture: Posture;
 }
 
 export interface HandMotion {
@@ -150,5 +168,7 @@ export interface SaveData {
   violations?: string[];
   /** ジュニア適用規則（§10 変更規則1）で採点するか。未指定は false 扱い。 */
   junior?: boolean;
+  /** §3.5.6.4 芸術と多様性の欠点テーブル（項目id → 減点）。 */
+  artDeductions?: Record<string, number>;
   series: Series[];
 }

@@ -325,10 +325,42 @@ button {
   flex-direction: column;
   gap: 8px;
   position: relative;
-  padding: 12px 26px 12px 12px;
+  padding: 12px 18px;
   background: rgba(255, 255, 255, 0.45);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
+}
+/* 技ごとの操作列：両端が入れ替え矢印、中央が削除 */
+.item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+}
+.move-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(150, 150, 190, 0.35);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+.move-btn:hover:not(:disabled) {
+  background: #fff;
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: scale(1.12);
+}
+.move-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
 }
 .sel-wrap {
   display: flex;
@@ -690,6 +722,23 @@ input[type="checkbox"] {
   color: var(--ink-soft);
   margin-bottom: 12px;
 }
+/* 実施減点とテンプレート操作を横並びにする行 */
+.exec-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.exec-row .exec-label {
+  margin-bottom: 0;
+}
+.exec-row {
+  margin-bottom: 12px;
+}
+.tpl-select {
+  min-width: 170px;
+  padding: 6px 10px;
+}
 .exec-input {
   width: 74px;
   padding: 6px 10px;
@@ -1013,5 +1062,457 @@ input[type="checkbox"] {
   }
   .card {
     padding: 16px;
+  }
+}
+
+
+/* ---- テンプレート管理 ---- */
+.modal-wide {
+  max-width: 1180px;
+}
+.tpl-panes {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) 1fr;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.tpl-panes.is-narrow {
+  grid-template-columns: 1fr;
+  overflow-y: auto;
+}
+.tpl-list {
+  overflow-y: auto;
+  padding-right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tpl-panes.is-narrow .tpl-list {
+  overflow: visible;
+}
+.tpl-list .line-head {
+  margin-top: 4px;
+}
+.tpl-list-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tpl-editor {
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.tpl-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.tpl-name-input {
+  flex: 1;
+  min-width: 160px;
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(150, 150, 190, 0.35);
+  color: var(--ink);
+  border-radius: var(--radius-xs);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 10px;
+}
+.tpl-name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+/* テンプレートのカード一覧 */
+.tpl-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.tpl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xs);
+  background: var(--glass-soft);
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+.tpl-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.tpl-card.is-active {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+.tpl-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.tpl-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  word-break: break-word;
+}
+.tpl-card-del {
+  flex: none;
+  color: var(--red);
+  opacity: 0.6;
+  line-height: 0;
+  padding: 2px;
+  border-radius: 6px;
+}
+.tpl-card-del:hover {
+  opacity: 1;
+  background: rgba(230, 100, 130, 0.14);
+}
+.tpl-card-meta {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.tpl-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.tpl-card-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 狭い画面：カードを選ぶと編集シートを重ねる */
+.tpl-sheet {
+  position: absolute;
+  inset: 0;
+  background: var(--glass-strong);
+  border-radius: var(--radius);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(24px) saturate(180%);
+  animation: fade-in 0.16s ease;
+}
+.tpl-sheet-inner {
+  overflow: auto;
+  padding: 16px;
+}
+.modal {
+  position: relative;
+  /* フレックス子要素が中身の幅で広がらないようにする（狭い画面でのはみ出し防止） */
+  min-width: 0;
+}
+.tpl-list,
+.tpl-editor {
+  min-width: 0;
+}
+
+
+/* ---- 狭い画面：シリーズ入力を縦積みにする ---- */
+@media (max-width: 720px) {
+  .skill-row {
+    flex-direction: column;
+    gap: 22px;
+  }
+  .skill-block {
+    width: 100%;
+  }
+  /* プルダウンは幅いっぱいに（最小幅で横にはみ出さないように） */
+  .skill-block .select,
+  .skill-block .sel-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  /* 縦積みでは前後＝上下なので、入れ替え矢印も上下を向ける */
+  .move-btn {
+    rotate: 90deg;
+  }
+  /* 矢印はブロックの下に向ける */
+  .arrow {
+    right: auto;
+    left: 50%;
+    top: auto;
+    bottom: -19px;
+    transform: translateX(-50%) rotate(90deg);
+  }
+  .tpl-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* ---- 画面下に貼り付く操作バー（個人モード） ---- */
+.action-bar {
+  position: sticky;
+  bottom: 10px;
+  z-index: 50;
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(18px) saturate(180%);
+  box-shadow: 0 12px 30px -12px rgba(40, 40, 90, 0.35);
+}
+.action-bar-score {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  padding-left: 6px;
+}
+.action-bar-score b {
+  font-size: 18px;
+  color: var(--ink);
+}
+.action-bar-sub {
+  font-size: 11px;
+}
+.action-bar-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 560px) {
+  /* 画面を塞がないよう1行に収める */
+  .action-bar {
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    flex-wrap: nowrap;
+  }
+  .action-bar-sub {
+    display: none;
+  }
+  .action-bar-score {
+    padding-left: 2px;
+    font-size: 12px;
+  }
+  .action-bar-score b {
+    font-size: 16px;
+  }
+  .action-bar-btns {
+    flex-wrap: nowrap;
+  }
+  .action-bar .io-btn {
+    padding: 7px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}
+
+
+/* ---- シリーズのタグ／テンプレート検索 ---- */
+.tag-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-left: 8px;
+}
+.tag {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: rgba(120, 130, 255, 0.12);
+  border: 1px solid rgba(120, 130, 255, 0.25);
+  white-space: nowrap;
+}
+.tag-btn {
+  cursor: pointer;
+  color: var(--ink-soft);
+  background: var(--glass-soft);
+  border-color: var(--glass-border);
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+.tag-btn:hover {
+  border-color: var(--accent);
+}
+.tag-btn.is-on {
+  color: #fff;
+  background: var(--accent-grad);
+  border-color: transparent;
+}
+.tpl-card .tag-row {
+  margin-left: 0;
+}
+.tpl-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.tpl-search .tag-row {
+  margin-left: 0;
+}
+.tpl-search-input {
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(150, 150, 190, 0.35);
+  color: var(--ink);
+  border-radius: var(--radius-xs);
+  font-size: 13px;
+  padding: 7px 10px;
+  width: 100%;
+}
+.tpl-search-input:focus,
+.tpl-range-input:focus,
+.tpl-range-sel:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+/* 難度・点数の範囲指定 */
+.tpl-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  flex-wrap: wrap;
+}
+.tpl-range-sel {
+  min-width: 0;
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.tpl-range-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(150, 150, 190, 0.35);
+  color: var(--ink);
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+
+/* ---- ランダム生成ダイアログ ---- */
+.gen-body {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gen-result {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--glass-soft);
+  padding: 12px;
+}
+.gen-list {
+  margin: 6px 0 8px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.gen-list-detail {
+  color: var(--ink-soft);
+  margin-left: 8px;
+}
+/* 自動生成の投げに付くバッジ */
+.gen-list .tag {
+  margin-left: 6px;
+}
+
+
+/* ---- 芸術と多様性の欠点テーブル（手入力） ---- */
+.art-group {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin: 10px 0 4px;
+}
+.art-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.art-row-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.art-row-note {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.art-select {
+  min-width: 92px;
+  flex: none;
+  padding: 6px 10px;
+}
+
+
+/* ---- タンブリング技のひねり指定 ---- */
+.mode-btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-soft);
+  color: var(--ink-soft);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.16s ease, color 0.16s ease;
+}
+.mode-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.twist-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.twist-select {
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.twist-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .twist-select {
+    flex: 1 1 100%;
+    width: 100%;
   }
 }
