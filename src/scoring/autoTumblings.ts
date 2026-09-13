@@ -165,7 +165,7 @@ const limitedWeights = (): Record<string, number> =>
  *  - 側宙 ＞ 転宙
  *  - 抱え込み＝伸身 ＞ 屈伸（姿勢）
  *  - 前宙 ＞ 前宙半ひねり
- *  - テンポひねりは後方系のC難度のなかで最も少ない
+ *  - テンポひねりは後方系のC難度のなかで最も少ない（ただし屈伸より上）
  */
 export const SKILL_PICK_WEIGHT: Record<string, number> = {
   // ロンダート（重み無し＝1）＞ バク転 ＞ ハンドスプリング（`LIMITED_SKILLS` で 0.2）
@@ -178,8 +178,8 @@ export const SKILL_PICK_WEIGHT: Record<string, number> = {
   c_backtuck1full: 0.3,
   // 前宙（1）＞ 前宙半ひねり
   b_fronthalf: 0.5,
-  // テンポひねりは後方系のC難度のなかで最も少ない（屈伸より更に下）
-  c_tempotwist: 0.2,
+  // テンポひねりは後方系のC難度のなかで最も少ない。ただし屈伸より上
+  c_tempotwist: 0.5,
 };
 
 /**
