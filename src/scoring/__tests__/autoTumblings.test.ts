@@ -29,6 +29,7 @@ import {
   isHighDifficultySkill,
   CONNECT_RISE_WEIGHT,
   TEMPO_CONNECT_WEIGHT,
+  noRollAfter,
   TEMPO_SKILL_ID,
   TEMPO_TWIST_SKILL_ID,
   isTempoSalto,
@@ -408,6 +409,41 @@ describe("つなぎ技", () => {
           else otherFirst += 1;
         });
     expect(tempoFirst).toBeLessThan(otherFirst);
+  });
+
+  it("側宙の後に前転は実施しない", () => {
+    expect(noRollAfter("b_sidesalto")).toBe(true);
+    // 側宙で投げる形はそのままキャッチする（前転を挟まない）
+    const series = buildAutoTumblingSeries({
+      pattern: pattern("chainThrowInSkill"),
+      saltoCount: 2,
+      entry: [],
+      saltoIds: ["c_back15", "b_sidesalto"],
+      connectId: "",
+    });
+    const names = series.items.map((it) =>
+      it.kind === "motion" ? it.motionId : it.kind === "skill" ? it.skillId : it.kind,
+    );
+    // 後方系なので入りのロンダートが補われる。側宙の後は前転を挟まずそのまま受ける
+    expect(names).toEqual(["a_roundoff", "c_back15", "b_sidesalto", "catch"]);
+    // 前宙で投げる形はこれまでどおり前転でつなぐ
+    const roll = buildAutoTumblingSeries({
+      pattern: pattern("chainThrowInSkill"),
+      saltoCount: 2,
+      entry: [],
+      saltoIds: ["c_back15", "b_front"],
+      connectId: "",
+    });
+    expect(roll.items.some((it) => it.kind === "motion" && it.motionId === THROW_ROLL_MOTION)).toBe(true);
+    // 組み立てた候補すべてで、側宙の直後に前転が来ない
+    for (let seed = 0; seed < 30; seed++)
+      autoTumblingTemplates("stick", { random: seeded(seed) }).forEach((t) =>
+        t.series.items.forEach((it, i) => {
+          const prev = t.series.items[i - 1];
+          if (it.kind === "motion" && it.motionId === THROW_ROLL_MOTION)
+            expect(prev?.kind === "skill" && noRollAfter(prev.skillId)).toBe(false);
+        }),
+      );
   });
 
   it("バク転は入りの技には使わない（合理的な理由が無ければ実施しない）", () => {

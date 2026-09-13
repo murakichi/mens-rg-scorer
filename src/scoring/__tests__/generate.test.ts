@@ -10,6 +10,8 @@ import {
   saltoRepeatCount,
   SHAPE_PRIORITY_WEIGHT,
   shapeRankTotal,
+  THROW_ORDER_WEIGHT,
+  reversedThrowOrderCount,
   shortfallPenalty,
   usableTemplates,
 } from "../generate";
@@ -462,5 +464,32 @@ describe("同じ難度に到達する組み方の優先度", () => {
   it("転回系のユニットが1つでないシリーズは数えない", () => {
     const twoUnits = [S(skill("b_front"), { kind: "motion", motionId: "fwd_roll", count: 1 }, skill("b_front"))];
     expect(shapeRankTotal(twoUnits, computeScore(twoUnits, "stick"))).toBe(0);
+  });
+});
+
+describe("連続投げの難度の並び", () => {
+  const throwSeries = (motions: number) =>
+    S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: motions, hands: false }, { kind: "catch" });
+  /** 1つのシリーズに投げ受けを2つ並べる */
+  const pair = (first: number, second: number): Series =>
+    S(...throwSeries(first).items, ...throwSeries(second).items);
+
+  it("2回目以降のほうが難度が高いシリーズを数える", () => {
+    const normal = [pair(4, 0)]; // 1回目が高い（普通）
+    const reversed = [pair(0, 4)]; // 2回目が高い
+    expect(reversedThrowOrderCount(computeScore(normal, "stick"))).toBe(0);
+    expect(reversedThrowOrderCount(computeScore(reversed, "stick"))).toBe(1);
+    // 難度が同じなら数えない
+    expect(reversedThrowOrderCount(computeScore([pair(2, 2)], "stick"))).toBe(0);
+    // 投げ受けが1つだけのシリーズは対象外
+    expect(reversedThrowOrderCount(computeScore([throwSeries(4)], "stick"))).toBe(0);
+  });
+
+  it("重みは難度点の刻みより小さい（逆順の構成も現実にあるので禁止しない）", () => {
+    expect(THROW_ORDER_WEIGHT).toBeLessThan(0.1);
+    // 同じ内容なら1回目が高い並びのほうが評価が高い（D・Aは同じ）
+    const normal = [pair(4, 0)];
+    const reversed = [pair(0, 4)];
+    expect(computeScore(normal, "stick").dScore).toBe(computeScore(reversed, "stick").dScore);
   });
 });

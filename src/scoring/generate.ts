@@ -44,7 +44,7 @@ import {
 } from "./autoTumblings";
 import { computeScore, type ScoreResult } from "./score";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
-import { ADOPT_COUNT, APPARATUS, APPARATUS_REQUIRED_ELEMENTS, skillDef } from "./constants";
+import { ADOPT_COUNT, APPARATUS, APPARATUS_REQUIRED_ELEMENTS, DIFF_VALUE, skillDef } from "./constants";
 import type { ApparatusKey, Series } from "./types";
 
 export interface GenerateOptions {
@@ -284,6 +284,27 @@ export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false)
   return total;
 }
 
+/**
+ * 連続投げ（1つのシリーズに投げ受けが2つ以上）のうち、**2回目以降のほうが難度が高い**
+ * シリーズの数。1回目のほうが高いのが普通だが、逆の構成も現実にあるので、
+ * `THROW_ORDER_WEIGHT`（難度点の刻みより小さい）だけ弱く嫌うだけにする。
+ * 投げタンは転回系の難度で決まるので数えない。
+ */
+export function reversedThrowOrderCount(r: ScoreResult): number {
+  let n = 0;
+  r.analysis.forEach((a) => {
+    const diffs = a.units
+      .filter((u) => u.throwCount > 0 && !u.isThrowTumbling)
+      .map((u) => DIFF_VALUE[u.finalDiff]);
+    if (diffs.length < 2) return;
+    if (Math.max(...diffs.slice(1)) > diffs[0]) n += 1;
+  });
+  return n;
+}
+
+/** 連続投げで2回目以降のほうが難度が高いシリーズ1本ぶんの評価の重み */
+export const THROW_ORDER_WEIGHT = 0.005;
+
 /** 演技中に何度実施しても不自然でない宙返り（前宙） */
 export const REPEATABLE_SALTOS = ["b_front"];
 
@@ -349,6 +370,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
   // 同じ難度なら、より実施される組み方（C→B→B など）を選ぶ
   const shape = shapeRankTotal(series, r, !!opts.junior) * SHAPE_PRIORITY_WEIGHT;
+  // 連続投げは1回目のほうが難度が高いのが普通（逆の構成も現実にあるので弱く嫌うだけ）
+  const throwOrder = reversedThrowOrderCount(r) * THROW_ORDER_WEIGHT;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
@@ -361,6 +384,7 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       r.aScore -
       variety -
       shape -
+      throwOrder -
       auto -
       limitedUsed * LIMITED_SKILL_WEIGHT -
       (highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT)) /

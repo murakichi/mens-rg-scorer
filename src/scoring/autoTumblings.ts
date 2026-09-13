@@ -93,6 +93,13 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
 /** 投げ受けの着地でつなぐ徒手動作（前転） */
 export const THROW_ROLL_MOTION = "fwd_roll";
 
+/**
+ * この技のあとに前転でつながない技。側宙の後に前転を実施することは（物理的に
+ * 破綻はしていなくても）実際には無い。投げ受けはそのままキャッチする。
+ */
+export const NO_ROLL_AFTER_SKILLS: string[] = ["b_sidesalto"];
+export const noRollAfter = (id: string): boolean => NO_ROLL_AFTER_SKILLS.includes(id);
+
 /** 投げ受けで前方系の宙返りに続けて実施する技（側宙、たまに転宙） */
 export const THROW_FINISH_SALTOS: string[] = ["b_sidesalto", "b_tenchu"];
 
@@ -401,8 +408,9 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec): Series {
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
     items.push(next);
   });
-  // 投げ受けの着地は前転でつなぐ
-  if (pattern.rollFinish) items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
+  // 投げ受けの着地は前転でつなぐ（側宙の後は前転を実施しないので、そのまま受ける）
+  if (pattern.rollFinish && !noRollAfter(saltos[saltos.length - 1]))
+    items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
   if (pattern.throwCatch) items.push({ kind: "catch" });
   return { executionDeduction: 0, items };
 }
