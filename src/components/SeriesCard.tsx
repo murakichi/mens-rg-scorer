@@ -30,6 +30,7 @@ import {
 } from "../scoring/constants";
 import {
   checkApparatusFlow,
+  handsEmptyFlags,
   maxSaltoChain,
   needsRoundoffBefore,
   prevSkillId,
@@ -126,6 +127,7 @@ function ItemEditor({
   onTwistModeChange,
   flow,
   prevMotionId,
+  handsEmpty,
   onUpdate,
 }: {
   item: Item;
@@ -140,6 +142,8 @@ function ItemEditor({
   flow: SkillFlow;
   /** 直前の徒手動作アイテムで選ばれていた動作（選択肢の並べ替えに使う） */
   prevMotionId?: string;
+  /** 投げている間（手元に手具が無い）か。手具操作は付けられない */
+  handsEmpty?: boolean;
   onUpdate: (patch: Partial<Item>) => void;
 }) {
   if (item.kind === "throw") {
@@ -295,14 +299,17 @@ function ItemEditor({
             </select>
           </div>
         )}
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={item.hasApparatus || false}
-            onChange={(e) => onUpdate({ hasApparatus: e.target.checked })}
-          />
-          手具操作
-        </label>
+        {/* 投げている間は手元に手具が無いので操作できない */}
+        {!handsEmpty && (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={item.hasApparatus || false}
+              onChange={(e) => onUpdate({ hasApparatus: e.target.checked })}
+            />
+            手具操作
+          </label>
+        )}
         <label className="check">
           <input
             type="checkbox"
@@ -467,6 +474,8 @@ export function SeriesCard({
 }: Props) {
   const seriesQualifies = a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus);
   const flowErrors = checkApparatusFlow(ser, apparatus);
+  // 投げてからキャッチするまでは手元に手具が無いので、その間の技に手具操作は付けられない
+  const handsEmpty = handsEmptyFlags(ser.items, apparatus);
   // タンブリング技の入力パターン（一覧／手動入力）。既定は一覧で、
   // ボタンで切り替えたブロックだけを覚えておく（キーはアイテムの位置）。
   const [twistModes, setTwistModes] = useState<Record<number, boolean>>({});
@@ -605,6 +614,7 @@ export function SeriesCard({
               onTwistModeChange={(on) => setTwistModeOf(iIdx, on)}
               flow={skillFlowAfter(prevSkillId(ser.items, iIdx))}
               prevMotionId={prevMotionId(ser.items, iIdx)}
+              handsEmpty={handsEmpty[iIdx]}
               onUpdate={(patch) => updateItemAt(iIdx, patch)}
             />
             {/* 技の両端：隣の技と入れ替える矢印（中央は削除） */}
