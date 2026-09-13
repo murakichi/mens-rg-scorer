@@ -33,7 +33,9 @@ export const THROW_OPTIONS_COMMON = [
   { id: "nonhand", name: "手以外の投げ" },
   { id: "other", name: "その他の投げ" },
 ];
-export const THROW_OPTIONS_APPARATUS = [{ id: "useapp", name: "手具を使った投げ" }];
+/** 「手具を使った投げ・キャッチ」の技術タグ（もう一方の手具を使うのでクラブ・リングだけ） */
+export const USE_APPARATUS_TAG = "useapp";
+export const THROW_OPTIONS_APPARATUS = [{ id: USE_APPARATUS_TAG, name: "手具を使った投げ" }];
 /** タンブリング中の投げ（投げタン）に付けられる技術タグ。技術加点対象のみ（その他は除外）。 */
 export const SKILL_THROW_OPTIONS_COMMON = [
   { id: "noview", name: "視野外の投げ" },
@@ -44,7 +46,7 @@ export const CATCH_OPTIONS_COMMON = [
   { id: "nonhand", name: "手以外のキャッチ" },
   { id: "other", name: "その他のキャッチ" },
 ];
-export const CATCH_OPTIONS_APPARATUS = [{ id: "useapp", name: "手具を使ったキャッチ" }];
+export const CATCH_OPTIONS_APPARATUS = [{ id: USE_APPARATUS_TAG, name: "手具を使ったキャッチ" }];
 
 export const APPARATUS_USE: Record<ApparatusKey, boolean> = {
   stick: false,
@@ -65,6 +67,12 @@ export const REQUIRED_THROW_OPTIONS: Record<ApparatusKey, { id: string; name: st
   ring: [{ id: "twothrow", name: "二つ投げ" }],
   rope: [],
 };
+
+/** 手具固有の必須投げの表示名（どの手具のものでも引ける） */
+export const requiredThrowName = (id: string): string =>
+  Object.values(REQUIRED_THROW_OPTIONS)
+    .flat()
+    .find((o) => o.id === id)?.name ?? id;
 
 /** 二つ投げが必須投げの手具（リング・クラブ）か。二つ投げ関連の表示条件に使う。 */
 export function hasTwoThrow(apparatus: ApparatusKey): boolean {

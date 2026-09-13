@@ -1017,3 +1017,28 @@ describe("内訳の見出し（徒手系ユニット）", () => {
     expect(r.seriesBreakdowns[1].handRows.map((x) => x.label)).toEqual(["投げ1"]);
   });
 });
+
+describe("その手具では入力できない内容は採点しない", () => {
+  it("スティックに残った「手具を使ったキャッチ」は技術加点・受け方の種類に数えない", () => {
+    const withTag = [
+      S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4, hands: false }, { kind: "catch", catchTypes: ["useapp"] }),
+    ];
+    const without = [
+      S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4, hands: false }, { kind: "catch" }),
+    ];
+    const a = computeScore(withTag, "stick");
+    const b = computeScore(without, "stick");
+    expect(a.dScore).toBe(b.dScore);
+    expect(a.techniqueBonus).toBe(b.techniqueBonus);
+    expect(a.catchKindCount).toBe(b.catchKindCount);
+    // クラブでは入力できるので、そのまま加点される
+    const clubs = computeScore(withTag, "clubs");
+    expect(clubs.techniqueBonus).toBeGreaterThan(computeScore(without, "clubs").techniqueBonus);
+  });
+
+  it("ロープ以外に残ったロープ跳びは難度に数えない", () => {
+    const jump = [S({ kind: "ropeJump", jumpId: "3fc", isMoving6m: false })];
+    expect(computeScore(jump, "stick").dScore).toBe(0);
+    expect(computeScore(jump, "rope").dScore).toBeGreaterThan(0);
+  });
+});

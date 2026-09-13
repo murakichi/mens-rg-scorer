@@ -9,6 +9,7 @@ import {
   clampArtDeduction,
 } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
+import { apparatusBlockers, stripForApparatus } from "../scoring/analysis";
 import type { ApparatusKey, Series } from "../scoring/types";
 import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
@@ -128,14 +129,17 @@ export function IndividualScorer({ initialData }: Props = {}) {
 
   const applyImportedData = (raw: string): boolean => {
     const data = JSON.parse(raw);
-    if (data.apparatus && APPARATUS[data.apparatus as ApparatusKey]) setApparatus(data.apparatus);
+    const ap: ApparatusKey =
+      data.apparatus && APPARATUS[data.apparatus as ApparatusKey] ? (data.apparatus as ApparatusKey) : apparatus;
+    if (ap !== apparatus) setApparatus(ap);
     setOverallExecution(Number(data.executionDeduction) || 0);
     setApparatusElements(asStringArray(data.apparatusElements));
     setViolations(asStringArray(data.violations));
     setJunior(!!data.junior);
     setArtDeductions(normalizeArt(data.artDeductions));
     if (Array.isArray(data.series) && data.series.length > 0) {
-      setSeries(data.series);
+      // 読み込んだ内容のうち、その手具で入力できないものは落とす
+      setSeries(stripForApparatus(data.series, ap));
       return true;
     }
     return false;
@@ -188,6 +192,21 @@ export function IndividualScorer({ initialData }: Props = {}) {
     }
   };
 
+  /**
+   * 手具の切り替え。その手具で入力できない内容（他の手具から残ったもの）は
+   * 入力画面に出ないので、確認して落としてから切り替える。
+   */
+  const changeApparatus = (k: ApparatusKey) => {
+    if (k === apparatus) return;
+    const blockers = apparatusBlockers(series, k);
+    if (blockers.length > 0) {
+      const msg = `${APPARATUS[k].name}では入力できない内容（${blockers.join("・")}）があります。外して切り替えますか？`;
+      if (!window.confirm(msg)) return;
+      setSeries((p) => stripForApparatus(p, k));
+    }
+    setApparatus(k);
+  };
+
   // ---- テンプレートの操作 ----
   const { common, same, other } = splitByApparatus(templates.series, apparatus);
   const seriesTemplateOptions = [
@@ -206,9 +225,11 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const loadSeriesTemplate = (sIdx: number, id: string) => {
     const t = templates.series.find((x) => x.id === id);
     if (!t) return;
+    // 他の手具のテンプレートを読み込んだときは、今の手具で入力できない内容を落とす
+    const [loaded] = stripForApparatus([structuredClone(t.series)], apparatus);
     // 実施減点は採点ごとの入力なので、読み込んでも今の値を残す
     setSeries((p) =>
-      p.map((ser, i) => (i === sIdx ? { ...structuredClone(t.series), executionDeduction: ser.executionDeduction } : ser)),
+      p.map((ser, i) => (i === sIdx ? { ...loaded, executionDeduction: ser.executionDeduction } : ser)),
     );
   };
   const saveCurrentRoutine = () => {
@@ -221,14 +242,15 @@ export function IndividualScorer({ initialData }: Props = {}) {
     if (!t) return;
     if (!window.confirm(`「${t.name}」を読み込みます。編集中の構成は置き換わります。`)) return;
     // 共通テンプレートは手具を選ばないので、今の手具のまま読み込む
-    if (!isCommonApparatus(t.apparatus)) setApparatus(t.apparatus);
-    setSeries(structuredClone(t.series));
+    const ap = isCommonApparatus(t.apparatus) ? apparatus : t.apparatus;
+    if (ap !== apparatus) setApparatus(ap);
+    setSeries(stripForApparatus(structuredClone(t.series), ap));
     setTemplateOpen(false);
   };
   const appendSeriesTemplate = (id: string) => {
     const t = templates.series.find((x) => x.id === id);
     if (!t) return;
-    setSeries((p) => [...p, structuredClone(t.series)]);
+    setSeries((p) => [...p, ...stripForApparatus([structuredClone(t.series)], apparatus)]);
     setTemplateOpen(false);
   };
   const exportTemplates = () => {
@@ -357,7 +379,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
             <button
               key={k}
               className={k === apparatus ? "app-btn is-active" : "app-btn"}
-              onClick={() => setApparatus(k)}
+              onClick={() => changeApparatus(k)}
             >
               {v.name}
             </button>

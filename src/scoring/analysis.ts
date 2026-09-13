@@ -10,6 +10,10 @@ import {
   DEFAULT_HANDS_TYPE,
   HANDS_TYPE_OTHER,
   APPARATUS_COUNT,
+  APPARATUS_USE,
+  REQUIRED_THROW_OPTIONS,
+  USE_APPARATUS_TAG,
+  requiredThrowName,
   skillDef,
   skillDifficulty,
   ropeJumpDef,
@@ -19,6 +23,7 @@ import {
   ROUNDOFF_SKILL_ID,
 } from "./constants";
 import type {
+  ApparatusKey,
   Difficulty,
   Item,
   Series,
@@ -520,6 +525,86 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
   }
 
   return { units, throwCount };
+}
+
+// ---- その手具では入力できない内容（別の手具から残ったもの） ----
+//
+// 手具を切り替えても、他の手具のシリーズテンプレートを読み込んでも、シリーズの中身は
+// そのまま残る。入力画面はその手具で入力できるものしか出さないので、残った内容は
+// **画面に出ないまま採点に効いてしまう**（スティックに残った「手具を使ったキャッチ」で
+// 技術加点＋0.1、ロープ跳びで難度＋0.3 など）。採点も編集もここを通して弾く。
+
+/** 手具固有の入力（その手具で入力できるものだけを true にする） */
+const canUseApparatusTag = (apparatus: ApparatusKey): boolean => APPARATUS_USE[apparatus];
+const canUseReqType = (apparatus: ApparatusKey, id: string): boolean =>
+  REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === id);
+const canUseRopeJump = (apparatus: ApparatusKey): boolean => apparatus === "rope";
+
+/** 手具固有の入力の表示名（`apparatusBlockers` が返す） */
+export const APPARATUS_INPUT_NAMES = {
+  useapp: "手具を使った投げ・キャッチ",
+  catchTwo: "2つ同時キャッチ",
+  ropeJump: "ロープ跳び",
+} as const;
+
+/** その手具では入力できない内容の一覧（無ければ空。確認ダイアログの文面に使う） */
+export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): string[] {
+  const reasons = new Set<string>();
+  const tags = canUseApparatusTag(apparatus);
+  list.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "throw") {
+        if (!tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
+          reasons.add(APPARATUS_INPUT_NAMES.useapp);
+        (item.reqTypes || []).forEach((id) => {
+          if (!canUseReqType(apparatus, id))
+            reasons.add(requiredThrowName(id));
+        });
+      }
+      if (item.kind === "skill" && !tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
+        reasons.add(APPARATUS_INPUT_NAMES.useapp);
+      if (item.kind === "catch") {
+        if (!tags && (item.catchTypes || []).includes(USE_APPARATUS_TAG))
+          reasons.add(APPARATUS_INPUT_NAMES.useapp);
+        if (!tags && item.catchTwo) reasons.add(APPARATUS_INPUT_NAMES.catchTwo);
+      }
+      if (item.kind === "ropeJump" && !canUseRopeJump(apparatus))
+        reasons.add(APPARATUS_INPUT_NAMES.ropeJump);
+    }),
+  );
+  return [...reasons];
+}
+
+/**
+ * その手具では入力できない内容を落とした構成。
+ * 何も落とすものが無ければ**同じ配列をそのまま返す**（採点のたびに複製しない）。
+ */
+export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Series[] {
+  if (apparatusBlockers(list, apparatus).length === 0) return list;
+  const tags = canUseApparatusTag(apparatus);
+  const withoutTag = (ids?: string[]) => (ids || []).filter((id) => tags || id !== USE_APPARATUS_TAG);
+  return list.map((ser) => ({
+    ...ser,
+    items: ser.items
+      .filter((item) => item.kind !== "ropeJump" || canUseRopeJump(apparatus))
+      .map((item) => {
+        if (item.kind === "throw")
+          return {
+            ...item,
+            throwTypes: withoutTag(item.throwTypes),
+            reqTypes: (item.reqTypes || []).filter((id) => canUseReqType(apparatus, id)),
+          };
+        if (item.kind === "skill" && item.throwTypes)
+          return { ...item, throwTypes: withoutTag(item.throwTypes) };
+        if (item.kind === "catch")
+          return {
+            ...item,
+            catchTypes: withoutTag(item.catchTypes),
+            catchTwo: tags ? item.catchTwo : false,
+          };
+        return item;
+      }),
+  }));
 }
 
 /** 手元/空中の手具数をシミュレートし、投げ・キャッチの過不足を警告として返す（採点には非影響） */
