@@ -11,6 +11,8 @@ import {
   motionTimes,
   analyzeSeries,
   seriesSignature,
+  apparatusBlockers,
+  stripForApparatus,
 } from "../analysis";
 import { ropeJumpDef, MOTION_OPTIONS, SKILL_LIST, legacyMotionDef, motionOptionsFor } from "../constants";
 import type { Series, Item } from "../types";
@@ -547,5 +549,54 @@ describe("タンブリングの合間の徒手でユニットを分ける", () =
     );
     expect(a.units.map((u) => u.type)).toEqual(["tumbling", "throw", "throw"]);
     expect(a.units[2].isThrowTumbling).toBe(true);
+  });
+});
+
+describe("その手具では入力できない内容", () => {
+  const clubsSeries = (): Series =>
+    S(
+      { kind: "throw", reqTypes: ["twothrow"], throwTypes: ["useapp"] },
+      { kind: "motion", motionId: "chene", count: 3, hands: false },
+      { kind: "catch", catchTypes: ["useapp"], catchTwo: true },
+    );
+
+  it("残っている手具固有の入力を挙げる", () => {
+    const list = [clubsSeries()];
+    expect(apparatusBlockers(list, "clubs")).toEqual([]);
+    expect(apparatusBlockers(list, "ring")).toEqual([]);
+    // スティックでは二つ投げ・手具を使った投げ受け・2つ同時キャッチが入力できない
+    expect(apparatusBlockers(list, "stick").sort()).toEqual(
+      ["2つ同時キャッチ", "二つ投げ", "手具を使った投げ・キャッチ"].sort(),
+    );
+    // ロープ跳びはロープだけ
+    const jump = [S({ kind: "ropeJump", jumpId: "3f", isMoving6m: false })];
+    expect(apparatusBlockers(jump, "rope")).toEqual([]);
+    expect(apparatusBlockers(jump, "stick")).toEqual(["ロープ跳び"]);
+    // スティックの左手投げはクラブでは入力できない
+    const left = [S({ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" })];
+    expect(apparatusBlockers(left, "stick")).toEqual([]);
+    expect(apparatusBlockers(left, "clubs")).toEqual(["左手投げ"]);
+  });
+
+  it("落としたシリーズを返す（落とすものが無ければ同じ配列）", () => {
+    const list = [clubsSeries()];
+    expect(stripForApparatus(list, "clubs")).toBe(list); // 複製しない
+    const stripped = stripForApparatus(list, "stick");
+    const [throwItem, , catchItem] = stripped[0].items;
+    expect(throwItem.kind === "throw" && throwItem.throwTypes).toEqual([]);
+    expect(throwItem.kind === "throw" && throwItem.reqTypes).toEqual([]);
+    expect(catchItem.kind === "catch" && catchItem.catchTypes).toEqual([]);
+    expect(catchItem.kind === "catch" && catchItem.catchTwo).toBe(false);
+    // 元のシリーズは書き換えない
+    expect(apparatusBlockers(list, "stick").length).toBeGreaterThan(0);
+    // ロープ跳びはアイテムごと落ちる
+    const jump = [S({ kind: "ropeJump", jumpId: "3f", isMoving6m: false }, { kind: "catch" })];
+    expect(stripForApparatus(jump, "stick")[0].items).toHaveLength(1);
+    // 技の最中の投げに付いたタグも落とす
+    const skillThrow = [
+      S({ kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: true, throwTypes: ["useapp"] }, { kind: "catch" }),
+    ];
+    const sk = stripForApparatus(skillThrow, "stick")[0].items[0];
+    expect(sk.kind === "skill" && sk.throwTypes).toEqual([]);
   });
 });

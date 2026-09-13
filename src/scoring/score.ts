@@ -52,6 +52,7 @@ import {
   motionTimes,
   hasConnect,
   hasConnectWithoutApparatus,
+  stripForApparatus,
 } from "./analysis";
 import type { ApparatusKey, Difficulty, Series, SeriesAnalysis, Unit } from "./types";
 
@@ -186,10 +187,14 @@ export interface ComputeOptions {
 }
 
 export function computeScore(
-  series: Series[],
+  rawSeries: Series[],
   apparatus: ApparatusKey,
   opts: ComputeOptions = {},
 ): ScoreResult {
+  // 手具を切り替えても他の手具のテンプレートを読み込んでもシリーズの中身は残るが、
+  // その手具で入力できない内容（スティックの「手具を使ったキャッチ」・ロープ以外の
+  // ロープ跳びなど）は入力画面に出ないので、採点にも効かせない
+  const series = stripForApparatus(rawSeries, apparatus);
   const {
     overallExecutionDeduction = 0,
     apparatusElements = [],
