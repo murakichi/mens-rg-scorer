@@ -94,12 +94,28 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
 export const THROW_ROLL_MOTION = "fwd_roll";
 
 /**
- * 進行方向に対して**後ろ向きで終わる後方宙返り**か（後方系かつ後ろ向きに降りる）。
- * 整数ひねりの後方宙返りがこれにあたる（半ひねりは前向きに降りる）。
- *  - 上級者はこの後に何も実施せず終わることはない（`endsChainForAdvanced`）
- *  - この後に前転を実施することもない（`noRollAfter`）
+ * その宙返りで終わると、進行方向に対して**後ろ向きで終わる**か。
+ *  - 整数ひねりの後方宙返り（半ひねりは前向きに降りる）
+ *  - 半ひねり・1回半ひねりの前方宙返り（前方は半ひねりで後ろ向きに降りる）
+ * どちらもこの後に何も実施せず終わることはなく（`canEndChain`）、
+ * この後に前転を実施することもない（`noRollAfter`）。
  */
-export const endsFacingBackward = (id: string): boolean => isBackwardSalto(id) && leadsBackward(id);
+export const endsFacingBackward = (id: string): boolean => !!skillDef(id)?.isSalto && leadsBackward(id);
+
+/**
+ * 後ろ向きで終わる後方宙返りで**終わってよい確率**。狙うDスコアが上がるほど指数的に
+ * 下がり（1点ごとに半分）、複数のシリーズで連続技を検討するレベルで0になる。
+ * 0になる水準は必須要素をすべて満たしにいくのと同じ3.0点
+ * （`generate.ts` の `REQUIRE_ALL_ELEMENTS_MIN_SCORE` と同じ考え方）。
+ */
+export const BACKWARD_END_ZERO_SCORE = 3.0;
+export const BACKWARD_END_DECAY = 0.5;
+export function backwardEndChance(targetScore?: number | null): number {
+  // 上限を指定しない＝難度を狙いきる構成なので実施しない
+  if (targetScore == null) return 0;
+  if (targetScore >= BACKWARD_END_ZERO_SCORE) return 0;
+  return BACKWARD_END_DECAY ** Math.max(0, targetScore);
+}
 
 /**
  * この技のあとに前転でつながない技。物理的に破綻はしていなくても実際には無い並び。
@@ -112,12 +128,17 @@ export const noRollAfter = (id: string): boolean =>
   NO_ROLL_AFTER_SKILLS.includes(id) || endsFacingBackward(id);
 
 /**
- * 上級者の連続の**最後**に置ける技か。後ろ向きで終わる後方宙返りの後に何も実施せず
- * 終わることはない（Dスコアの低い選手・ジュニアは実施するので `basicLevel` では許す）。
- * 2回宙返り系は連続も繋ぎもせずそこで終わる技なので例外。
+ * 連続の**最後**に置ける技か。後ろ向きで終わる技の後に何も実施せず終わることはない。
+ *  - 後方宙返り（整数ひねり）：Dスコアの低い選手は実施するので、`allowBackwardEnd`
+ *    （`backwardEndChance` の抽選）が通ったときだけ許す
+ *  - 前方の半ひねり・1回半ひねり：実戦で使われることはほぼ無いので、常に許さない
+ *  - 2回宙返り系：連続も繋ぎもせずそこで終わる技なので例外
  */
-export const canEndChain = (id: string, basicLevel = false): boolean =>
-  basicLevel || !endsFacingBackward(id) || !!skillDef(id)?.isDoubleSalto;
+export const canEndChain = (id: string, allowBackwardEnd = false): boolean => {
+  if (!endsFacingBackward(id)) return true;
+  if (skillDef(id)?.isDoubleSalto) return true;
+  return allowBackwardEnd && isBackwardSalto(id);
+};
 
 /**
  * 側宙の実施中に投げる構成の重み。クラブでの練習動画はあるが、実戦で使われた記録は
@@ -409,8 +430,8 @@ export interface AutoTumblingSpec {
   saltoIds: string[];
   /** つなぎ技のid（`pattern.connect` のときだけ。1本目の後に入る） */
   connectId: string;
-  /** 基本的な構成（Dスコアが低い選手）として組んだか。連続の終わり方の判定に使う */
-  basicLevel?: boolean;
+  /** 後ろ向きで終わる後方宙返りで終わってよい候補か（`backwardEndChance` の抽選結果） */
+  allowBackwardEnd?: boolean;
 }
 
 const skillItem = (skillId: string, isThrow = false): Item => ({
@@ -522,6 +543,11 @@ export interface AutoTumblingOptions {
    * ただの後方宙返りのような基本技も普通に実施するので、稀な技の重み付けもしない。
    */
   basicLevel?: boolean;
+  /**
+   * 狙うDスコアの上限（`maxScore`）。後ろ向きで終わる後方宙返りで終わる確率に使う
+   * （`backwardEndChance`）。未指定＝上限なしは難度を狙いきる構成として扱う。
+   */
+  targetScore?: number | null;
   /**
    * 使ってよい転回技のid。登録テンプレートに出てくる技を渡すと、その選手が
    * 実際に実施している技だけで組み立てる（技そのものではなく**組み合わせ**を自動化する）。
@@ -757,11 +783,15 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       if (saltoIds.length < pattern.saltos.min) continue;
       // 続かなかったぶんは本数を減らす
       let saltoCount = Math.max(pattern.saltos.min, Math.min(count, saltoIds.length));
-      // 上級者は後ろ向きで終わる後方宙返りで終わらないので、そこで終わる本数にはしない
-      while (saltoCount > pattern.saltos.min && !canEndChain(saltoIds[saltoCount - 1], basicLevel))
+      // 後ろ向きで終わる後方宙返りで終わるかは、狙うDスコアで決まる確率で抽選する
+      const allowBackwardEnd = rand() < backwardEndChance(opts.targetScore);
+      while (
+        saltoCount > pattern.saltos.min &&
+        !canEndChain(saltoIds[saltoCount - 1], allowBackwardEnd)
+      )
         saltoCount -= 1;
-      if (!canEndChain(saltoIds[saltoCount - 1], basicLevel)) continue;
-      specs.push({ pattern, saltoCount, entry: [], saltoIds, connectId, basicLevel });
+      if (!canEndChain(saltoIds[saltoCount - 1], allowBackwardEnd)) continue;
+      specs.push({ pattern, saltoCount, entry: [], saltoIds, connectId, allowBackwardEnd });
     }
   });
 
@@ -848,7 +878,7 @@ export function withSaltoCount(t: AutoTumblingTemplate, saltoCount: number): Aut
   if (saltoCount === t.spec.saltoCount) return null;
   if (!saltoCountRange(t.spec.pattern).includes(saltoCount)) return null;
   if (saltoCount > t.spec.saltoIds.length) return null;
-  // 上級者は後ろ向きで終わる後方宙返りで終わらない
-  if (!canEndChain(t.spec.saltoIds[saltoCount - 1], t.spec.basicLevel)) return null;
+  // 連続の終わり方は候補を作ったときの抽選に従う
+  if (!canEndChain(t.spec.saltoIds[saltoCount - 1], t.spec.allowBackwardEnd)) return null;
   return autoTemplate(t.apparatus, { ...t.spec, saltoCount }, t.id);
 }

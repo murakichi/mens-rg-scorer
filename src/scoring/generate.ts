@@ -550,6 +550,8 @@ function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () => numb
         junior: !!opts.junior,
         // 低いDスコアを狙うなら、基本的な構成の選手とみなして候補を寄せる
         basicLevel: opts.maxScore != null && opts.maxScore < BASIC_LEVEL_MAX_SCORE,
+        // 後ろ向きで終わる後方宙返りで終わる確率は狙うDスコアで決まる
+        targetScore: opts.maxScore,
         skillIds: opts.autoTumblingSkills ?? usedSkillIds(own.map((t) => t.series)),
         random: rand,
         limit: opts.autoTumblingLimit,
