@@ -33,6 +33,9 @@ import {
   LIMITED_SKILL_MAX,
   apparatusHighDifficultyWeight,
   isHighDifficultySkill,
+  readTumblingShape,
+  throwTumblingShapeRank,
+  tumblingShapeRank,
   autoTumblingTemplates,
   isAutoTumblingTemplate,
   saltoCountRange,
@@ -256,6 +259,31 @@ export function highDifficultyCount(series: Series[], junior = false): number {
   return n;
 }
 
+/**
+ * 同じ難度に到達する組み方のうち、実施されにくい組み方1順位ぶんの評価の重み。
+ * 難度点は同じなので、**同じ点数ならより実施される組み方を選ぶ**だけの効き方にする
+ * （順位は最大5、タンブリング3本で最大0.075＝難度の刻み0.1より小さい）。
+ */
+export const SHAPE_PRIORITY_WEIGHT = 0.005;
+
+/**
+ * 構成全体で、実施されにくい組み方ぶんの順位の合計（`TUMBLING_SHAPE_ORDER`）。
+ * 転回系のユニットが1つのシリーズだけを見る（テンプレートの複合シリーズは対象外）。
+ */
+export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false): number {
+  let total = 0;
+  series.forEach((ser, i) => {
+    const units = (r.analysis[i]?.units ?? []).filter((u) => u.type === "tumbling" || u.isThrowTumbling);
+    if (units.length !== 1) return;
+    const shape = readTumblingShape(ser, junior);
+    if (!shape) return;
+    total += units[0].isThrowTumbling
+      ? throwTumblingShapeRank(shape, units[0].finalDiff)
+      : tumblingShapeRank(shape, units[0].finalDiff);
+  });
+  return total;
+}
+
 /** 演技中に何度実施しても不自然でない宙返り（前宙） */
 export const REPEATABLE_SALTOS = ["b_front"];
 
@@ -319,6 +347,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   });
   // 同じ宙返りの繰り返しは弱く嫌う（同点のときに多様な構成が選ばれる程度）
   const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
+  // 同じ難度なら、より実施される組み方（C→B→B など）を選ぶ
+  const shape = shapeRankTotal(series, r, !!opts.junior) * SHAPE_PRIORITY_WEIGHT;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
@@ -330,6 +360,7 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       r.dScore +
       r.aScore -
       variety -
+      shape -
       auto -
       limitedUsed * LIMITED_SKILL_WEIGHT -
       (highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT)) /

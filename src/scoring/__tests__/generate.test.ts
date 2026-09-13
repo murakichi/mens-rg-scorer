@@ -8,10 +8,12 @@ import {
   generateRoutine,
   requiresAllElements,
   saltoRepeatCount,
+  SHAPE_PRIORITY_WEIGHT,
+  shapeRankTotal,
   shortfallPenalty,
   usableTemplates,
 } from "../generate";
-import { DIFF_SCORE } from "../constants";
+import { ADOPT_COUNT, DIFF_SCORE } from "../constants";
 import { analyzeSeries, seriesSignature } from "../analysis";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
@@ -438,5 +440,27 @@ describe("宙返りの多様性", () => {
     const weak = tpl("前宙1本", "common", S(skill("b_front")));
     const r = generateRoutine([strong, weak], { apparatus: "stick", maxSeries: 1, ...noAuto, random: seeded(31) })!;
     expect(r.used.map((t) => t.name)).toEqual(["後宙3連続"]);
+  });
+});
+
+describe("同じ難度に到達する組み方の優先度", () => {
+  it("順位ぶんの重みは難度点の刻みより小さい（点数は犠牲にしない）", () => {
+    // 順位は最大5、採用されるタンブリングは3本まで
+    expect(SHAPE_PRIORITY_WEIGHT * 5 * ADOPT_COUNT).toBeLessThan(0.1);
+  });
+
+  it("同じE難度でも、実施される組み方のほうが順位合計が小さい", () => {
+    const better = [S(skill("a_roundoff"), skill("c_back15"), skill("b_front"), skill("b_sidesalto"))];
+    // C→C→B も同じE難度だが、C→B→B より実施されない
+    const worse = [S(skill("a_roundoff"), skill("c_back15"), skill("c_backlay1full"), skill("b_front"))];
+    const rank = (list: Series[]) => shapeRankTotal(list, computeScore(list, "stick"));
+    // どちらもE難度のタンブリング1本
+    expect(computeScore(better, "stick").tumblingScore).toBe(computeScore(worse, "stick").tumblingScore);
+    expect(rank(better)).toBeLessThan(rank(worse));
+  });
+
+  it("転回系のユニットが1つでないシリーズは数えない", () => {
+    const twoUnits = [S(skill("b_front"), { kind: "motion", motionId: "fwd_roll", count: 1 }, skill("b_front"))];
+    expect(shapeRankTotal(twoUnits, computeScore(twoUnits, "stick"))).toBe(0);
   });
 });
