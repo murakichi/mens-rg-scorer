@@ -48,6 +48,7 @@ import {
   skillOptions,
 } from "./constants";
 import { needsRoundoffBefore, prevSkillId, stripForApparatus } from "./analysis";
+import { NON_HAND_TAG, autoThrowStyles, type AutoThrowStyle } from "./autoThrows";
 import { newTemplateId, type SeriesTemplate } from "./templates";
 import type { ApparatusKey, Difficulty, Item, Series } from "./types";
 
@@ -89,6 +90,26 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
     rollFinish: true,
   },
 ];
+
+/**
+ * 投げタンのキャッチのあとに**連続投げ**を続ける確率。現実にあり得る形で、
+ * 投げてから宙返りを実施する形（`throwRoll`・`throwSalto`）のほうが、
+ * 宙返りの最中に投げる形（`throwInSkill`）より多い。
+ */
+export const PAIR_AFTER_THROW_FIRST_CHANCE = 0.5;
+export const PAIR_AFTER_THROW_IN_SKILL_CHANCE = 0.2;
+
+/** その形で投げタンのキャッチのあとに連続投げを続ける確率 */
+export const pairAfterChance = (pattern: AutoTumblingPattern): number =>
+  pattern.throwInSkill ? PAIR_AFTER_THROW_IN_SKILL_CHANCE : PAIR_AFTER_THROW_FIRST_CHANCE;
+
+/**
+ * 連続投げの2回目に使える投げ方。手以外の投げは2回目には実施できない。
+ * スティックの左手投げ・クラブとリングの二つ投げもここに入る（手元に戻っているので実施できる）。
+ */
+export function secondThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
+  return autoThrowStyles(apparatus).filter((t) => t.id !== NON_HAND_TAG);
+}
 
 /** 投げ受けの着地でつなぐ徒手動作（前転） */
 export const THROW_ROLL_MOTION = "fwd_roll";
@@ -432,6 +453,11 @@ export interface AutoTumblingSpec {
   connectId: string;
   /** 後ろ向きで終わる後方宙返りで終わってよい候補か（`backwardEndChance` の抽選結果） */
   allowBackwardEnd?: boolean;
+  /**
+   * 投げタンのキャッチのあとに続ける投げ受けの投げ方（連続投げの2回目）。
+   * 未指定なら続けない。
+   */
+  secondThrow?: AutoThrowStyle;
 }
 
 const skillItem = (skillId: string, isThrow = false): Item => ({
@@ -460,6 +486,16 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec): Series {
   if (pattern.rollFinish && !noRollAfter(saltos[saltos.length - 1]))
     items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
   if (pattern.throwCatch) items.push({ kind: "catch" });
+  // 投げタンのキャッチのあとに連続投げを続ける形
+  if (pattern.throwCatch && spec.secondThrow) {
+    const style = spec.secondThrow;
+    items.push({
+      kind: "throw",
+      ...(style.reqTypes ? { reqTypes: [...style.reqTypes] } : {}),
+      ...(style.throwTypes ? { throwTypes: [...style.throwTypes] } : {}),
+    });
+    items.push({ kind: "catch", ...(style.two ? { catchTwo: true } : {}) });
+  }
   return { executionDeduction: 0, items };
 }
 
@@ -688,6 +724,16 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     );
 
   const specs: AutoTumblingSpec[] = [];
+  // 連続投げの2回目の投げ方は、できる限り被らないように配る
+  const secondThrowCyclers = new Map<string, () => AutoThrowStyle>();
+  const nextSecondThrow = (app: ApparatusKey): AutoThrowStyle => {
+    let next = secondThrowCyclers.get(app);
+    if (!next) {
+      next = cycler(secondThrowStyles(app), rand);
+      secondThrowCyclers.set(app, next);
+    }
+    return next();
+  };
   AUTO_TUMBLING_PATTERNS.forEach((rawPattern) => {
     // 基本的な構成ではつなぎ技を実施せず、連続も2本まで
     if (basicLevel && rawPattern.connect) return;
@@ -791,7 +837,20 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       )
         saltoCount -= 1;
       if (!canEndChain(saltoIds[saltoCount - 1], allowBackwardEnd)) continue;
-      specs.push({ pattern, saltoCount, entry: [], saltoIds, connectId, allowBackwardEnd });
+      // 投げタンのキャッチのあとに連続投げを続けるか（投げてから跳ぶ形のほうが多い）
+      const secondThrow =
+        pattern.throwCatch && apparatus && rand() < pairAfterChance(pattern)
+          ? nextSecondThrow(apparatus)
+          : undefined;
+      specs.push({
+        pattern,
+        saltoCount,
+        entry: [],
+        saltoIds,
+        connectId,
+        allowBackwardEnd,
+        ...(secondThrow ? { secondThrow } : {}),
+      });
     }
   });
 

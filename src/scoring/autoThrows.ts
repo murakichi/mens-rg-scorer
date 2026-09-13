@@ -151,6 +151,26 @@ export const NON_HAND_TAG = "nonhand";
  */
 export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
 
+/** 左手投げの必須投げのid */
+export const LEFT_HAND_TAG = "lefthand";
+/** 左手投げを**視野外で受ける**確率はかなり低い */
+export const LEFT_HAND_NO_VIEW_CATCH_WEIGHT = 0.1;
+
+/** その投げ方・形で受け方を引く重み（1が既定） */
+export function catchStyleWeight(
+  throwStyle: AutoThrowStyle,
+  catchStyle: AutoCatchStyle,
+  pattern: AutoThrowPattern,
+): number {
+  // 縦3動作の形は手具で押さえつけて受けるのが主流
+  if (pattern.verticalThree && catchStyle.id !== CATCH_USE_APPARATUS)
+    return VERTICAL_THREE_OTHER_CATCH_WEIGHT;
+  // 左手投げを視野外で受けることはかなり少ない
+  if ((throwStyle.reqTypes || []).includes(LEFT_HAND_TAG) && catchStyle.id === NO_VIEW_TAG)
+    return LEFT_HAND_NO_VIEW_CATCH_WEIGHT;
+  return 1;
+}
+
 /**
  * その形で使える受け方。**次の投げに続ける受け**（`noViewPair` の直前の受け）では、
  * そこから投げに繋げない受け方を外す：
@@ -300,19 +320,18 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   const limit = Math.max(0, opts.limit ?? combos.length);
   // 受け方は「形 × 二つ投げかどうか」ごとに配る（使える受け方が違うので偏らせない）
   const catchCyclers = new Map<string, () => AutoCatchStyle>();
-  const nextCatchFor = (pattern: AutoThrowPattern, twoThrow: boolean): AutoCatchStyle => {
+  const nextCatchFor = (pattern: AutoThrowPattern, throwStyle: AutoThrowStyle): AutoCatchStyle => {
+    const twoThrow = !!throwStyle.two;
+    const styles = catchStylesForPattern(apparatus, twoThrow, pattern);
+    // 引きにくい受け方がある形・投げ方（縦3動作・左手投げの視野外）は重み付きで引く
+    const weight = (c: AutoCatchStyle) => catchStyleWeight(throwStyle, c, pattern);
+    if (styles.some((c) => weight(c) !== 1)) return pickWeighted(styles, rand, weight);
+    // それ以外は被らないように配る
     const key = `${pattern.noViewPair ? "noViewPair" : "-"}:${twoThrow}`;
     let next = catchCyclers.get(key);
     if (!next) {
-      next = cycler(catchStylesForPattern(apparatus, twoThrow, pattern), rand);
+      next = cycler(styles, rand);
       catchCyclers.set(key, next);
-    }
-    // 縦3動作の形は手具を使ったキャッチが主流。それ以外は引きにくくする
-    if (pattern.verticalThree) {
-      const styles = catchStylesForPattern(apparatus, twoThrow, pattern);
-      return pickWeighted(styles, rand, (c) =>
-        c.id === CATCH_USE_APPARATUS ? 1 : VERTICAL_THREE_OTHER_CATCH_WEIGHT,
-      );
     }
     return next();
   };
@@ -337,7 +356,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       // シェネが無い形では手の種類は使わない（順番も消費しない）
       hands: cheneCount > 0 ? nextHands() : null,
       throwStyle,
-      catchStyle: nextCatchFor(pattern, !!throwStyle.two),
+      catchStyle: nextCatchFor(pattern, throwStyle),
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
     };
   });
