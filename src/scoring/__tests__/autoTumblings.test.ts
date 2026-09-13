@@ -10,6 +10,10 @@ import {
   CONNECT_FINISH_RARE,
   RARE_CHAIN_END_SKILLS,
   DIFFICULTY_RISE_WEIGHT,
+  DIFFICULTY_RISE_AFTER,
+  isBackToForwardThrow,
+  throwInSkillTypes,
+  BACK_TO_FORWARD_THROW_CHANCE,
   withJuniorBoost,
   JUNIOR_UPGRADE_BOOST_MAX_SCORE,
   RARE_CHAIN_END_CHANCE,
@@ -404,8 +408,10 @@ describe("宙返りの連続の組み方", () => {
         const chained = nextSaltoOptions(prev);
         if (chained.length === 0) return;
         if (!chained.includes(id)) return; // つなぎ後の入り直し
-        // テンポの後と後方伸身宙返りの後（前宙・きりもみ系）は難度の上下を問わない
+        // テンポの後と後方伸身宙返りの後（前宙・きりもみ系）は難度の上下を問わない。
+        // 後方宙返り半ひねり→前方宙返り1回ひねりも難度が上がる例外
         if (isTempoSalto(prev) || isBackLayoutSalto(prev)) return;
+        if ((DIFFICULTY_RISE_AFTER[prev] ?? []).includes(id)) return;
         expect(diff(id)).toBeLessThanOrEqual(diff(prev));
       });
     });
@@ -721,6 +727,41 @@ describe("つなぎ技", () => {
     });
   });
 
+  it("後ろ向きで終わる宙返り→前方系で投げるのは、きりもみの視野外投げだけ", () => {
+    // 後方伸身宙返り（後ろ向きに降りる）→前宙 の位置で投げた例は無い
+    expect(isBackToForwardThrow("b_backlayout", "b_front")).toBe(true);
+    expect(isBackToForwardThrow("b_backlayout", "b_kirimomi")).toBe(true);
+    // 前向きに降りる技の後・後方系で投げるのは対象外
+    expect(isBackToForwardThrow("b_front", "b_sidesalto")).toBe(false);
+    expect(isBackToForwardThrow("b_backlayout", "c_back15")).toBe(false);
+    expect(isBackToForwardThrow(undefined, "b_front")).toBe(false);
+    // きりもみのときだけ視野外投げのタグが付く
+    expect(throwInSkillTypes("b_backlayout", "b_kirimomi")).toEqual(["noview"]);
+    expect(throwInSkillTypes("b_front", "b_sidesalto")).toBeUndefined();
+    expect(BACK_TO_FORWARD_THROW_CHANCE).toBeLessThan(0.5);
+    // 組み立てた候補：この位置で投げるのはきりもみだけで、必ず視野外投げになる
+    let kirimomi = 0;
+    let other = 0;
+    for (let seed = 0; seed < 40; seed++)
+      autoTumblingTemplates("stick", { random: seeded(seed) })
+        .filter((t) => t.spec.pattern.throwInSkill)
+        .forEach((t) => {
+          const ids = t.spec.saltoIds.slice(0, t.spec.saltoCount);
+          const last = ids[ids.length - 1];
+          if (!isBackToForwardThrow(ids[ids.length - 2], last)) {
+            other += 1;
+            return;
+          }
+          kirimomi += 1;
+          expect(last).toBe("b_kirimomi");
+          const item = t.series.items.find((it) => it.kind === "skill" && it.isThrow);
+          expect(item?.kind === "skill" && item.throwTypes).toEqual(["noview"]);
+        });
+    expect(other).toBeGreaterThan(0);
+    // 残すのは低い確率（他の形のほうが多い）
+    expect(kirimomi * 3).toBeLessThan(other);
+  }, 60_000);
+
   it("投げタンのキャッチのあとに連続投げを続ける形がある", () => {
     // 投げてから宙返りする形のほうが、宙返りの最中に投げる形より多い
     expect(PAIR_AFTER_THROW_FIRST_CHANCE).toBeGreaterThan(PAIR_AFTER_THROW_IN_SKILL_CHANCE);
@@ -754,9 +795,11 @@ describe("つなぎ技", () => {
   });
 
   it("連続の最後に投げる形は三宙と投げタンを1シリーズで両立できる", () => {
-    const spec = autoTumblingSpecs({ random: seeded(3) }).find(
-      (sp) => sp.pattern.throwInSkill && sp.saltoCount === 3,
-    );
+    let spec: ReturnType<typeof autoTumblingSpecs>[number] | undefined;
+    for (let seed = 0; seed < 20 && !spec; seed++)
+      spec = autoTumblingSpecs({ random: seeded(seed) }).find(
+        (sp) => sp.pattern.throwInSkill && sp.saltoCount === 3,
+      );
     expect(spec).toBeDefined();
     const series = buildAutoTumblingSeries(spec!);
     const a = analyzeSeries(series);
@@ -844,22 +887,27 @@ describe("候補と調整", () => {
   });
 
   it("宙返りの本数だけを差し替えられる（範囲外・変化なしは null）", () => {
-    const t = autoTumblingTemplates("stick", { random: seeded(3) }).find(
-      (x) => saltoCountRange(x.spec.pattern).length > 1 && x.spec.saltoIds.length > x.spec.pattern.saltos.min,
-    )!;
-    const other = saltoCountRange(t.spec.pattern).find(
-      (n) =>
-        n !== t.spec.saltoCount &&
-        n <= t.spec.saltoIds.length &&
-        // 差し替えた本数でも連続の終わり方が成り立つこと
-        canEndChain(t.spec.saltoIds[n - 1], t.spec.allowBackwardEnd),
-    )!;
-    const tuned = withSaltoCount(t, other)!;
+    // 差し替えられる（終わり方・投げる位置のルールを満たす）候補と本数を探す
+    let t: ReturnType<typeof autoTumblingTemplates>[number] | undefined;
+    let other = 0;
+    for (let seed = 0; seed < 20 && !t; seed++)
+      for (const cand of autoTumblingTemplates("stick", { random: seeded(seed) })) {
+        const n = saltoCountRange(cand.spec.pattern).find(
+          (k) => k !== cand.spec.saltoCount && withSaltoCount(cand, k) !== null,
+        );
+        if (n !== undefined) {
+          t = cand;
+          other = n;
+          break;
+        }
+      }
+    expect(t).toBeDefined();
+    const tuned = withSaltoCount(t!, other)!;
     expect(tuned.spec.saltoCount).toBe(other);
-    expect(tuned.id).toBe(t.id);
+    expect(tuned.id).toBe(t!.id);
     expect(tumblingFlowErrors(tuned.series)).toEqual([]);
-    expect(withSaltoCount(t, t.spec.saltoCount)).toBeNull();
-    expect(withSaltoCount(t, 99)).toBeNull();
+    expect(withSaltoCount(t!, t!.spec.saltoCount)).toBeNull();
+    expect(withSaltoCount(t!, 99)).toBeNull();
   });
 
   it("表示名は種類だけ（中身はシリーズの内容で分かるので解説は付けない）", () => {
