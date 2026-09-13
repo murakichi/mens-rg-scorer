@@ -23,6 +23,7 @@ import {
   isTempoSalto,
   nextSaltoOptions,
   saltoCountRange,
+  SALTO_DIFFICULTY_WEIGHT,
   saltoOptionsAfterConnect,
   saltoWeights,
   tumblingFlowErrors,
@@ -210,6 +211,23 @@ describe("宙返りの連続の組み方", () => {
     expect(isBackLayoutSalto("b_backtuck")).toBe(false);
   });
 
+  it("単発で高難度な技ほど選ばれにくい", () => {
+    expect(SALTO_DIFFICULTY_WEIGHT.E!).toBeLessThan(SALTO_DIFFICULTY_WEIGHT.D!);
+    expect(SALTO_DIFFICULTY_WEIGHT.D!).toBeLessThan(1);
+    const w = saltoWeights("b_front");
+    expect(w["e_backlay3twist"]).toBe(SALTO_DIFFICULTY_WEIGHT.E);
+    expect(w["d_back2twist"]).toBe(SALTO_DIFFICULTY_WEIGHT.D);
+    expect(w["b_backsalto"]).toBeUndefined(); // 重み無し＝1
+    // 実際に組み立てた候補でも、E難度の単発はB難度より少ない
+    const count = new Map<string, number>();
+    for (let seed = 0; seed < 40; seed++)
+      autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
+        const d = skillDifficulty(sp.saltoIds[0]) ?? "?";
+        count.set(d, (count.get(d) ?? 0) + 1);
+      });
+    expect(count.get("E") ?? 0).toBeLessThan(count.get("B") ?? 0);
+  });
+
   it("後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回 の順に選ばれやすい", () => {
     const weights = saltoWeights("b_backlayout");
     expect(weights["b_front"]).toBeGreaterThan(weights["b_kirimomi"]);
@@ -242,6 +260,24 @@ describe("宙返りの連続の組み方", () => {
     expect(names(s)).toEqual(["前宙", "ロンダート", "後方伸身宙返り", "前宙"]);
     expect(tumblingFlowErrors(s)).toEqual([]);
     expect(hasConnect(skillsOf(s))).toBe(true);
+  });
+
+  it("日本トップの実例の連続を組める", () => {
+    // ロンダート→後方宙返り1回半ひねり→前宙半ひねり→ダイビング前宙（三宙）
+    expect(nextSaltoOptions("c_back15")).toContain("b_fronthalf");
+    expect(nextSaltoOptions("b_fronthalf")).toContain("b_divefront");
+    // ロンダート→後方伸身宙返り2回半ひねり→ロンダート→ダイビング前宙（つなぎ）
+    expect(connectOptionsAfter("d_backlay25")).toContain(ROUNDOFF_SKILL_ID);
+    expect(saltoOptionsAfterConnect(ROUNDOFF_SKILL_ID)).toContain("b_divefront");
+    // 入力画面の制約も満たす
+    const skills = (...ids: string[]) => S(...ids.map(skill));
+    expect(tumblingFlowErrors(skills("a_roundoff", "c_back15", "b_fronthalf", "b_divefront"))).toEqual([]);
+    expect(tumblingFlowErrors(skills("a_roundoff", "d_backlay25", "a_roundoff", "b_divefront"))).toEqual([]);
+  });
+
+  it("前方の半ひねりからは後方系に続けられる（後方系どうしの連続はしない）", () => {
+    nextSaltoOptions("b_fronthalf").forEach((id) => expect(skillDef(id)?.category).toBe(CATEGORY.BACKWARD));
+    expect(nextSaltoOptions("b_backsalto")).toEqual([]);
   });
 
   it("実際の連続の例どおりに組める", () => {

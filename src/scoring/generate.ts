@@ -13,6 +13,7 @@
 //  - 投げタンは1本まで（必須要素は1本で満たせるため）
 //  - タンブリングは投げタンを含めて3本まで（上位3本しか難度に採用されないため）
 //  - ハンドスプリング・転宙は実施が少ないので優先度を下げ、演技内で1回までにする
+//  - 単発でD難度以上になる技は重みで抑える（結果として演技内で1〜2つ程度になる）
 //  - よくある投げシリーズ（autoThrows.ts）とタンブリング（autoTumblings.ts）は
 //    システム側で組んで候補に足す。投げ方や技の組み合わせを網羅したテンプレートを
 //    登録しなくて済む。あくまで候補なので、評価が上がらなければ使われない
@@ -30,6 +31,7 @@ import { autoThrowTemplates, cheneCountRange, isAutoThrowTemplate, withCheneCoun
 import {
   LIMITED_SKILLS,
   LIMITED_SKILL_MAX,
+  isHighDifficultySkill,
   autoTumblingTemplates,
   isAutoTumblingTemplate,
   saltoCountRange,
@@ -61,6 +63,8 @@ export interface GenerateOptions {
   maxThrowTumbling?: number;
   /** タンブリングの本数の上限（投げタンを含む）。既定は3本（採用される上限と同じ）。 */
   maxTumblings?: number;
+  /** 単発で高難度（D難度以上）な技1つあたりの評価の重み（既定 `HIGH_DIFFICULTY_WEIGHT`）。 */
+  highDifficultyWeight?: number;
   /** 自動生成の投げシリーズを候補に加えるか（既定 true） */
   autoThrows?: boolean;
   /** 1つの構成に入れる自動生成の投げの本数の上限。既定は3本。 */
@@ -225,6 +229,29 @@ export function limitedSkillCounts(series: Series[]): Map<string, number> {
   return counts;
 }
 
+/**
+ * 単発で高難度（D難度以上）な技を1つ実施するごとの評価の重み。
+ * 上限は決めず、重みの結果として演技内で**1〜2つ程度**に落ち着くようにする
+ * （日本のトップでも単発でD難度になる技は演技に1〜2つ程度）。
+ *
+ * 実際の抑えは候補づくり側の `SALTO_DIFFICULTY_WEIGHT`（D=0.6／E=0.3）が担っていて、
+ * それだけで最大を狙う構成でも 0個23%／1個43%／2個28%／3個以上5% に収まる。
+ * ここは難度点の刻み（0.1）より小さくして、同じ点数なら易しい技の構成を選ぶ程度にする
+ * （0.1 にすると0個が35%まで増えて、1〜2つという実態から外れる）。
+ */
+export const HIGH_DIFFICULTY_WEIGHT = 0.02;
+
+/** 演技全体での、単発で高難度（D難度以上）な技の数 */
+export function highDifficultyCount(series: Series[], junior = false): number {
+  let n = 0;
+  series.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "skill" && item.skillId && isHighDifficultySkill(item.skillId, junior)) n += 1;
+    }),
+  );
+  return n;
+}
+
 /** 演技中に何度実施しても不自然でない宙返り（前宙） */
 export const REPEATABLE_SALTOS = ["b_front"];
 
@@ -276,6 +303,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   const overThrowTum = Math.max(0, throwTumCount - maxThrowTum);
   // タンブリングは投げタンを含めて3本までしか評価されない。4本目は入れない
   const overTumbling = Math.max(0, r.nonDupTumblingCount - (opts.maxTumblings ?? DEFAULT_MAX_TUMBLINGS));
+  // 単発で高難度（D難度以上）な技は数が少ない。上限は決めず、重みで抑える
+  const highDifficulty = highDifficultyCount(series, !!opts.junior);
   // 実施が少ない技（ハンドスプリング・転宙）は演技内で1回まで。使うこと自体も弱く嫌う
   const limited = limitedSkillCounts(series);
   let limitedUsed = 0;
@@ -298,7 +327,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       r.aScore -
       variety -
       auto -
-      limitedUsed * LIMITED_SKILL_WEIGHT,
+      limitedUsed * LIMITED_SKILL_WEIGHT -
+      highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT),
     dScore: r.dScore,
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),
