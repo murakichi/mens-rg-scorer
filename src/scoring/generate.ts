@@ -3,7 +3,8 @@
 //
 // 方針：
 //  - 使えるのは「指定した手具」と「共通」のシリーズテンプレート
-//  - 必須要素をできるだけ満たす（不足はA減点に出るので、D + A残点 を最大化すれば満たしにいく）
+//  - 必須要素をできるだけ満たす（不足はA減点に出るので、D + A残点 を最大化すれば満たしにいく）。
+//    3点以上のDスコアを狙う構成では、必須要素を必ず満たす（REQUIRE_ALL_ELEMENTS_MIN_SCORE）
 //  - Dスコアの範囲を指定できる。指定がなければ最大を目指す
 //  - 評価されない要素は入れない（入れても評価が上がらないシリーズは最後に取り除く）
 //    例：4本目のタンブリング、ジュニアの6回目以降の投げ、まったく同じ内容の重複シリーズ
@@ -105,6 +106,27 @@ export const DEFAULT_MAX_AUTO_TUMBLINGS = 4;
 export const BASIC_LEVEL_MAX_SCORE = 2.0;
 
 /**
+ * これ以上のDスコアを狙う構成では、必須要素（三宙・つなぎ技・方向系・投げタン・
+ * 投げ回数・タンブリング本数）を**必ず満たす**。
+ * 上級者（Dスコア4点以上）は必然的にAスコアも高く、要求を満たした構成になっている。
+ * 必須要素をすべて満たす構成のDスコアは2.0あたりが下限なので、そこから少し余裕を見た値。
+ * 上限を指定しない（最大を狙う）ときも必ず満たしにいく。
+ */
+export const REQUIRE_ALL_ELEMENTS_MIN_SCORE = 3.0;
+
+/**
+ * 必須要素を必ず満たす構成での、不足1つあたりの評価の重み。
+ * 難度点（最大でも1本0.7）より十分大きく、Dスコアの範囲外ペナルティ（×100）よりは小さい。
+ * 範囲に収めることを優先しつつ、その中では要求を満たす構成を選ぶ。
+ */
+export const REQUIRED_ELEMENT_WEIGHT = 10;
+
+/** その構成で必須要素を必ず満たしにいくか（狙うDスコアで決まる） */
+export function requiresAllElements(opts: Pick<GenerateOptions, "maxScore">): boolean {
+  return opts.maxScore == null || opts.maxScore >= REQUIRE_ALL_ELEMENTS_MIN_SCORE;
+}
+
+/**
  * 自動生成のシリーズ1本あたりの評価の重み。
  * 登録したテンプレートは「その選手が実際に実施できる構成」なので、
  * 同じ点数なら自動生成より優先する。難度点の最小単位（0.1）より小さくして、
@@ -170,10 +192,12 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   const overThrowTum = Math.max(0, throwTumCount - maxThrowTum);
   // 同じ宙返りの繰り返しは弱く嫌う（同点のときに多様な構成が選ばれる程度）
   const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
+  // ある程度のDスコアを狙う構成では、必須要素の不足を強く嫌う
+  const shortfall = requiresAllElements(opts) ? r.missing.length * REQUIRED_ELEMENT_WEIGHT : 0;
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
   const auto = autoCount * AUTO_SERIES_WEIGHT;
   return {
-    value: -(penalty + overThrowTum) * 100 + r.dScore + r.aScore - variety - auto,
+    value: -(penalty + overThrowTum) * 100 - shortfall + r.dScore + r.aScore - variety - auto,
     dScore: r.dScore,
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),

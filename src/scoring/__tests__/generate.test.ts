@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { generateRoutine, saltoRepeatCount, usableTemplates } from "../generate";
+import {
+  REQUIRE_ALL_ELEMENTS_MIN_SCORE,
+  generateRoutine,
+  requiresAllElements,
+  saltoRepeatCount,
+  usableTemplates,
+} from "../generate";
 import { analyzeSeries, seriesSignature } from "../analysis";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
@@ -173,6 +179,37 @@ describe("ランダム生成", () => {
   });
 });
 
+
+describe("必須要素を必ず満たす構成", () => {
+  it("狙うDスコアで切り替わる（3点以上・上限なしは必ず満たす）", () => {
+    expect(requiresAllElements({ maxScore: null })).toBe(true);
+    expect(requiresAllElements({})).toBe(true);
+    expect(requiresAllElements({ maxScore: REQUIRE_ALL_ELEMENTS_MIN_SCORE })).toBe(true);
+    expect(requiresAllElements({ maxScore: REQUIRE_ALL_ELEMENTS_MIN_SCORE - 0.1 })).toBe(false);
+  });
+
+  it("3点以上を狙うと必須要素をすべて満たす", () => {
+    [3.5, 4.5].forEach((maxScore) => {
+      [3, 7, 11].forEach((seed) => {
+        const r = generateRoutine(pool(), { apparatus: "stick", maxScore, random: seeded(seed) })!;
+        expect(computeScore(r.series, "stick").missing).toEqual([]);
+        expect(r.dScore).toBeLessThanOrEqual(maxScore + 1e-9);
+      });
+    });
+  });
+
+  it("上限を指定しないときも必ず満たす", () => {
+    [3, 7, 11].forEach((seed) => {
+      const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
+      expect(computeScore(r.series, "stick").missing).toEqual([]);
+    });
+  });
+
+  it("低いDスコアを狙うときは満たせなくてもよい（範囲を優先する）", () => {
+    const r = generateRoutine([], { apparatus: "stick", maxScore: 1.5, random: seeded(5) })!;
+    expect(r.dScore).toBeLessThanOrEqual(1.5 + 1e-9);
+  });
+});
 
 describe("並び順", () => {
   /** 転回系（宙返り・投げタン）を含むシリーズか */
