@@ -10,7 +10,6 @@ import {
   CATEGORY,
   DIFF_VALUE,
   DIFF_SCORE,
-  E_BONUS,
   SERIES_BONUS,
   TECHNIQUE_BONUS,
   APPARATUS_OP_BONUS,
@@ -170,9 +169,8 @@ export interface ScoreResult {
 
 const isTumblingUnit = (u: Unit) => u.type === "tumbling" || (u.type === "throw" && u.isThrowTumbling);
 const isHandUnit = (u: Unit) => u.type === "throw" && !u.isThrowTumbling;
-/** そのユニットが難度点に寄与する点数（E難度ボーナス込み）。採用の優劣比較に使う。 */
-const unitScore = (u: Unit) =>
-  DIFF_SCORE[u.finalDiff] + (isTumblingUnit(u) && u.finalDiff === "E" && u.skillThrow ? E_BONUS : 0);
+/** そのユニットが難度点に寄与する点数。採用の優劣比較に使う。 */
+const unitScore = (u: Unit) => DIFF_SCORE[u.finalDiff];
 
 export interface ComputeOptions {
   overallExecutionDeduction?: number;
@@ -434,18 +432,15 @@ export function computeScore(
   // A側の判定（方向系・連続宙返り・必須要素）は全ユニットを見る。
   const tumblingUnits = allUnits.filter(isTumblingUnit);
 
-  const tumblingScore = topTumbling.reduce((s, u) => {
-    const base = DIFF_SCORE[u.finalDiff];
-    const eB = u.finalDiff === "E" && u.skillThrow ? E_BONUS : 0;
-    return s + base + eB;
-  }, 0);
+  const tumblingScore = topTumbling.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
   const handScore = topHand.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
   // シリーズ内訳（sBonus）と同じ条件。上限超過の投げ・ユニットは数えない
   const seriesBonus = seriesBreakdowns.some((b) => b.sBonus > 0) ? SERIES_BONUS : 0;
 
   const techniqueBonus = seriesBreakdowns.reduce((s, b) => s + b.tech, 0);
   const techniqueCount = Math.round(techniqueBonus / TECHNIQUE_BONUS);
-  const apparatusOpBonus = seriesBreakdowns.reduce((s, b) => s + b.appOp, 0);
+  // §3.5.5.5(3) は「最大0.10点」。技の最中の投げと手具操作2回以上は同じ加点なので重複しない
+  const apparatusOpBonus = seriesBreakdowns.some((b) => b.appOp > 0) ? APPARATUS_OP_BONUS : 0;
   const twoThrowMotionBonus = seriesBreakdowns.reduce((s, b) => s + b.twoMot, 0);
 
   // 要素として数える投げ回数（ジュニアの上限超過分は含めない）

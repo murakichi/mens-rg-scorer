@@ -687,12 +687,43 @@ describe("computeScore — タンブリング難度点も塊ごとの内訳を�
     expect(r.seriesBreakdowns[0].tumRows[0].label).toBe("投げタン1");
   });
 
-  it("E難度＋技中の投げのボーナスが行の点数に含まれる", () => {
-    const r = computeScore(
+  it("E難度＋技の最中の投げは手具操作加点で見る（行の点数は難度点のみ）", () => {
+    // §3.5.5.5(3)「手具を保持して行うE難度の転回系に、投げまたは2回以上の操作」＝最大0.10点。
+    // 技の最中の投げと手具操作2回以上は同じ加点なので重複しない
+    const held = computeScore(
+      [S({ kind: "skill", skillId: "e_doublelay", hasApparatus: true, isThrow: true }, { kind: "catch" })],
+      "clubs",
+    );
+    expect(held.seriesBreakdowns[0].tumRows[0].score).toBeCloseTo(0.7, 5);
+    expect(held.apparatusOpBonus).toBeCloseTo(0.1, 5);
+    // 手具を保持していなければ付かない
+    const free = computeScore(
       [S({ kind: "skill", skillId: "e_doublelay", isThrow: true }, { kind: "catch" })],
       "clubs",
     );
-    expect(r.seriesBreakdowns[0].tumRows[0].score).toBeCloseTo(0.8, 5);
+    expect(free.apparatusOpBonus).toBe(0);
+    expect(free.dScore).toBeCloseTo(0.7, 5);
+  });
+
+  it("手具操作2回以上と技の最中の投げは重複しない（まとめて最大0.1）", () => {
+    // 後方宙返り半ひねり（手具操作）→前宙（手具操作）→きりもみ（視野外の投げ）→キャッチ
+    const ser = S(
+      { kind: "skill", skillId: "b_backhalf", hasApparatus: true, isThrow: false },
+      { kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: false },
+      { kind: "skill", skillId: "b_kirimomi", hasApparatus: false, isThrow: true, throwTypes: ["noview"] },
+      { kind: "catch" },
+    );
+    const r = computeScore([ser], "stick");
+    // 3本連続＝D難度 → 技の最中の投げで1ランクアップしてE難度＝0.7
+    expect(r.analysis[0].units[0].finalDiff).toBe("E");
+    expect(r.tumblingScore).toBeCloseTo(0.7, 5);
+    // 手具操作加点0.1（操作2回と技中の投げをまとめて最大0.1）＋ 視野外の投げの技術加点0.1
+    expect(r.apparatusOpBonus).toBeCloseTo(0.1, 5);
+    expect(r.techniqueBonus).toBeCloseTo(0.1, 5);
+    expect(r.dScore).toBeCloseTo(0.9, 5);
+    // 演技全体でも最大0.1（同じシリーズを2本にしても増えない。2本目は重複シリーズ）
+    const two = computeScore([ser, { ...structuredClone(ser), notDuplicate: true }], "stick");
+    expect(two.apparatusOpBonus).toBeCloseTo(0.1, 5);
   });
 });
 

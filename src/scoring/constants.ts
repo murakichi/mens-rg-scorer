@@ -84,7 +84,6 @@ export const VALUE_DIFF: Record<number, Difficulty> = { 1: "A", 2: "B", 3: "C", 
 export const MAX_DIFF = 5;
 export const DIFF_SCORE: Record<Difficulty, number> = { A: 0.1, B: 0.2, C: 0.3, D: 0.5, E: 0.7 };
 
-export const E_BONUS = 0.1;
 export const SERIES_BONUS = 0.1;
 export const TECHNIQUE_BONUS = 0.1;
 export const APPARATUS_OP_BONUS = 0.1;
