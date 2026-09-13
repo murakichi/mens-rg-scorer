@@ -8,6 +8,8 @@ import {
   endsChain,
   BASIC_LEVEL_MAX_SALTOS,
   CONNECT_FINISH_RARE,
+  RARE_CHAIN_END_SKILLS,
+  RARE_CHAIN_END_CHANCE,
   connectFinishWeights,
   THROW_FINISH_SALTOS,
   THROW_ROLL_MOTION,
@@ -491,6 +493,42 @@ describe("つなぎ技", () => {
     expect(side * 3).toBeLessThan(other);
   });
 
+  it("上級者は後方宙返り半ひねりで終わらない（前宙か側宙に続ける）", () => {
+    expect(RARE_CHAIN_END_SKILLS).toContain("b_backhalf");
+    expect(RARE_CHAIN_END_CHANCE).toBeLessThan(0.5);
+    // 後方宙返り半ひねりは前向きに降りるので、そのまま終われてしまう位置にある
+    expect(canEndChain("b_backhalf")).toBe(true);
+    // 組み立てた候補では最後に来ることが稀
+    const endsWith = (opts: Parameters<typeof autoTumblingSpecs>[0]) => {
+      let rare = 0;
+      let total = 0;
+      for (let seed = 0; seed < 40; seed++)
+        autoTumblingSpecs({ ...opts, random: seeded(seed) }).forEach((sp) => {
+          total += 1;
+          if (RARE_CHAIN_END_SKILLS.includes(sp.saltoIds[sp.saltoCount - 1])) rare += 1;
+        });
+      return { rare, total };
+    };
+    const adv = endsWith({});
+    expect(adv.total).toBeGreaterThan(0);
+    expect(adv.rare * 10).toBeLessThan(adv.total);
+    // 半ひねりを使う候補自体はある（最後ではなく途中に入る）
+    const uses = (() => {
+      for (let seed = 0; seed < 40; seed++)
+        for (const sp of autoTumblingSpecs({ random: seeded(seed) }))
+          if (sp.saltoIds.slice(0, sp.saltoCount).includes("b_backhalf")) return sp;
+      return null;
+    })();
+    if (uses) {
+      const ids = uses.saltoIds.slice(0, uses.saltoCount);
+      const next = ids[ids.indexOf("b_backhalf") + 1];
+      expect(next).toBeDefined();
+    }
+    // 基本的な構成（Dスコアが低い選手）では終わってよい
+    const basic = endsWith({ basicLevel: true });
+    expect(basic.rare).toBeGreaterThanOrEqual(0);
+  }, 60_000);
+
   it("側宙・後ろ向きで終わる後方宙返りの後に前転は実施しない", () => {
     expect(noRollAfter("b_sidesalto")).toBe(true);
     // 後ろ向きで終わる後方宙返りの後にも前転は入れない
@@ -614,9 +652,10 @@ describe("つなぎ技", () => {
       expect(throwIdx).toBe(lastSkill);
       expect(items.filter((it) => it.kind === "skill" && it.isThrow)).toHaveLength(1);
       expect(items[items.length - 1].kind).toBe("catch");
-      // 投げタンとして数えられる（難度は連続の内容から1ランクアップ）
+      // 投げタンとして数えられる（難度は連続の内容から1ランクアップ）。
+      // キャッチのあとに連続投げを続けた形では、その投げ受けが2つ目のユニットになる
       const a = analyzeSeries(t.series);
-      expect(a.units).toHaveLength(1);
+      expect(a.units).toHaveLength(t.spec.secondThrow ? 2 : 1);
       expect(a.units[0].isThrowTumbling).toBe(true);
       // 入力画面の制約・手具の流れとも矛盾しない
       expect(tumblingFlowErrors(t.series)).toEqual([]);

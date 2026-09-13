@@ -149,6 +149,14 @@ export const noRollAfter = (id: string): boolean =>
   NO_ROLL_AFTER_SKILLS.includes(id) || endsFacingBackward(id);
 
 /**
+ * シリーズの最後に実施することが**稀**な技。上級者は後方宙返り半ひねりで終わらず、
+ * 大抵その後に前宙か側宙を実施する。Dスコアの低い選手（`basicLevel`）は実施する。
+ */
+export const RARE_CHAIN_END_SKILLS: string[] = ["b_backhalf"];
+/** 稀な終わり方をしてよい確率 */
+export const RARE_CHAIN_END_CHANCE = 0.1;
+
+/**
  * 連続の**最後**に置ける技か。後ろ向きで終わる技の後に何も実施せず終わることはない。
  *  - 後方宙返り（整数ひねり）：Dスコアの低い選手は実施するので、`allowBackwardEnd`
  *    （`backwardEndChance` の抽選）が通ったときだけ許す
@@ -458,6 +466,8 @@ export interface AutoTumblingSpec {
    * 未指定なら続けない。
    */
   secondThrow?: AutoThrowStyle;
+  /** 稀な終わり方（後方宙返り半ひねりで終わる）をしてよい候補か */
+  allowRareEnd?: boolean;
 }
 
 const skillItem = (skillId: string, isThrow = false): Item => ({
@@ -831,12 +841,20 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       let saltoCount = Math.max(pattern.saltos.min, Math.min(count, saltoIds.length));
       // 後ろ向きで終わる後方宙返りで終わるかは、狙うDスコアで決まる確率で抽選する
       const allowBackwardEnd = rand() < backwardEndChance(opts.targetScore);
-      while (
-        saltoCount > pattern.saltos.min &&
-        !canEndChain(saltoIds[saltoCount - 1], allowBackwardEnd)
-      )
-        saltoCount -= 1;
-      if (!canEndChain(saltoIds[saltoCount - 1], allowBackwardEnd)) continue;
+      // 後方宙返り半ひねりで終わるのは稀（大抵そのあとに前宙か側宙を実施する）
+      const allowRareEnd = basicLevel || rand() < RARE_CHAIN_END_CHANCE;
+      const endsOk = (n: number) =>
+        canEndChain(saltoIds[n - 1], allowBackwardEnd) &&
+        (allowRareEnd || !RARE_CHAIN_END_SKILLS.includes(saltoIds[n - 1]));
+      // 終われる本数を探す：まず伸ばして（前宙・側宙に続ける）、だめなら縮める
+      let end = saltoCount;
+      while (end < saltoIds.length && !endsOk(end)) end += 1;
+      if (!endsOk(end)) {
+        end = saltoCount;
+        while (end > pattern.saltos.min && !endsOk(end)) end -= 1;
+      }
+      if (!endsOk(end)) continue;
+      saltoCount = end;
       // 投げタンのキャッチのあとに連続投げを続けるか（投げてから跳ぶ形のほうが多い）
       const secondThrow =
         pattern.throwCatch && apparatus && rand() < pairAfterChance(pattern)
@@ -849,6 +867,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         saltoIds,
         connectId,
         allowBackwardEnd,
+        allowRareEnd,
         ...(secondThrow ? { secondThrow } : {}),
       });
     }
@@ -939,6 +958,8 @@ export function withSaltoCount(t: AutoTumblingTemplate, saltoCount: number): Aut
   if (!saltoCountRange(t.spec.pattern).includes(saltoCount)) return null;
   if (saltoCount > t.spec.saltoIds.length) return null;
   // 連続の終わり方は候補を作ったときの抽選に従う
-  if (!canEndChain(t.spec.saltoIds[saltoCount - 1], t.spec.allowBackwardEnd)) return null;
+  const last = t.spec.saltoIds[saltoCount - 1];
+  if (!canEndChain(last, t.spec.allowBackwardEnd)) return null;
+  if (!t.spec.allowRareEnd && RARE_CHAIN_END_SKILLS.includes(last)) return null;
   return autoTemplate(t.apparatus, { ...t.spec, saltoCount }, t.id);
 }
