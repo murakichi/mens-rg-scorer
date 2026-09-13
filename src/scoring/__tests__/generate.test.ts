@@ -180,6 +180,48 @@ describe("ランダム生成", () => {
 });
 
 
+describe("DとAの損失の比較", () => {
+  /** 手具操作なしの技（シリーズ全体に手具操作が無いと A −0.2） */
+  const noApp = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: false, isThrow: false });
+
+  it("同じ難度なら、A減点の少ないほうを選ぶ", () => {
+    const withApp = tpl("手具操作あり", "common", triple());
+    const withoutApp = tpl(
+      "手具操作なし",
+      "common",
+      S(noApp("b_backsalto"), noApp("b_backsalto"), noApp("b_backsalto"), { kind: "catch" }),
+    );
+    [3, 7, 11].forEach((seed) => {
+      const r = generateRoutine([withApp, withoutApp], {
+        apparatus: "stick",
+        maxSeries: 1,
+        ...noAuto,
+        random: seeded(seed),
+      })!;
+      // Dは同じ（0.5）。A減点0.2のぶんだけ手具操作ありが勝つ
+      expect(r.used.map((t) => t.name)).toEqual(["手具操作あり"]);
+    });
+  });
+
+  it("Dの上がり分よりA減点が大きいシリーズは入れない", () => {
+    // 前宙1本（最大でもD +0.2）に手具操作が無い → A −0.2。差し引きで得にならない
+    const loss = tpl("手具操作なし前宙", "common", S(noApp("b_front")));
+    [3, 7, 11].forEach((seed) => {
+      const r = generateRoutine([...pool(), loss], { apparatus: "stick", ...noAuto, random: seeded(seed) })!;
+      expect(r.used.map((t) => t.name)).not.toContain("手具操作なし前宙");
+      // 手具操作なしのA減点を受けていない
+      expect(computeScore(r.series, "stick").noApparatusDeduction).toBe(0);
+    });
+  });
+
+  it("A減点を取り返せるだけDが上がるなら入れる", () => {
+    // 三宙（D +0.5）なら手具操作なしのA −0.2 を上回る
+    const gain = tpl("手具操作なし三宙", "common", S(noApp("b_tempo"), noApp("b_tempo"), noApp("b_tempo")));
+    const r = generateRoutine([gain], { apparatus: "stick", maxSeries: 1, ...noAuto, random: seeded(3) })!;
+    expect(r.used.map((t) => t.name)).toEqual(["手具操作なし三宙"]);
+  });
+});
+
 describe("必須要素を必ず満たす構成", () => {
   it("狙うDスコアで切り替わる（3点以上・上限なしは必ず満たす）", () => {
     expect(requiresAllElements({ maxScore: null })).toBe(true);
@@ -203,6 +245,19 @@ describe("必須要素を必ず満たす構成", () => {
       const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
       expect(computeScore(r.series, "stick").missing).toEqual([]);
     });
+  });
+
+  it("requireAllElements で明示的に切り替えられる", () => {
+    expect(requiresAllElements({ maxScore: 1.0, requireAllElements: true })).toBe(true);
+    expect(requiresAllElements({ maxScore: null, requireAllElements: false })).toBe(false);
+    // 切ってもDの範囲は守る（必須要素の不足はA減点としてだけ効く）
+    const r = generateRoutine(pool(), {
+      apparatus: "stick",
+      maxScore: 4.0,
+      requireAllElements: false,
+      random: seeded(3),
+    })!;
+    expect(r.dScore).toBeLessThanOrEqual(4.0 + 1e-9);
   });
 
   it("低いDスコアを狙うときは満たせなくてもよい（範囲を優先する）", () => {

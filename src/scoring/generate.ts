@@ -45,6 +45,12 @@ export interface GenerateOptions {
   attempts?: number;
   /** シリーズ数の上限 */
   maxSeries?: number;
+  /**
+   * 必須要素を必ず満たすか。未指定なら狙うDスコアで決まる
+   * （上限なし、または `REQUIRE_ALL_ELEMENTS_MIN_SCORE` 以上で満たしにいく）。
+   * false にすると、不足もA減点として D と天秤にかけるだけになる。
+   */
+  requireAllElements?: boolean;
   /** 投げタン（転回系の投げ受け）の本数の上限。既定は1本。 */
   maxThrowTumbling?: number;
   /** 自動生成の投げシリーズを候補に加えるか（既定 true） */
@@ -121,8 +127,14 @@ export const REQUIRE_ALL_ELEMENTS_MIN_SCORE = 3.0;
  */
 export const REQUIRED_ELEMENT_WEIGHT = 10;
 
-/** その構成で必須要素を必ず満たしにいくか（狙うDスコアで決まる） */
-export function requiresAllElements(opts: Pick<GenerateOptions, "maxScore">): boolean {
+/**
+ * その構成で必須要素を必ず満たしにいくか。
+ * 既定は狙うDスコアで決まり、`requireAllElements` で明示的に上書きできる。
+ * false のときは、必須要素の不足も他と同じくA減点（1つ −0.30）として
+ * DとAの損失を比べるだけになる。
+ */
+export function requiresAllElements(opts: Pick<GenerateOptions, "maxScore" | "requireAllElements">): boolean {
+  if (opts.requireAllElements !== undefined) return opts.requireAllElements;
   return opts.maxScore == null || opts.maxScore >= REQUIRE_ALL_ELEMENTS_MIN_SCORE;
 }
 
