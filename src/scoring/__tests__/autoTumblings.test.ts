@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   AUTO_TUMBLING_PATTERNS,
+  BASIC_LEVEL_MAX_DIFF,
+  BASIC_LEVEL_MAX_SALTOS,
   CONNECT_FINISH_RARE,
   connectFinishWeights,
   THROW_FINISH_SALTOS,
@@ -26,7 +28,7 @@ import {
 } from "../autoTumblings";
 import { analyzeSeries, hasConnect, maxSaltoChain, prevSkillId } from "../analysis";
 import { CATEGORY, DIFF_VALUE, ROUNDOFF_SKILL_ID, skillDef, skillDifficulty, skillFlowAfter, skillOptions } from "../constants";
-import { BASIC_SKILL_MAX_SCORE, DEFAULT_MAX_AUTO_TUMBLINGS, generateRoutine } from "../generate";
+import { BASIC_LEVEL_MAX_SCORE, DEFAULT_MAX_AUTO_TUMBLINGS, generateRoutine } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
 import type { Item, Series } from "../types";
@@ -241,18 +243,45 @@ describe("つなぎ技", () => {
     });
   });
 
-  it("低いDスコアを狙う構成では基本技の重み付けをしない", () => {
-    const basic = (maxScore: number | null) =>
-      autoTumblingSpecs({
-        basicSkills: maxScore != null && maxScore <= BASIC_SKILL_MAX_SCORE,
-        random: seeded(3),
-      });
-    // 呼び分けができていること（重み付けの有無で候補の引き方が変わる）
-    expect(basic(2.0).length).toBeGreaterThan(0);
-    expect(basic(null).length).toBeGreaterThan(0);
-    // 上限を低くした生成は、その範囲に収まる
+  it("基本的な構成の選手は単純なタンブリングだけ（D難度なし・三宙なし・つなぎなし）", () => {
+    const specs = autoTumblingSpecs({ basicLevel: true, random: seeded(3) });
+    expect(specs.length).toBeGreaterThan(0);
+    specs.forEach((sp) => {
+      // つなぎ技を実施しない
+      expect(sp.pattern.connect).toBe(false);
+      // 連続は2本まで（三宙なし）
+      expect(sp.saltoCount).toBeLessThanOrEqual(BASIC_LEVEL_MAX_SALTOS);
+      // D難度以上の技を実施しない
+      sp.saltoIds.slice(0, sp.saltoCount).forEach((id) => expect(diff(id)).toBeLessThanOrEqual(BASIC_LEVEL_MAX_DIFF));
+    });
+    // 上級者の構成では大技も連続もつなぎも出る
+    const all = autoTumblingSpecs({ random: seeded(3) });
+    expect(all.some((sp) => sp.pattern.connect)).toBe(true);
+    expect(all.some((sp) => sp.saltoIds.some((id) => diff(id) > BASIC_LEVEL_MAX_DIFF))).toBe(true);
+  });
+
+  it("Dスコア1点台までを狙うと基本的な構成になる", () => {
     const r = generateRoutine([], { apparatus: "stick", maxScore: 1.5, random: seeded(5) })!;
     expect(r.dScore).toBeLessThanOrEqual(1.5 + 1e-9);
+    // 自動生成のタンブリングにD難度以上の技が入らない
+    r.used.forEach((t) => {
+      if (!isAutoTumblingTemplate(t)) return;
+      t.spec.saltoIds.slice(0, t.spec.saltoCount).forEach((id) => expect(diff(id)).toBeLessThanOrEqual(BASIC_LEVEL_MAX_DIFF));
+    });
+    // 2点台以上を狙うなら上級者の構成のまま
+    expect(BASIC_LEVEL_MAX_SCORE).toBe(2.0);
+    const hi = generateRoutine([], { apparatus: "stick", maxScore: 4.0, random: seeded(5) })!;
+    expect(
+      hi.used.some((t) => isAutoTumblingTemplate(t) && t.spec.saltoIds.some((id) => diff(id) > BASIC_LEVEL_MAX_DIFF)),
+    ).toBe(true);
+  });
+
+  it("タンブリングの実施中には投げない（投げてから実施する）", () => {
+    autoTumblingTemplates("stick", { random: seeded(9) }).forEach((t) =>
+      t.series.items.forEach((item) => {
+        if (item.kind === "skill") expect(item.isThrow).toBeFalsy();
+      }),
+    );
   });
 
   it("つなぎの形は宙返りの間にA難度技が入る", () => {

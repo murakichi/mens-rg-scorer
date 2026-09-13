@@ -97,10 +97,12 @@ export const DEFAULT_MAX_AUTO_THROWS = 3;
 export const DEFAULT_MAX_AUTO_TUMBLINGS = 4;
 
 /**
- * これ以下のDスコアを狙う構成では、基本技（つなぎの最後のただの後方宙返りなど）も
- * 普通に使う。上級者は実施しないが、Dスコアの低い選手は十分実施するため。
+ * これ未満のDスコアを狙う構成は「基本的な構成の選手」とみなす（`basicLevel`）。
+ * Dスコアが0〜1点台の選手は、ルールの要求を満たしきれない単純なタンブリングを実施する
+ * （ロンダート→宙返り1本で終わり／三宙なし／つなぎなし／D難度なし）ので、
+ * 自動生成のタンブリングもその範囲に寄せる。
  */
-export const BASIC_SKILL_MAX_SCORE = 3.0;
+export const BASIC_LEVEL_MAX_SCORE = 2.0;
 
 /**
  * 自動生成のシリーズ1本あたりの評価の重み。
@@ -212,8 +214,8 @@ function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () => numb
     pool.push(
       ...autoTumblingTemplates(opts.apparatus, {
         junior: !!opts.junior,
-        // 低いDスコアを狙うなら基本技も普通に使う選手とみなす
-        basicSkills: opts.maxScore != null && opts.maxScore <= BASIC_SKILL_MAX_SCORE,
+        // 低いDスコアを狙うなら、基本的な構成の選手とみなして候補を寄せる
+        basicLevel: opts.maxScore != null && opts.maxScore < BASIC_LEVEL_MAX_SCORE,
         skillIds: opts.autoTumblingSkills ?? usedSkillIds(own.map((t) => t.series)),
         random: rand,
         limit: opts.autoTumblingLimit,

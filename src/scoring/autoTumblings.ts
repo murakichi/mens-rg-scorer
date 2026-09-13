@@ -20,6 +20,9 @@
 //  - 投げ受け（投げタン）は手具の滞空時間の都合で 前方系→前転／前方系→側宙（転宙）。
 //    投げたあとにロンダートを入れる形は作らない
 //  - ジュニアは2回宙返り系を実施しない（`skillOptions` の選択肢に出ない）
+//  - Dスコアの低い選手は、ルールの要求を満たしきれない単純なタンブリングを実施する
+//    （ロンダート→宙返り1本で終わり／三宙なし／つなぎなし／D難度なし）ので、
+//    低いDスコアを狙う構成では候補もそれに寄せる（`basicLevel`）
 // 組み立てたシリーズは `tumblingFlowErrors` で入力画面の制約を検算できる。
 // =====================================================================
 
@@ -109,10 +112,10 @@ export const RARE_PICK_WEIGHT = 0.2;
 
 /**
  * つなぎ技のあとの技の選ばれやすさ。
- * 基本技も普通に実施する選手（ジュニア・低いDスコアを狙う構成）には重みを付けない。
+ * 基本技も普通に実施する選手（ジュニア・基本的な構成）には重みを付けない。
  */
-export function connectFinishWeights(basicSkills = false): Record<string, number> {
-  if (basicSkills) return {};
+export function connectFinishWeights(basicLevel = false): Record<string, number> {
+  if (basicLevel) return {};
   return Object.fromEntries(CONNECT_FINISH_RARE.map((id) => [id, RARE_PICK_WEIGHT]));
 }
 
@@ -317,10 +320,12 @@ function pickDifferent(
 export interface AutoTumblingOptions {
   junior?: boolean;
   /**
-   * 基本技（ただの後方宙返りなど）も普通に実施する選手か。
-   * 低いDスコアを狙う構成・ジュニアで true にすると、稀な技の重み付けをしない。
+   * 基本的な構成の選手か（低いDスコアを狙う構成）。
+   * Dスコアの低い選手は、ルールの要求を満たしきれない単純なタンブリングを実施する：
+   * ロンダート→宙返り1本で終わり／三宙なし（2本まで）／つなぎなし／D難度なし。
+   * ただの後方宙返りのような基本技も普通に実施するので、稀な技の重み付けもしない。
    */
-  basicSkills?: boolean;
+  basicLevel?: boolean;
   /**
    * 使ってよい転回技のid。登録テンプレートに出てくる技を渡すと、その選手が
    * 実際に実施している技だけで組み立てる（技そのものではなく**組み合わせ**を自動化する）。
@@ -336,6 +341,11 @@ export interface AutoTumblingOptions {
 /** 1つの形につき作る候補の数（宙返りの種類を変えた別案） */
 export const AUTO_TUMBLING_VARIANTS = 5;
 
+/** 基本的な構成の選手が実施する技の難度の上限（D難度なし） */
+export const BASIC_LEVEL_MAX_DIFF = DIFF_VALUE.C;
+/** 基本的な構成の選手の連続宙返りの本数（三宙なし・2回で終わり） */
+export const BASIC_LEVEL_MAX_SALTOS = 2;
+
 /** 前方系の宙返り（投げタンの1本目）か */
 const isForwardSalto = (id: string): boolean => skillDef(id)?.category === CATEGORY.FORWARD;
 
@@ -346,12 +356,30 @@ const isForwardSalto = (id: string): boolean => skillDef(id)?.category === CATEG
 export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingSpec[] {
   const rand = opts.random ?? Math.random;
   const junior = !!opts.junior;
-  // 使ってよい技の範囲（指定が無ければ全部）
+  const basicLevel = !!opts.basicLevel;
+  // 使ってよい技の範囲（指定が無ければ全部）。基本的な構成ではD難度以上を使わない
   const allowed = opts.skillIds && opts.skillIds.length > 0 ? new Set(opts.skillIds) : null;
-  const usable = (ids: string[]) => (allowed ? ids.filter((id) => allowed.has(id)) : ids);
+  const usable = (ids: string[]) =>
+    ids.filter(
+      (id) =>
+        (!allowed || allowed.has(id)) &&
+        (!basicLevel || difficultyValue(id, junior) <= BASIC_LEVEL_MAX_DIFF),
+    );
 
   const specs: AutoTumblingSpec[] = [];
-  AUTO_TUMBLING_PATTERNS.forEach((pattern) => {
+  AUTO_TUMBLING_PATTERNS.forEach((rawPattern) => {
+    // 基本的な構成ではつなぎ技を実施せず、連続も2本まで
+    if (basicLevel && rawPattern.connect) return;
+    const pattern =
+      basicLevel && rawPattern.saltos.max > BASIC_LEVEL_MAX_SALTOS
+        ? {
+            ...rawPattern,
+            saltos: {
+              min: Math.min(rawPattern.saltos.min, BASIC_LEVEL_MAX_SALTOS),
+              max: BASIC_LEVEL_MAX_SALTOS,
+            },
+          }
+        : rawPattern;
     // 投げタンの1本目は前方系（手具の滞空時間の都合で後方系は実施しない）
     const firsts = usable(firstSaltoOptions(junior))
       // 投げ受けの1本目は前方系（手具の滞空時間の都合で後方系は実施しない）
@@ -383,7 +411,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
             usable(saltoOptionsAfterConnect(cid, junior)),
             ids,
             rand,
-            connectFinishWeights(junior || !!opts.basicSkills),
+            connectFinishWeights(junior || basicLevel),
           );
           if (!after) continue;
           ids.push(after);
