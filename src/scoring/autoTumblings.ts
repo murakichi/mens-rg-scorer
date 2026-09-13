@@ -19,8 +19,9 @@
 //    候補には残して選ばれにくくするだけにする
 //  - 投げ受け（投げタン）は手具の滞空時間の都合で 前方系→前転／前方系→側宙（転宙）。
 //    投げたあとにロンダートを入れる形は作らない
-//  - とび前転・きりもみは首から背中にかけて着地するので、その後に技を続けない
-//    （入りの技・つなぎ技にも使わない）
+//  - とび前転・きりもみ（首から背中にかけて着地する）・きりもみ転回・側宙は連続の最後だけ。
+//    その後に技を続けない（入りの技・つなぎ技にも使わない）
+//  - 側転は徒手扱いなので、つなぎ技には使わない（側宙への入りには使う）
 //  - ジュニアは2回宙返り系を実施しない（`skillOptions` の選択肢に出ない）。
 //    一般でも個人で2回宙返り系を実施することはほぼないので、テンプレートに出てくる
 //    ときだけ使う。2回宙返りの後に連続・つなぎを続けることもない（後ろ向きに降りる
@@ -132,11 +133,13 @@ export const TEMPO_SKILLS: string[] = ["b_tempo", "c_tempotwist"];
 export const isTempoSalto = (id: string): boolean => TEMPO_SKILLS.includes(id);
 
 /**
- * 首から背中にかけて着地する技（とび前転・きりもみ）。
- * 着地の形として実施するので、**この後に技を続けて実施することはできない**。
+ * 連続の最後にだけ実施する技。**この後に技を続けて実施することはできない**ので、
  * 入りの技にもつなぎ技にも使わない。
+ *  - とび前転・きりもみ：首から背中にかけて着地する
+ *  - きりもみ転回：理屈のうえでは続けられるが、実際に続けた選手はいない
+ *  - 側宙：連続の最後としてしか実施されない
  */
-export const CHAIN_END_SKILLS: string[] = ["a_frontroll", "b_kirimomi"];
+export const CHAIN_END_SKILLS: string[] = ["a_frontroll", "b_kirimomi", "c_kirimomiten", "b_sidesalto"];
 export const endsChain = (id: string): boolean => CHAIN_END_SKILLS.includes(id);
 
 /** 系統ごとの入りの技（空＝助走から直接入る） */
@@ -155,7 +158,7 @@ export const TUMBLING_CONNECTS: { id: string; next: string }[] = [
   { id: ROUNDOFF_SKILL_ID, next: CATEGORY.BACKWARD },
   { id: "a_flicflac", next: CATEGORY.BACKWARD },
   { id: "a_handspring", next: CATEGORY.FORWARD },
-  { id: "a_cartwheel", next: CATEGORY.SIDE },
+  // 側転は徒手扱いなので、宙返りの間に挟んでもつなぎ技にはならない
 ];
 
 const difficultyValue = (id: string, junior: boolean): number => {

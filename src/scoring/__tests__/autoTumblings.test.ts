@@ -114,7 +114,7 @@ describe("入力画面の制約", () => {
     expect(own.some((sp) => sp.saltoIds.some(isDouble))).toBe(true);
   });
 
-  it("とび前転・きりもみの後には技を続けない（首から背中にかけて着地する技）", () => {
+  it("とび前転・きりもみ・きりもみ転回・側宙の後には技を続けない（連続の最後だけ）", () => {
     CHAIN_END_SKILLS.forEach((id) => {
       expect(endsChain(id)).toBe(true);
       expect(nextSaltoOptions(id)).toEqual([]);
@@ -135,6 +135,17 @@ describe("入力画面の制約", () => {
         });
       }),
     );
+  });
+
+  it("側宙は連続の最後にしか来ない", () => {
+    expect(nextSaltoOptions("b_sidesalto")).toEqual([]);
+    // 前宙の次には出るが、その後は続かない
+    expect(nextSaltoOptions("b_front")).toContain("b_sidesalto");
+    allTemplates().forEach((t) => {
+      const ids = t.series.items.flatMap((item) => (item.kind === "skill" ? [item.skillId] : []));
+      const at = ids.indexOf("b_sidesalto");
+      if (at >= 0) expect(at).toBe(ids.length - 1);
+    });
   });
 
   it("2回宙返りの後は連続もつなぎも続かない", () => {
@@ -271,10 +282,9 @@ describe("つなぎ技", () => {
     expect(connectOptionsAfter("b_backsalto")).toEqual([]);
   });
 
-  it("前向きに降りた後はロンダート・側転・ハンドスプリング（とび前転は着地技なので使わない）", () => {
-    expect(connectOptionsAfter("b_front").sort()).toEqual(
-      ["a_cartwheel", "a_handspring", ROUNDOFF_SKILL_ID].sort(),
-    );
+  it("前向きに降りた後はロンダート・ハンドスプリング（とび前転は着地技、側転は徒手扱い）", () => {
+    expect(connectOptionsAfter("b_front").sort()).toEqual(["a_handspring", ROUNDOFF_SKILL_ID].sort());
+    expect(TUMBLING_CONNECTS.map((c) => c.id)).not.toContain("a_cartwheel");
   });
 
   it("つなぎの最後のただの後方宙返りは選ばれにくい（Dスコアの低い選手・ジュニアは実施する）", () => {
