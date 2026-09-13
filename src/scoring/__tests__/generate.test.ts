@@ -12,6 +12,9 @@ import {
   shapeRankTotal,
   THROW_ORDER_WEIGHT,
   reversedThrowOrderCount,
+  preferredThrowCount,
+  throwCountPenalty,
+  extraThrowOperation,
   shortfallPenalty,
   usableTemplates,
 } from "../generate";
@@ -491,5 +494,58 @@ describe("連続投げの難度の並び", () => {
     const normal = [pair(4, 0)];
     const reversed = [pair(0, 4)];
     expect(computeScore(normal, "stick").dScore).toBe(computeScore(reversed, "stick").dScore);
+  });
+});
+
+describe("投げ上げの回数", () => {
+  const minimalThrow = (): Series => S({ kind: "throw" }, { kind: "catch" });
+  const cheneThrow = (n: number): Series =>
+    S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: n, hands: false }, { kind: "catch" });
+
+  it("最頻値はDスコアが上がるほど増え、最小はルールの回数", () => {
+    // 最小はルールの回数（一般3回・ジュニア2回）
+    expect(preferredThrowCount(0)).toBe(3);
+    expect(preferredThrowCount(1.9)).toBe(3);
+    expect(preferredThrowCount(0, true)).toBe(2);
+    // 上がるほど増える
+    expect(preferredThrowCount(2.0)).toBe(4);
+    expect(preferredThrowCount(3.9)).toBe(4);
+    expect(preferredThrowCount(4.0)).toBe(5);
+    // Dスコア5でも最頻値は5のまま
+    expect(preferredThrowCount(5.0)).toBe(5);
+    expect(preferredThrowCount(6.0)).toBe(5);
+    // 単調に増える
+    for (let d = 0; d <= 6; d += 0.5)
+      expect(preferredThrowCount(d + 0.5)).toBeGreaterThanOrEqual(preferredThrowCount(d));
+  });
+
+  it("最頻値から離れるほど評価が下がる（多い側のほうを強く嫌う）", () => {
+    expect(throwCountPenalty(5, 4.5)).toBe(0);
+    expect(throwCountPenalty(4, 4.5)).toBeGreaterThan(0);
+    // 技術加点で稼げてしまうので、多い側のほうを強く嫌う
+    expect(throwCountPenalty(6, 4.5)).toBeGreaterThan(throwCountPenalty(4, 4.5));
+    // Dスコア5以上は多い側を緩める（最頻値は5のまま、6回も出やすい）
+    expect(throwCountPenalty(6, 5.0)).toBeLessThan(throwCountPenalty(6, 4.5));
+    expect(preferredThrowCount(5.0)).toBe(preferredThrowCount(4.5));
+  });
+
+  it("Dスコアの上限が低くてもルールの回数は満たす", () => {
+    [3, 7, 11].forEach((seed) => {
+      const r = generateRoutine(pool(), { apparatus: "stick", maxScore: 1.5, random: seeded(seed) })!;
+      const sc = computeScore(r.series, "stick");
+      expect(sc.performedThrowCount).toBeGreaterThanOrEqual(3);
+      expect(sc.dScore).toBeLessThanOrEqual(1.5 + 1e-9);
+    });
+  }, 60_000);
+
+  it("難度に採用されない投げの操作を数える（加点だけを狙う投げは操作を足さない）", () => {
+    // 徒手系ユニットは上位3つだけが難度に採用される
+    const four = [cheneThrow(4), cheneThrow(3), cheneThrow(2), cheneThrow(1)];
+    expect(extraThrowOperation(computeScore(four, "stick"))).toBeGreaterThan(0);
+    // 4本目を操作なしにすれば0
+    const withMinimal = [cheneThrow(4), cheneThrow(3), cheneThrow(2), minimalThrow()];
+    expect(extraThrowOperation(computeScore(withMinimal, "stick"))).toBe(0);
+    // 3本以下なら全部採用されるので0
+    expect(extraThrowOperation(computeScore([cheneThrow(4), cheneThrow(3)], "stick"))).toBe(0);
   });
 });

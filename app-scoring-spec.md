@@ -474,6 +474,22 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
   それでも足りなければ、**不足を満たす候補を必ず入れた状態から組み直す**
   （`satisfying` → `greedyAttempt([t])` を `REBUILD_ATTEMPTS`＝5回まで、入れ替えも掛ける）。
   Dスコアの上限いっぱいの構成では1本足す代わりに1本抜く必要があり、入れ替えだけでは届かない
+- **投げ上げの回数の最頻値はDスコアで決まる**（`preferredThrowCount` / `throwCountPenalty`）。
+  Dスコアが上がるほど多くなり、**最小はルールの回数**（一般3回・ジュニア2回）。
+  `THROW_COUNT_MODE_STEPS`：2点未満＝ルールの回数／2点台〜3点台＝4回／4点以上＝5回。
+  最頻値より少ないぶんは `THROW_COUNT_UNDER_WEIGHT`（0.1）、多いぶんは
+  `THROW_COUNT_OVER_WEIGHT`（0.35。技術加点は上限が無いので多い側を強く嫌う）、
+  `THROW_COUNT_RELAXED_SCORE`（5.0）以上では `THROW_COUNT_OVER_WEIGHT_RELAXED`（0.2）に緩めて
+  **最頻値は5のまま6回も出やすく**する。実測：D1.5→3回100%／D2.5→4回100%／
+  D3.5→4回97%／D4.5→5回100%／D5.2→5回57%・6回30%・7回13%
+- **ルールの投げ回数はDスコアに関係なく必ず満たす**。`shortfallPenalty` の投げ回数だけは
+  `mandatory` でなくても `REQUIRED_ELEMENT_WEIGHT` を足し、詰め直し（`swapIn`／組み直し）も
+  投げ回数が足りなければ走る（`Evaluation.throwCountUnmet`）。Dスコアの上限が低い構成では
+  難度を下げてでも投げ回数を満たす（0〜1点台の選手が満たさないのはタンブリング側の要求で、
+  投げは投げるだけなので満たす）
+- **難度を狙う投げは4回まで**（投げタン1回＋それ以外3回＝`ADOPT_COUNT` 本の徒手系ユニット）。
+  それ以上の投げは**加点だけを狙う**ので徒手操作を足さない：難度に採用されない投げ受けに
+  入っている操作を `extraThrowOperation` で数え、`EXTRA_THROW_OPERATION_WEIGHT`（0.01）だけ嫌う
 - **連続投げは1回目のほうが難度が高い**のが普通（`reversedThrowOrderCount` ×
   `THROW_ORDER_WEIGHT`＝0.005）。2回目のほうが高い構成も現実にある（日本トップのロープの
   1シリーズ目は 手以外の投げ→キャッチ→視野外の投げ→シェネ→キャッチ）ので、

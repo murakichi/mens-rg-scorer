@@ -44,7 +44,14 @@ import {
 } from "./autoTumblings";
 import { computeScore, type ScoreResult } from "./score";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
-import { ADOPT_COUNT, APPARATUS, APPARATUS_REQUIRED_ELEMENTS, DIFF_VALUE, skillDef } from "./constants";
+import {
+  ADOPT_COUNT,
+  APPARATUS,
+  APPARATUS_REQUIRED_ELEMENTS,
+  DIFF_VALUE,
+  skillDef,
+  throwCountRequired,
+} from "./constants";
 import type { ApparatusKey, Series } from "./types";
 
 export interface GenerateOptions {
@@ -285,6 +292,62 @@ export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false)
 }
 
 /**
+ * 難度を狙う投げは基本4回まで（投げタン1回＋それ以外の投げ3回＝`ADOPT_COUNT` 本の
+ * 徒手系ユニット）。それ以上の投げは**加点だけを狙う**ので徒手操作を足さない。
+ * 難度に採用されない投げ受けに操作が入っているぶんを、難度の刻みより小さい重みで嫌う。
+ */
+export const EXTRA_THROW_OPERATION_WEIGHT = 0.01;
+
+/** 難度に採用されない投げ受けに入っている徒手操作のぶん（A難度＝操作なしを0とする） */
+export function extraThrowOperation(r: ScoreResult): number {
+  let total = 0;
+  r.analysis.forEach((a, i) =>
+    a.units.forEach((u, j) => {
+      if (u.throwCount === 0 || u.isThrowTumbling) return;
+      if (r.unitInTop[i]?.[j]) return;
+      total += DIFF_VALUE[u.finalDiff] - DIFF_VALUE.A;
+    }),
+  );
+  return total;
+}
+
+/**
+ * 投げ上げの回数の**最頻値**。Dスコアが上がるほど多くなる。
+ * 最小はルールの回数（一般3回・ジュニア2回）で、それ未満にはしない。
+ */
+export const THROW_COUNT_MODE_STEPS: { minScore: number; count: number }[] = [
+  { minScore: 4.0, count: 5 },
+  { minScore: 2.0, count: 4 },
+];
+
+/** そのDスコアの構成で最も多い投げ上げの回数 */
+export function preferredThrowCount(dScore: number, junior = false): number {
+  const step = THROW_COUNT_MODE_STEPS.find((x) => dScore >= x.minScore);
+  return Math.max(throwCountRequired(junior), step?.count ?? 0);
+}
+
+/** 最頻値より少ない投げ1回ぶんの評価の重み */
+export const THROW_COUNT_UNDER_WEIGHT = 0.1;
+/** 最頻値より多い投げ1回ぶんの評価の重み（技術加点で稼げるので強めに嫌う） */
+export const THROW_COUNT_OVER_WEIGHT = 0.35;
+/** このDスコア以上では多い側を緩める（最頻値は変えずに1回多い構成も出やすくする） */
+export const THROW_COUNT_RELAXED_SCORE = 5.0;
+export const THROW_COUNT_OVER_WEIGHT_RELAXED = 0.2;
+
+/**
+ * 投げ上げの回数が最頻値から離れているぶんの評価の引き算。
+ * 多い側は技術加点（上限なし）で稼げてしまうので強めに嫌い、Dスコアが高い構成では緩める。
+ */
+export function throwCountPenalty(count: number, dScore: number, junior = false): number {
+  const mode = preferredThrowCount(dScore, junior);
+  if (count < mode) return (mode - count) * THROW_COUNT_UNDER_WEIGHT;
+  const over = count - mode;
+  const weight =
+    dScore >= THROW_COUNT_RELAXED_SCORE ? THROW_COUNT_OVER_WEIGHT_RELAXED : THROW_COUNT_OVER_WEIGHT;
+  return over * weight;
+}
+
+/**
  * 連続投げ（1つのシリーズに投げ受けが2つ以上）のうち、**2回目以降のほうが難度が高い**
  * シリーズの数。1回目のほうが高いのが普通だが、逆の構成も現実にあるので、
  * `THROW_ORDER_WEIGHT`（難度点の刻みより小さい）だけ弱く嫌うだけにする。
@@ -337,6 +400,8 @@ interface Evaluation {
   dScore: number;
   aScore: number;
   missing: string[];
+  /** ルールの投げ回数（一般3回・ジュニア2回）に足りていないか。Dスコアに関係なく必ず満たす */
+  throwCountUnmet: boolean;
 }
 
 /**
@@ -372,6 +437,10 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   const shape = shapeRankTotal(series, r, !!opts.junior) * SHAPE_PRIORITY_WEIGHT;
   // 連続投げは1回目のほうが難度が高いのが普通（逆の構成も現実にあるので弱く嫌うだけ）
   const throwOrder = reversedThrowOrderCount(r) * THROW_ORDER_WEIGHT;
+  // 投げ上げの回数はDスコアに応じた最頻値に寄せる
+  const throwCount = throwCountPenalty(r.performedThrowCount, r.dScore, !!opts.junior);
+  // 難度に採用されない投げは加点だけを狙うので、操作を足さない
+  const extraOperation = extraThrowOperation(r) * EXTRA_THROW_OPERATION_WEIGHT;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
@@ -385,6 +454,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       variety -
       shape -
       throwOrder -
+      throwCount -
+      extraOperation -
       auto -
       limitedUsed * LIMITED_SKILL_WEIGHT -
       (highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT)) /
@@ -392,6 +463,7 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
     dScore: r.dScore,
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),
+    throwCountUnmet: r.required.some((c) => c.key === "count3" && c.passed === false),
   };
 }
 
@@ -407,7 +479,10 @@ export function shortfallPenalty(r: ScoreResult, apparatus: ApparatusKey, mandat
     if (unmet) total += (mandatory ? REQUIRED_ELEMENT_WEIGHT : 0) + priority * A_PRIORITY_WEIGHT;
   };
   const failed = (key: string) => r.required.some((c) => c.key === key && c.passed === false);
-  add(failed("count3") || failed("countMax"), A_PRIORITY.throwCount);
+  // 投げの回数はA側の最優先。Dスコアが低い構成でも**ルールの回数は必ず満たす**
+  // （0〜1点台の選手が満たさないのはタンブリング側の要求で、投げの回数は投げるだけ）
+  if (failed("count3") || failed("countMax"))
+    total += REQUIRED_ELEMENT_WEIGHT + A_PRIORITY.throwCount * A_PRIORITY_WEIGHT;
   APPARATUS_REQUIRED_ELEMENTS[apparatus].forEach((el) => {
     // 投げ・受けの要求だけ（ロープ跳び・手動チェックの項目は生成では動かせない）
     if (el.auto !== "rightThrow" && el.auto !== "leftThrow" && el.auto !== "twoThrow") return;
@@ -679,16 +754,35 @@ function greedyAttempt(
   return { used: ordered.used, ev: ordered.ev };
 }
 
-/** その候補1本だけで、不足している要求のどれかを満たせるもの */
+/** 投げの回数が足りないときに、組み直しの起点として試す投げ候補の数 */
+const THROW_REBUILD_CANDIDATES = 4;
+
+/** その候補を必ず入れて組み直す価値があるもの（不足を満たせる候補） */
 function satisfying(
   pool: SeriesTemplate[],
-  missing: string[],
+  ev: Evaluation,
   opts: GenerateOptions,
+  rand: () => number,
 ): SeriesTemplate[] {
-  return pool.filter((t) => {
-    const ev = evaluateUsed([t], opts);
-    return missing.some((m) => !ev.missing.includes(m));
+  const list = pool.filter((t) => {
+    const one = evaluateUsed([t], opts);
+    return ev.missing.some((m) => !one.missing.includes(m));
   });
+  if (!ev.throwCountUnmet) return list;
+  // 投げの回数は1本では満たせない（3回必要）ので、投げを含む候補も起点にする。
+  // 起点も登録テンプレートを先に試す（自動生成は足りないところを補うもの）
+  const withThrow = pool.filter((t) => t.series.items.some((it) => it.kind === "throw"));
+  const throwers = [
+    ...shuffled(
+      withThrow.filter((t) => !t.auto),
+      rand,
+    ),
+    ...shuffled(
+      withThrow.filter((t) => t.auto),
+      rand,
+    ),
+  ].slice(0, THROW_REBUILD_CANDIDATES);
+  return [...new Set([...list, ...throwers])];
 }
 
 /**
@@ -715,9 +809,15 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   if (!best || best.used.length === 0) return null;
 
   const pool = [...own, ...auto];
+  /**
+   * 詰め直しが必要か。必須要素を必ず満たす設定なら不足が残っているとき、
+   * そうでなくても**ルールの投げ回数**に足りていなければ詰め直す。
+   */
+  const unmet = (ev: Evaluation) =>
+    (requiresAllElements(opts) && ev.missing.length > 0) || ev.throwCountUnmet;
   /** 不足が残っている構成を、1本ずつ入れ替えて詰める */
   const repair = (cand: { used: SeriesTemplate[]; ev: Evaluation }) => {
-    if (cand.ev.missing.length === 0) return cand;
+    if (!unmet(cand.ev)) return cand;
     const fixed = swapIn(cand.used, cand.ev, pool, opts);
     if (fixed.ev.value <= cand.ev.value + 1e-9) return cand;
     const ordered = orderSeries(fixed.used, fixed.ev, opts);
@@ -725,20 +825,20 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   };
 
   // ⑤ 必須要素を満たしきれていなければ、1本ずつ入れ替えて詰める
-  if (requiresAllElements(opts)) best = repair(best);
+  best = repair(best);
 
   // ⑥ それでも足りなければ、不足を満たす候補を必ず入れた状態から組み直して詰める。
   //    Dスコアの上限いっぱいの構成では、入れ替えだけでは不足を埋められない
   //    （不足を満たす1本を足す代わりに1本抜く必要がある）ことがある。
-  if (requiresAllElements(opts) && best.ev.missing.length > 0) {
-    for (const t of satisfying(pool, best.ev.missing, opts)) {
+  if (unmet(best.ev)) {
+    for (const t of satisfying(pool, best.ev, opts, rand)) {
       // 足す順番（乱数）で結果が変わるので、1本につき何度か組み直す
       for (let k = 0; k < REBUILD_ATTEMPTS; k++) {
         const cand = repair(greedyAttempt([t], own, auto, opts, rand, maxSeries));
         if (cand.used.length > 0 && cand.ev.value > best.ev.value + 1e-9) best = cand;
-        if (best.ev.missing.length === 0) break;
+        if (!unmet(best.ev)) break;
       }
-      if (best.ev.missing.length === 0) break;
+      if (!unmet(best.ev)) break;
     }
   }
 
