@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   AUTO_TUMBLING_PATTERNS,
-  CONNECT_FINISH_AVOID,
+  CONNECT_FINISH_RARE,
+  connectFinishWeights,
   THROW_FINISH_SALTOS,
   THROW_ROLL_MOTION,
   autoTumblingName,
@@ -17,6 +18,7 @@ import {
   nextSaltoOptions,
   saltoCountRange,
   saltoOptionsAfterConnect,
+  saltoWeights,
   tumblingFlowErrors,
   usedSkillIds,
   withSaltoCount,
@@ -24,7 +26,7 @@ import {
 } from "../autoTumblings";
 import { analyzeSeries, hasConnect, maxSaltoChain, prevSkillId } from "../analysis";
 import { CATEGORY, DIFF_VALUE, ROUNDOFF_SKILL_ID, skillDef, skillDifficulty, skillFlowAfter, skillOptions } from "../constants";
-import { DEFAULT_MAX_AUTO_TUMBLINGS, generateRoutine } from "../generate";
+import { BASIC_SKILL_MAX_SCORE, DEFAULT_MAX_AUTO_TUMBLINGS, generateRoutine } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
 import type { Item, Series } from "../types";
@@ -139,13 +141,33 @@ describe("宙返りの連続の組み方", () => {
   it("後方伸身宙返りの後は 前宙・きりもみ・きりもみ転回（ひねっても同じ）", () => {
     ["b_backlayout", "b_backlayhalf", "c_backlay1full", "d_backlay25", "e_backlay35twist"].forEach((id) => {
       expect(isBackLayoutSalto(id)).toBe(true);
-      expect(nextSaltoOptions(id)).toEqual(AFTER_BACK_LAYOUT_SALTOS);
+      expect(nextSaltoOptions(id)).toEqual(AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id));
     });
     // 側宙はその前宙に続けて実施する
     expect(nextSaltoOptions("b_front")).toContain("b_sidesalto");
     // 伸身以外の後方宙返りは連続しない
     expect(isBackLayoutSalto("b_backsalto")).toBe(false);
     expect(isBackLayoutSalto("b_backtuck")).toBe(false);
+  });
+
+  it("後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回 の順に選ばれやすい", () => {
+    const weights = saltoWeights("b_backlayout");
+    expect(weights["b_front"]).toBeGreaterThan(weights["b_kirimomi"]);
+    expect(weights["b_kirimomi"]).toBeGreaterThan(weights["c_kirimomiten"] * 2);
+    // 実際に組み立てた並びでも、その順に多くなる
+    const count = new Map<string, number>();
+    for (let seed = 0; seed < 120; seed++) {
+      autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) =>
+        sp.saltoIds.forEach((id, i) => {
+          const prev = sp.saltoIds[i - 1];
+          if (!prev || !isBackLayoutSalto(prev)) return;
+          count.set(id, (count.get(id) ?? 0) + 1);
+        }),
+      );
+    }
+    const n = (id: string) => count.get(id) ?? 0;
+    expect(n("b_front")).toBeGreaterThan(n("b_kirimomi"));
+    expect(n("b_kirimomi")).toBeGreaterThan(n("c_kirimomiten"));
   });
 
   it("つなぎの最後の後方伸身宙返りはそのまま前宙に続けられる", () => {
@@ -206,11 +228,31 @@ describe("つなぎ技", () => {
     );
   });
 
-  it("つなぎの最後にただの後方宙返りを実施しない（ジュニアは除く）", () => {
-    expect(saltoOptionsAfterConnect(ROUNDOFF_SKILL_ID)).not.toContain("b_backsalto");
-    // B難度がほしいときはダイビング前宙
+  it("つなぎの最後のただの後方宙返りは選ばれにくい（Dスコアの低い選手・ジュニアは実施する）", () => {
+    // B難度がほしいときはダイビング前宙・後方伸身宙返り
     expect(saltoOptionsAfterConnect(ROUNDOFF_SKILL_ID)).toContain("b_divefront");
-    CONNECT_FINISH_AVOID.forEach((id) => expect(saltoOptionsAfterConnect(ROUNDOFF_SKILL_ID, true)).toContain(id));
+    expect(saltoOptionsAfterConnect(ROUNDOFF_SKILL_ID)).toContain("b_backlayout");
+    // 候補からは外さず、重みで選ばれにくくする
+    CONNECT_FINISH_RARE.forEach((id) => {
+      expect(saltoOptionsAfterConnect(ROUNDOFF_SKILL_ID)).toContain(id);
+      expect(connectFinishWeights()[id]).toBeLessThan(1);
+      // 基本技も普通に実施する選手（ジュニア・低いDスコア）には重みを付けない
+      expect(connectFinishWeights(true)[id]).toBeUndefined();
+    });
+  });
+
+  it("低いDスコアを狙う構成では基本技の重み付けをしない", () => {
+    const basic = (maxScore: number | null) =>
+      autoTumblingSpecs({
+        basicSkills: maxScore != null && maxScore <= BASIC_SKILL_MAX_SCORE,
+        random: seeded(3),
+      });
+    // 呼び分けができていること（重み付けの有無で候補の引き方が変わる）
+    expect(basic(2.0).length).toBeGreaterThan(0);
+    expect(basic(null).length).toBeGreaterThan(0);
+    // 上限を低くした生成は、その範囲に収まる
+    const r = generateRoutine([], { apparatus: "stick", maxScore: 1.5, random: seeded(5) })!;
+    expect(r.dScore).toBeLessThanOrEqual(1.5 + 1e-9);
   });
 
   it("つなぎの形は宙返りの間にA難度技が入る", () => {

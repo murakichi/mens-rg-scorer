@@ -14,8 +14,9 @@
 //    ただし後方伸身宙返り（ひねりを含む）の後は 前宙・きりもみ・きりもみ転回 が主流
 //  - 宙返りのあとのバク転は（テンポの後を除いて）個人ではまず無いので、つなぎ技は
 //    前向きに降りた後のロンダート・側転・ハンドスプリング・とび前転にする
-//  - つなぎの最後にただの後方宙返りは実施しない（B難度がほしいときはダイビング前宙）。
-//    ジュニアは難度を取るためにやむを得ず実施することがあるので制限しない
+//  - つなぎの最後のただの後方宙返りは上級者は実施しない（B難度がほしいときは
+//    ダイビング前宙・後方伸身宙返り）。Dスコアの低い選手・ジュニアは実施するので、
+//    候補には残して選ばれにくくするだけにする
 //  - 投げ受け（投げタン）は手具の滞空時間の都合で 前方系→前転／前方系→側宙（転宙）。
 //    投げたあとにロンダートを入れる形は作らない
 //  - ジュニアは2回宙返り系を実施しない（`skillOptions` の選択肢に出ない）
@@ -72,10 +73,21 @@ export const THROW_FINISH_SALTOS: string[] = ["b_sidesalto", "b_tenchu"];
  * 後方伸身宙返り（ひねりの有無を問わない）の後に実施する主流の技。
  * 後ろ向きに降りる技だが、ここだけは連続が切れず前方系に続く。
  * 側宙はこの後の前宙に続けて実施する（前宙（＋側宙））。
+ * 実際の多さは 前宙＞きりもみ＞＞きりもみ転回 なので、選ばれやすさに重みを付ける。
  * きりもみ・きりもみ転回は宙返りの連続の中でだけ宙返りとして数える技（Q&A Q7）で、
  * まさにこの位置で実施するので難度の上下は問わない。
  */
-export const AFTER_BACK_LAYOUT_SALTOS: string[] = ["b_front", "b_kirimomi", "c_kirimomiten"];
+export const AFTER_BACK_LAYOUT_SALTOS: { id: string; weight: number }[] = [
+  { id: "b_front", weight: 5 },
+  { id: "b_kirimomi", weight: 3 },
+  { id: "c_kirimomiten", weight: 1 },
+];
+
+/** 実施する技の選ばれやすさ（直前の技で変わる。表に無い技は1） */
+export function saltoWeights(prevId: string): Record<string, number> {
+  if (!isBackLayoutSalto(prevId)) return {};
+  return Object.fromEntries(AFTER_BACK_LAYOUT_SALTOS.map((x) => [x.id, x.weight]));
+}
 
 /** 後方伸身宙返り系（ひねりを含む）か */
 export function isBackLayoutSalto(id: string): boolean {
@@ -84,12 +96,25 @@ export function isBackLayoutSalto(id: string): boolean {
 }
 
 /**
- * つなぎ技のあとには実施しない技。
- * 上級者がつなぎの最後にただの後方宙返りを実施することは稀で、
- * B難度がほしいときはダイビング前宙を実施する。
- * ジュニアは難度を取るためにやむを得ず実施することがあるので、この制限をかけない。
+ * つなぎ技のあとに実施することが稀な技。
+ * 上級者はつなぎの最後にただの後方宙返りを実施せず、B難度がほしいときは
+ * ダイビング前宙・後方伸身宙返りを実施する。ただしDスコアの低い選手・ジュニアは
+ * 実施することが十分あるので、候補からは外さず**選ばれにくく**しておく。
+ * 高いDを狙う構成では難度で負けるので、そもそも使われない。
  */
-export const CONNECT_FINISH_AVOID: string[] = ["b_backsalto"];
+export const CONNECT_FINISH_RARE: string[] = ["b_backsalto"];
+
+/** 稀な技の選ばれやすさ（既定の1に対する重み） */
+export const RARE_PICK_WEIGHT = 0.2;
+
+/**
+ * つなぎ技のあとの技の選ばれやすさ。
+ * 基本技も普通に実施する選手（ジュニア・低いDスコアを狙う構成）には重みを付けない。
+ */
+export function connectFinishWeights(basicSkills = false): Record<string, number> {
+  if (basicSkills) return {};
+  return Object.fromEntries(CONNECT_FINISH_RARE.map((id) => [id, RARE_PICK_WEIGHT]));
+}
 
 /**
  * テンポ宙返り系。連続の「難度はだんだん下がる」の例外で、この後は難度が上がってよい。
@@ -143,7 +168,8 @@ export function firstSaltoOptions(junior = false): string[] {
 export function nextSaltoOptions(prevId: string, junior = false): string[] {
   const offered = new Set(skillOptions(junior, skillFlowAfter(prevId)).map((s) => s.id));
   // 後方伸身宙返り（ひねりを含む）の後は 前宙・きりもみ・きりもみ転回
-  if (isBackLayoutSalto(prevId)) return AFTER_BACK_LAYOUT_SALTOS.filter((id) => offered.has(id));
+  if (isBackLayoutSalto(prevId))
+    return AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id).filter((id) => offered.has(id));
   const backward = leadsBackward(prevId);
   if (backward && !isTempoSalto(prevId)) return [];
   const ceiling = isTempoSalto(prevId) ? MAX_DIFF : difficultyValue(prevId, junior);
@@ -171,8 +197,6 @@ export function saltoOptionsAfterConnect(connectId: string, junior = false): str
   const next = TUMBLING_CONNECTS.find((c) => c.id === connectId)?.next;
   return saltoList(junior, connectId)
     .filter((s) => (next === CATEGORY.SIDE ? s.category !== CATEGORY.BACKWARD : s.category === next))
-    // ただの後方宙返りは実施しない（B難度がほしいときはダイビング前宙・後方伸身宙返り）。ジュニアは除く
-    .filter((s) => junior || !CONNECT_FINISH_AVOID.includes(s.id))
     .map((s) => s.id);
 }
 
@@ -268,16 +292,35 @@ function cycler<T>(list: T[], rand: () => number): () => T {
   };
 }
 
-/** 同じ技の繰り返しは避けて1つ選ぶ（他に無ければ繰り返しも許す） */
-function pickDifferent(options: string[], used: string[], rand: () => number): string | null {
+/**
+ * 同じ技の繰り返しは避けて1つ選ぶ（他に無ければ繰り返しも許す）。
+ * `weights` を渡すと実際の演技での多さに寄せて選ぶ（表に無い技は1）。
+ */
+function pickDifferent(
+  options: string[],
+  used: string[],
+  rand: () => number,
+  weights: Record<string, number> = {},
+): string | null {
   if (options.length === 0) return null;
   const fresh = options.filter((id) => !used.includes(id));
   const list = fresh.length > 0 ? fresh : options;
-  return list[Math.floor(rand() * list.length)];
+  const weightOf = (id: string) => weights[id] ?? 1;
+  let left = rand() * list.reduce((n, id) => n + weightOf(id), 0);
+  for (const id of list) {
+    left -= weightOf(id);
+    if (left < 0) return id;
+  }
+  return list[list.length - 1];
 }
 
 export interface AutoTumblingOptions {
   junior?: boolean;
+  /**
+   * 基本技（ただの後方宙返りなど）も普通に実施する選手か。
+   * 低いDスコアを狙う構成・ジュニアで true にすると、稀な技の重み付けをしない。
+   */
+  basicSkills?: boolean;
   /**
    * 使ってよい転回技のid。登録テンプレートに出てくる技を渡すと、その選手が
    * 実際に実施している技だけで組み立てる（技そのものではなく**組み合わせ**を自動化する）。
@@ -336,13 +379,19 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         if (pattern.connect) {
           cid = pickDifferent(usable(connectOptionsAfter(first, junior)), [], rand) ?? "";
           if (!cid) continue;
-          const after = pickDifferent(usable(saltoOptionsAfterConnect(cid, junior)), ids, rand);
+          const after = pickDifferent(
+            usable(saltoOptionsAfterConnect(cid, junior)),
+            ids,
+            rand,
+            connectFinishWeights(junior || !!opts.basicSkills),
+          );
           if (!after) continue;
           ids.push(after);
         }
         // 残りは「向きと難度」のルールで続ける
         while (ids.length < pattern.saltos.max) {
-          const next = pickDifferent(continuations(ids[ids.length - 1]), ids, rand);
+          const prev = ids[ids.length - 1];
+          const next = pickDifferent(continuations(prev), ids, rand, saltoWeights(prev));
           if (!next) break;
           ids.push(next);
         }

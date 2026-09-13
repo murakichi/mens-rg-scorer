@@ -97,6 +97,12 @@ export const DEFAULT_MAX_AUTO_THROWS = 3;
 export const DEFAULT_MAX_AUTO_TUMBLINGS = 4;
 
 /**
+ * これ以下のDスコアを狙う構成では、基本技（つなぎの最後のただの後方宙返りなど）も
+ * 普通に使う。上級者は実施しないが、Dスコアの低い選手は十分実施するため。
+ */
+export const BASIC_SKILL_MAX_SCORE = 3.0;
+
+/**
  * 自動生成のシリーズ1本あたりの評価の重み。
  * 登録したテンプレートは「その選手が実際に実施できる構成」なので、
  * 同じ点数なら自動生成より優先する。難度点の最小単位（0.1）より小さくして、
@@ -206,6 +212,8 @@ function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () => numb
     pool.push(
       ...autoTumblingTemplates(opts.apparatus, {
         junior: !!opts.junior,
+        // 低いDスコアを狙うなら基本技も普通に使う選手とみなす
+        basicSkills: opts.maxScore != null && opts.maxScore <= BASIC_SKILL_MAX_SCORE,
         skillIds: opts.autoTumblingSkills ?? usedSkillIds(own.map((t) => t.series)),
         random: rand,
         limit: opts.autoTumblingLimit,
