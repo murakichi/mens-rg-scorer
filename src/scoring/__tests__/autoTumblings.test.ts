@@ -9,6 +9,9 @@ import {
   BASIC_LEVEL_MAX_SALTOS,
   CONNECT_FINISH_RARE,
   RARE_CHAIN_END_SKILLS,
+  DIFFICULTY_RISE_WEIGHT,
+  withJuniorBoost,
+  JUNIOR_UPGRADE_BOOST_MAX_SCORE,
   RARE_CHAIN_END_CHANCE,
   connectFinishWeights,
   THROW_FINISH_SALTOS,
@@ -55,7 +58,16 @@ import {
   type AutoTumblingSpec,
 } from "../autoTumblings";
 import { analyzeSeries, checkApparatusFlow, hasConnect, maxSaltoChain, prevSkillId } from "../analysis";
-import { CATEGORY, DIFF_VALUE, ROUNDOFF_SKILL_ID, skillDef, skillDifficulty, skillFlowAfter, skillOptions } from "../constants";
+import {
+  CATEGORY,
+  DIFF_VALUE,
+  JUNIOR_SKILL_DIFFICULTY,
+  ROUNDOFF_SKILL_ID,
+  skillDef,
+  skillDifficulty,
+  skillFlowAfter,
+  skillOptions,
+} from "../constants";
 import { BASIC_LEVEL_MAX_SCORE, DEFAULT_MAX_AUTO_TUMBLINGS, generateRoutine } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
@@ -492,6 +504,52 @@ describe("つなぎ技", () => {
         });
     expect(side * 3).toBeLessThan(other);
   });
+
+  it("後方宙返り半ひねりのあとは前方宙返り1回ひねりに続けられる（難度が上がる例外）", () => {
+    // 通常は難度が上がる技には続けない
+    expect(nextSaltoOptions("b_front")).not.toContain("c_front1full");
+    // 後方半ひねりのあとだけは例外（そこからさらに前宙に続く）
+    expect(nextSaltoOptions("b_backhalf")).toContain("c_front1full");
+    expect(nextSaltoOptions("c_front1full")).toContain("b_front");
+    // 機会は少ないので選ばれやすさは下げる
+    const w = saltoWeights("b_backhalf");
+    expect(w["c_front1full"]).toBeLessThan(w["b_front"] ?? 1);
+    expect(DIFFICULTY_RISE_WEIGHT).toBeLessThan(1);
+    // 組み立てた候補にもこの並びが現れる
+    let found = false;
+    for (let seed = 0; seed < 60 && !found; seed++)
+      autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
+        const ids = sp.saltoIds.slice(0, sp.saltoCount);
+        const i = ids.indexOf("b_backhalf");
+        if (i >= 0 && ids[i + 1] === "c_front1full") found = true;
+      });
+    expect(found).toBe(true);
+  }, 60_000);
+
+  it("ジュニアで低いDスコアを狙うときは格上げされる技を優先する", () => {
+    // ダイビング前宙・後方（伸身）宙返り半ひねりはジュニアではC難度
+    expect(skillDifficulty("b_divefront", true)).toBe("C");
+    const base = saltoWeights("b_front");
+    const boosted = withJuniorBoost(base, true, 1.5);
+    expect(boosted["b_divefront"]).toBeGreaterThan(base["b_divefront"] ?? 1);
+    expect(boosted["b_backhalf"]).toBeGreaterThan(base["b_backhalf"] ?? 1);
+    // 一般ルール・高いDスコアを狙う場合・上限なしは変えない
+    expect(withJuniorBoost(base, false, 1.5)).toBe(base);
+    expect(withJuniorBoost(base, true, JUNIOR_UPGRADE_BOOST_MAX_SCORE)).toBe(base);
+    expect(withJuniorBoost(base, true, null)).toBe(base);
+    // 実際に組み立てた候補でも、ジュニアの低いDスコアでは格上げ技が増える
+    const count = (junior: boolean) => {
+      let n = 0;
+      for (let seed = 0; seed < 30; seed++)
+        autoTumblingSpecs({ random: seeded(seed), junior, targetScore: 1.5, basicLevel: true }).forEach((sp) =>
+          sp.saltoIds.slice(0, sp.saltoCount).forEach((id) => {
+            if (id in JUNIOR_SKILL_DIFFICULTY) n += 1;
+          }),
+        );
+      return n;
+    };
+    expect(count(true)).toBeGreaterThan(count(false));
+  }, 60_000);
 
   it("上級者は後方宙返り半ひねりで終わらない（前宙か側宙に続ける）", () => {
     expect(RARE_CHAIN_END_SKILLS).toContain("b_backhalf");
