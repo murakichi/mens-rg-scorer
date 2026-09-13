@@ -11,6 +11,9 @@
 //  - 評価されない要素は入れない（入れても評価が上がらないシリーズは最後に取り除く）
 //    例：4本目のタンブリング、ジュニアの6回目以降の投げ、まったく同じ内容の重複シリーズ
 //  - 投げタンは1本まで（必須要素は1本で満たせるため）
+//  - タンブリングは投げタンを含めて3本まで（上位3本しか難度に採用されないため）
+//  - ハンドスプリング・転宙は実施が少ないので優先度を下げ、演技内で1回までにする
+//  - 単発でD難度以上になる技は重みで抑える（結果として演技内で1〜2つ程度になる）
 //  - よくある投げシリーズ（autoThrows.ts）とタンブリング（autoTumblings.ts）は
 //    システム側で組んで候補に足す。投げ方や技の組み合わせを網羅したテンプレートを
 //    登録しなくて済む。あくまで候補なので、評価が上がらなければ使われない
@@ -26,6 +29,13 @@
 import { analyzeSeries } from "./analysis";
 import { autoThrowTemplates, cheneCountRange, isAutoThrowTemplate, withCheneCount } from "./autoThrows";
 import {
+  LIMITED_SKILLS,
+  LIMITED_SKILL_MAX,
+  apparatusHighDifficultyWeight,
+  isHighDifficultySkill,
+  readTumblingShape,
+  throwTumblingShapeRank,
+  tumblingShapeRank,
   autoTumblingTemplates,
   isAutoTumblingTemplate,
   saltoCountRange,
@@ -34,7 +44,7 @@ import {
 } from "./autoTumblings";
 import { computeScore, type ScoreResult } from "./score";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
-import { APPARATUS, APPARATUS_REQUIRED_ELEMENTS, skillDef } from "./constants";
+import { ADOPT_COUNT, APPARATUS, APPARATUS_REQUIRED_ELEMENTS, skillDef } from "./constants";
 import type { ApparatusKey, Series } from "./types";
 
 export interface GenerateOptions {
@@ -55,6 +65,10 @@ export interface GenerateOptions {
   requireAllElements?: boolean;
   /** 投げタン（転回系の投げ受け）の本数の上限。既定は1本。 */
   maxThrowTumbling?: number;
+  /** タンブリングの本数の上限（投げタンを含む）。既定は3本（採用される上限と同じ）。 */
+  maxTumblings?: number;
+  /** 単発で高難度（D難度以上）な技1つあたりの評価の重み（既定 `HIGH_DIFFICULTY_WEIGHT`）。 */
+  highDifficultyWeight?: number;
   /** 自動生成の投げシリーズを候補に加えるか（既定 true） */
   autoThrows?: boolean;
   /** 1つの構成に入れる自動生成の投げの本数の上限。既定は3本。 */
@@ -90,6 +104,12 @@ export interface GenerateResult {
 export const DEFAULT_MAX_THROW_TUMBLING = 1;
 
 /**
+ * 構成に入れるタンブリングの本数の上限（**投げタンを含む**）。
+ * 難度点に採用されるのは上位3本（`ADOPT_COUNT`）までで、4本目は評価されないため。
+ */
+export const DEFAULT_MAX_TUMBLINGS = ADOPT_COUNT;
+
+/**
  * 生成する構成に入れる自動生成の投げの本数の上限。
  * 技術加点（視野外・手以外…）に上限が無いため、放っておくと自動生成の投げだけで
  * 構成が埋まってしまう。難度に採用されるのも上位3本（`ADOPT_COUNT`）までなので、
@@ -99,11 +119,9 @@ export const DEFAULT_MAX_AUTO_THROWS = 3;
 
 /**
  * 生成する構成に入れる自動生成のタンブリングの本数の上限。
- * 難度に採用されるのは上位3本（`ADOPT_COUNT`）までだが、4本目は
- * 必須要素（三宙・つなぎ技・方向系・投げタン）を担うことがあるので1本ぶん余裕を持たせる。
- * 点数に効かない4本目は刈り込みで落ちる。
+ * タンブリング全体が3本まで（`DEFAULT_MAX_TUMBLINGS`）なので、それを超えない本数にする。
  */
-export const DEFAULT_MAX_AUTO_TUMBLINGS = 4;
+export const DEFAULT_MAX_AUTO_TUMBLINGS = DEFAULT_MAX_TUMBLINGS;
 
 /**
  * これ未満のDスコアを狙う構成は「基本的な構成の選手」とみなす（`basicLevel`）。
@@ -193,6 +211,79 @@ export const AUTO_SERIES_WEIGHT = 0.02;
  */
 export const SALTO_VARIETY_WEIGHT = 0.02;
 
+/**
+ * 実施が少ない技（ハンドスプリング・転宙）を使ったときの評価の重み。
+ * 難度点の最小単位（0.1）より小さくして、同じ点数なら別の技の構成を選ばせる。
+ * 演技内の回数そのものは `LIMITED_SKILL_MAX` で1回までに制限する。
+ */
+export const LIMITED_SKILL_WEIGHT = 0.02;
+
+/** 演技全体での、実施が少ない技の回数（技idごと） */
+export function limitedSkillCounts(series: Series[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  const add = (id: string) => {
+    if (LIMITED_SKILLS.includes(id)) counts.set(id, (counts.get(id) ?? 0) + 1);
+  };
+  series.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "skill" && item.skillId) add(item.skillId);
+      if (item.kind === "motion" && item.motionId) add(item.motionId);
+    }),
+  );
+  return counts;
+}
+
+/**
+ * 単発で高難度（D難度以上）な技を1つ実施するごとの評価の重み。
+ * 上限は決めず、重みの結果として演技内で**1〜2つ程度**に落ち着くようにする
+ * （日本のトップでも単発でD難度になる技は演技に1〜2つ程度）。
+ *
+ * 実際の抑えは候補づくり側の `SALTO_DIFFICULTY_WEIGHT`（D=0.6／E=0.3）が担っていて、
+ * それだけで最大を狙う構成でも 0個23%／1個43%／2個28%／3個以上5% に収まる。
+ * ここは難度点の刻み（0.1）より小さくして、同じ点数なら易しい技の構成を選ぶ程度にする
+ * （0.1 にすると0個が35%まで増えて、1〜2つという実態から外れる）。
+ *
+ * 手具によって出やすさが違う分は `apparatusHighDifficultyWeight` で割る
+ * （リングは重く持ったままひねりにくいので、他の手具より更に嫌う）。
+ */
+export const HIGH_DIFFICULTY_WEIGHT = 0.02;
+
+/** 演技全体での、単発で高難度（D難度以上）な技の数 */
+export function highDifficultyCount(series: Series[], junior = false): number {
+  let n = 0;
+  series.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "skill" && item.skillId && isHighDifficultySkill(item.skillId, junior)) n += 1;
+    }),
+  );
+  return n;
+}
+
+/**
+ * 同じ難度に到達する組み方のうち、実施されにくい組み方1順位ぶんの評価の重み。
+ * 難度点は同じなので、**同じ点数ならより実施される組み方を選ぶ**だけの効き方にする
+ * （順位は最大5、タンブリング3本で最大0.075＝難度の刻み0.1より小さい）。
+ */
+export const SHAPE_PRIORITY_WEIGHT = 0.005;
+
+/**
+ * 構成全体で、実施されにくい組み方ぶんの順位の合計（`TUMBLING_SHAPE_ORDER`）。
+ * 転回系のユニットが1つのシリーズだけを見る（テンプレートの複合シリーズは対象外）。
+ */
+export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false): number {
+  let total = 0;
+  series.forEach((ser, i) => {
+    const units = (r.analysis[i]?.units ?? []).filter((u) => u.type === "tumbling" || u.isThrowTumbling);
+    if (units.length !== 1) return;
+    const shape = readTumblingShape(ser, junior);
+    if (!shape) return;
+    total += units[0].isThrowTumbling
+      ? throwTumblingShapeRank(shape, units[0].finalDiff)
+      : tumblingShapeRank(shape, units[0].finalDiff);
+  });
+  return total;
+}
+
 /** 演技中に何度実施しても不自然でない宙返り（前宙） */
 export const REPEATABLE_SALTOS = ["b_front"];
 
@@ -242,14 +333,38 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
     0,
   );
   const overThrowTum = Math.max(0, throwTumCount - maxThrowTum);
+  // タンブリングは投げタンを含めて3本までしか評価されない。4本目は入れない
+  const overTumbling = Math.max(0, r.nonDupTumblingCount - (opts.maxTumblings ?? DEFAULT_MAX_TUMBLINGS));
+  // 単発で高難度（D難度以上）な技は数が少ない。上限は決めず、重みで抑える
+  const highDifficulty = highDifficultyCount(series, !!opts.junior);
+  // 実施が少ない技（ハンドスプリング・転宙）は演技内で1回まで。使うこと自体も弱く嫌う
+  const limited = limitedSkillCounts(series);
+  let limitedUsed = 0;
+  let overLimited = 0;
+  limited.forEach((n) => {
+    limitedUsed += n;
+    overLimited += Math.max(0, n - LIMITED_SKILL_MAX);
+  });
   // 同じ宙返りの繰り返しは弱く嫌う（同点のときに多様な構成が選ばれる程度）
   const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
+  // 同じ難度なら、より実施される組み方（C→B→B など）を選ぶ
+  const shape = shapeRankTotal(series, r, !!opts.junior) * SHAPE_PRIORITY_WEIGHT;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
   const auto = autoCount * AUTO_SERIES_WEIGHT;
   return {
-    value: -(penalty + overThrowTum) * 100 - shortfall + r.dScore + r.aScore - variety - auto,
+    value:
+      -(penalty + overThrowTum + overTumbling + overLimited) * 100 -
+      shortfall +
+      r.dScore +
+      r.aScore -
+      variety -
+      shape -
+      auto -
+      limitedUsed * LIMITED_SKILL_WEIGHT -
+      (highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT)) /
+        apparatusHighDifficultyWeight(opts.apparatus),
     dScore: r.dScore,
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),
@@ -338,6 +453,9 @@ function autoLimitOf(t: SeriesTemplate, opts: GenerateOptions): number | null {
   return null;
 }
 
+/** 不足を満たす候補を必ず入れて組み直す回数（足す順番で結果が変わるため） */
+const REBUILD_ATTEMPTS = 5;
+
 /** 自動生成の候補の「量」を変えた別案（投げ＝シェネの回数、タンブリング＝宙返りの本数） */
 function autoVariants(t: SeriesTemplate): SeriesTemplate[] {
   if (isAutoThrowTemplate(t))
@@ -418,6 +536,137 @@ function orderSeries(
   return ev.value >= cur.value - 1e-9 ? { used: ordered, ev } : { used, ev: cur };
 }
 
+/** 自動生成のシリーズの本数が上限を超えていないか */
+function withinAutoLimits(list: SeriesTemplate[], opts: GenerateOptions): boolean {
+  const throws = list.filter(isAutoThrowTemplate).length;
+  const tumblings = list.filter(isAutoTumblingTemplate).length;
+  return (
+    throws <= (opts.maxAutoThrows ?? DEFAULT_MAX_AUTO_THROWS) &&
+    tumblings <= (opts.maxAutoTumblings ?? DEFAULT_MAX_AUTO_TUMBLINGS)
+  );
+}
+
+/**
+ * 最後の詰め。使っている1本を別の候補に入れ替えて評価が上がるなら採る。
+ * タンブリングは3本までなので、貪欲法だけでは必須要素の組み合わせに届かないことがある
+ * （三宙・つなぎ技・投げタンを3本に収める並び）。いちばん良い構成に対してだけ、
+ * 必須要素が足りないときに行うので、生成時間はほとんど増えない。
+ */
+function swapIn(
+  used: SeriesTemplate[],
+  cur: Evaluation,
+  pool: SeriesTemplate[],
+  opts: GenerateOptions,
+  rounds = 2,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  let list = used;
+  let ev = cur;
+  for (let round = 0; round < rounds; round++) {
+    let improved = false;
+    for (let i = 0; i < list.length; i++) {
+      const usedIds = new Set(list.map((t) => t.id));
+      for (const t of pool) {
+        if (usedIds.has(t.id)) continue;
+        const next = list.map((x, k) => (k === i ? t : x));
+        if (!withinAutoLimits(next, opts)) continue;
+        const e = evaluateUsed(next, opts);
+        if (e.value > ev.value + 1e-9) {
+          list = next;
+          ev = e;
+          improved = true;
+        }
+      }
+    }
+    if (!improved) break;
+  }
+  return { used: list, ev };
+}
+
+/**
+ * 貪欲法の1回ぶん。`start` のシリーズは必ず入れた状態から始める。
+ *  ① ランダムな順に見て、評価が上がるものだけ足す（登録テンプレートを先に見る）
+ *  ② 自動生成のシリーズは量（シェネの回数・宙返りの本数）を調整する
+ *  ③ 抜いても評価が下がらないシリーズを取り除く
+ *  ④ 投げとタンブリングを交互に並べる
+ */
+function greedyAttempt(
+  start: SeriesTemplate[],
+  own: SeriesTemplate[],
+  auto: SeriesTemplate[],
+  opts: GenerateOptions,
+  rand: () => number,
+  maxSeries: number,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  let used: SeriesTemplate[] = [...start];
+  let cur = evaluateUsed(used, opts);
+  /** 自動生成の候補を種類ごとに何本使ったか */
+  const autoUsed = new Map<string, number>();
+  const countAuto = (t: SeriesTemplate) => {
+    if (autoLimitOf(t, opts) === null) return;
+    const kind = isAutoThrowTemplate(t) ? "throw" : "tumbling";
+    autoUsed.set(kind, (autoUsed.get(kind) ?? 0) + 1);
+  };
+  start.forEach(countAuto);
+
+  // ① ランダムな順に見て、評価が上がるものだけ足す。
+  //    登録テンプレートを先に見て、足りないところを自動生成で補う。
+  const startIds = new Set(used.map((t) => t.id));
+  for (const t of [...shuffled(own, rand), ...shuffled(auto, rand)]) {
+    if (used.length >= maxSeries) break;
+    if (startIds.has(t.id)) continue;
+    // 自動生成のシリーズは補いの本数まで（テンプレートを押しのけないように）
+    const limit = autoLimitOf(t, opts);
+    const kind = isAutoThrowTemplate(t) ? "throw" : "tumbling";
+    if (limit !== null && (autoUsed.get(kind) ?? 0) >= limit) continue;
+    const next = [...used, t];
+    const ev = evaluateUsed(next, opts);
+    if (ev.value > cur.value + 1e-9) {
+      used = next;
+      cur = ev;
+      countAuto(t);
+    }
+  }
+
+  // ② 自動生成のシリーズは量（シェネの回数・宙返りの本数）を調整する
+  const tuned = tuneAutoSeries(used, cur, opts);
+  used = tuned.used;
+  cur = tuned.ev;
+
+  // ③ 抜いても評価が下がらないシリーズを取り除く（＝評価されない要素を入れない）
+  //    ただし必ず入れる指定のものは残す
+  const keep = new Set(start.map((t) => t.id));
+  for (let improved = true; improved && used.length > 0; ) {
+    improved = false;
+    for (let i = 0; i < used.length; i++) {
+      if (keep.has(used[i].id)) continue;
+      const next = used.filter((_, k) => k !== i);
+      const ev = evaluateUsed(next, opts);
+      if (ev.value >= cur.value - 1e-9) {
+        used = next;
+        cur = ev;
+        improved = true;
+        break;
+      }
+    }
+  }
+
+  // ④ 投げとタンブリングを交互に並べる
+  const ordered = orderSeries(used, cur, opts);
+  return { used: ordered.used, ev: ordered.ev };
+}
+
+/** その候補1本だけで、不足している要求のどれかを満たせるもの */
+function satisfying(
+  pool: SeriesTemplate[],
+  missing: string[],
+  opts: GenerateOptions,
+): SeriesTemplate[] {
+  return pool.filter((t) => {
+    const ev = evaluateUsed([t], opts);
+    return missing.some((m) => !ev.missing.includes(m));
+  });
+}
+
 /**
  * ランダムな貪欲法を何度も試して、いちばん評価の高い構成を返す。
  * 使えるテンプレートが無ければ null。
@@ -435,57 +684,40 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   let best: { used: SeriesTemplate[]; ev: Evaluation } | null = null;
 
   for (let a = 0; a < attempts; a++) {
-    let used: SeriesTemplate[] = [];
-    let cur = evaluateUsed([], opts);
-    /** 自動生成の候補を種類ごとに何本使ったか */
-    const autoUsed = new Map<string, number>();
-
-    // ① ランダムな順に見て、評価が上がるものだけ足す。
-    //    登録テンプレートを先に見て、足りないところを自動生成で補う。
-    for (const t of [...shuffled(own, rand), ...shuffled(auto, rand)]) {
-      if (used.length >= maxSeries) break;
-      // 自動生成のシリーズは補いの本数まで（テンプレートを押しのけないように）
-      const limit = autoLimitOf(t, opts);
-      const kind = isAutoThrowTemplate(t) ? "throw" : "tumbling";
-      if (limit !== null && (autoUsed.get(kind) ?? 0) >= limit) continue;
-      const next = [...used, t];
-      const ev = evaluateUsed(next, opts);
-      if (ev.value > cur.value + 1e-9) {
-        used = next;
-        cur = ev;
-        if (limit !== null) autoUsed.set(kind, (autoUsed.get(kind) ?? 0) + 1);
-      }
-    }
-
-    // ② 自動生成のシリーズは量（シェネの回数・宙返りの本数）を調整する
-    const tuned = tuneAutoSeries(used, cur, opts);
-    used = tuned.used;
-    cur = tuned.ev;
-
-    // ③ 抜いても評価が下がらないシリーズを取り除く（＝評価されない要素を入れない）
-    for (let improved = true; improved && used.length > 0; ) {
-      improved = false;
-      for (let i = 0; i < used.length; i++) {
-        const next = used.filter((_, k) => k !== i);
-        const ev = evaluateUsed(next, opts);
-        if (ev.value >= cur.value - 1e-9) {
-          used = next;
-          cur = ev;
-          improved = true;
-          break;
-        }
-      }
-    }
-
-    // ④ 投げとタンブリングを交互に並べる
-    const ordered = orderSeries(used, cur, opts);
-    used = ordered.used;
-    cur = ordered.ev;
-
-    if (!best || cur.value > best.ev.value + 1e-9) best = { used, ev: cur };
+    const cand = greedyAttempt([], own, auto, opts, rand, maxSeries);
+    if (!best || cand.ev.value > best.ev.value + 1e-9) best = cand;
   }
 
   if (!best || best.used.length === 0) return null;
+
+  const pool = [...own, ...auto];
+  /** 不足が残っている構成を、1本ずつ入れ替えて詰める */
+  const repair = (cand: { used: SeriesTemplate[]; ev: Evaluation }) => {
+    if (cand.ev.missing.length === 0) return cand;
+    const fixed = swapIn(cand.used, cand.ev, pool, opts);
+    if (fixed.ev.value <= cand.ev.value + 1e-9) return cand;
+    const ordered = orderSeries(fixed.used, fixed.ev, opts);
+    return { used: ordered.used, ev: ordered.ev };
+  };
+
+  // ⑤ 必須要素を満たしきれていなければ、1本ずつ入れ替えて詰める
+  if (requiresAllElements(opts)) best = repair(best);
+
+  // ⑥ それでも足りなければ、不足を満たす候補を必ず入れた状態から組み直して詰める。
+  //    Dスコアの上限いっぱいの構成では、入れ替えだけでは不足を埋められない
+  //    （不足を満たす1本を足す代わりに1本抜く必要がある）ことがある。
+  if (requiresAllElements(opts) && best.ev.missing.length > 0) {
+    for (const t of satisfying(pool, best.ev.missing, opts)) {
+      // 足す順番（乱数）で結果が変わるので、1本につき何度か組み直す
+      for (let k = 0; k < REBUILD_ATTEMPTS; k++) {
+        const cand = repair(greedyAttempt([t], own, auto, opts, rand, maxSeries));
+        if (cand.used.length > 0 && cand.ev.value > best.ev.value + 1e-9) best = cand;
+        if (best.ev.missing.length === 0) break;
+      }
+      if (best.ev.missing.length === 0) break;
+    }
+  }
+
   return {
     series: seriesOf(best.used),
     used: best.used,

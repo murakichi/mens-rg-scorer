@@ -1,15 +1,19 @@
 import { describe, it, expect } from "vitest";
+import { LIMITED_SKILL_MAX } from "../autoTumblings";
 import {
   A_PRIORITY,
+  limitedSkillCounts,
   A_PRIORITY_WEIGHT,
   REQUIRE_ALL_ELEMENTS_MIN_SCORE,
   generateRoutine,
   requiresAllElements,
   saltoRepeatCount,
+  SHAPE_PRIORITY_WEIGHT,
+  shapeRankTotal,
   shortfallPenalty,
   usableTemplates,
 } from "../generate";
-import { DIFF_SCORE } from "../constants";
+import { ADOPT_COUNT, DIFF_SCORE } from "../constants";
 import { analyzeSeries, seriesSignature } from "../analysis";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
@@ -39,8 +43,11 @@ const seeded = (seed: number) => () => {
 const throwFront = () => S({ kind: "throw" }, skill("b_front"), { kind: "catch" });
 const throwSide = () => S({ kind: "throw" }, skill("b_sidesalto"), { kind: "catch" });
 const throwBack = () => S({ kind: "throw" }, skill("b_backsalto"), { kind: "catch" });
-const triple = () => S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto"), { kind: "catch" });
-const connect = () => S(skill("b_backsalto"), skill("a_flicflac"), skill("b_backsalto"), { kind: "catch" });
+// 後方系はロンダートから入る（入力画面と同じ）。ロンダートは側方系なので方向系にも効く
+const triple = () =>
+  S(skill("a_roundoff"), skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto"), { kind: "catch" });
+const connect = () =>
+  S(skill("a_roundoff"), skill("b_backsalto"), skill("a_flicflac"), skill("b_backsalto"), { kind: "catch" });
 const cheap = () => S(skill("a_cartwheel"), { kind: "catch" });
 
 /** 投げタンではない投げ（投げ→徒手動作→キャッチ） */
@@ -226,6 +233,70 @@ describe("DとAの損失の比較", () => {
   });
 });
 
+describe("実施が少ない技（ハンドスプリング・転宙）", () => {
+  it("演技内で1回まで", () => {
+    [3, 7, 11, 19].forEach((seed) => {
+      [null, 3.0, 4.5].forEach((maxScore) => {
+        const r = generateRoutine([], { apparatus: "stick", maxScore, random: seeded(seed) })!;
+        limitedSkillCounts(r.series).forEach((n) => expect(n).toBeLessThanOrEqual(LIMITED_SKILL_MAX));
+      });
+    });
+  });
+
+  it("技としても徒手動作としても数える", () => {
+    const counts = limitedSkillCounts([
+      S(skill("a_handspring"), skill("b_front")),
+      S({ kind: "motion", motionId: "a_handspring", count: 1 }, skill("b_tenchu")),
+    ]);
+    expect(counts.get("a_handspring")).toBe(2);
+    expect(counts.get("b_tenchu")).toBe(1);
+  });
+
+  it("同じ点数なら使わない構成を選ぶ", () => {
+    // 前宙2連続（D 0.3）と 転宙→前宙（同じくD 0.3）なら、転宙を使わないほうを採る
+    const plain = tpl("前宙2連続", "common", S(skill("b_front"), skill("b_front")));
+    const limited = tpl("転宙入り", "common", S(skill("b_tenchu"), skill("b_front")));
+    [3, 7, 11].forEach((seed) => {
+      const r = generateRoutine([plain, limited], {
+        apparatus: "stick",
+        maxSeries: 1,
+        ...noAuto,
+        random: seeded(seed),
+      })!;
+      expect(r.used.map((t) => t.name)).toEqual(["前宙2連続"]);
+    });
+  });
+});
+
+describe("タンブリングの本数", () => {
+  const tumblingCount = (list: Series[], apparatus: ApparatusKey = "stick") =>
+    computeScore(list, apparatus).nonDupTumblingCount;
+
+  it("投げタンを含めて3本まで（4本目は評価されないので入れない）", () => {
+    [3, 7, 11, 19].forEach((seed) => {
+      const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
+      expect(tumblingCount(r.series)).toBeLessThanOrEqual(3);
+    });
+    // テンプレートが無くても同じ
+    [3, 7].forEach((seed) => {
+      const r = generateRoutine([], { apparatus: "stick", random: seeded(seed) })!;
+      expect(tumblingCount(r.series)).toBeLessThanOrEqual(3);
+    });
+  });
+
+  it("3本の中で必須要素（三宙・つなぎ・投げタン・方向系）を満たす", () => {
+    const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(7) })!;
+    const score = computeScore(r.series, "stick");
+    expect(score.missing).toEqual([]);
+    expect(score.nonDupTumblingCount).toBe(3);
+  });
+
+  it("上限は変えられる", () => {
+    const r = generateRoutine(pool(), { apparatus: "stick", maxTumblings: 2, random: seeded(7) })!;
+    expect(tumblingCount(r.series)).toBeLessThanOrEqual(2);
+  });
+});
+
 describe("A側の要求を満たす優先順位", () => {
   const penalty = (ser: Series[], mandatory = false) =>
     shortfallPenalty(computeScore(ser, "stick"), "stick", mandatory);
@@ -276,8 +347,9 @@ describe("必須要素を必ず満たす構成", () => {
   });
 
   it("3点以上を狙うと必須要素をすべて満たす", () => {
+    // Dスコアの上限いっぱいでも満たす（足す代わりに抜く必要がある形でも組み直して詰める）
     [3.5, 4.5].forEach((maxScore) => {
-      [3, 7, 11].forEach((seed) => {
+      [3, 7, 11, 13, 17].forEach((seed) => {
         const r = generateRoutine(pool(), { apparatus: "stick", maxScore, random: seeded(seed) })!;
         expect(computeScore(r.series, "stick").missing).toEqual([]);
         expect(r.dScore).toBeLessThanOrEqual(maxScore + 1e-9);
@@ -368,5 +440,27 @@ describe("宙返りの多様性", () => {
     const weak = tpl("前宙1本", "common", S(skill("b_front")));
     const r = generateRoutine([strong, weak], { apparatus: "stick", maxSeries: 1, ...noAuto, random: seeded(31) })!;
     expect(r.used.map((t) => t.name)).toEqual(["後宙3連続"]);
+  });
+});
+
+describe("同じ難度に到達する組み方の優先度", () => {
+  it("順位ぶんの重みは難度点の刻みより小さい（点数は犠牲にしない）", () => {
+    // 順位は最大5、採用されるタンブリングは3本まで
+    expect(SHAPE_PRIORITY_WEIGHT * 5 * ADOPT_COUNT).toBeLessThan(0.1);
+  });
+
+  it("同じE難度でも、実施される組み方のほうが順位合計が小さい", () => {
+    const better = [S(skill("a_roundoff"), skill("c_back15"), skill("b_front"), skill("b_sidesalto"))];
+    // C→C→B も同じE難度だが、C→B→B より実施されない
+    const worse = [S(skill("a_roundoff"), skill("c_back15"), skill("c_backlay1full"), skill("b_front"))];
+    const rank = (list: Series[]) => shapeRankTotal(list, computeScore(list, "stick"));
+    // どちらもE難度のタンブリング1本
+    expect(computeScore(better, "stick").tumblingScore).toBe(computeScore(worse, "stick").tumblingScore);
+    expect(rank(better)).toBeLessThan(rank(worse));
+  });
+
+  it("転回系のユニットが1つでないシリーズは数えない", () => {
+    const twoUnits = [S(skill("b_front"), { kind: "motion", motionId: "fwd_roll", count: 1 }, skill("b_front"))];
+    expect(shapeRankTotal(twoUnits, computeScore(twoUnits, "stick"))).toBe(0);
   });
 });

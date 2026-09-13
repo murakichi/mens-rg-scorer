@@ -96,6 +96,26 @@ describe("自動生成の投げの形", () => {
     expect(shape(s)).toEqual(["投げ", "fwd_roll×3", "キャッチ"]);
   });
 
+  it("最低限の操作で必須投げを満たす形（徒手0〜1動作）", () => {
+    expect(shape(buildAutoThrowSeries(spec("minimalChene")))).toEqual(["投げ", "chene×1", "キャッチ"]);
+    expect(shape(buildAutoThrowSeries(spec("minimalRoll")))).toEqual(["投げ", "fwd_roll×1", "キャッチ"]);
+    // 徒手なし（通常・視野外投げ→手以外のキャッチ など）
+    expect(shape(buildAutoThrowSeries(spec("minimalNone")))).toEqual(["投げ", "キャッチ"]);
+    expect(
+      autoThrowSpecs("stick", { random: seeded(5) }).some(
+        (sp) => sp.pattern.id === "minimalNone" && sp.catchStyle.id === "nonhand",
+      ),
+    ).toBe(true);
+    // 手具の必須投げ（左手投げ・二つ投げ）とも組み合わせて出る
+    const minimalWith = (app: ApparatusKey, throwId: string) =>
+      autoThrowSpecs(app, { random: seeded(3) }).some(
+        (sp) => sp.pattern.id.startsWith("minimal") && sp.throwStyle.id === throwId,
+      );
+    expect(minimalWith("stick", "lefthand")).toBe(true);
+    expect(minimalWith("clubs", "twothrow")).toBe(true);
+    expect(minimalWith("ring", "twothrow")).toBe(true);
+  });
+
   it("視野外のパターンはキャッチのあとに視野外の投げ受けを足す", () => {
     const s = buildAutoThrowSeries(spec("cheneNoView", { cheneCount: 3 }));
     expect(shape(s)).toEqual(["投げ", "chene×3", "キャッチ", "投げ", "キャッチ"]);
@@ -220,17 +240,9 @@ describe("自動生成の投げの採点", () => {
     expect(computeScore([series], "stick").techniqueBonus).toBeCloseTo(0.2, 5);
   });
 
-  it("表示名に投げ方・受け方・シェネの手が出る", () => {
-    const name = autoThrowName(
-      spec("chene", {
-        hands: "both",
-        throwStyle: autoThrowStyles("stick").find((t) => t.id === "lefthand")!,
-        catchStyle: autoCatchStyles("stick").find((c) => c.id === "noview")!,
-      }),
-    );
-    expect(name).toContain("左手投げ");
-    expect(name).toContain("視野外のキャッチ");
-    expect(name).toContain("両手上げ");
+  it("表示名は種類だけ（中身はシリーズの内容で分かるので解説は付けない）", () => {
+    expect(autoThrowName()).toBe("自動生成の投げ");
+    autoThrowTemplates("stick", { random: seeded(3) }).forEach((t) => expect(t.name).toBe("自動生成の投げ"));
   });
 });
 
@@ -313,6 +325,26 @@ describe("ランダム生成への組み込み", () => {
     expect(chene?.kind === "motion" && chene.count).toBe(other);
     expect(withCheneCount(t, t.spec.cheneCount)).toBeNull();
     expect(withCheneCount(t, 1)).toBeNull(); // この形の範囲外
+  });
+
+  it("先に最低限の投げ受けを1本置く形がある（日本トップのロープの1シリーズ目）", () => {
+    const list = autoThrowTemplates("rope").filter((t) => t.spec.pattern.leadPair);
+    expect(list.length).toBeGreaterThan(0);
+    list.forEach((t) => {
+      const items = t.series.items;
+      // 投げ→キャッチ（徒手なし）→本体の投げ→…→キャッチ
+      expect(items[0].kind).toBe("throw");
+      expect(items[1].kind).toBe("catch");
+      expect(items[2].kind).toBe("throw");
+      expect(items[1].kind === "catch" && items[1].catchTypes).toBeUndefined();
+      // 先の投げは二つ投げにしない（2つ同時キャッチが要るので通常のキャッチで受けられない）
+      expect(t.spec.leadThrowStyle?.two).toBeFalsy();
+      expect(analyzeSeries(t.series).throwCount).toBe(2);
+      expect(checkApparatusFlow(t.series, "rope")).toEqual([]);
+    });
+    // 手以外の投げ→キャッチ→視野外の投げ→シェネ→キャッチ のような組み合わせが出る
+    const styles = new Set(list.map((t) => t.spec.leadThrowStyle?.id));
+    expect(styles.size).toBeGreaterThan(1);
   });
 
   it("autoThrows: false なら使わない", () => {

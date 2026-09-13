@@ -4,11 +4,15 @@
 // 投げ方（左手投げ・視野外・手以外…）を全パターン網羅したテンプレートを
 // 手で登録するのは大変なので、よくある投げシリーズの形をシステム側で組む。
 //
-// 形は AUTO_THROW_PATTERNS の6種類：
+// 形は AUTO_THROW_PATTERNS の11種類：
 //   投げ→1〜2回シェネ→前転→転がり→キャッチ
 //   投げ→1〜3回シェネ→前転→キャッチ（＋視野外の投げ受け）
 //   投げ→3〜4回シェネ→キャッチ（＋視野外の投げ受け）
 //   投げ→前転3回→キャッチ（縦3動作でE難度）
+//   投げ→シェネ→キャッチ／投げ→前転→キャッチ／投げ→キャッチ
+//     （必須要素を最低限の操作（徒手0〜1動作）で満たす形）
+//   投げ→キャッチ→投げ→シェネ（→前転）→キャッチ
+//     （先に最低限の投げ受けを1本置いて、投げ方を安く1種類増やす形）
 // これに「投げ方」「受け方」「シェネの手」「シェネの回数」を割り当てた候補を作り、
 // ランダム生成（generate.ts）の候補に足す。**必ず使われるわけではなく**、
 // 評価が上がるものだけが構成に入る。
@@ -27,6 +31,12 @@ export interface AutoThrowPattern {
   after: { motionId: string; count: number }[];
   /** キャッチのあとに「視野外の投げ→視野外のキャッチ」を足すか */
   noViewPair: boolean;
+  /**
+   * 先に最低限の投げ受け（投げ→キャッチ、徒手なし）を1本足すか。
+   * 投げ方を1種類増やすのに操作を足さずに済むので、日本トップの演技でも
+   * 「手以外の投げ→キャッチ→視野外の投げ→シェネ→キャッチ」のように実施する。
+   */
+  leadPair?: boolean;
 }
 
 /** 徒手動作のid（自動生成で使うものだけ） */
@@ -44,6 +54,16 @@ export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
   { id: "cheneNoView", chene: { min: 3, max: 4 }, after: [], noViewPair: true },
   // シェネなし。前転3回＝縦3動作でE難度（§3.5.5.3）
   { id: "rolls", chene: { min: 0, max: 0 }, after: [times(FWD_ROLL, 3)], noViewPair: false },
+  // 最低限の操作で必須要素（左手投げ・二つ投げ）を満たす形。
+  // スティックの「1シェネキャッチ」、クラブ・リングの「二つ投げ→前転／シェネ→キャッチ」。
+  // 難度は低いのでDスコアを抑えたいときに使われやすいが、上級者も普通に実施する。
+  { id: "minimalChene", chene: { min: 1, max: 1 }, after: [], noViewPair: false },
+  { id: "minimalRoll", chene: { min: 0, max: 0 }, after: [times(FWD_ROLL, 1)], noViewPair: false },
+  // 徒手なしの投げ受け（スティックの「通常・視野外投げ→手以外のキャッチ」など）
+  { id: "minimalNone", chene: { min: 0, max: 0 }, after: [], noViewPair: false },
+  // 先に最低限の投げ受けを1本置く形（投げ方を安く1種類増やす）
+  { id: "cheneLeadPair", chene: { min: 3, max: 4 }, after: [], noViewPair: false, leadPair: true },
+  { id: "cheneRollLeadPair", chene: { min: 1, max: 3 }, after: [times(FWD_ROLL, 1)], noViewPair: false, leadPair: true },
 ];
 
 /** 自動生成で使う投げ方 */
@@ -112,8 +132,6 @@ export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean):
 /** シェネの手の使い方（null＝手なし。手ありは HANDS_TYPES の種類ごとに別の技） */
 export type AutoHands = string | null;
 export const autoHandsVariants = (): AutoHands[] => [null, ...HANDS_TYPES.map((h) => h.id)];
-const handsName = (hands: AutoHands): string =>
-  hands === null ? "手なし" : HANDS_TYPES.find((h) => h.id === hands)?.name ?? hands;
 
 /** 1本ぶんの自動生成の内容 */
 export interface AutoThrowSpec {
@@ -123,12 +141,22 @@ export interface AutoThrowSpec {
   hands: AutoHands;
   throwStyle: AutoThrowStyle;
   catchStyle: AutoCatchStyle;
+  /** 先に足す投げ受けの投げ方（`pattern.leadPair` のときだけ。受けは通常のキャッチ） */
+  leadThrowStyle?: AutoThrowStyle;
 }
 
 /** 自動生成の内容からシリーズを組み立てる */
 export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
   const { pattern, throwStyle, catchStyle } = spec;
   const items: Item[] = [];
+  // 先に最低限の投げ受けを1本（徒手なし・通常のキャッチ）
+  if (pattern.leadPair && spec.leadThrowStyle) {
+    items.push({
+      kind: "throw",
+      ...(spec.leadThrowStyle.throwTypes ? { throwTypes: [...spec.leadThrowStyle.throwTypes] } : {}),
+    });
+    items.push({ kind: "catch" });
+  }
   items.push({
     kind: "throw",
     ...(throwStyle.reqTypes ? { reqTypes: [...throwStyle.reqTypes] } : {}),
@@ -156,15 +184,9 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
   return { executionDeduction: 0, items };
 }
 
-/** 生成結果の表示名（投げ方・受け方・シェネの手がひと目で分かるようにする） */
-export function autoThrowName(spec: AutoThrowSpec): string {
-  const parts = [
-    ...(spec.throwStyle.id === "normal" ? [] : [spec.throwStyle.name]),
-    ...(spec.catchStyle.id === "normal" ? [] : [spec.catchStyle.name]),
-    ...(spec.cheneCount > 0 ? [`シェネ${handsName(spec.hands)}`] : []),
-  ];
-  return parts.length > 0 ? `自動生成の投げ（${parts.join("・")}）` : "自動生成の投げ";
-}
+/** 生成結果の表示名。中身はシリーズの内容で分かるので、種類だけを出す。 */
+export const AUTO_THROW_NAME = "自動生成の投げ";
+export const autoThrowName = (): string => AUTO_THROW_NAME;
 
 function shuffled<T>(list: T[], rand: () => number): T[] {
   const a = [...list];
@@ -218,6 +240,11 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   // 二つ投げは受け方が1つ少ないので、別に配って偏らせない
   const nextTwoThrowCatch = cycler(catchStylesForThrow(apparatus, true), rand);
   const nextHands = cycler(autoHandsVariants(), rand);
+  // 先に足す投げ受けの投げ方。二つ投げは2つ同時キャッチで受ける形になるので使わない
+  const nextLeadThrow = cycler(
+    throwStyles.filter((t) => !t.two),
+    rand,
+  );
   // シェネの回数は形ごとに配る（その形で取り得る回数がひととおり出るように）
   const nextCount = new Map<string, () => number>();
   return combos.slice(0, limit).map(({ pattern, throwStyle }) => {
@@ -234,6 +261,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       hands: cheneCount > 0 ? nextHands() : null,
       throwStyle,
       catchStyle: throwStyle.two ? nextTwoThrowCatch() : nextCatch(),
+      ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
     };
   });
 }
@@ -250,7 +278,7 @@ export interface AutoThrowTemplate extends SeriesTemplate {
 
 const autoTemplate = (apparatus: ApparatusKey, spec: AutoThrowSpec, id = newTemplateId()): AutoThrowTemplate => ({
   id,
-  name: autoThrowName(spec),
+  name: autoThrowName(),
   apparatus,
   updatedAt: 0,
   auto: true,
