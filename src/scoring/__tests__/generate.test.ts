@@ -39,8 +39,11 @@ const seeded = (seed: number) => () => {
 const throwFront = () => S({ kind: "throw" }, skill("b_front"), { kind: "catch" });
 const throwSide = () => S({ kind: "throw" }, skill("b_sidesalto"), { kind: "catch" });
 const throwBack = () => S({ kind: "throw" }, skill("b_backsalto"), { kind: "catch" });
-const triple = () => S(skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto"), { kind: "catch" });
-const connect = () => S(skill("b_backsalto"), skill("a_flicflac"), skill("b_backsalto"), { kind: "catch" });
+// 後方系はロンダートから入る（入力画面と同じ）。ロンダートは側方系なので方向系にも効く
+const triple = () =>
+  S(skill("a_roundoff"), skill("b_backsalto"), skill("b_backsalto"), skill("b_backsalto"), { kind: "catch" });
+const connect = () =>
+  S(skill("a_roundoff"), skill("b_backsalto"), skill("a_flicflac"), skill("b_backsalto"), { kind: "catch" });
 const cheap = () => S(skill("a_cartwheel"), { kind: "catch" });
 
 /** 投げタンではない投げ（投げ→徒手動作→キャッチ） */
@@ -223,6 +226,35 @@ describe("DとAの損失の比較", () => {
     const gain = tpl("手具操作なし三宙", "common", S(noApp("b_tempo"), noApp("b_tempo"), noApp("b_tempo")));
     const r = generateRoutine([gain], { apparatus: "stick", maxSeries: 1, ...noAuto, random: seeded(3) })!;
     expect(r.used.map((t) => t.name)).toEqual(["手具操作なし三宙"]);
+  });
+});
+
+describe("タンブリングの本数", () => {
+  const tumblingCount = (list: Series[], apparatus: ApparatusKey = "stick") =>
+    computeScore(list, apparatus).nonDupTumblingCount;
+
+  it("投げタンを含めて3本まで（4本目は評価されないので入れない）", () => {
+    [3, 7, 11, 19].forEach((seed) => {
+      const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
+      expect(tumblingCount(r.series)).toBeLessThanOrEqual(3);
+    });
+    // テンプレートが無くても同じ
+    [3, 7].forEach((seed) => {
+      const r = generateRoutine([], { apparatus: "stick", random: seeded(seed) })!;
+      expect(tumblingCount(r.series)).toBeLessThanOrEqual(3);
+    });
+  });
+
+  it("3本の中で必須要素（三宙・つなぎ・投げタン・方向系）を満たす", () => {
+    const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(7) })!;
+    const score = computeScore(r.series, "stick");
+    expect(score.missing).toEqual([]);
+    expect(score.nonDupTumblingCount).toBe(3);
+  });
+
+  it("上限は変えられる", () => {
+    const r = generateRoutine(pool(), { apparatus: "stick", maxTumblings: 2, random: seeded(7) })!;
+    expect(tumblingCount(r.series)).toBeLessThanOrEqual(2);
   });
 });
 

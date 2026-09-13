@@ -11,6 +11,7 @@
 //  - 評価されない要素は入れない（入れても評価が上がらないシリーズは最後に取り除く）
 //    例：4本目のタンブリング、ジュニアの6回目以降の投げ、まったく同じ内容の重複シリーズ
 //  - 投げタンは1本まで（必須要素は1本で満たせるため）
+//  - タンブリングは投げタンを含めて3本まで（上位3本しか難度に採用されないため）
 //  - よくある投げシリーズ（autoThrows.ts）とタンブリング（autoTumblings.ts）は
 //    システム側で組んで候補に足す。投げ方や技の組み合わせを網羅したテンプレートを
 //    登録しなくて済む。あくまで候補なので、評価が上がらなければ使われない
@@ -34,7 +35,7 @@ import {
 } from "./autoTumblings";
 import { computeScore, type ScoreResult } from "./score";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
-import { APPARATUS, APPARATUS_REQUIRED_ELEMENTS, skillDef } from "./constants";
+import { ADOPT_COUNT, APPARATUS, APPARATUS_REQUIRED_ELEMENTS, skillDef } from "./constants";
 import type { ApparatusKey, Series } from "./types";
 
 export interface GenerateOptions {
@@ -55,6 +56,8 @@ export interface GenerateOptions {
   requireAllElements?: boolean;
   /** 投げタン（転回系の投げ受け）の本数の上限。既定は1本。 */
   maxThrowTumbling?: number;
+  /** タンブリングの本数の上限（投げタンを含む）。既定は3本（採用される上限と同じ）。 */
+  maxTumblings?: number;
   /** 自動生成の投げシリーズを候補に加えるか（既定 true） */
   autoThrows?: boolean;
   /** 1つの構成に入れる自動生成の投げの本数の上限。既定は3本。 */
@@ -90,6 +93,12 @@ export interface GenerateResult {
 export const DEFAULT_MAX_THROW_TUMBLING = 1;
 
 /**
+ * 構成に入れるタンブリングの本数の上限（**投げタンを含む**）。
+ * 難度点に採用されるのは上位3本（`ADOPT_COUNT`）までで、4本目は評価されないため。
+ */
+export const DEFAULT_MAX_TUMBLINGS = ADOPT_COUNT;
+
+/**
  * 生成する構成に入れる自動生成の投げの本数の上限。
  * 技術加点（視野外・手以外…）に上限が無いため、放っておくと自動生成の投げだけで
  * 構成が埋まってしまう。難度に採用されるのも上位3本（`ADOPT_COUNT`）までなので、
@@ -99,11 +108,9 @@ export const DEFAULT_MAX_AUTO_THROWS = 3;
 
 /**
  * 生成する構成に入れる自動生成のタンブリングの本数の上限。
- * 難度に採用されるのは上位3本（`ADOPT_COUNT`）までだが、4本目は
- * 必須要素（三宙・つなぎ技・方向系・投げタン）を担うことがあるので1本ぶん余裕を持たせる。
- * 点数に効かない4本目は刈り込みで落ちる。
+ * タンブリング全体が3本まで（`DEFAULT_MAX_TUMBLINGS`）なので、それを超えない本数にする。
  */
-export const DEFAULT_MAX_AUTO_TUMBLINGS = 4;
+export const DEFAULT_MAX_AUTO_TUMBLINGS = DEFAULT_MAX_TUMBLINGS;
 
 /**
  * これ未満のDスコアを狙う構成は「基本的な構成の選手」とみなす（`basicLevel`）。
@@ -242,6 +249,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
     0,
   );
   const overThrowTum = Math.max(0, throwTumCount - maxThrowTum);
+  // タンブリングは投げタンを含めて3本までしか評価されない。4本目は入れない
+  const overTumbling = Math.max(0, r.nonDupTumblingCount - (opts.maxTumblings ?? DEFAULT_MAX_TUMBLINGS));
   // 同じ宙返りの繰り返しは弱く嫌う（同点のときに多様な構成が選ばれる程度）
   const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
@@ -249,7 +258,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
   const auto = autoCount * AUTO_SERIES_WEIGHT;
   return {
-    value: -(penalty + overThrowTum) * 100 - shortfall + r.dScore + r.aScore - variety - auto,
+    value:
+      -(penalty + overThrowTum + overTumbling) * 100 - shortfall + r.dScore + r.aScore - variety - auto,
     dScore: r.dScore,
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),
@@ -418,6 +428,52 @@ function orderSeries(
   return ev.value >= cur.value - 1e-9 ? { used: ordered, ev } : { used, ev: cur };
 }
 
+/** 自動生成のシリーズの本数が上限を超えていないか */
+function withinAutoLimits(list: SeriesTemplate[], opts: GenerateOptions): boolean {
+  const throws = list.filter(isAutoThrowTemplate).length;
+  const tumblings = list.filter(isAutoTumblingTemplate).length;
+  return (
+    throws <= (opts.maxAutoThrows ?? DEFAULT_MAX_AUTO_THROWS) &&
+    tumblings <= (opts.maxAutoTumblings ?? DEFAULT_MAX_AUTO_TUMBLINGS)
+  );
+}
+
+/**
+ * 最後の詰め。使っている1本を別の候補に入れ替えて評価が上がるなら採る。
+ * タンブリングは3本までなので、貪欲法だけでは必須要素の組み合わせに届かないことがある
+ * （三宙・つなぎ技・投げタンを3本に収める並び）。いちばん良い構成に対してだけ、
+ * 必須要素が足りないときに行うので、生成時間はほとんど増えない。
+ */
+function swapIn(
+  used: SeriesTemplate[],
+  cur: Evaluation,
+  pool: SeriesTemplate[],
+  opts: GenerateOptions,
+  rounds = 2,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  let list = used;
+  let ev = cur;
+  for (let round = 0; round < rounds; round++) {
+    let improved = false;
+    for (let i = 0; i < list.length; i++) {
+      const usedIds = new Set(list.map((t) => t.id));
+      for (const t of pool) {
+        if (usedIds.has(t.id)) continue;
+        const next = list.map((x, k) => (k === i ? t : x));
+        if (!withinAutoLimits(next, opts)) continue;
+        const e = evaluateUsed(next, opts);
+        if (e.value > ev.value + 1e-9) {
+          list = next;
+          ev = e;
+          improved = true;
+        }
+      }
+    }
+    if (!improved) break;
+  }
+  return { used: list, ev };
+}
+
 /**
  * ランダムな貪欲法を何度も試して、いちばん評価の高い構成を返す。
  * 使えるテンプレートが無ければ null。
@@ -486,6 +542,16 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   }
 
   if (!best || best.used.length === 0) return null;
+
+  // ④ 必須要素を満たしきれていなければ、1本ずつ入れ替えて詰める
+  if (requiresAllElements(opts) && best.ev.missing.length > 0) {
+    const fixed = swapIn(best.used, best.ev, [...own, ...auto], opts);
+    if (fixed.ev.value > best.ev.value + 1e-9) {
+      const ordered = orderSeries(fixed.used, fixed.ev, opts);
+      best = { used: ordered.used, ev: ordered.ev };
+    }
+  }
+
   return {
     series: seriesOf(best.used),
     used: best.used,

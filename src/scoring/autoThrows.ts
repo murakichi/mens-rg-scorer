@@ -112,8 +112,6 @@ export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean):
 /** シェネの手の使い方（null＝手なし。手ありは HANDS_TYPES の種類ごとに別の技） */
 export type AutoHands = string | null;
 export const autoHandsVariants = (): AutoHands[] => [null, ...HANDS_TYPES.map((h) => h.id)];
-const handsName = (hands: AutoHands): string =>
-  hands === null ? "手なし" : HANDS_TYPES.find((h) => h.id === hands)?.name ?? hands;
 
 /** 1本ぶんの自動生成の内容 */
 export interface AutoThrowSpec {
@@ -156,15 +154,9 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
   return { executionDeduction: 0, items };
 }
 
-/** 生成結果の表示名（投げ方・受け方・シェネの手がひと目で分かるようにする） */
-export function autoThrowName(spec: AutoThrowSpec): string {
-  const parts = [
-    ...(spec.throwStyle.id === "normal" ? [] : [spec.throwStyle.name]),
-    ...(spec.catchStyle.id === "normal" ? [] : [spec.catchStyle.name]),
-    ...(spec.cheneCount > 0 ? [`シェネ${handsName(spec.hands)}`] : []),
-  ];
-  return parts.length > 0 ? `自動生成の投げ（${parts.join("・")}）` : "自動生成の投げ";
-}
+/** 生成結果の表示名。中身はシリーズの内容で分かるので、種類だけを出す。 */
+export const AUTO_THROW_NAME = "自動生成の投げ";
+export const autoThrowName = (): string => AUTO_THROW_NAME;
 
 function shuffled<T>(list: T[], rand: () => number): T[] {
   const a = [...list];
@@ -250,7 +242,7 @@ export interface AutoThrowTemplate extends SeriesTemplate {
 
 const autoTemplate = (apparatus: ApparatusKey, spec: AutoThrowSpec, id = newTemplateId()): AutoThrowTemplate => ({
   id,
-  name: autoThrowName(spec),
+  name: autoThrowName(),
   apparatus,
   updatedAt: 0,
   auto: true,

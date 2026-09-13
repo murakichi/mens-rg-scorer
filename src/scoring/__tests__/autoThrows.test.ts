@@ -220,17 +220,9 @@ describe("自動生成の投げの採点", () => {
     expect(computeScore([series], "stick").techniqueBonus).toBeCloseTo(0.2, 5);
   });
 
-  it("表示名に投げ方・受け方・シェネの手が出る", () => {
-    const name = autoThrowName(
-      spec("chene", {
-        hands: "both",
-        throwStyle: autoThrowStyles("stick").find((t) => t.id === "lefthand")!,
-        catchStyle: autoCatchStyles("stick").find((c) => c.id === "noview")!,
-      }),
-    );
-    expect(name).toContain("左手投げ");
-    expect(name).toContain("視野外のキャッチ");
-    expect(name).toContain("両手上げ");
+  it("表示名は種類だけ（中身はシリーズの内容で分かるので解説は付けない）", () => {
+    expect(autoThrowName()).toBe("自動生成の投げ");
+    autoThrowTemplates("stick", { random: seeded(3) }).forEach((t) => expect(t.name).toBe("自動生成の投げ"));
   });
 });
 

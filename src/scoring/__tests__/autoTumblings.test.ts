@@ -424,16 +424,14 @@ describe("候補と調整", () => {
     expect(withSaltoCount(t, 99)).toBeNull();
   });
 
-  it("表示名に最後の技と連続本数が出る", () => {
-    const name = autoTumblingName({
-      pattern: pattern("chain"),
-      saltoCount: 2,
-      entry: [],
-      saltoIds: ["c_back15", "b_front"],
-      connectId: "",
-    } as AutoTumblingSpec);
-    expect(name).toContain("前宙");
-    expect(name).toContain("2連続");
+  it("表示名は種類だけ（中身はシリーズの内容で分かるので解説は付けない）", () => {
+    const base = { saltoCount: 2, entry: [], saltoIds: ["c_back15", "b_front"], connectId: "" };
+    expect(autoTumblingName({ ...base, pattern: pattern("chain") } as AutoTumblingSpec)).toBe(
+      "自動生成のタンブリング",
+    );
+    expect(autoTumblingName({ ...base, pattern: pattern("throwSalto") } as AutoTumblingSpec)).toBe(
+      "自動生成の投げタン",
+    );
   });
 });
 

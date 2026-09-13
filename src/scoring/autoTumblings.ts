@@ -285,16 +285,9 @@ export function tumblingFlowErrors(series: Series, junior = false): string[] {
   return errors;
 }
 
-/** 表示名（最後の技と連続本数、つなぎ・投げ受けの別が分かるようにする） */
-export function autoTumblingName(spec: AutoTumblingSpec): string {
-  const last = skillDef(spec.saltoIds[spec.saltoCount - 1])?.name ?? "宙返り";
-  const parts = [
-    spec.saltoCount >= 2 ? `${last}まで${spec.saltoCount}連続` : last,
-    ...(spec.pattern.connect ? ["つなぎ技あり"] : []),
-    ...(spec.pattern.rollFinish ? ["前転"] : []),
-  ];
-  return `${spec.pattern.throwCatch ? "自動生成の投げタン" : "自動生成のタンブリング"}（${parts.join("・")}）`;
-}
+/** 表示名。中身はシリーズの内容で分かるので、種類だけを出す。 */
+export const autoTumblingName = (spec: AutoTumblingSpec): string =>
+  spec.pattern.throwCatch ? "自動生成の投げタン" : "自動生成のタンブリング";
 
 function shuffled<T>(list: T[], rand: () => number): T[] {
   const a = [...list];
