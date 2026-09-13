@@ -453,8 +453,14 @@ export function computeScore(
   if (connectNoApparatus) noApparatusDeduction += CONNECT_NO_APP_DEDUCTION;
   noApparatusDeduction = Math.min(noApparatusDeduction, NO_APP_CAP);
 
+  // 方向系は転回技の系統で数える。徒手扱いの技（側転）は数えない
   const allTumblingSkills = tumblingUnits.flatMap((u) => u.skills);
-  const cats = new Set(allTumblingSkills.map((s) => skillDef(s.skillId)?.category).filter(Boolean));
+  const cats = new Set(
+    allTumblingSkills
+      .map((s) => skillDef(s.skillId))
+      .filter((d) => d && !d.isHandElement)
+      .map((d) => d!.category),
+  );
   const missingDirCount =
     (cats.has(CATEGORY.FORWARD) ? 0 : 1) +
     (cats.has(CATEGORY.SIDE) ? 0 : 1) +

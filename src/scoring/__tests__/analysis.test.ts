@@ -69,16 +69,19 @@ describe("hasConnect / hasConnectWithoutApparatus", () => {
   const skills = (...ids: string[]) => ids.map((skillId) => ({ skillId, hasApparatus: true, isThrow: false }));
 
   it("宙返り→A難度→宙返り の並びを検出する", () => {
-    expect(hasConnect(skills("b_backsalto", "a_cartwheel", "b_front"))).toBe(true);
+    expect(hasConnect(skills("b_front", "a_roundoff", "b_backsalto"))).toBe(true);
+  });
+  it("側転は徒手扱いなのでつなぎ技にならない", () => {
+    expect(hasConnect(skills("b_front", "a_cartwheel", "b_backsalto"))).toBe(false);
   });
   it("A難度が挟まれていなければ false", () => {
     expect(hasConnect(skills("b_backsalto", "b_front"))).toBe(false);
   });
   it("つなぎ技のA難度に手具操作が無いと検出する", () => {
     const s = [
-      { skillId: "b_backsalto", hasApparatus: true, isThrow: false },
-      { skillId: "a_cartwheel", hasApparatus: false, isThrow: false },
       { skillId: "b_front", hasApparatus: true, isThrow: false },
+      { skillId: "a_roundoff", hasApparatus: false, isThrow: false },
+      { skillId: "b_backsalto", hasApparatus: true, isThrow: false },
     ];
     expect(hasConnectWithoutApparatus(s)).toBe(true);
   });

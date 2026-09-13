@@ -51,6 +51,7 @@ The data model is a flat **list of `Series`**, each an ordered list of `items` (
 ### Conventions and gotchas
 
 - **`APPARATUS_REQUIRED_ELEMENTS` entries with an `auto` field are judged from the series input** (stick's 右投げ右受け, the 必須投げ of each apparatus, every apparatus's 転回系の投げ受け, and rope's four jump requirements — see `RequiredElementAuto`), not from the `apparatusElements` manual checkboxes — `computeScore` ignores the manual list for those, and `IndividualScorer` hides them from the checkbox card.
+- **側転 is 徒手, not a 転回技** (`Skill.isHandElement`): it carries no `isConnectA`, so it never satisfies the つなぎ技 requirement, and `computeScore` skips it when collecting the 系統 for the 方向系 check — 側方系 is met by ロンダート or 側宙. It stays selectable as a 徒手動作 and still counts as one motion like the other A skills.
 - **`connectNoApparatus` (つなぎ技のA難度に手具操作なし, −0.2) only looks at throw-free tumbling units** — a connect inside a 投げタン unit is not deducted.
 - **§3.5.6.4 の欠点テーブル（芸術と多様性の主観評価）は手入力**：`ART_DEDUCTION_ITEMS` が表と1対1で、`computeScore(…, {artDeductions})` が項目ごとに `clampArtDeduction` で 0〜`max` に丸めて `artDeduction`/`artRows` を返し、A減点に加算する。「投げ受けの操作」だけは自動判定（投げ方・受け方の種類不足）なので手入力の対象外。
 - **`computeScore` returns everything the UI needs**, including `seriesBreakdowns` (per-series contribution rows) and `required`/`missing` (必須要素 checks). Add new derived values to `ScoreResult`, not as ad-hoc calculations in components.
