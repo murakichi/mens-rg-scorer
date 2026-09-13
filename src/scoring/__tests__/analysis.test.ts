@@ -493,3 +493,59 @@ describe("徒手動作の選択肢の並び順", () => {
     });
   });
 });
+
+describe("タンブリングの合間の徒手でユニットを分ける", () => {
+  const skill = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: true, isThrow: false });
+  const motion = (motionId: string, count = 1): Item => ({ kind: "motion", motionId, count });
+  const kinds = (ser: Series) => analyzeSeries(ser).units.map((u) => `${u.type}:${u.finalDiff}`);
+
+  it("前宙→前転→前宙 は タンブリング／徒手／タンブリング の3つ", () => {
+    const a = analyzeSeries(S(skill("b_front"), motion("fwd_roll"), skill("b_front")));
+    expect(a.units.map((u) => u.type)).toEqual(["tumbling", "throw", "tumbling"]);
+    // それぞれ 前宙(B)／1動作(B)／前宙(B)
+    expect(a.units.map((u) => u.finalDiff)).toEqual(["B", "B", "B"]);
+    // 連続宙返りも分かれる（合間の徒手で切れる）
+    expect(a.units.map((u) => maxSaltoChain(u.skills.map((s) => s.skillId)))).toEqual([1, 0, 1]);
+  });
+
+  it("側転も徒手なので同じように分ける", () => {
+    expect(kinds(S(skill("b_front"), skill("a_cartwheel"), skill("b_backsalto")))).toEqual([
+      "tumbling:B",
+      "throw:B",
+      "tumbling:B",
+    ]);
+  });
+
+  it("つなぎ技（転回技）では分けない", () => {
+    // 前宙→ロンダート→後方宙返り は1つの塊（つなぎ技）
+    const a = analyzeSeries(S(skill("b_front"), skill("a_roundoff"), skill("b_backsalto")));
+    expect(a.units).toHaveLength(1);
+    expect(hasConnect(a.units[0].skills)).toBe(true);
+  });
+
+  it("前後どちらかに転回技が無ければ分けない（着地の前転など）", () => {
+    expect(analyzeSeries(S(skill("b_front"), motion("fwd_roll"))).units).toHaveLength(1);
+    expect(analyzeSeries(S(motion("fwd_roll"), skill("b_front"))).units).toHaveLength(1);
+  });
+
+  it("投げ上げている間は分けない（従来どおりの裁定）", () => {
+    // 投げ→前宙→前転→前宙→キャッチ は1つの投げタン
+    const a = analyzeSeries(
+      S({ kind: "throw" }, skill("b_front"), motion("fwd_roll"), skill("b_front"), { kind: "catch" }),
+    );
+    expect(a.units).toHaveLength(1);
+    expect(a.units[0].isThrowTumbling).toBe(true);
+    // 投げ→シェネ→前転→キャッチ（徒手だけ）も従来どおり1つ
+    expect(
+      analyzeSeries(S({ kind: "throw" }, motion("chene", 3), motion("fwd_roll"), { kind: "catch" })).units,
+    ).toHaveLength(1);
+  });
+
+  it("投げの前の徒手では分ける（空中に手具が無いので）", () => {
+    const a = analyzeSeries(
+      S(skill("b_front"), motion("fwd_roll"), { kind: "throw" }, skill("b_front"), { kind: "catch" }),
+    );
+    expect(a.units.map((u) => u.type)).toEqual(["tumbling", "throw", "throw"]);
+    expect(a.units[2].isThrowTumbling).toBe(true);
+  });
+});

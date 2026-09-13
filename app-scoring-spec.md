@@ -236,6 +236,12 @@ series[] → analyzeSeries() → analysis[] → computeScore() → ScoreResult
 ### 6.1 `analyzeSeries(series)` in `analysis.ts`
 
 items を左→右に走査し、`catch` が来たら buffer を flush して**ユニット**に変換する。
+**タンブリングの合間の徒手（側転・徒手動作）でも区切る**（`unitSplitFlags`）：
+前宙→前転→前宙 は「前宙（タンブリング）／前転（徒手）／前宙（タンブリング）」の3つとして
+それぞれ評価する（連続宙返りもそこで切れる）。徒手の前後どちらかに転回技が無いとき
+（着地の前転など）と、**投げ上げている間**（投げ〜キャッチの間で徒手とタンブリングが混ざった場合）は
+区切らず、従来どおり1つの塊のまま評価する。つなぎ技（ロンダート・バク転・ハンドスプリング）は
+転回技なので区切らない。
 
 - 投げなし → `tumbling` ユニット（`calcTumblingDifficulty` で格上げ算出）
 - 投げあり → `throw` ユニット（`max(handDiff, tumblingDiff)` を採用）

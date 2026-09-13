@@ -322,8 +322,10 @@ export function computeScore(
     });
     const tumDiff = tumRows.reduce((s, r) => s + (r.adopted && r.inTop ? r.score : 0), 0);
     let throwNo = 0;
+    let handNo = 0;
     const handRows: DiffRow[] = a.units.filter(isHandUnit).map((u) => {
-      const label = u.fromRopeJump ? "ロープ跳び" : `投げ${++throwNo}`;
+      // 投げを含まない徒手系ユニット（タンブリングの合間の徒手など）は「徒手n」と表示する
+      const label = u.fromRopeJump ? "ロープ跳び" : u.isThrow ? `投げ${++throwNo}` : `徒手${++handNo}`;
       return {
         label,
         diff: u.finalDiff,

@@ -1000,3 +1000,20 @@ describe("方向系の判定（側転は徒手扱い）", () => {
     expect(withRoundoff.required.find((c) => c.key === "connect")?.passed).toBe(true);
   });
 });
+
+describe("内訳の見出し（徒手系ユニット）", () => {
+  const skill = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: true, isThrow: false });
+
+  it("投げを含む徒手系は「投げn」、含まないものは「徒手n」", () => {
+    const r = computeScore(
+      [
+        S(skill("b_front"), { kind: "motion", motionId: "fwd_roll", count: 1 }, skill("b_backsalto")),
+        S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 3 }, { kind: "catch" }),
+      ],
+      "stick",
+    );
+    expect(r.seriesBreakdowns[0].handRows.map((x) => x.label)).toEqual(["徒手1"]);
+    expect(r.seriesBreakdowns[0].tumRows.map((x) => x.label)).toEqual(["タンブリング1", "タンブリング2"]);
+    expect(r.seriesBreakdowns[1].handRows.map((x) => x.label)).toEqual(["投げ1"]);
+  });
+});
