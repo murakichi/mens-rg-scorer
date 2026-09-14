@@ -7,6 +7,8 @@ import {
   REQUIRE_ALL_ELEMENTS_MIN_SCORE,
   generateRoutine,
   DEFAULT_MAX_AUTO_THROWS,
+  DEFAULT_MAX_SERIES,
+  autoSeriesMax,
   otherStyleCount,
   OTHER_STYLE_WEIGHT,
   requiresAllElements,
@@ -582,6 +584,56 @@ describe("投げ上げの回数", () => {
     // 3本以下なら全部採用されるので0
     expect(extraThrowOperation(computeScore([cheneThrow(4), cheneThrow(3)], "stick"))).toBe(0);
   });
+});
+
+describe("自動生成の割合（ユーザー指定）", () => {
+  it("割合をシリーズ数の上限に対する本数に換算する", () => {
+    // 既定（1）は割合では制限しない
+    expect(autoSeriesMax({ apparatus: "stick" })).toBeNull();
+    expect(autoSeriesMax({ apparatus: "stick", autoRatio: 1 })).toBeNull();
+    expect(autoSeriesMax({ apparatus: "stick", autoRatio: 0 })).toBe(0);
+    expect(autoSeriesMax({ apparatus: "stick", autoRatio: 0.5 })).toBe(DEFAULT_MAX_SERIES / 2);
+    // シリーズ数の上限を変えれば本数も変わる
+    expect(autoSeriesMax({ apparatus: "stick", autoRatio: 0.5, maxSeries: 4 })).toBe(2);
+    // 負の値でも0を下回らない
+    expect(autoSeriesMax({ apparatus: "stick", autoRatio: -1 })).toBe(0);
+  });
+
+  it("0%なら登録テンプレートだけで組む", () => {
+    const r = generateRoutine(pool(), { apparatus: "stick", autoRatio: 0, random: seeded(7) })!;
+    expect(r).toBeTruthy();
+    expect(r.used.some((t) => t.auto)).toBe(false);
+  }, 60_000);
+
+  it("指定した割合ぶんの本数までしか自動生成を入れない", () => {
+    [0.25, 0.5].forEach((autoRatio) => {
+      const max = autoSeriesMax({ apparatus: "stick", autoRatio })!;
+      [3, 7, 11].forEach((seed) => {
+        const r = generateRoutine(pool(), { apparatus: "stick", autoRatio, random: seeded(seed) })!;
+        expect(r.used.filter((t) => t.auto).length).toBeLessThanOrEqual(max);
+      });
+    });
+  }, 120_000);
+
+  it("割合を上げるほど自動生成のシリーズが増える（減ることはない）", () => {
+    const autoCount = (autoRatio: number) =>
+      [3, 7, 11]
+        .map((seed) => {
+          const r = generateRoutine(pool(), { apparatus: "stick", autoRatio, random: seeded(seed) })!;
+          return r.used.filter((t) => t.auto).length;
+        })
+        .reduce((a, b) => a + b, 0);
+    // 0%は必ず0本。上げても減ることはない（テンプレートで足りていれば増えないこともある）
+    expect(autoCount(0)).toBe(0);
+    expect(autoCount(0.25)).toBeGreaterThan(0);
+    expect(autoCount(0.25)).toBeLessThanOrEqual(autoCount(0.75));
+    // テンプレートが少ない構成では割合を上げたぶんだけ増える
+    const few = (autoRatio: number) =>
+      generateRoutine([tpl("三宙", "common", triple())], { apparatus: "stick", autoRatio, random: seeded(7) })!.used.filter(
+        (t) => t.auto,
+      ).length;
+    expect(few(0.25)).toBeLessThan(few(0.75));
+  }, 120_000);
 });
 
 describe("その他の投げ・その他のキャッチ", () => {
