@@ -171,6 +171,12 @@ export const canEndChain = (id: string, allowBackwardEnd = false): boolean => {
 };
 
 /**
+ * 宙返りの途中で投げる投げタン（`throwInSkill`）で、**ロンダートから入る**
+ * （＝後方系の宙返りから始める）ことを優先する重み。
+ */
+export const THROW_IN_SKILL_ROUNDOFF_WEIGHT = 3;
+
+/**
  * 側宙の実施中に投げる構成の重み。クラブでの練習動画はあるが、実戦で使われた記録は
  * 無いので稀。連続の最後で投げる形（`throwInSkill`）で側宙を引く確率を下げる。
  */
@@ -839,14 +845,25 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     const firstsUsed: string[] = [];
     // つなぎの形でテンポ系を1本目にすると、つなぎ技はバク転しかない（`connectOptionsAfter`）。
     // バク転を挟むより宙返りを続けるほうが多いので、その形は選ばれにくくする
-    const firstWeights = pattern.connect
-      ? {
-          ...weights,
-          ...Object.fromEntries(
-            TEMPO_SKILLS.map((id) => [id, (weights[id] ?? 1) * TEMPO_CONNECT_WEIGHT]),
-          ),
-        }
-      : weights;
+    let firstWeights = weights;
+    // つなぎの形でテンポ系を1本目にすると、つなぎ技はバク転しかない
+    if (pattern.connect)
+      firstWeights = {
+        ...firstWeights,
+        ...Object.fromEntries(
+          TEMPO_SKILLS.map((id) => [id, (firstWeights[id] ?? 1) * TEMPO_CONNECT_WEIGHT]),
+        ),
+      };
+    // 宙返りの途中で投げる投げタンは、ロンダートから入る（＝後方系から始める）ことを優先する
+    if (pattern.throwInSkill)
+      firstWeights = {
+        ...firstWeights,
+        ...Object.fromEntries(
+          firsts
+            .filter((id) => isBackwardSalto(id))
+            .map((id) => [id, (firstWeights[id] ?? 1) * THROW_IN_SKILL_ROUNDOFF_WEIGHT]),
+        ),
+      };
     const nextFirst = () => {
       const id = pickDifferent(firsts, firstsUsed, rand, firstWeights);
       if (id) firstsUsed.push(id);

@@ -638,6 +638,9 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
     （`PAIR_AFTER_THROW_FIRST_CHANCE`＝0.5／`PAIR_AFTER_THROW_IN_SKILL_CHANCE`＝0.2）。
     2回目の投げ方は `secondThrowStyles`（手以外の投げは2回目には使わない。スティックの
     左手投げ・クラブとリングの二つ投げは手元に戻っているので使える）
+  - 宙返りの途中で投げる投げタン（`throwInSkill`）は**ロンダートから入る**ことを優先する
+    （`THROW_IN_SKILL_ROUNDOFF_WEIGHT`＝3。1本目に後方系の宙返りを選ぶ重みを上げると、
+    入りの技がロンダートになる）。実測：候補87%／生成された投げタン71%がロンダート入り
   - **後ろ向きで終わる宙返り→前方系の宙返り**の位置で投げた例は無いので基本作らない
     （`isBackToForwardThrow`）。ただし**きりもみで視野外に投げる**形だけは物理的にあり得て
     見栄えも悪くないので、`BACK_TO_FORWARD_THROW_CHANCE`（0.15）の確率で残し、
