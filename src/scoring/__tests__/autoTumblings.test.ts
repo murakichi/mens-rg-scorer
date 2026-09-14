@@ -42,6 +42,7 @@ import {
   backwardEndChance,
   BACKWARD_END_ZERO_SCORE,
   THROW_IN_SIDE_SALTO_WEIGHT,
+  THROW_IN_SKILL_ROUNDOFF_WEIGHT,
   TEMPO_CONNECT_WEIGHT,
   PAIR_AFTER_THROW_FIRST_CHANCE,
   PAIR_AFTER_THROW_IN_SKILL_CHANCE,
@@ -760,6 +761,21 @@ describe("つなぎ技", () => {
     expect(other).toBeGreaterThan(0);
     // 残すのは低い確率（他の形のほうが多い）
     expect(kirimomi * 3).toBeLessThan(other);
+  }, 60_000);
+
+  it("宙返りの途中で投げる投げタンはロンダートから入るのを優先する", () => {
+    expect(THROW_IN_SKILL_ROUNDOFF_WEIGHT).toBeGreaterThan(1);
+    let roundoff = 0;
+    let other = 0;
+    for (let seed = 0; seed < 40; seed++)
+      autoTumblingTemplates("stick", { random: seeded(seed) })
+        .filter((t) => t.spec.pattern.throwInSkill)
+        .forEach((t) => {
+          const first = t.series.items.find((it) => it.kind === "skill");
+          if (first?.kind === "skill" && first.skillId === ROUNDOFF_SKILL_ID) roundoff += 1;
+          else other += 1;
+        });
+    expect(roundoff).toBeGreaterThan(other);
   }, 60_000);
 
   it("投げタンのキャッチのあとに連続投げを続ける形がある", () => {
