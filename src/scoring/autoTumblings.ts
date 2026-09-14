@@ -37,6 +37,7 @@
 
 import {
   CATEGORY,
+  JUNIOR_SKILL_DIFFICULTY,
   DIFF_VALUE,
   MAX_DIFF,
   ROUNDOFF_SKILL_ID,
@@ -47,7 +48,14 @@ import {
   skillFlowAfter,
   skillOptions,
 } from "./constants";
-import { needsRoundoffBefore, prevSkillId } from "./analysis";
+import { calcTumblingDifficulty, needsRoundoffBefore, prevSkillId, stripForApparatus } from "./analysis";
+import {
+  CATCH_USE_APPARATUS,
+  NON_HAND_TAG,
+  NO_VIEW_TAG,
+  autoThrowStyles,
+  type AutoThrowStyle,
+} from "./autoThrows";
 import { newTemplateId, type SeriesTemplate } from "./templates";
 import type { ApparatusKey, Difficulty, Item, Series } from "./types";
 
@@ -90,15 +98,142 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
   },
 ];
 
+/**
+ * 投げタンのキャッチのあとに**連続投げ**を続ける確率。現実にあり得る形で、
+ * 投げてから宙返りを実施する形（`throwRoll`・`throwSalto`）のほうが、
+ * 宙返りの最中に投げる形（`throwInSkill`）より多い。
+ */
+export const PAIR_AFTER_THROW_FIRST_CHANCE = 0.5;
+export const PAIR_AFTER_THROW_IN_SKILL_CHANCE = 0.2;
+
+/** その形で投げタンのキャッチのあとに連続投げを続ける確率 */
+export const pairAfterChance = (pattern: AutoTumblingPattern): number =>
+  pattern.throwInSkill ? PAIR_AFTER_THROW_IN_SKILL_CHANCE : PAIR_AFTER_THROW_FIRST_CHANCE;
+
+/**
+ * 連続投げの2回目に使える投げ方。手以外の投げは2回目には実施できない。
+ * スティックの左手投げ・クラブとリングの二つ投げもここに入る（手元に戻っているので実施できる）。
+ */
+export function secondThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
+  return autoThrowStyles(apparatus).filter((t) => t.id !== NON_HAND_TAG);
+}
+
+/**
+ * 投げタンの着地を前転でつないだあと、**手具を使ったキャッチ（押さえつけ）**で受ける確率。
+ * クラブ・リングは転がり・前転のあと押さえつけて受けるのが定番
+ * （スティック・ロープは手具が1つなので `stripForApparatus` が落とす）。
+ */
+export const ROLL_FINISH_PRESS_CATCH_CHANCE = 0.5;
+
 /** 投げ受けの着地でつなぐ徒手動作（前転） */
 export const THROW_ROLL_MOTION = "fwd_roll";
 
 /**
- * この技のあとに前転でつながない技。側宙の後に前転を実施することは（物理的に
- * 破綻はしていなくても）実際には無い。投げ受けはそのままキャッチする。
+ * その宙返りで終わると、進行方向に対して**後ろ向きで終わる**か。
+ *  - 整数ひねりの後方宙返り（半ひねりは前向きに降りる）
+ *  - 半ひねり・1回半ひねりの前方宙返り（前方は半ひねりで後ろ向きに降りる）
+ * どちらもこの後に何も実施せず終わることはなく（`canEndChain`）、
+ * この後に前転を実施することもない（`noRollAfter`）。
+ */
+export const endsFacingBackward = (id: string): boolean => !!skillDef(id)?.isSalto && leadsBackward(id);
+
+/**
+ * 後ろ向きで終わる後方宙返りで**終わってよい確率**。狙うDスコアが上がるほど指数的に
+ * 下がり（1点ごとに半分）、複数のシリーズで連続技を検討するレベルで0になる。
+ * 0になる水準は必須要素をすべて満たしにいくのと同じ3.0点
+ * （`generate.ts` の `REQUIRE_ALL_ELEMENTS_MIN_SCORE` と同じ考え方）。
+ */
+export const BACKWARD_END_ZERO_SCORE = 3.0;
+export const BACKWARD_END_DECAY = 0.5;
+export function backwardEndChance(targetScore?: number | null): number {
+  // 上限を指定しない＝難度を狙いきる構成なので実施しない
+  if (targetScore == null) return 0;
+  if (targetScore >= BACKWARD_END_ZERO_SCORE) return 0;
+  return BACKWARD_END_DECAY ** Math.max(0, targetScore);
+}
+
+/**
+ * この技のあとに前転でつながない技。物理的に破綻はしていなくても実際には無い並び。
+ *  - 側宙の後の前転
+ *  - 後ろ向きで終わる後方宙返りの後の前転
+ * 投げ受けはそのままキャッチする。
  */
 export const NO_ROLL_AFTER_SKILLS: string[] = ["b_sidesalto"];
-export const noRollAfter = (id: string): boolean => NO_ROLL_AFTER_SKILLS.includes(id);
+export const noRollAfter = (id: string): boolean =>
+  NO_ROLL_AFTER_SKILLS.includes(id) || endsFacingBackward(id);
+
+/**
+ * シリーズの最後に実施することが**稀**な技。上級者は後方宙返り半ひねりで終わらず、
+ * 大抵その後に前宙か側宙を実施する。Dスコアの低い選手（`basicLevel`）は実施する。
+ */
+export const RARE_CHAIN_END_SKILLS: string[] = ["b_backhalf"];
+/** 稀な終わり方をしてよい確率 */
+export const RARE_CHAIN_END_CHANCE = 0.1;
+
+/**
+ * 連続の**最後**に置ける技か。後ろ向きで終わる技の後に何も実施せず終わることはない。
+ *  - 後方宙返り（整数ひねり）：Dスコアの低い選手は実施するので、`allowBackwardEnd`
+ *    （`backwardEndChance` の抽選）が通ったときだけ許す
+ *  - 前方の半ひねり・1回半ひねり：実戦で使われることはほぼ無いので、常に許さない
+ *  - 2回宙返り系：連続も繋ぎもせずそこで終わる技なので例外
+ */
+export const canEndChain = (id: string, allowBackwardEnd = false): boolean => {
+  if (!endsFacingBackward(id)) return true;
+  if (skillDef(id)?.isDoubleSalto) return true;
+  return allowBackwardEnd && isBackwardSalto(id);
+};
+
+/**
+ * 宙返りの途中で投げる投げタン（`throwInSkill`）で、**ロンダートから入る**
+ * （＝後方系の宙返りから始める）ことを優先する重み。
+ */
+export const THROW_IN_SKILL_ROUNDOFF_WEIGHT = 3;
+
+/**
+ * ロンダートから入る（＝後方系の宙返りから始める）ことを優先する重み。投げタンに限らず
+ * 通常のタンブリングもロンダート入りがいちばん多いが、狙うDスコアが上がるほど前方系・側方系から
+ * 直接入る形が増えるので、目標Dスコアで減衰させる（1点ごとに `ROUNDOFF_ENTRY_DECAY` 倍、1未満にはしない）。
+ * 低いDスコアでつなぎ技を満たす形（ロンダート→宙返り→つなぎ→宙返り）はとくに多いので、
+ * `ROUNDOFF_ENTRY_CONNECT_MAX_SCORE` 未満のつなぎの形ではさらに優先する。
+ * 上限を指定しない＝難度を狙いきる構成では優先しない。
+ */
+export const ROUNDOFF_ENTRY_WEIGHT = 3;
+export const ROUNDOFF_ENTRY_DECAY = 0.7;
+export const ROUNDOFF_ENTRY_CONNECT_BOOST = 2;
+export const ROUNDOFF_ENTRY_CONNECT_MAX_SCORE = 3.0;
+export function roundoffEntryWeight(targetScore?: number | null, connect = false): number {
+  if (targetScore == null) return 1;
+  const lowConnect = connect && targetScore < ROUNDOFF_ENTRY_CONNECT_MAX_SCORE;
+  const base = ROUNDOFF_ENTRY_WEIGHT * (lowConnect ? ROUNDOFF_ENTRY_CONNECT_BOOST : 1);
+  return Math.max(1, base * ROUNDOFF_ENTRY_DECAY ** Math.max(0, targetScore));
+}
+
+/**
+ * 側宙の実施中に投げる構成の重み。クラブでの練習動画はあるが、実戦で使われた記録は
+ * 無いので稀。連続の最後で投げる形（`throwInSkill`）で側宙を引く確率を下げる。
+ */
+export const THROW_IN_SIDE_SALTO_WEIGHT = 0.1;
+
+/** 前方系の宙返り（投げタンの1本目）か */
+const isForwardSalto = (id: string): boolean => skillDef(id)?.category === CATEGORY.FORWARD;
+
+/**
+ * **後ろ向きで終わる宙返り → 前方系の宙返り**の位置で投げる形か。
+ * この位置で投げた例は無いので基本作らないが、きりもみで視野外に投げる形だけは
+ * 物理的にあり得て見栄えも悪くないので、低い確率で残す
+ * （`KIRIMOMI_THROW_SKILL_ID` / `BACK_TO_FORWARD_THROW_CHANCE`）。
+ */
+export const isBackToForwardThrow = (prevId: string | undefined, skillId: string): boolean =>
+  !!prevId && leadsBackward(prevId) && isForwardSalto(skillId);
+
+/** その位置で投げてよい唯一の技（視野外投げで実施する） */
+export const KIRIMOMI_THROW_SKILL_ID = "b_kirimomi";
+/** その形を残す確率 */
+export const BACK_TO_FORWARD_THROW_CHANCE = 0.15;
+
+/** 技の最中の投げに付ける技術タグ（後ろ向き→前方系のきりもみは視野外投げ） */
+export const throwInSkillTypes = (prevId: string | undefined, skillId: string): string[] | undefined =>
+  isBackToForwardThrow(prevId, skillId) ? [NO_VIEW_TAG] : undefined;
 
 /** 投げ受けで前方系の宙返りに続けて実施する技（側宙、たまに転宙） */
 export const THROW_FINISH_SALTOS: string[] = ["b_sidesalto", "b_tenchu"];
@@ -117,6 +252,17 @@ export const AFTER_BACK_LAYOUT_SALTOS: { id: string; weight: number }[] = [
   { id: "c_kirimomiten", weight: 1 },
 ];
 
+/**
+ * 直前の技より**難度の高い**技を続けてよい例外。
+ * 後方系のあとにそれより難度の高い前方系を実施する機会は少ないが、
+ * 後方宙返り半ひねりのあとに前方宙返り1回ひねり（さらにそこから前宙）を実施する選手はいる。
+ * 機会は少ないので選ばれやすさも下げる（`DIFFICULTY_RISE_WEIGHT`）。
+ */
+export const DIFFICULTY_RISE_AFTER: Record<string, string[]> = {
+  b_backhalf: ["c_front1full"],
+};
+export const DIFFICULTY_RISE_WEIGHT = 0.3;
+
 /** 実施する技の選ばれやすさ（直前の技で変わる。表に無い技は1） */
 export function saltoWeights(
   prevId: string,
@@ -124,6 +270,10 @@ export function saltoWeights(
   apparatus?: ApparatusKey,
 ): Record<string, number> {
   const weights = baseSkillWeights(junior, apparatus);
+  // 難度が上がる例外（後方半ひねり→前方1回ひねり など）は機会が少ない
+  (DIFFICULTY_RISE_AFTER[prevId] ?? []).forEach((id) => {
+    weights[id] = (weights[id] ?? 1) * DIFFICULTY_RISE_WEIGHT;
+  });
   // テンポひねりの次はテンポ宙返り＞それ以外の宙返り（難度の重みより優先する）
   if (prevId === TEMPO_TWIST_SKILL_ID)
     return { ...weights, [TEMPO_SKILL_ID]: AFTER_TEMPO_TWIST_WEIGHT };
@@ -178,8 +328,11 @@ const limitedWeights = (): Record<string, number> =>
  *  - テンポひねりは後方系のC難度のなかで最も少ない（ただし屈伸より上）
  */
 export const SKILL_PICK_WEIGHT: Record<string, number> = {
-  // ロンダート（重み無し＝1）＞ バク転 ＞ ハンドスプリング（`LIMITED_SKILLS` で 0.2）
+  // ロンダート（重み無し＝1）＞ バク転 ＞ ハンドスプリング
   a_flicflac: 0.5,
+  // ハンドスプリングは実施がとくに少ないので、`LIMITED_SKILLS` の 0.2 にさらに掛けて
+  // 実質 0.1（ロンダート 1 ＞ バク転 0.5 ＞ ハンドスプリング 0.1）にする
+  a_handspring: 0.5,
   // 前方宙返り1回ひねり（1）＞ 伸身前宙 ＞ きりもみ転回
   c_kirimomiten: 0.3,
   // 側宙（1）＞ 転宙（`LIMITED_SKILLS` で 0.2）
@@ -216,6 +369,29 @@ export const HIGH_DIFFICULTY_MIN: Difficulty = "D";
 export function isHighDifficultySkill(id: string, junior = false): boolean {
   const d = skillDifficulty(id, junior);
   return !!d && DIFF_VALUE[d] >= DIFF_VALUE[HIGH_DIFFICULTY_MIN];
+}
+
+/**
+ * ジュニアで難度が格上げされる技（`JUNIOR_SKILL_DIFFICULTY`：ダイビング前宙・
+ * 後方宙返り半ひねり・後方伸身宙返り半ひねり）を優先する構成の、狙うDスコアの上限。
+ * ジュニアで低いDスコアを狙うなら、格上げされたこれらの技から難度を取るのが自然。
+ */
+export const JUNIOR_UPGRADE_BOOST_MAX_SCORE = 3.0;
+/** そのときの選ばれやすさの倍率 */
+export const JUNIOR_UPGRADE_BOOST = 2;
+
+/** ジュニアで格上げされる技の重みを上げた選ばれやすさ（条件を満たさなければそのまま） */
+export function withJuniorBoost(
+  weights: Record<string, number>,
+  junior: boolean,
+  targetScore?: number | null,
+): Record<string, number> {
+  if (!junior || targetScore == null || targetScore >= JUNIOR_UPGRADE_BOOST_MAX_SCORE) return weights;
+  const boosted = { ...weights };
+  Object.keys(JUNIOR_SKILL_DIFFICULTY).forEach((id) => {
+    boosted[id] = (boosted[id] ?? 1) * JUNIOR_UPGRADE_BOOST;
+  });
+  return boosted;
 }
 
 /** 技の選ばれやすさの土台（高難度の単発・実施が少ない技を下げる） */
@@ -338,9 +514,11 @@ export function nextSaltoOptions(prevId: string, junior = false): string[] {
   // （例：ロンダート→後方1回半ひねり→前宙半ひねり→ダイビング前宙）。
   if (backward && !isTempoSalto(prevId) && isBackwardSalto(prevId)) return [];
   const ceiling = isTempoSalto(prevId) ? MAX_DIFF : difficultyValue(prevId, junior);
+  // 難度が上がってよい例外（後方宙返り半ひねり→前方宙返り1回ひねり など）
+  const rise = DIFFICULTY_RISE_AFTER[prevId] ?? [];
   return saltoList(junior, prevId)
     .filter((s) => (backward ? isBackwardSalto(s.id) : !isBackwardSalto(s.id)))
-    .filter((s) => difficultyValue(s.id, junior) <= ceiling)
+    .filter((s) => difficultyValue(s.id, junior) <= ceiling || rise.includes(s.id))
     .map((s) => s.id);
 }
 
@@ -384,9 +562,23 @@ export interface AutoTumblingSpec {
   saltoIds: string[];
   /** つなぎ技のid（`pattern.connect` のときだけ。1本目の後に入る） */
   connectId: string;
+  /** 後ろ向きで終わる後方宙返りで終わってよい候補か（`backwardEndChance` の抽選結果） */
+  allowBackwardEnd?: boolean;
+  /**
+   * 投げタンのキャッチのあとに続ける投げ受けの投げ方（連続投げの2回目）。
+   * 未指定なら続けない。
+   */
+  secondThrow?: AutoThrowStyle;
+  /** 稀な終わり方（後方宙返り半ひねりで終わる）をしてよい候補か */
+  allowRareEnd?: boolean;
+  /** 後ろ向きで終わる宙返り→前方系の位置で投げてよい候補か（きりもみの視野外投げだけ） */
+  allowBackToForwardThrow?: boolean;
+  /** 前転でつないだ着地を手具を使ったキャッチ（押さえつけ）で受ける候補か */
+  pressCatch?: boolean;
 }
 
-const skillItem = (skillId: string, isThrow = false): Item => ({
+type SkillItem = Extract<Item, { kind: "skill" }>;
+const skillItem = (skillId: string, isThrow = false): SkillItem => ({
   kind: "skill",
   skillId,
   hasApparatus: true,
@@ -394,7 +586,47 @@ const skillItem = (skillId: string, isThrow = false): Item => ({
 });
 
 /** 自動生成の内容からシリーズを組み立てる */
-export function buildAutoTumblingSeries(spec: AutoTumblingSpec): Series {
+/**
+ * 手具操作を付ける位置。**加点を狙わないタンブリングでは最低限**にする。
+ *  - 減点を避けるのに必要なのは、宙返り1本（`NO_APP_SALTO_DEDUCTION`・
+ *    `NO_APP_ALL_DEDUCTION` を避ける＝最後の宙返り）と、つなぎ技のA難度
+ *    （`connectNoApparatus` の −0.2 を避ける）だけ
+ *  - 手具操作加点（§3.5.5.5(3)）が狙えるのはE難度のときだけなので、そのときだけ
+ *    宙返り2本（＝1本目にも付ける）にする
+ *  - 投げタンは手具操作なしでも減点されない（A減点は投げの無いシリーズだけを見る）ので
+ *    最低限＝0。技の最中に投げる形でE難度になるときだけ、その技に付けて加点を狙う
+ */
+function applyApparatusOps(items: Item[], pattern: AutoTumblingPattern, junior: boolean): void {
+  const skills = items.flatMap((it, i) => (it.kind === "skill" && it.skillId ? [{ it, i }] : []));
+  skills.forEach(({ it }) => {
+    if (it.kind === "skill") it.hasApparatus = false;
+  });
+  const isA = (id: string) => skillDifficulty(id, junior) === "A";
+  const saltoIdx = skills.filter(({ it }) => it.kind === "skill" && !isA(it.skillId));
+  if (saltoIdx.length === 0) return;
+  const setOp = (item: Item | undefined) => {
+    if (item?.kind === "skill") item.hasApparatus = true;
+  };
+  const ids = saltoIdx.map(({ it }) => (it.kind === "skill" ? it.skillId : ""));
+  const isE = calcTumblingDifficulty(ids, !!pattern.throwCatch, junior) === "E";
+  if (pattern.throwCatch) {
+    // 技の最中に投げる形は、その技を保持していればE難度で加点が付く
+    if (isE && pattern.throwInSkill) setOp(items.find((it) => it.kind === "skill" && it.isThrow));
+    return;
+  }
+  // 最後の宙返り（手具操作なしの減点を避ける最低限）
+  setOp(saltoIdx[saltoIdx.length - 1].it);
+  // つなぎ技のA難度（宙返りの間に入ったもの）
+  const first = saltoIdx[0].i;
+  const last = saltoIdx[saltoIdx.length - 1].i;
+  skills
+    .filter(({ it, i }) => i > first && i < last && it.kind === "skill" && isA(it.skillId))
+    .forEach(({ it }) => setOp(it));
+  // E難度なら手具操作加点（操作2回以上）を狙う
+  if (isE && saltoIdx.length >= 2) setOp(saltoIdx[0].it);
+}
+
+export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false): Series {
   const { pattern } = spec;
   const items: Item[] = [];
   // 技の最中に投げる形では、先頭に投げを置かず最後の宙返りに投げを付ける
@@ -404,14 +636,36 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec): Series {
   saltos.forEach((id, i) => {
     if (pattern.connect && i === 1 && spec.connectId) items.push(skillItem(spec.connectId));
     // 入力画面と同じで、そのままでは後方系に入れない位置ではロンダートを補う
-    const next = skillItem(id, pattern.throwInSkill && i === saltos.length - 1);
+    const throwsHere = !!pattern.throwInSkill && i === saltos.length - 1;
+    const next = skillItem(id, throwsHere);
+    // 後ろ向きで終わる宙返りのあとに前方系で投げるのは、きりもみの視野外投げだけ
+    if (throwsHere) {
+      const types = throwInSkillTypes(saltos[i - 1], id);
+      if (types) next.throwTypes = [...types];
+    }
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
     items.push(next);
   });
   // 投げ受けの着地は前転でつなぐ（側宙の後は前転を実施しないので、そのまま受ける）
-  if (pattern.rollFinish && !noRollAfter(saltos[saltos.length - 1]))
-    items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
-  if (pattern.throwCatch) items.push({ kind: "catch" });
+  const rolled = !!pattern.rollFinish && !noRollAfter(saltos[saltos.length - 1]);
+  if (rolled) items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
+  // 転がり・前転のあとは手具を使ったキャッチ（押さえつけ）で受けるのが定番
+  if (pattern.throwCatch)
+    items.push({
+      kind: "catch",
+      ...(rolled && spec.pressCatch ? { catchTypes: [CATCH_USE_APPARATUS] } : {}),
+    });
+  // 投げタンのキャッチのあとに連続投げを続ける形
+  if (pattern.throwCatch && spec.secondThrow) {
+    const style = spec.secondThrow;
+    items.push({
+      kind: "throw",
+      ...(style.reqTypes ? { reqTypes: [...style.reqTypes] } : {}),
+      ...(style.throwTypes ? { throwTypes: [...style.throwTypes] } : {}),
+    });
+    items.push({ kind: "catch", ...(style.two ? { catchTwo: true } : {}) });
+  }
+  applyApparatusOps(items, pattern, junior);
   return { executionDeduction: 0, items };
 }
 
@@ -495,6 +749,11 @@ export interface AutoTumblingOptions {
    * ただの後方宙返りのような基本技も普通に実施するので、稀な技の重み付けもしない。
    */
   basicLevel?: boolean;
+  /**
+   * 狙うDスコアの上限（`maxScore`）。後ろ向きで終わる後方宙返りで終わる確率に使う
+   * （`backwardEndChance`）。未指定＝上限なしは難度を狙いきる構成として扱う。
+   */
+  targetScore?: number | null;
   /**
    * 使ってよい転回技のid。登録テンプレートに出てくる技を渡すと、その選手が
    * 実際に実施している技だけで組み立てる（技そのものではなく**組み合わせ**を自動化する）。
@@ -610,9 +869,6 @@ export function throwTumblingShapeRank(shape: TumblingShape, unitDiff: Difficult
   return 0;
 }
 
-/** 前方系の宙返り（投げタンの1本目）か */
-const isForwardSalto = (id: string): boolean => skillDef(id)?.category === CATEGORY.FORWARD;
-
 /**
  * タンブリングの候補を作る。形ごとに宙返りの種類・入りの技・本数を
  * できる限り被らないように配る（`cycler`）。
@@ -635,6 +891,16 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     );
 
   const specs: AutoTumblingSpec[] = [];
+  // 連続投げの2回目の投げ方は、できる限り被らないように配る
+  const secondThrowCyclers = new Map<string, () => AutoThrowStyle>();
+  const nextSecondThrow = (app: ApparatusKey): AutoThrowStyle => {
+    let next = secondThrowCyclers.get(app);
+    if (!next) {
+      next = cycler(secondThrowStyles(app), rand);
+      secondThrowCyclers.set(app, next);
+    }
+    return next();
+  };
   AUTO_TUMBLING_PATTERNS.forEach((rawPattern) => {
     // 基本的な構成ではつなぎ技を実施せず、連続も2本まで
     if (basicLevel && rawPattern.connect) return;
@@ -657,19 +923,33 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       .filter((id) => !pattern.connect || usable(connectOptionsAfter(id, junior)).length > 0);
     if (firsts.length === 0) return;
     const nextCount = cycler(saltoCountRange(pattern), rand);
-    const weights = baseSkillWeights(junior, apparatus);
+    const weights = withJuniorBoost(baseSkillWeights(junior, apparatus), junior, opts.targetScore);
     /** 1本目：できるだけ別の技を使いつつ、高難度の単発・実施が少ない技は選ばれにくくする */
     const firstsUsed: string[] = [];
     // つなぎの形でテンポ系を1本目にすると、つなぎ技はバク転しかない（`connectOptionsAfter`）。
     // バク転を挟むより宙返りを続けるほうが多いので、その形は選ばれにくくする
-    const firstWeights = pattern.connect
-      ? {
-          ...weights,
-          ...Object.fromEntries(
-            TEMPO_SKILLS.map((id) => [id, (weights[id] ?? 1) * TEMPO_CONNECT_WEIGHT]),
-          ),
-        }
-      : weights;
+    let firstWeights = weights;
+    // つなぎの形でテンポ系を1本目にすると、つなぎ技はバク転しかない
+    if (pattern.connect)
+      firstWeights = {
+        ...firstWeights,
+        ...Object.fromEntries(
+          TEMPO_SKILLS.map((id) => [id, (firstWeights[id] ?? 1) * TEMPO_CONNECT_WEIGHT]),
+        ),
+      };
+    // ロンダートから入る（＝後方系から始める）ことを優先する。宙返りの途中で投げる投げタンは
+    // 目標Dスコアに関わらず優先し、通常のタンブリングは目標Dスコアで減衰させる
+    const roundoff = Math.max(
+      roundoffEntryWeight(opts.targetScore, !!pattern.connect),
+      pattern.throwInSkill ? THROW_IN_SKILL_ROUNDOFF_WEIGHT : 1,
+    );
+    if (roundoff !== 1)
+      firstWeights = {
+        ...firstWeights,
+        ...Object.fromEntries(
+          firsts.filter((id) => isBackwardSalto(id)).map((id) => [id, (firstWeights[id] ?? 1) * roundoff]),
+        ),
+      };
     const nextFirst = () => {
       const id = pickDifferent(firsts, firstsUsed, rand, firstWeights);
       if (id) firstsUsed.push(id);
@@ -696,7 +976,11 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           cid = pickDifferent(usable(connectOptionsAfter(first, junior)), [], rand, weights) ?? "";
           if (!cid) continue;
           const afterOptions = usable(saltoOptionsAfterConnect(cid, junior));
-          const finishWeights = connectFinishWeights(junior || basicLevel, junior, apparatus);
+          const finishWeights = withJuniorBoost(
+            connectFinishWeights(junior || basicLevel, junior, apparatus),
+            junior,
+            opts.targetScore,
+          );
           // つなぎの後に難度が上がる組み方は少ない（C→B→B ＞ B→C→B）
           const firstValue = difficultyValue(first, junior);
           const afterWeights = Object.fromEntries(
@@ -713,7 +997,12 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         // 残りは「向きと難度」のルールで続ける
         while (ids.length < pattern.saltos.max) {
           const prev = ids[ids.length - 1];
-          const next = pickDifferent(continuations(prev), ids, rand, saltoWeights(prev, junior, apparatus));
+          const base = withJuniorBoost(saltoWeights(prev, junior, apparatus), junior, opts.targetScore);
+          // 側宙の実施中に投げる構成は稀（連続の最後の宙返りで投げる形だけ側宙を下げる）
+          const weightsForNext = pattern.throwInSkill
+            ? { ...base, b_sidesalto: (base["b_sidesalto"] ?? 1) * THROW_IN_SIDE_SALTO_WEIGHT }
+            : base;
+          const next = pickDifferent(continuations(prev), ids, rand, weightsForNext);
           if (!next) break;
           ids.push(next);
         }
@@ -724,16 +1013,61 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       }
       if (saltoIds.length < pattern.saltos.min) continue;
       // 続かなかったぶんは本数を減らす
-      const saltoCount = Math.max(pattern.saltos.min, Math.min(count, saltoIds.length));
-      specs.push({ pattern, saltoCount, entry: [], saltoIds, connectId });
+      let saltoCount = Math.max(pattern.saltos.min, Math.min(count, saltoIds.length));
+      // 後ろ向きで終わる後方宙返りで終わるかは、狙うDスコアで決まる確率で抽選する
+      const allowBackwardEnd = rand() < backwardEndChance(opts.targetScore);
+      // 後方宙返り半ひねりで終わるのは稀（大抵そのあとに前宙か側宙を実施する）
+      const allowRareEnd = basicLevel || rand() < RARE_CHAIN_END_CHANCE;
+      // 後ろ向きで終わる宙返り→前方系の位置で投げるのは、きりもみの視野外投げだけ低確率で残す
+      const allowBackToForwardThrow = rand() < BACK_TO_FORWARD_THROW_CHANCE;
+      const throwOk = (n: number) => {
+        if (!pattern.throwInSkill) return true;
+        const id = saltoIds[n - 1];
+        if (!isBackToForwardThrow(saltoIds[n - 2], id)) return true;
+        return allowBackToForwardThrow && id === KIRIMOMI_THROW_SKILL_ID;
+      };
+      const endsOk = (n: number) =>
+        canEndChain(saltoIds[n - 1], allowBackwardEnd) &&
+        (allowRareEnd || !RARE_CHAIN_END_SKILLS.includes(saltoIds[n - 1])) &&
+        throwOk(n);
+      // 終われる本数を探す：まず伸ばして（前宙・側宙に続ける）、だめなら縮める
+      let end = saltoCount;
+      while (end < saltoIds.length && !endsOk(end)) end += 1;
+      if (!endsOk(end)) {
+        end = saltoCount;
+        while (end > pattern.saltos.min && !endsOk(end)) end -= 1;
+      }
+      if (!endsOk(end)) continue;
+      saltoCount = end;
+      // 投げタンのキャッチのあとに連続投げを続けるか（投げてから跳ぶ形のほうが多い）
+      const secondThrow =
+        pattern.throwCatch && apparatus && rand() < pairAfterChance(pattern)
+          ? nextSecondThrow(apparatus)
+          : undefined;
+      specs.push({
+        pattern,
+        saltoCount,
+        pressCatch: rand() < ROLL_FINISH_PRESS_CATCH_CHANCE,
+        entry: [],
+        saltoIds,
+        connectId,
+        allowBackwardEnd,
+        allowRareEnd,
+        allowBackToForwardThrow,
+        ...(secondThrow ? { secondThrow } : {}),
+      });
     }
   });
 
   // 入りの技は1本目の系統に合わせて配る（投げてから実施する投げタンには付けない）。
-  // 入りの技も実施の多さで選ぶ（ロンダート＞バク転＞ハンドスプリング）
+  // 入りの技も実施の多さで選ぶ（ロンダート＞バク転＞ハンドスプリング）。
+  // 実施が少ない技（ハンドスプリング）は `LIMITED_SKILLS` の重みも掛ける
   const entryUsed = new Map<string, string[]>();
   const entryWeight = (entry: string[]) =>
-    entry.reduce((w, id) => w * (SKILL_PICK_WEIGHT[id] ?? 1), 1);
+    entry.reduce(
+      (w, id) => w * (SKILL_PICK_WEIGHT[id] ?? 1) * (LIMITED_SKILLS.includes(id) ? RARE_PICK_WEIGHT : 1),
+      1,
+    );
   specs.forEach((spec) => {
     if (spec.pattern.throwCatch && !spec.pattern.throwInSkill) return;
     const category = skillDef(spec.saltoIds[0])?.category ?? CATEGORY.FORWARD;
@@ -743,8 +1077,11 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     const list = entries.length > 0 ? entries : [[]];
     const keys = list.map((_, i) => String(i));
     const weights = Object.fromEntries(list.map((entry, i) => [String(i), entryWeight(entry)]));
+    // 実施が少ない技の入りは「ひと回り」の順番では回さない（回すと必ず1本は出てしまう）。
+    // 使用済み扱いにしておき、重みだけで引く
+    const rare = keys.filter((k) => list[Number(k)].some((id) => LIMITED_SKILLS.includes(id)));
     const used = entryUsed.get(category) ?? [];
-    const key = pickDifferent(keys, used, rand, weights) ?? keys[0];
+    const key = pickDifferent(keys, [...used, ...rare], rand, weights) ?? keys[0];
     used.push(key);
     entryUsed.set(category, used);
     spec.entry = list[Number(key)];
@@ -791,7 +1128,8 @@ const autoTemplate = (
   updatedAt: 0,
   auto: true,
   spec,
-  series: buildAutoTumblingSeries(spec),
+  // 手具が1つの種目では投げている間に手具操作ができないので、その手具に合わせて落とす
+  series: stripForApparatus([buildAutoTumblingSeries(spec)], apparatus)[0],
 });
 
 /** 自動生成のタンブリングを、ランダム生成の候補（シリーズテンプレート）として返す */
@@ -812,5 +1150,16 @@ export function withSaltoCount(t: AutoTumblingTemplate, saltoCount: number): Aut
   if (saltoCount === t.spec.saltoCount) return null;
   if (!saltoCountRange(t.spec.pattern).includes(saltoCount)) return null;
   if (saltoCount > t.spec.saltoIds.length) return null;
+  // 連続の終わり方は候補を作ったときの抽選に従う
+  const last = t.spec.saltoIds[saltoCount - 1];
+  if (!canEndChain(last, t.spec.allowBackwardEnd)) return null;
+  if (!t.spec.allowRareEnd && RARE_CHAIN_END_SKILLS.includes(last)) return null;
+  // 後ろ向きで終わる宙返り→前方系の位置で投げる形も、候補を作ったときの抽選に従う
+  if (
+    t.spec.pattern.throwInSkill &&
+    isBackToForwardThrow(t.spec.saltoIds[saltoCount - 2], last) &&
+    !(t.spec.allowBackToForwardThrow && last === KIRIMOMI_THROW_SKILL_ID)
+  )
+    return null;
   return autoTemplate(t.apparatus, { ...t.spec, saltoCount }, t.id);
 }

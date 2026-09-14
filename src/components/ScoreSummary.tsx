@@ -119,7 +119,7 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
           <span>{techniqueBonus.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
-          <span>手具操作加点（シリーズ最終難度E＋手具操作2回以上）</span>
+          <span>手具操作加点（難度E＋技の最中の投げ／手具操作2回以上・最大0.1）</span>
           <span>{apparatusOpBonus.toFixed(1)} 点</span>
         </div>
         {hasTwoThrow(apparatus) && (

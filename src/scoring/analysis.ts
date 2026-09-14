@@ -540,19 +540,48 @@ const canUseReqType = (apparatus: ApparatusKey, id: string): boolean =>
   REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === id);
 const canUseRopeJump = (apparatus: ApparatusKey): boolean => apparatus === "rope";
 
+/**
+ * 各アイテムを実施する時点で**手元に手具が無い**か（投げてからキャッチするまで）。
+ * 手具が1つの種目では投げている間ずっと手元が空になるので、その間の技に手具操作は
+ * 付けられない（クラブ・リングでも二つ投げの間は同じ）。
+ * 技の最中の投げは開始時は手元にあるので、その技自体は手具操作ありでよい。
+ */
+export function handsEmptyFlags(items: Item[], apparatus: ApparatusKey): boolean[] {
+  const total = APPARATUS_COUNT[apparatus];
+  let inHand = total;
+  return items.map((item) => {
+    if (item.kind === "throw") {
+      inHand = Math.max(0, inHand - ((item.reqTypes || []).includes("twothrow") ? 2 : 1));
+      return false;
+    }
+    if (item.kind === "catch") {
+      inHand = Math.min(total, inHand + (item.catchTwo ? 2 : 1));
+      return false;
+    }
+    const empty = inHand === 0;
+    if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - 1);
+    return empty;
+  });
+}
+
 /** 手具固有の入力の表示名（`apparatusBlockers` が返す） */
 export const APPARATUS_INPUT_NAMES = {
   useapp: "手具を使った投げ・キャッチ",
   catchTwo: "2つ同時キャッチ",
   ropeJump: "ロープ跳び",
+  handsEmptyOp: "投げている間の手具操作",
 } as const;
 
 /** その手具では入力できない内容の一覧（無ければ空。確認ダイアログの文面に使う） */
 export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): string[] {
   const reasons = new Set<string>();
   const tags = canUseApparatusTag(apparatus);
-  list.forEach((ser) =>
-    ser.items.forEach((item) => {
+  list.forEach((ser) => {
+    const empty = handsEmptyFlags(ser.items, apparatus);
+    ser.items.forEach((item, i) => {
+      // 投げている間（手元に手具が無い間）は手具操作ができない
+      if (item.kind === "skill" && item.hasApparatus && empty[i])
+        reasons.add(APPARATUS_INPUT_NAMES.handsEmptyOp);
       if (item.kind === "throw") {
         if (!tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
           reasons.add(APPARATUS_INPUT_NAMES.useapp);
@@ -570,8 +599,8 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
       }
       if (item.kind === "ropeJump" && !canUseRopeJump(apparatus))
         reasons.add(APPARATUS_INPUT_NAMES.ropeJump);
-    }),
-  );
+    });
+  });
   return [...reasons];
 }
 
@@ -583,28 +612,35 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
   if (apparatusBlockers(list, apparatus).length === 0) return list;
   const tags = canUseApparatusTag(apparatus);
   const withoutTag = (ids?: string[]) => (ids || []).filter((id) => tags || id !== USE_APPARATUS_TAG);
-  return list.map((ser) => ({
-    ...ser,
-    items: ser.items
-      .filter((item) => item.kind !== "ropeJump" || canUseRopeJump(apparatus))
-      .map((item) => {
-        if (item.kind === "throw")
-          return {
-            ...item,
-            throwTypes: withoutTag(item.throwTypes),
-            reqTypes: (item.reqTypes || []).filter((id) => canUseReqType(apparatus, id)),
-          };
-        if (item.kind === "skill" && item.throwTypes)
-          return { ...item, throwTypes: withoutTag(item.throwTypes) };
-        if (item.kind === "catch")
-          return {
-            ...item,
-            catchTypes: withoutTag(item.catchTypes),
-            catchTwo: tags ? item.catchTwo : false,
-          };
-        return item;
-      }),
-  }));
+  return list.map((ser) => {
+    const empty = handsEmptyFlags(ser.items, apparatus);
+    const emptyOf = new Map(ser.items.map((item, i) => [item, empty[i]]));
+    return {
+      ...ser,
+      items: ser.items
+        .filter((item) => item.kind !== "ropeJump" || canUseRopeJump(apparatus))
+        .map((item) => {
+          // 投げている間は手具操作ができない
+          if (item.kind === "skill" && item.hasApparatus && emptyOf.get(item))
+            return { ...item, hasApparatus: false, throwTypes: withoutTag(item.throwTypes) };
+          if (item.kind === "throw")
+            return {
+              ...item,
+              throwTypes: withoutTag(item.throwTypes),
+              reqTypes: (item.reqTypes || []).filter((id) => canUseReqType(apparatus, id)),
+            };
+          if (item.kind === "skill" && item.throwTypes)
+            return { ...item, throwTypes: withoutTag(item.throwTypes) };
+          if (item.kind === "catch")
+            return {
+              ...item,
+              catchTypes: withoutTag(item.catchTypes),
+              catchTwo: tags ? item.catchTwo : false,
+            };
+          return item;
+        }),
+    };
+  });
 }
 
 /** 手元/空中の手具数をシミュレートし、投げ・キャッチの過不足を警告として返す（採点には非影響） */

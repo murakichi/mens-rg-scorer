@@ -32,12 +32,23 @@ export interface AutoThrowPattern {
   /** キャッチのあとに「視野外の投げ→視野外のキャッチ」を足すか */
   noViewPair: boolean;
   /**
-   * 先に最低限の投げ受け（投げ→キャッチ、徒手なし）を1本足すか。
+   * 徒手が**縦3動作**（前転3回）でE難度になる形か。
+   * 受けは手具を使ったキャッチ（押さえつけ）が主流で、それ以外の受け方は少ない。
+   */
+  verticalThree?: boolean;
+  /**
+   * 先に投げ受けを1本足すか（連続投げの1回目。`LEAD_THROW_CHENE_COUNT` 回のシェネを挟む）。
    * 投げ方を1種類増やすのに操作を足さずに済むので、日本トップの演技でも
    * 「手以外の投げ→キャッチ→視野外の投げ→シェネ→キャッチ」のように実施する。
    */
   leadPair?: boolean;
 }
+
+/**
+ * 連続投げの1回目（`leadPair` の先に置く投げ受け）で実施するシェネの回数。
+ * 1回目が低難度になる形では1シェネを挟む。
+ */
+export const LEAD_THROW_CHENE_COUNT = 1;
 
 /** 徒手動作のid（自動生成で使うものだけ） */
 const CHENE = "chene";
@@ -53,7 +64,13 @@ export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
   { id: "chene", chene: { min: 3, max: 4 }, after: [], noViewPair: false },
   { id: "cheneNoView", chene: { min: 3, max: 4 }, after: [], noViewPair: true },
   // シェネなし。前転3回＝縦3動作でE難度（§3.5.5.3）
-  { id: "rolls", chene: { min: 0, max: 0 }, after: [times(FWD_ROLL, 3)], noViewPair: false },
+  {
+    id: "rolls",
+    chene: { min: 0, max: 0 },
+    after: [times(FWD_ROLL, 3)],
+    noViewPair: false,
+    verticalThree: true,
+  },
   // 最低限の操作で必須要素（左手投げ・二つ投げ）を満たす形。
   // スティックの「1シェネキャッチ」、クラブ・リングの「二つ投げ→前転／シェネ→キャッチ」。
   // 難度は低いのでDスコアを抑えたいときに使われやすいが、上級者も普通に実施する。
@@ -117,8 +134,24 @@ export function autoCatchStyles(apparatus: ApparatusKey): AutoCatchStyle[] {
   // クラブ・リングは、もう一方の手具で押さえつけて受けられる
   if (APPARATUS_USE[apparatus])
     styles.push({ id: CATCH_USE_APPARATUS, name: "手具で押さえつけてキャッチ", catchTypes: [CATCH_USE_APPARATUS] });
+  // 2種類を同時に満たす受け方（`COMBINED_CATCH_WEIGHT`）
+  styles.push({
+    id: `${NO_VIEW_TAG}+${NON_HAND_TAG}`,
+    name: "視野外＋手以外のキャッチ",
+    catchTypes: [NO_VIEW_TAG, NON_HAND_TAG],
+  });
+  if (APPARATUS_USE[apparatus])
+    styles.push({
+      id: `${NO_VIEW_TAG}+${CATCH_USE_APPARATUS}`,
+      name: "視野外＋手具を使ったキャッチ",
+      catchTypes: [NO_VIEW_TAG, CATCH_USE_APPARATUS],
+    });
   return styles;
 }
+
+/** その受け方がその技術タグを含むか（2種類を同時に満たす受け方があるのでタグで見る） */
+export const catchHasTag = (catchStyle: AutoCatchStyle, tag: string): boolean =>
+  (catchStyle.catchTypes || []).includes(tag);
 
 /**
  * その投げ方で使える受け方。
@@ -126,12 +159,176 @@ export function autoCatchStyles(apparatus: ApparatusKey): AutoCatchStyle[] {
  */
 export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean): AutoCatchStyle[] {
   const styles = autoCatchStyles(apparatus);
-  return twoThrow ? styles.filter((c) => c.id !== CATCH_USE_APPARATUS) : styles;
+  return twoThrow ? styles.filter((c) => !catchHasTag(c, CATCH_USE_APPARATUS)) : styles;
+}
+
+/** 視野外の受け・投げの技術タグ */
+export const NO_VIEW_TAG = "noview";
+/** 手以外の受け・投げの技術タグ */
+export const NON_HAND_TAG = "nonhand";
+/**
+ * 動作の最後が**転がり・前転**の形。クラブ・リングは、そこから
+ * **手具を使ったキャッチ（押さえつけ）**で受けるのが定番。
+ */
+export const ROLL_FINISH_MOTIONS: string[] = [FWD_ROLL, ROLL];
+export const rollFinishShape = (pattern: AutoThrowPattern): boolean => {
+  const last = pattern.after[pattern.after.length - 1];
+  return !!last && ROLL_FINISH_MOTIONS.includes(last.motionId);
+};
+/** その形で手具を使ったキャッチ以外を引く重み（クラブ・リングのみ） */
+export const ROLL_FINISH_OTHER_CATCH_WEIGHT = 0.2;
+
+/** その他の受け・投げの技術タグ */
+export const OTHER_TAG = "other";
+/** その他のキャッチから次の投げに続ける確率は低い */
+export const OTHER_CATCH_BEFORE_THROW_WEIGHT = 0.2;
+/**
+ * その他の投げ・その他のキャッチは自動生成では**可能な限り使わない**。
+ * 受け方は引く重みを下げ（ここ）、投げ方は候補としては残したまま
+ * 生成側の評価で嫌う（`generate.ts` の `OTHER_STYLE_WEIGHT`）。
+ */
+export const OTHER_CATCH_WEIGHT = 0.1;
+
+/**
+ * 2種類を同時に満たす受け方の重み。単独の受け方より実施は少ない。
+ *  - 視野外＋手以外のキャッチ：低難度の投げで実施する（手以外の規則 `NON_HAND_CATCH_RULE` に従う）
+ *  - 視野外＋手具を使ったキャッチ：クラブ・リングで、難度に関わらず起こりうる
+ *    （クラブは実施例が無いので `NO_VIEW_USE_APPARATUS_WEIGHT` でさらに低く）
+ */
+export const COMBINED_CATCH_WEIGHT = 0.1;
+export const NO_VIEW_USE_APPARATUS_WEIGHT: Partial<Record<ApparatusKey, number>> = { clubs: 0.3 };
+
+/**
+ * 縦3動作（前転3回）の形で、**手具を使ったキャッチ以外**の受け方を引く重み。
+ * 前転3回から受けるのは手具で押さえつけるのが主流。
+ */
+export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
+
+/** 左手投げの必須投げのid */
+export const LEFT_HAND_TAG = "lefthand";
+/** 左手投げを**視野外で受ける**確率はかなり低い */
+export const LEFT_HAND_NO_VIEW_CATCH_WEIGHT = 0.1;
+
+/**
+ * 手以外のキャッチの実施しやすさは手具で違う。
+ *  - スティック：**低難度の投げ**（徒手が少ない投げ受け）で実施する
+ *  - クラブ：低難度の投げで、しかも**低確率**
+ *  - リング・ロープ：普通に実施する（ロープは足に絡めて受け、そのまま演技を締めることが多い）
+ */
+export const NON_HAND_CATCH_MAX_MOTIONS = 1;
+export const NON_HAND_CATCH_RULE: Record<ApparatusKey, { lowDifficultyOnly: boolean; weight: number }> = {
+  stick: { lowDifficultyOnly: true, weight: 1 },
+  clubs: { lowDifficultyOnly: true, weight: 0.2 },
+  ring: { lowDifficultyOnly: false, weight: 1 },
+  rope: { lowDifficultyOnly: false, weight: 1 },
+};
+
+/** その形で実施する徒手動作の数（シェネの回数＋形に含まれる動作） */
+export const patternMotions = (pattern: AutoThrowPattern, cheneCount: number): number =>
+  cheneCount + pattern.after.reduce((n, m) => n + m.count, 0);
+
+/** その投げ方・形で受け方を引く重み（1が既定。0は実施しない） */
+export function catchStyleWeight({
+  throwStyle,
+  catchStyle,
+  pattern,
+  apparatus,
+  motions,
+}: {
+  throwStyle: AutoThrowStyle;
+  catchStyle: AutoCatchStyle;
+  pattern: AutoThrowPattern;
+  apparatus: ApparatusKey;
+  /** その投げ受けで実施する徒手動作の数（`patternMotions`） */
+  motions: number;
+}): number {
+  const has = (tag: string) => catchHasTag(catchStyle, tag);
+  const nonHandRule = NON_HAND_CATCH_RULE[apparatus];
+  // 手以外のキャッチを低難度の投げでしか実施しない手具では、徒手が多い形では実施しない
+  if (has(NON_HAND_TAG) && nonHandRule.lowDifficultyOnly && motions > NON_HAND_CATCH_MAX_MOTIONS)
+    return 0;
+  let weight = 1;
+  // その他のキャッチは可能な限り使わない
+  if (has(OTHER_TAG)) weight *= OTHER_CATCH_WEIGHT;
+  // その他のキャッチから次の投げに続けるのは少ない（`noViewPair` は受けたあと投げる形）
+  if (pattern.noViewPair && has(OTHER_TAG)) weight *= OTHER_CATCH_BEFORE_THROW_WEIGHT;
+  // 縦3動作の形は手具で押さえつけて受けるのが主流
+  if (pattern.verticalThree && !has(CATCH_USE_APPARATUS)) weight *= VERTICAL_THREE_OTHER_CATCH_WEIGHT;
+  // クラブ・リングは、転がり・前転で終わってから手具で押さえつけて受けるのが定番
+  if (APPARATUS_USE[apparatus] && rollFinishShape(pattern) && !has(CATCH_USE_APPARATUS))
+    weight *= ROLL_FINISH_OTHER_CATCH_WEIGHT;
+  // 左手投げを視野外で受けることはかなり少ない
+  if ((throwStyle.reqTypes || []).includes(LEFT_HAND_TAG) && has(NO_VIEW_TAG))
+    weight *= LEFT_HAND_NO_VIEW_CATCH_WEIGHT;
+  // 手以外のキャッチの実施しやすさは手具で違う
+  if (has(NON_HAND_TAG)) weight *= nonHandRule.weight;
+  // 2種類を同時に満たす受け方は単独より少ない（視野外＋手具を使ったキャッチはクラブでさらに低く）
+  if ((catchStyle.catchTypes || []).length >= 2)
+    weight *=
+      COMBINED_CATCH_WEIGHT *
+      (has(CATCH_USE_APPARATUS) ? (NO_VIEW_USE_APPARATUS_WEIGHT[apparatus] ?? 1) : 1);
+  return weight;
+}
+
+/**
+ * その形で使える受け方。**次の投げに続ける受け**（`noViewPair` の直前の受け）では、
+ * そこから投げに繋げない受け方を外す：
+ *  - 視野外のキャッチ → 視野外の投げ（物理的に実施できない）
+ *  - 手以外のキャッチ → 連続投げ（ほぼ不可能）
+ */
+export function catchStylesForPattern(
+  apparatus: ApparatusKey,
+  twoThrow: boolean,
+  pattern: AutoThrowPattern,
+): AutoCatchStyle[] {
+  const styles = catchStylesForThrow(apparatus, twoThrow);
+  if (!pattern.noViewPair) return styles;
+  return styles.filter((c) => !catchHasTag(c, NO_VIEW_TAG) && !catchHasTag(c, NON_HAND_TAG));
+}
+
+/**
+ * その形で使える投げ方。先に投げ受けを1本置く形（`leadPair`）の本体の投げは
+ * **連続投げの2回目**なので、手以外の投げにはしない（ほぼ不可能）。
+ */
+export function throwStylesForPattern(
+  apparatus: ApparatusKey,
+  pattern: AutoThrowPattern,
+): AutoThrowStyle[] {
+  const styles = autoThrowStyles(apparatus);
+  return pattern.leadPair ? styles.filter((t) => t.id !== NON_HAND_TAG) : styles;
 }
 
 /** シェネの手の使い方（null＝手なし。手ありは HANDS_TYPES の種類ごとに別の技） */
 export type AutoHands = string | null;
 export const autoHandsVariants = (): AutoHands[] => [null, ...HANDS_TYPES.map((h) => h.id)];
+
+/**
+ * シェネの手を引く重み。**手なしが最優先**で、手ありは
+ * 片手上げ＝両手上げ ＞ その他 ＞ 回旋 の順に実施される。
+ */
+export const HANDS_NONE_WEIGHT = 1;
+export const HANDS_PICK_WEIGHT: Record<string, number> = {
+  one: 0.5,
+  both: 0.5,
+  other: 0.25,
+  spin: 0.1,
+};
+export const handsWeight = (hands: AutoHands): number =>
+  hands === null ? HANDS_NONE_WEIGHT : (HANDS_PICK_WEIGHT[hands] ?? 1);
+
+/**
+ * 回旋は2動作までがメインで、3動作は頻度が下がる（4動作はさらに下がる）。
+ * シェネの回数はいままでどおり形ごとに配り、**その回数で回旋を引く重み**を下げる
+ * （3動作以上しか取れない形では回旋がほとんど出ない）。ほかの手は回数で変わらない。
+ */
+export const SPIN_HANDS_ID = "spin";
+export const SPIN_MAIN_CHENE_COUNT = 2;
+export const SPIN_THIRD_CHENE_WEIGHT = 0.3;
+export const SPIN_OVER_CHENE_WEIGHT = 0.1;
+export const cheneCountWeight = (hands: AutoHands, count: number): number => {
+  if (hands !== SPIN_HANDS_ID || count <= SPIN_MAIN_CHENE_COUNT) return 1;
+  return count === SPIN_MAIN_CHENE_COUNT + 1 ? SPIN_THIRD_CHENE_WEIGHT : SPIN_OVER_CHENE_WEIGHT;
+};
 
 /** 1本ぶんの自動生成の内容 */
 export interface AutoThrowSpec {
@@ -155,6 +352,8 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
       kind: "throw",
       ...(spec.leadThrowStyle.throwTypes ? { throwTypes: [...spec.leadThrowStyle.throwTypes] } : {}),
     });
+    // 連続投げの1回目が低難度になる形では、1シェネを挟む
+    items.push({ kind: "motion", motionId: CHENE, count: LEAD_THROW_CHENE_COUNT, hands: false });
     items.push({ kind: "catch" });
   }
   items.push({
@@ -178,8 +377,8 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
     ...(throwStyle.two ? { catchTwo: true } : {}),
   });
   if (pattern.noViewPair) {
-    items.push({ kind: "throw", throwTypes: ["noview"] });
-    items.push({ kind: "catch", catchTypes: ["noview"] });
+    items.push({ kind: "throw", throwTypes: [NO_VIEW_TAG] });
+    items.push({ kind: "catch", catchTypes: [NO_VIEW_TAG] });
   }
   return { executionDeduction: 0, items };
 }
@@ -209,6 +408,16 @@ function cycler<T>(list: T[], rand: () => number): () => T {
   };
 }
 
+/** 重み付きで1つ選ぶ（重みは1が既定） */
+function pickWeighted<T>(list: T[], rand: () => number, weightOf: (x: T) => number): T {
+  let left = rand() * list.reduce((n, x) => n + weightOf(x), 0);
+  for (const x of list) {
+    left -= weightOf(x);
+    if (left < 0) return x;
+  }
+  return list[list.length - 1];
+}
+
 /** その形で取り得るシェネの回数 */
 export function cheneCountRange(pattern: AutoThrowPattern): number[] {
   const range: number[] = [];
@@ -232,14 +441,38 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   const rand = opts.random ?? Math.random;
   const throwStyles = autoThrowStyles(apparatus);
   const combos = shuffled(
-    AUTO_THROW_PATTERNS.flatMap((pattern) => throwStyles.map((throwStyle) => ({ pattern, throwStyle }))),
+    AUTO_THROW_PATTERNS.flatMap((pattern) =>
+      throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
+    ),
     rand,
   );
   const limit = Math.max(0, opts.limit ?? combos.length);
-  const nextCatch = cycler(catchStylesForThrow(apparatus, false), rand);
-  // 二つ投げは受け方が1つ少ないので、別に配って偏らせない
-  const nextTwoThrowCatch = cycler(catchStylesForThrow(apparatus, true), rand);
-  const nextHands = cycler(autoHandsVariants(), rand);
+  // 受け方は「形 × 二つ投げかどうか」ごとに配る（使える受け方が違うので偏らせない）
+  const catchCyclers = new Map<string, () => AutoCatchStyle>();
+  const nextCatchFor = (
+    pattern: AutoThrowPattern,
+    throwStyle: AutoThrowStyle,
+    motions: number,
+  ): AutoCatchStyle => {
+    const twoThrow = !!throwStyle.two;
+    const styles = catchStylesForPattern(apparatus, twoThrow, pattern);
+    // 引きにくい受け方がある形・投げ方（縦3動作・左手投げの視野外・手以外）は重み付きで引く
+    const weight = (c: AutoCatchStyle) =>
+      catchStyleWeight({ throwStyle, catchStyle: c, pattern, apparatus, motions });
+    if (styles.some((c) => weight(c) !== 1)) return pickWeighted(styles, rand, weight);
+    // それ以外は被らないように配る
+    const key = `${pattern.noViewPair ? "noViewPair" : "-"}:${twoThrow}`;
+    let next = catchCyclers.get(key);
+    if (!next) {
+      next = cycler(styles, rand);
+      catchCyclers.set(key, next);
+    }
+    return next();
+  };
+  // シェネの手は重み付きで引く（手なし ＞ 片手＝両手 ＞ その他 ＞ 回旋）。
+  // 回旋は2動作までがメインなので、回数が多い形では引きにくくする
+  const nextHands = (cheneCount: number): AutoHands =>
+    pickWeighted(autoHandsVariants(), rand, (h) => handsWeight(h) * cheneCountWeight(h, cheneCount));
   // 先に足す投げ受けの投げ方。二つ投げは2つ同時キャッチで受ける形になるので使わない
   const nextLeadThrow = cycler(
     throwStyles.filter((t) => !t.two),
@@ -257,10 +490,10 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     return {
       pattern,
       cheneCount,
-      // シェネが無い形では手の種類は使わない（順番も消費しない）
-      hands: cheneCount > 0 ? nextHands() : null,
+      // シェネが無い形では手の種類は使わない
+      hands: cheneCount > 0 ? nextHands(cheneCount) : null,
       throwStyle,
-      catchStyle: throwStyle.two ? nextTwoThrowCatch() : nextCatch(),
+      catchStyle: nextCatchFor(pattern, throwStyle, patternMotions(pattern, cheneCount)),
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
     };
   });

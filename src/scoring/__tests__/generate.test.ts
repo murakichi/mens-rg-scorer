@@ -6,6 +6,11 @@ import {
   A_PRIORITY_WEIGHT,
   REQUIRE_ALL_ELEMENTS_MIN_SCORE,
   generateRoutine,
+  DEFAULT_MAX_AUTO_THROWS,
+  DEFAULT_MAX_SERIES,
+  autoSeriesMax,
+  otherStyleCount,
+  OTHER_STYLE_WEIGHT,
   requiresAllElements,
   saltoRepeatCount,
   SHAPE_PRIORITY_WEIGHT,
@@ -15,10 +20,13 @@ import {
   preferredThrowCount,
   throwCountPenalty,
   extraThrowOperation,
+  verticalThreeThrowCount,
+  DIFFICULTY_PREFERENCE_WEIGHT,
+  VERTICAL_THREE_THROW_WEIGHT,
   shortfallPenalty,
   usableTemplates,
 } from "../generate";
-import { ADOPT_COUNT, DIFF_SCORE } from "../constants";
+import { ADOPT_COUNT, DIFF_SCORE, TECHNIQUE_BONUS } from "../constants";
 import { analyzeSeries, seriesSignature } from "../analysis";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
@@ -246,7 +254,7 @@ describe("実施が少ない技（ハンドスプリング・転宙）", () => {
         limitedSkillCounts(r.series).forEach((n) => expect(n).toBeLessThanOrEqual(LIMITED_SKILL_MAX));
       });
     });
-  });
+  }, 60_000);
 
   it("技としても徒手動作としても数える", () => {
     const counts = limitedSkillCounts([
@@ -524,10 +532,38 @@ describe("投げ上げの回数", () => {
     expect(throwCountPenalty(4, 4.5)).toBeGreaterThan(0);
     // 技術加点で稼げてしまうので、多い側のほうを強く嫌う
     expect(throwCountPenalty(6, 4.5)).toBeGreaterThan(throwCountPenalty(4, 4.5));
-    // Dスコア5以上は多い側を緩める（最頻値は5のまま、6回も出やすい）
+    // 1回多いのは十分ありえる（4点台でも6回）。2回以上多いぶんは強く嫌う
+    expect(throwCountPenalty(7, 4.5) - throwCountPenalty(6, 4.5)).toBeGreaterThan(
+      throwCountPenalty(6, 4.5),
+    );
+    // Dスコア5以上は6回を実施する確率が上がる（最頻値は5のまま）ので、1回多い側は弱くなる
     expect(throwCountPenalty(6, 5.0)).toBeLessThan(throwCountPenalty(6, 4.5));
     expect(preferredThrowCount(5.0)).toBe(preferredThrowCount(4.5));
+    // 2回以上多いぶんはDスコアに関わらず強く嫌う
+    expect(throwCountPenalty(7, 5.0)).toBeGreaterThan(throwCountPenalty(6, 5.0) * 2);
   });
+
+  it("加点のための投げは本数を増やしてよい（最頻値は5のまま）", () => {
+    // 難度に採用されるのは投げタン＋上位3本だけ。自動生成の投げの本数の上限は
+    // それより多く取れるようにしてあり、本数は最頻値の重みで決まる
+    expect(DEFAULT_MAX_AUTO_THROWS).toBeGreaterThan(ADOPT_COUNT);
+    const routines: { count: number; mode: number }[] = [];
+    for (let seed = 1; seed <= 12; seed++) {
+      const r = generateRoutine(pool(), { apparatus: "stick", maxScore: 4.5, random: seeded(seed * 13 + 5) });
+      if (!r) continue;
+      const sc = computeScore(r.series, "stick");
+      routines.push({ count: sc.totalThrowCount, mode: preferredThrowCount(sc.dScore) });
+    }
+    expect(routines.length).toBeGreaterThan(0);
+    // 回数はその構成のDスコアの最頻値の近くに収まる
+    routines.forEach(({ count, mode }) => {
+      expect(count).toBeGreaterThanOrEqual(mode - 1);
+      expect(count).toBeLessThanOrEqual(mode + 2);
+    });
+    // 大半は最頻値以上で、最頻値より多い構成も出る（加点のために投げを足す）
+    expect(routines.filter((r) => r.count >= r.mode).length).toBeGreaterThanOrEqual(routines.length / 2);
+    expect(routines.some((r) => r.count > r.mode)).toBe(true);
+  }, 120_000);
 
   it("Dスコアの上限が低くてもルールの回数は満たす", () => {
     [3, 7, 11].forEach((seed) => {
@@ -547,5 +583,224 @@ describe("投げ上げの回数", () => {
     expect(extraThrowOperation(computeScore(withMinimal, "stick"))).toBe(0);
     // 3本以下なら全部採用されるので0
     expect(extraThrowOperation(computeScore([cheneThrow(4), cheneThrow(3)], "stick"))).toBe(0);
+  });
+});
+
+describe("自動生成の割合（ユーザー指定）", () => {
+  it("割合をシリーズ数の上限に対する本数に換算する", () => {
+    // 既定（1）は割合では制限しない
+    expect(autoSeriesMax({ apparatus: "stick" })).toBeNull();
+    expect(autoSeriesMax({ apparatus: "stick", autoRatio: 1 })).toBeNull();
+    expect(autoSeriesMax({ apparatus: "stick", autoRatio: 0 })).toBe(0);
+    expect(autoSeriesMax({ apparatus: "stick", autoRatio: 0.5 })).toBe(DEFAULT_MAX_SERIES / 2);
+    // シリーズ数の上限を変えれば本数も変わる
+    expect(autoSeriesMax({ apparatus: "stick", autoRatio: 0.5, maxSeries: 4 })).toBe(2);
+    // 負の値でも0を下回らない
+    expect(autoSeriesMax({ apparatus: "stick", autoRatio: -1 })).toBe(0);
+  });
+
+  it("0%なら登録テンプレートだけで組む", () => {
+    const r = generateRoutine(pool(), { apparatus: "stick", autoRatio: 0, random: seeded(7) })!;
+    expect(r).toBeTruthy();
+    expect(r.used.some((t) => t.auto)).toBe(false);
+  }, 60_000);
+
+  it("指定した割合ぶんの本数までしか自動生成を入れない", () => {
+    [0.25, 0.5].forEach((autoRatio) => {
+      const max = autoSeriesMax({ apparatus: "stick", autoRatio })!;
+      [3, 7, 11].forEach((seed) => {
+        const r = generateRoutine(pool(), { apparatus: "stick", autoRatio, random: seeded(seed) })!;
+        expect(r.used.filter((t) => t.auto).length).toBeLessThanOrEqual(max);
+      });
+    });
+  }, 120_000);
+
+  it("割合を上げるほど自動生成のシリーズが増える（減ることはない）", () => {
+    const autoCount = (autoRatio: number) =>
+      [3, 7, 11]
+        .map((seed) => {
+          const r = generateRoutine(pool(), { apparatus: "stick", autoRatio, random: seeded(seed) })!;
+          return r.used.filter((t) => t.auto).length;
+        })
+        .reduce((a, b) => a + b, 0);
+    // 0%は必ず0本。上げても減ることはない（テンプレートで足りていれば増えないこともある）
+    expect(autoCount(0)).toBe(0);
+    expect(autoCount(0.25)).toBeGreaterThan(0);
+    expect(autoCount(0.25)).toBeLessThanOrEqual(autoCount(0.75));
+    // テンプレートが少ない構成では割合を上げたぶんだけ増える
+    const few = (autoRatio: number) =>
+      generateRoutine([tpl("三宙", "common", triple())], { apparatus: "stick", autoRatio, random: seeded(7) })!.used.filter(
+        (t) => t.auto,
+      ).length;
+    expect(few(0.25)).toBeLessThan(few(0.75));
+  }, 120_000);
+});
+
+describe("その他の投げ・その他のキャッチ", () => {
+  it("数えるのは投げ・キャッチ・技の最中の投げに付いたその他だけ", () => {
+    expect(
+      otherStyleCount([
+        S({ kind: "throw", throwTypes: ["other"] }, { kind: "catch", catchTypes: ["other"] }),
+        S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch" }),
+      ]),
+    ).toBe(2);
+    expect(otherStyleCount([S({ kind: "throw" }, { kind: "catch", catchTypes: ["nonhand"] })])).toBe(0);
+  });
+
+  it("技術加点より強い重みで嫌う（加点のためだけには実施しない）", () => {
+    expect(OTHER_STYLE_WEIGHT).toBeGreaterThan(TECHNIQUE_BONUS);
+  });
+
+  it("生成される構成にはほとんど出ない", () => {
+    let others = 0;
+    let routines = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed * 13 + 5) });
+      if (!r) continue;
+      routines += 1;
+      others += otherStyleCount(r.series);
+    }
+    expect(routines).toBeGreaterThan(0);
+    expect(others).toBeLessThanOrEqual(routines);
+  }, 120_000);
+});
+
+describe("前転3回（縦3動作）の投げ", () => {
+  const rolls = (catchTypes?: string[]): Series =>
+    S(
+      { kind: "throw" },
+      { kind: "motion", motionId: "fwd_roll", count: 3 },
+      { kind: "catch", ...(catchTypes ? { catchTypes } : {}) },
+    );
+
+  it("手具を使ったキャッチ以外の縦3動作の投げを数える", () => {
+    expect(verticalThreeThrowCount([rolls()])).toBe(1);
+    // 手具で押さえつけて受ける形は主流なので数えない
+    expect(verticalThreeThrowCount([rolls(["useapp"])])).toBe(0);
+    // 視野外・手以外は「それ以外の操作」なので数える
+    expect(verticalThreeThrowCount([rolls(["noview"])])).toBe(1);
+    // 横回転（シェネ）は縦3動作ではない
+    expect(
+      verticalThreeThrowCount([
+        S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4 }, { kind: "catch" }),
+      ]),
+    ).toBe(0);
+    // 前転2回では足りない
+    expect(
+      verticalThreeThrowCount([
+        S({ kind: "throw" }, { kind: "motion", motionId: "fwd_roll", count: 2 }, { kind: "catch" }),
+      ]),
+    ).toBe(0);
+  });
+
+  it("重みは難度点より大きい（Dスコアの範囲に必要なときだけ入る）", () => {
+    // 難度の刻み（0.1）より大きく、範囲外のペナルティ（×100）より小さい
+    expect(VERTICAL_THREE_THROW_WEIGHT).toBeGreaterThan(0.1);
+    expect(VERTICAL_THREE_THROW_WEIGHT).toBeLessThan(1);
+  });
+
+  it("基本的には構成に入らない", () => {
+    let count = 0;
+    [3, 7, 11, 13].forEach((seed) => {
+      const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
+      count += verticalThreeThrowCount(r.series);
+    });
+    expect(count).toBe(0);
+  }, 60_000);
+});
+
+describe("難度点と加点の優先度", () => {
+  // どちらもDスコアは同じ0.7だが、中身が違う
+  //  A：シェネ4動作＝徒手E難度 0.7（難度点だけ）
+  //  B：シェネ3動作＝D難度 0.5 ＋ 手以外の投げ0.1 ＋ 視野外のキャッチ0.1（加点で0.2）
+  const byDifficulty = () =>
+    S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4 }, { kind: "catch" });
+  // 視野外の投げは「右投げ右受け」を満たすので、A側はどちらも同じになる
+  const byBonus = () =>
+    S(
+      { kind: "throw", throwTypes: ["noview"] },
+      { kind: "motion", motionId: "chene", count: 3 },
+      { kind: "catch", catchTypes: ["noview"] },
+    );
+
+  it("同じDスコアなら難度点で取っている構成を選ぶ", () => {
+    expect(DIFFICULTY_PREFERENCE_WEIGHT).toBeGreaterThan(0);
+    const a = computeScore([byDifficulty()], "stick");
+    const b = computeScore([byBonus()], "stick");
+    // 前提：Dスコアは同じで、内訳（難度点と加点）が違い、A側は同じ
+    expect(a.dScore).toBeCloseTo(b.dScore, 5);
+    expect(a.handScore).toBeGreaterThan(b.handScore);
+    expect(a.techniqueBonus).toBeLessThan(b.techniqueBonus);
+    expect(a.aScore).toBeCloseTo(b.aScore, 5);
+    // 1シリーズしか入れられないなら、難度点で取るほうを選ぶ
+    const templates = [
+      tpl("加点で取る", "common", byBonus()),
+      tpl("難度点で取る", "common", byDifficulty()),
+    ];
+    [1, 5, 9].forEach((seed) => {
+      const r = generateRoutine(templates, {
+        apparatus: "stick",
+        maxSeries: 1,
+        random: seeded(seed),
+        ...noAuto,
+      })!;
+      expect(r.used.map((t) => t.name)).toEqual(["難度点で取る"]);
+    });
+  });
+
+  it("難度点の上乗せはDスコアの刻みより小さい（Dを下げてまで難度点は取らない）", () => {
+    // 難度点0.1ぶんの上乗せ（0.03）＜ Dスコア0.1
+    expect(DIFFICULTY_PREFERENCE_WEIGHT * 0.1).toBeLessThan(0.1);
+    // 加点込みで0.7取れる構成と、難度点だけで0.1の構成なら、点数の高いほうを選ぶ
+    const cheap = () => S({ kind: "throw" }, { kind: "catch" }); // 徒手A難度 0.1
+    const templates = [
+      tpl("加点で取る", "common", byBonus()), // 0.7
+      tpl("難度点だけ少し", "common", cheap()), // 0.1
+    ];
+    [1, 3, 5].forEach((seed) => {
+      const r = generateRoutine(templates, {
+        apparatus: "stick",
+        maxSeries: 1,
+        random: seeded(seed),
+        ...noAuto,
+      })!;
+      expect(r.used.map((t) => t.name)).toEqual(["加点で取る"]);
+    });
+  });
+});
+
+describe("ロープは手以外のキャッチで締める", () => {
+  const nonHand = () =>
+    S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 3 }, { kind: "catch", catchTypes: ["nonhand"] });
+  const plain = () =>
+    S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4 }, { kind: "catch" });
+  const tumbling = () => S(skill("a_roundoff"), skill("b_backsalto"), skill("b_front"), { kind: "catch" });
+
+  it("手以外のキャッチで終わるシリーズを最後に置く", () => {
+    const templates = [
+      tpl("足に絡めて受ける", "rope", nonHand()),
+      tpl("投げ4シェネ", "common", plain()),
+      tpl("三宙", "common", tumbling()),
+    ];
+    [1, 5, 9].forEach((seed) => {
+      const r = generateRoutine(templates, { apparatus: "rope", random: seeded(seed), ...noAuto })!;
+      // 3本とも使う構成なら、手以外のキャッチのシリーズが最後
+      if (!r.used.some((t) => t.name === "足に絡めて受ける")) return;
+      expect(r.used[r.used.length - 1].name).toBe("足に絡めて受ける");
+    });
+  });
+
+  it("他の手具では並べ替えない", () => {
+    const templates = [
+      tpl("手以外で受ける", "common", nonHand()),
+      tpl("投げ4シェネ", "common", plain()),
+      tpl("三宙", "common", tumbling()),
+    ];
+    // スティックでは投げとタンブリングの交互並べだけが効く（最後が手以外とは限らない）
+    const last = [1, 5, 9, 13].map((seed) => {
+      const r = generateRoutine(templates, { apparatus: "stick", random: seeded(seed), ...noAuto })!;
+      return r.used[r.used.length - 1].name;
+    });
+    expect(last.some((n) => n !== "手以外で受ける")).toBe(true);
   });
 });

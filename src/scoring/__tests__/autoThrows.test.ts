@@ -3,12 +3,32 @@ import {
   AUTO_THROW_PATTERNS,
   autoCatchStyles,
   autoHandsVariants,
+  handsWeight,
+  cheneCountWeight,
   autoThrowName,
   autoThrowSpecs,
   autoThrowStyles,
   autoThrowTemplates,
   buildAutoThrowSeries,
   catchStylesForThrow,
+  catchStylesForPattern,
+  NO_VIEW_TAG,
+  LEAD_THROW_CHENE_COUNT,
+  LEFT_HAND_TAG,
+  LEFT_HAND_NO_VIEW_CATCH_WEIGHT,
+  catchStyleWeight,
+  catchHasTag,
+  COMBINED_CATCH_WEIGHT,
+  NO_VIEW_USE_APPARATUS_WEIGHT,
+  OTHER_CATCH_WEIGHT,
+  OTHER_TAG,
+  NON_HAND_TAG,
+  NON_HAND_CATCH_MAX_MOTIONS,
+  patternMotions,
+  rollFinishShape,
+  ROLL_FINISH_OTHER_CATCH_WEIGHT,
+  throwStylesForPattern,
+  VERTICAL_THREE_OTHER_CATCH_WEIGHT,
   cheneCountRange,
   isAutoThrowTemplate,
   withCheneCount,
@@ -179,22 +199,58 @@ describe("投げ方・受け方の網羅", () => {
 
 describe("シェネの手", () => {
   it("手なしと手ありの各種類を使う", () => {
-    const hands = autoThrowSpecs("clubs", { random: seeded(3) })
-      .filter((s) => s.cheneCount > 0)
-      .map((s) => s.hands);
+    // 回旋は稀なので、何回か作ったなかに出てくればよい
+    const hands: (string | null)[] = [];
+    for (let seed = 1; seed <= 10; seed++)
+      autoThrowSpecs("clubs", { random: seeded(seed) })
+        .filter((s) => s.cheneCount > 0)
+        .forEach((s) => hands.push(s.hands));
     autoHandsVariants().forEach((v) => expect(hands).toContain(v));
   });
 
-  it("できる限り被らせない（ひと回りするまで同じ手を使わない）", () => {
-    const variants = autoHandsVariants().length;
-    // シェネのある形だけが手の種類を消費する
-    const hands = autoThrowSpecs("stick", { random: seeded(29) })
-      .filter((s) => s.cheneCount > 0)
-      .map((s) => s.hands);
-    // 連続する variants 個を切り出すと、どの周も同じ手は1回ずつ
-    for (let i = 0; i + variants <= hands.length; i += variants) {
-      expect(new Set(hands.slice(i, i + variants)).size).toBe(variants);
-    }
+  it("手なしが最優先で、片手＝両手 ＞ その他 ＞ 回旋 の順に多い", () => {
+    const count = new Map<string, number>();
+    for (let seed = 1; seed <= 40; seed++)
+      autoThrowSpecs("stick", { random: seeded(seed) })
+        .filter((s) => s.cheneCount > 0)
+        .forEach((s) => {
+          const key = s.hands ?? "none";
+          count.set(key, (count.get(key) ?? 0) + 1);
+        });
+    const n = (k: string) => count.get(k) ?? 0;
+    expect(n("none")).toBeGreaterThan(n("one"));
+    expect(n("none")).toBeGreaterThan(n("both"));
+    expect(n("one")).toBeGreaterThan(n("other"));
+    expect(n("both")).toBeGreaterThan(n("other"));
+    expect(n("other")).toBeGreaterThan(n("spin"));
+    expect(n("spin")).toBeGreaterThan(0);
+  });
+
+  it("重みは手なし ＞ 片手＝両手 ＞ その他 ＞ 回旋", () => {
+    expect(handsWeight(null)).toBeGreaterThan(handsWeight("one"));
+    expect(handsWeight("one")).toBe(handsWeight("both"));
+    expect(handsWeight("both")).toBeGreaterThan(handsWeight("other"));
+    expect(handsWeight("other")).toBeGreaterThan(handsWeight("spin"));
+  });
+
+  it("回旋は2動作までがメインで、3動作以上の頻度が下がる", () => {
+    expect(cheneCountWeight("spin", 1)).toBe(1);
+    expect(cheneCountWeight("spin", 2)).toBe(1);
+    expect(cheneCountWeight("spin", 3)).toBeLessThan(1);
+    expect(cheneCountWeight("spin", 4)).toBeLessThan(cheneCountWeight("spin", 3));
+    // ほかの手では回数に重みを付けない
+    [1, 2, 3, 4].forEach((n) => {
+      expect(cheneCountWeight("one", n)).toBe(1);
+      expect(cheneCountWeight(null, n)).toBe(1);
+    });
+    const counts: number[] = [];
+    for (let seed = 1; seed <= 40; seed++)
+      autoThrowSpecs("stick", { random: seeded(seed) })
+        .filter((s) => s.hands === "spin")
+        .forEach((s) => counts.push(s.cheneCount));
+    expect(counts.length).toBeGreaterThan(0);
+    const main = counts.filter((n) => n <= 2).length;
+    expect(main).toBeGreaterThan(counts.length - main);
   });
 
   it("シェネのない形は手の種類を持たない（名前にも出さない）", () => {
@@ -308,7 +364,10 @@ describe("ランダム生成への組み込み", () => {
           if (!isAutoThrowTemplate(t)) return;
           expect(cheneCountRange(t.spec.pattern)).toContain(t.spec.cheneCount);
           // 組み立てた内容とシリーズの中身が食い違わない
-          const item = r.series[i].items.find((x) => x.kind === "motion" && x.motionId === "chene");
+          // （先に投げ受けを1本置く形は、その1シェネが先に入る）
+          const chenes = r.series[i].items.filter((x) => x.kind === "motion" && x.motionId === "chene");
+          const main = t.spec.pattern.leadPair ? chenes.slice(1) : chenes;
+          const item = main[0];
           if (item?.kind === "motion") expect(item.count).toBe(t.spec.cheneCount);
         });
       });
@@ -327,16 +386,18 @@ describe("ランダム生成への組み込み", () => {
     expect(withCheneCount(t, 1)).toBeNull(); // この形の範囲外
   });
 
-  it("先に最低限の投げ受けを1本置く形がある（日本トップのロープの1シリーズ目）", () => {
+  it("先に投げ受けを1本置く形がある（連続投げの1回目は1シェネ）", () => {
     const list = autoThrowTemplates("rope").filter((t) => t.spec.pattern.leadPair);
     expect(list.length).toBeGreaterThan(0);
     list.forEach((t) => {
       const items = t.series.items;
-      // 投げ→キャッチ（徒手なし）→本体の投げ→…→キャッチ
+      // 投げ→1シェネ→キャッチ→本体の投げ→…→キャッチ
       expect(items[0].kind).toBe("throw");
-      expect(items[1].kind).toBe("catch");
-      expect(items[2].kind).toBe("throw");
-      expect(items[1].kind === "catch" && items[1].catchTypes).toBeUndefined();
+      expect(items[1].kind === "motion" && items[1].motionId).toBe("chene");
+      expect(items[1].kind === "motion" && items[1].count).toBe(LEAD_THROW_CHENE_COUNT);
+      expect(items[2].kind).toBe("catch");
+      expect(items[3].kind).toBe("throw");
+      expect(items[2].kind === "catch" && items[2].catchTypes).toBeUndefined();
       // 先の投げは二つ投げにしない（2つ同時キャッチが要るので通常のキャッチで受けられない）
       expect(t.spec.leadThrowStyle?.two).toBeFalsy();
       expect(analyzeSeries(t.series).throwCount).toBe(2);
@@ -345,6 +406,246 @@ describe("ランダム生成への組み込み", () => {
     // 手以外の投げ→キャッチ→視野外の投げ→シェネ→キャッチ のような組み合わせが出る
     const styles = new Set(list.map((t) => t.spec.leadThrowStyle?.id));
     expect(styles.size).toBeGreaterThan(1);
+  });
+
+  it("視野外のキャッチ→視野外の投げは作らない（物理的に実施できない）", () => {
+    // 視野外の投げ受けを足す形では、その直前の受けを視野外にしない
+    const pattern = AUTO_THROW_PATTERNS.find((x) => x.noViewPair)!;
+    expect(catchStylesForPattern("stick", false, pattern).map((c) => c.id)).not.toContain(NO_VIEW_TAG);
+    // 足さない形では視野外のキャッチも使う
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair)!;
+    expect(catchStylesForPattern("stick", false, plain).map((c) => c.id)).toContain(NO_VIEW_TAG);
+    // 組み立てた候補にも並びが現れない
+    (["stick", "clubs", "ring", "rope"] as ApparatusKey[]).forEach((app) =>
+      autoThrowTemplates(app).forEach((t) =>
+        t.series.items.forEach((item, i) => {
+          const next = t.series.items[i + 1];
+          if (item.kind !== "catch" || next?.kind !== "throw") return;
+          const noViewCatch = (item.catchTypes || []).includes(NO_VIEW_TAG);
+          const noViewThrow = (next.throwTypes || []).includes(NO_VIEW_TAG);
+          expect(noViewCatch && noViewThrow).toBe(false);
+        }),
+      ),
+    );
+  });
+
+  it("連続投げの前の受けは手以外にしない／2回目の投げは手以外にしない", () => {
+    const paired = AUTO_THROW_PATTERNS.find((x) => x.noViewPair)!;
+    const lead = AUTO_THROW_PATTERNS.find((x) => x.leadPair)!;
+    // 手以外のキャッチから次の投げには繋げない
+    expect(catchStylesForPattern("stick", false, paired).map((c) => c.id)).not.toContain(NON_HAND_TAG);
+    // 連続投げの2回目（先に1本置く形の本体の投げ）は手以外にしない
+    expect(throwStylesForPattern("stick", lead).map((t) => t.id)).not.toContain(NON_HAND_TAG);
+    // 1本だけの形では手以外の投げ受けも使う
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.leadPair)!;
+    expect(catchStylesForPattern("stick", false, plain).map((c) => c.id)).toContain(NON_HAND_TAG);
+    expect(throwStylesForPattern("stick", plain).map((t) => t.id)).toContain(NON_HAND_TAG);
+    // 組み立てた候補にも並びが現れない（先に置く1本目の投げが手以外なのは可）
+    (["stick", "clubs", "ring", "rope"] as ApparatusKey[]).forEach((app) =>
+      autoThrowTemplates(app).forEach((t) => {
+        const items = t.series.items;
+        items.forEach((item, i) => {
+          const next = items[i + 1];
+          if (item.kind !== "catch" || next?.kind !== "throw") return;
+          // 手以外のキャッチ → 次の投げ
+          expect((item.catchTypes || []).includes(NON_HAND_TAG)).toBe(false);
+          // 2回目の投げが手以外
+          expect((next.throwTypes || []).includes(NON_HAND_TAG)).toBe(false);
+        });
+      }),
+    );
+  });
+
+  it("その他のキャッチは可能な限り引かない", () => {
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree && !rollFinishShape(x))!;
+    const normalThrow = autoThrowStyles("stick").find((t) => t.id === "normal")!;
+    const w = (catchId: string) =>
+      catchStyleWeight({
+        throwStyle: normalThrow,
+        catchStyle: autoCatchStyles("stick").find((c) => c.id === catchId)!,
+        pattern: plain,
+        apparatus: "stick",
+        motions: 0,
+      });
+    expect(w(OTHER_TAG)).toBe(OTHER_CATCH_WEIGHT);
+    expect(w(OTHER_TAG)).toBeLessThan(w("normal"));
+    // 組み立てた候補でも、その他のキャッチはほかの受け方よりずっと少ない
+    let other = 0;
+    let all = 0;
+    for (let seed = 1; seed <= 10; seed++)
+      autoThrowSpecs("stick", { random: seeded(seed) }).forEach((sp) => {
+        all += 1;
+        if (catchHasTag(sp.catchStyle, OTHER_TAG)) other += 1;
+      });
+    expect(other).toBeLessThan(all * 0.1);
+  });
+
+  it("2種類を同時に満たすキャッチを作れる（視野外＋手以外／視野外＋手具を使った）", () => {
+    const ids = (apparatus: ApparatusKey) => autoCatchStyles(apparatus).map((c) => c.id);
+    // 視野外＋手以外はどの手具でも（手以外の規則に従う）
+    APPARATUS_KEYS.forEach((app) => expect(ids(app)).toContain(`${NO_VIEW_TAG}+${NON_HAND_TAG}`));
+    // 視野外＋手具を使ったキャッチはクラブ・リングだけ
+    (["clubs", "ring"] as ApparatusKey[]).forEach((app) =>
+      expect(ids(app)).toContain(`${NO_VIEW_TAG}+${CATCH_USE_APPARATUS}`),
+    );
+    (["stick", "rope"] as ApparatusKey[]).forEach((app) =>
+      expect(ids(app)).not.toContain(`${NO_VIEW_TAG}+${CATCH_USE_APPARATUS}`),
+    );
+    // 組み立てたシリーズのキャッチに両方のタグが乗る
+    const combo = autoCatchStyles("ring").find((c) => c.id === `${NO_VIEW_TAG}+${CATCH_USE_APPARATUS}`)!;
+    const items = buildAutoThrowSeries(spec("chene", { catchStyle: combo })).items;
+    const last = items[items.length - 1];
+    expect(last.kind === "catch" && last.catchTypes).toEqual([NO_VIEW_TAG, CATCH_USE_APPARATUS]);
+  });
+
+  it("2種類を同時に満たすキャッチは単独より少ない（スティックは低難度の投げだけ・クラブはリングより低い）", () => {
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree && !rollFinishShape(x))!;
+    const w = (apparatus: ApparatusKey, catchId: string, motions: number) =>
+      catchStyleWeight({
+        throwStyle: autoThrowStyles(apparatus).find((t) => t.id === "normal")!,
+        catchStyle: autoCatchStyles(apparatus).find((c) => c.id === catchId)!,
+        pattern: plain,
+        apparatus,
+        motions,
+      });
+    const bothNonHand = `${NO_VIEW_TAG}+${NON_HAND_TAG}`;
+    const bothUseApp = `${NO_VIEW_TAG}+${CATCH_USE_APPARATUS}`;
+    // 単独の受け方より少ない
+    expect(w("ring", bothNonHand, 0)).toBeLessThan(w("ring", NON_HAND_TAG, 0));
+    expect(w("ring", bothUseApp, 0)).toBeLessThan(w("ring", CATCH_USE_APPARATUS, 0));
+    expect(COMBINED_CATCH_WEIGHT).toBeLessThan(1);
+    // 視野外＋手以外は手以外の規則に従う（スティックは徒手0〜1動作の投げだけ）
+    expect(w("stick", bothNonHand, 0)).toBeGreaterThan(0);
+    expect(w("stick", bothNonHand, NON_HAND_CATCH_MAX_MOTIONS + 1)).toBe(0);
+    // 視野外＋手具を使ったキャッチは難度に関わらず起きうる（徒手が多くても0にならない）
+    expect(w("ring", bothUseApp, 4)).toBeGreaterThan(0);
+    // クラブは実施例が無いのでリングより低い
+    expect(w("clubs", bothUseApp, 0)).toBeLessThan(w("ring", bothUseApp, 0));
+    expect(NO_VIEW_USE_APPARATUS_WEIGHT.clubs).toBeLessThan(1);
+  });
+
+  it("2種類を同時に満たすキャッチは二つ投げ・連続投げの前では使わない", () => {
+    // 二つ投げは手具が2つとも空中にあるので押さえつけられない
+    expect(catchStylesForThrow("clubs", true).map((c) => c.id)).not.toContain(
+      `${NO_VIEW_TAG}+${CATCH_USE_APPARATUS}`,
+    );
+    // 視野外のキャッチ→視野外の投げは実施できないので、続けて投げる形では使わない
+    const noViewPair = AUTO_THROW_PATTERNS.find((x) => x.noViewPair)!;
+    const ids = catchStylesForPattern("ring", false, noViewPair).map((c) => c.id);
+    expect(ids).not.toContain(`${NO_VIEW_TAG}+${NON_HAND_TAG}`);
+    expect(ids).not.toContain(`${NO_VIEW_TAG}+${CATCH_USE_APPARATUS}`);
+  });
+
+  it("手以外のキャッチは手具ごとに実施しやすさが違う", () => {
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree && !rollFinishShape(x))!;
+    const normalThrow = autoThrowStyles("stick").find((t) => t.id === "normal")!;
+    const nonHand = autoCatchStyles("stick").find((c) => c.id === NON_HAND_TAG)!;
+    const w = (apparatus: ApparatusKey, motions: number) =>
+      catchStyleWeight({ throwStyle: normalThrow, catchStyle: nonHand, pattern: plain, apparatus, motions });
+    // スティックは低難度の投げ（徒手0〜1動作）で実施する
+    expect(w("stick", 0)).toBe(1);
+    expect(w("stick", NON_HAND_CATCH_MAX_MOTIONS)).toBe(1);
+    expect(w("stick", NON_HAND_CATCH_MAX_MOTIONS + 1)).toBe(0);
+    // クラブは低難度の投げで、しかも低確率
+    expect(w("clubs", 0)).toBeLessThan(1);
+    expect(w("clubs", 0)).toBeGreaterThan(0);
+    expect(w("clubs", NON_HAND_CATCH_MAX_MOTIONS + 1)).toBe(0);
+    // リング・ロープは普通に実施する
+    expect(w("ring", 4)).toBe(1);
+    expect(w("rope", 4)).toBe(1);
+    // 組み立てた候補でも、スティックの手以外のキャッチは徒手0〜1動作のものだけ
+    (["stick", "clubs"] as ApparatusKey[]).forEach((app) =>
+      autoThrowSpecs(app).forEach((sp) => {
+        if (!catchHasTag(sp.catchStyle, NON_HAND_TAG)) return;
+        expect(patternMotions(sp.pattern, sp.cheneCount)).toBeLessThanOrEqual(NON_HAND_CATCH_MAX_MOTIONS);
+      }),
+    );
+    // リング・ロープは徒手の多い投げでも手以外で受ける候補が出る
+    const many = (app: ApparatusKey) =>
+      autoThrowSpecs(app).some(
+        (sp) =>
+          sp.catchStyle.id === NON_HAND_TAG &&
+          patternMotions(sp.pattern, sp.cheneCount) > NON_HAND_CATCH_MAX_MOTIONS,
+      );
+    expect(many("ring")).toBe(true);
+    expect(many("rope")).toBe(true);
+  });
+
+  it("クラブ・リングは転がり・前転のあと手具を使ったキャッチが定番", () => {
+    expect(ROLL_FINISH_OTHER_CATCH_WEIGHT).toBeLessThan(1);
+    // 動作の最後が転がり・前転の形
+    const roll = AUTO_THROW_PATTERNS.find((x) => rollFinishShape(x) && !x.verticalThree)!;
+    const plain = AUTO_THROW_PATTERNS.find((x) => !rollFinishShape(x) && !x.verticalThree)!;
+    const throwStyle = autoThrowStyles("clubs").find((t) => t.id === "normal")!;
+    const w = (apparatus: ApparatusKey, pattern: typeof roll, catchId: string) =>
+      catchStyleWeight({
+        throwStyle,
+        catchStyle: autoCatchStyles(apparatus).find((c) => c.id === catchId)!,
+        pattern,
+        apparatus,
+        motions: 2,
+      });
+    // クラブ・リングは押さえつけ以外を引きにくくする
+    (["clubs", "ring"] as ApparatusKey[]).forEach((app) => {
+      expect(w(app, roll, CATCH_USE_APPARATUS)).toBe(1);
+      expect(w(app, roll, "normal")).toBe(ROLL_FINISH_OTHER_CATCH_WEIGHT);
+      // 転がり・前転で終わらない形は変えない
+      expect(w(app, plain, "normal")).toBe(1);
+    });
+    // 実際に組み立てた候補でも、その形の受け方は押さえつけが最も多い
+    const count = new Map<string, number>();
+    for (let seed = 0; seed < 20; seed++)
+      autoThrowSpecs("clubs", { random: seeded(seed) })
+        .filter((sp) => rollFinishShape(sp.pattern) && !sp.pattern.verticalThree)
+        .forEach((sp) => count.set(sp.catchStyle.id, (count.get(sp.catchStyle.id) ?? 0) + 1));
+    const useapp = count.get(CATCH_USE_APPARATUS) ?? 0;
+    expect(useapp).toBeGreaterThan(0);
+    [...count.entries()]
+      .filter(([id]) => id !== CATCH_USE_APPARATUS)
+      .forEach(([, n]) => expect(useapp).toBeGreaterThan(n));
+  });
+
+  it("前転3回（縦3動作）は手具を使ったキャッチが主流", () => {
+    expect(VERTICAL_THREE_OTHER_CATCH_WEIGHT).toBeLessThan(1);
+    const pattern = AUTO_THROW_PATTERNS.find((x) => x.verticalThree)!;
+    expect(pattern.id).toBe("rolls");
+    // クラブは手具で押さえつけて受けられるので、受け方の中でそれが最も多くなる
+    const count = new Map<string, number>();
+    for (let seed = 0; seed < 20; seed++)
+      autoThrowSpecs("clubs", { random: seeded(seed) })
+        .filter((sp) => sp.pattern.verticalThree)
+        .forEach((sp) => count.set(sp.catchStyle.id, (count.get(sp.catchStyle.id) ?? 0) + 1));
+    const useapp = count.get(CATCH_USE_APPARATUS) ?? 0;
+    expect(useapp).toBeGreaterThan(0);
+    [...count.entries()]
+      .filter(([id]) => id !== CATCH_USE_APPARATUS)
+      .forEach(([, n]) => expect(useapp).toBeGreaterThan(n));
+  });
+
+  it("左手投げを視野外で受ける候補はかなり少ない", () => {
+    expect(LEFT_HAND_NO_VIEW_CATCH_WEIGHT).toBeLessThan(1);
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree && !rollFinishShape(x))!;
+    const left = autoThrowStyles("stick").find((t) => (t.reqTypes || []).includes(LEFT_HAND_TAG))!;
+    const noView = autoCatchStyles("stick").find((c) => c.id === NO_VIEW_TAG)!;
+    const normal = autoCatchStyles("stick").find((c) => c.id === "normal")!;
+    const w = (throwStyle: typeof left, catchStyle: typeof noView, motions = 0) =>
+      catchStyleWeight({ throwStyle, catchStyle, pattern: plain, apparatus: "stick", motions });
+    expect(w(left, noView)).toBe(LEFT_HAND_NO_VIEW_CATCH_WEIGHT);
+    expect(w(left, normal)).toBe(1);
+    // 左手投げ以外なら視野外のキャッチも普通に出る
+    const nomal = autoThrowStyles("stick").find((t) => t.id === "normal")!;
+    expect(w(nomal, noView)).toBe(1);
+    // 実際に組み立てた候補でも、左手投げの視野外キャッチは他の受け方より少ない
+    let noViewCatch = 0;
+    let other = 0;
+    for (let seed = 0; seed < 20; seed++)
+      autoThrowSpecs("stick", { random: seeded(seed) })
+        .filter((sp) => (sp.throwStyle.reqTypes || []).includes(LEFT_HAND_TAG))
+        .forEach((sp) => {
+          if (sp.catchStyle.id === NO_VIEW_TAG) noViewCatch += 1;
+          else other += 1;
+        });
+    expect(noViewCatch * 3).toBeLessThan(other);
   });
 
   it("autoThrows: false なら使わない", () => {

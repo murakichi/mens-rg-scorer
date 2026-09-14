@@ -26,8 +26,15 @@
 //  - 同じ宙返りの繰り返しは避ける（前宙は例外）。必須ではないので弱い重み付けにとどめる
 // =====================================================================
 
-import { analyzeSeries } from "./analysis";
-import { autoThrowTemplates, cheneCountRange, isAutoThrowTemplate, withCheneCount } from "./autoThrows";
+import { analyzeSeries, motionDef, motionTimes } from "./analysis";
+import {
+  NON_HAND_TAG,
+  OTHER_TAG,
+  autoThrowTemplates,
+  cheneCountRange,
+  isAutoThrowTemplate,
+  withCheneCount,
+} from "./autoThrows";
 import {
   LIMITED_SKILLS,
   LIMITED_SKILL_MAX,
@@ -49,6 +56,7 @@ import {
   APPARATUS,
   APPARATUS_REQUIRED_ELEMENTS,
   DIFF_VALUE,
+  USE_APPARATUS_TAG,
   skillDef,
   throwCountRequired,
 } from "./constants";
@@ -62,8 +70,14 @@ export interface GenerateOptions {
   maxScore?: number | null;
   /** 試行回数（多いほど良い構成が出やすいが遅くなる） */
   attempts?: number;
-  /** シリーズ数の上限 */
+  /** シリーズ数の上限（既定 `DEFAULT_MAX_SERIES`） */
   maxSeries?: number;
+  /**
+   * 自動生成のシリーズにしてよい**割合**（0〜1。既定1＝種類ごとの上限だけ）。
+   * シリーズ数の上限（`maxSeries`）に対する本数に換算する（`autoSeriesMax`）。
+   * 0 なら自動生成を使わず、登録テンプレートだけで組む。
+   */
+  autoRatio?: number;
   /**
    * 必須要素を必ず満たすか。未指定なら狙うDスコアで決まる
    * （上限なし、または `REQUIRE_ALL_ELEMENTS_MIN_SCORE` 以上で満たしにいく）。
@@ -116,13 +130,32 @@ export const DEFAULT_MAX_THROW_TUMBLING = 1;
  */
 export const DEFAULT_MAX_TUMBLINGS = ADOPT_COUNT;
 
+/** シリーズ数の上限の既定値 */
+export const DEFAULT_MAX_SERIES = 8;
+
+/** 自動生成の割合の既定値（1＝種類ごとの上限だけで、割合では制限しない） */
+export const DEFAULT_AUTO_RATIO = 1;
+
+/**
+ * その構成に入れてよい自動生成のシリーズの本数（種類の合計）。
+ * `autoRatio` をシリーズ数の上限に対する本数に換算する。null＝割合では制限しない。
+ */
+export function autoSeriesMax(opts: GenerateOptions): number | null {
+  const ratio = opts.autoRatio ?? DEFAULT_AUTO_RATIO;
+  if (ratio >= 1) return null;
+  const maxSeries = opts.maxSeries ?? DEFAULT_MAX_SERIES;
+  return Math.max(0, Math.round(Math.max(0, ratio) * maxSeries));
+}
+
 /**
  * 生成する構成に入れる自動生成の投げの本数の上限。
- * 技術加点（視野外・手以外…）に上限が無いため、放っておくと自動生成の投げだけで
- * 構成が埋まってしまう。難度に採用されるのも上位3本（`ADOPT_COUNT`）までなので、
- * 「テンプレートで足りない投げ方を補う」本数にとどめる。
+ * 難度を狙う投げは投げタン＋上位3本（`ADOPT_COUNT`）までだが、それを超える投げは
+ * **技術加点のために実施する**ので、本数そのものは投げ上げの回数の最頻値
+ * （`preferredThrowCount` / `throwCountPenalty`）で決める。上限はその判断が効く範囲で
+ * 「構成が自動生成の投げだけで埋まらない」ようにするためだけのもので、実測では
+ * 5本と8本で結果が完全に一致する（＝最頻値の重みが先に効く）。
  */
-export const DEFAULT_MAX_AUTO_THROWS = 3;
+export const DEFAULT_MAX_AUTO_THROWS = 5;
 
 /**
  * 生成する構成に入れる自動生成のタンブリングの本数の上限。
@@ -292,6 +325,69 @@ export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false)
 }
 
 /**
+ * 縦3動作（前転3回など）でE難度になる投げ受けのうち、**手具を使ったキャッチ以外**の本数。
+ * 前転3回から受けるのは手具で押さえつけるのが主流で、それ以外の形は基本実施しない。
+ * 難度点より大きい重み（`VERTICAL_THREE_THROW_WEIGHT`）で嫌い、Dスコアの範囲を満たすのに
+ * どうしても必要なとき（範囲外のペナルティは×100）だけ入るようにする。
+ */
+/**
+ * その他の投げ・その他のキャッチは自動生成では**可能な限り使わない**。
+ * 技術加点（`TECHNIQUE_BONUS`＝0.1）より強い重みで嫌うので、加点のためだけには実施せず、
+ * 多様な投げ受け（必須要素＝`REQUIRED_ELEMENT_WEIGHT`）を満たすのにどうしても必要なときだけ入る。
+ */
+export const OTHER_STYLE_WEIGHT = 0.15;
+
+/** その他の投げ・その他のキャッチの回数 */
+export function otherStyleCount(series: Series[]): number {
+  let count = 0;
+  series.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "throw" || (item.kind === "skill" && item.isThrow))
+        count += (item.throwTypes || []).filter((t) => t === OTHER_TAG).length;
+      else if (item.kind === "catch") count += (item.catchTypes || []).filter((t) => t === OTHER_TAG).length;
+    }),
+  );
+  return count;
+}
+
+export function verticalThreeThrowCount(series: Series[], junior = false): number {
+  let count = 0;
+  series.forEach((ser) => {
+    let vertical = 0;
+    let open = false;
+    ser.items.forEach((item) => {
+      if (item.kind === "throw") {
+        vertical = 0;
+        open = true;
+        return;
+      }
+      if (item.kind === "motion" && open) {
+        const def = motionDef(item.motionId, junior);
+        if (def) vertical += def.vertical * motionTimes(item.count);
+        return;
+      }
+      if (item.kind === "catch" && open) {
+        if (vertical >= VERTICAL_THREE_MOTIONS && !(item.catchTypes || []).includes(USE_APPARATUS_TAG))
+          count += 1;
+        open = false;
+      }
+    });
+  });
+  return count;
+}
+
+/** 縦3動作とみなす動作数（§3.5.5.3） */
+const VERTICAL_THREE_MOTIONS = 3;
+
+/**
+ * 手具を使ったキャッチ以外の縦3動作の投げ受け1本ぶんの評価の重み。
+ * この形が1本増やす点数（徒手系E難度＝0.7が上限）より大きくして、
+ * **点数を稼ぐうえでどうしても必要なときだけ**実施するようにする
+ * （Dスコアの範囲外は×100、投げ回数の不足は10なので、必要なときは必ず入る）。
+ */
+export const VERTICAL_THREE_THROW_WEIGHT = 0.85;
+
+/**
  * 難度を狙う投げは基本4回まで（投げタン1回＋それ以外の投げ3回＝`ADOPT_COUNT` 本の
  * 徒手系ユニット）。それ以上の投げは**加点だけを狙う**ので徒手操作を足さない。
  * 難度に採用されない投げ受けに操作が入っているぶんを、難度の刻みより小さい重みで嫌う。
@@ -328,23 +424,37 @@ export function preferredThrowCount(dScore: number, junior = false): number {
 
 /** 最頻値より少ない投げ1回ぶんの評価の重み */
 export const THROW_COUNT_UNDER_WEIGHT = 0.1;
-/** 最頻値より多い投げ1回ぶんの評価の重み（技術加点で稼げるので強めに嫌う） */
-export const THROW_COUNT_OVER_WEIGHT = 0.35;
-/** このDスコア以上では多い側を緩める（最頻値は変えずに1回多い構成も出やすくする） */
-export const THROW_COUNT_RELAXED_SCORE = 5.0;
-export const THROW_COUNT_OVER_WEIGHT_RELAXED = 0.2;
+/**
+ * 最頻値より**1回多い**投げの重み。1回多い構成は十分ありえる（Dスコア4点台でも6回を
+ * 実施する）ので弱めに嫌う。それでも難度の刻み（0.1）より強くするのは、技術加点に
+ * 上限が無く、投げを足すほど点が伸びてしまうため。
+ * 自動生成の投げの本数の上限（`DEFAULT_MAX_AUTO_THROWS`）を上げたぶん、
+ * 「最頻値を保つ」のはこの重みの仕事になっている。
+ */
+export const THROW_COUNT_OVER_WEIGHT = 0.2;
+/**
+ * Dスコアが高い構成での、最頻値より1回多い投げの重み。
+ * `THROW_COUNT_HIGH_SCORE` 以上を狙う構成では6回を実施する確率が上がる
+ * （最頻値は5回のまま）ので、1回多いぶんの重みを**弱める**。
+ */
+export const THROW_COUNT_HIGH_SCORE = 5.0;
+export const THROW_COUNT_OVER_WEIGHT_HIGH = 0.15;
+/** 最頻値より2回以上多い投げ1回ぶんの重み（実際にはほぼ無いので強く嫌う） */
+export const THROW_COUNT_FAR_OVER_WEIGHT = 0.3;
 
 /**
  * 投げ上げの回数が最頻値から離れているぶんの評価の引き算。
- * 多い側は技術加点（上限なし）で稼げてしまうので強めに嫌い、Dスコアが高い構成では緩める。
+ * 多い側は技術加点（上限なし）で稼げてしまうので、難度の刻みより強い重みで嫌う。
+ * 1回多いだけなら弱め、2回以上多いぶんは強く。
  */
 export function throwCountPenalty(count: number, dScore: number, junior = false): number {
   const mode = preferredThrowCount(dScore, junior);
   if (count < mode) return (mode - count) * THROW_COUNT_UNDER_WEIGHT;
   const over = count - mode;
-  const weight =
-    dScore >= THROW_COUNT_RELAXED_SCORE ? THROW_COUNT_OVER_WEIGHT_RELAXED : THROW_COUNT_OVER_WEIGHT;
-  return over * weight;
+  if (over === 0) return 0;
+  const first =
+    dScore >= THROW_COUNT_HIGH_SCORE ? THROW_COUNT_OVER_WEIGHT_HIGH : THROW_COUNT_OVER_WEIGHT;
+  return first + (over - 1) * THROW_COUNT_FAR_OVER_WEIGHT;
 }
 
 /**
@@ -367,6 +477,13 @@ export function reversedThrowOrderCount(r: ScoreResult): number {
 
 /** 連続投げで2回目以降のほうが難度が高いシリーズ1本ぶんの評価の重み */
 export const THROW_ORDER_WEIGHT = 0.005;
+
+/**
+ * 難度点（タンブリング＋徒手）1点あたりの上乗せ。Dスコアを上げるときは、
+ * **加点よりも高難度の実施を優先する**。同じDスコアなら難度点で取っている構成を選び、
+ * 難度点と加点が競合する場面（シリーズの枠は限られている）では難度点を取る。
+ */
+export const DIFFICULTY_PREFERENCE_WEIGHT = 0.3;
 
 /** 演技中に何度実施しても不自然でない宙返り（前宙） */
 export const REPEATABLE_SALTOS = ["b_front"];
@@ -441,6 +558,11 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   const throwCount = throwCountPenalty(r.performedThrowCount, r.dScore, !!opts.junior);
   // 難度に採用されない投げは加点だけを狙うので、操作を足さない
   const extraOperation = extraThrowOperation(r) * EXTRA_THROW_OPERATION_WEIGHT;
+  // 前転3回（縦3動作）を手具を使ったキャッチ以外で受ける形は基本実施しない
+  const verticalThree =
+    verticalThreeThrowCount(series, !!opts.junior) * VERTICAL_THREE_THROW_WEIGHT;
+  // その他の投げ・その他のキャッチは可能な限り使わない
+  const otherStyle = otherStyleCount(series) * OTHER_STYLE_WEIGHT;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
@@ -450,12 +572,16 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       -(penalty + overThrowTum + overTumbling + overLimited) * 100 -
       shortfall +
       r.dScore +
+      // 加点よりも高難度の実施を優先する
+      (r.tumblingScore + r.handScore) * DIFFICULTY_PREFERENCE_WEIGHT +
       r.aScore -
       variety -
       shape -
       throwOrder -
       throwCount -
       extraOperation -
+      verticalThree -
+      otherStyle -
       auto -
       limitedUsed * LIMITED_SKILL_WEIGHT -
       (highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT)) /
@@ -529,6 +655,8 @@ export function usableTemplates(templates: SeriesTemplate[], apparatus: Apparatu
  */
 function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () => number): SeriesTemplate[] {
   const pool: SeriesTemplate[] = [];
+  // 割合が0＝自動生成を使わない（候補を作るだけ無駄なので作らない）
+  if (autoSeriesMax(opts) === 0) return pool;
   if (opts.autoThrows !== false)
     pool.push(...autoThrowTemplates(opts.apparatus, { random: rand, limit: opts.autoThrowLimit }));
   if (opts.autoTumblings !== false)
@@ -537,6 +665,8 @@ function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () => numb
         junior: !!opts.junior,
         // 低いDスコアを狙うなら、基本的な構成の選手とみなして候補を寄せる
         basicLevel: opts.maxScore != null && opts.maxScore < BASIC_LEVEL_MAX_SCORE,
+        // 後ろ向きで終わる後方宙返りで終わる確率は狙うDスコアで決まる
+        targetScore: opts.maxScore,
         skillIds: opts.autoTumblingSkills ?? usedSkillIds(own.map((t) => t.series)),
         random: rand,
         limit: opts.autoTumblingLimit,
@@ -628,17 +758,37 @@ function orderSeries(
   const junior = !!opts.junior;
   const tumbling = used.filter((t) => isTumblingSeries(t.series, junior));
   const throws = used.filter((t) => !isTumblingSeries(t.series, junior));
-  if (tumbling.length === 0 || throws.length === 0) return { used, ev: cur };
-  const ordered =
-    tumbling.length >= throws.length ? interleave(tumbling, throws) : interleave(throws, tumbling);
+  let ordered = used;
+  if (tumbling.length > 0 && throws.length > 0)
+    ordered =
+      tumbling.length >= throws.length ? interleave(tumbling, throws) : interleave(throws, tumbling);
+  ordered = nonHandLast(ordered, opts.apparatus);
+  if (ordered === used) return { used, ev: cur };
   const ev = evaluateUsed(ordered, opts);
   return ev.value >= cur.value - 1e-9 ? { used: ordered, ev } : { used, ev: cur };
 }
 
-/** 自動生成のシリーズの本数が上限を超えていないか */
+/**
+ * ロープは**足に絡めた手以外のキャッチで演技を締める**ことがとても多いので、
+ * その投げ受けで終わるシリーズを最後に置く（並びで点数は変わらない）。
+ */
+function nonHandLast(list: SeriesTemplate[], apparatus: ApparatusKey): SeriesTemplate[] {
+  if (apparatus !== "rope" || list.length < 2) return list;
+  const endsWithNonHand = (t: SeriesTemplate) => {
+    const last = t.series.items[t.series.items.length - 1];
+    return last?.kind === "catch" && (last.catchTypes || []).includes(NON_HAND_TAG);
+  };
+  const idx = list.findIndex(endsWithNonHand);
+  if (idx < 0 || endsWithNonHand(list[list.length - 1])) return list;
+  return [...list.filter((_, i) => i !== idx), list[idx]];
+}
+
+/** 自動生成のシリーズの本数が上限（種類ごと・割合）を超えていないか */
 function withinAutoLimits(list: SeriesTemplate[], opts: GenerateOptions): boolean {
   const throws = list.filter(isAutoThrowTemplate).length;
   const tumblings = list.filter(isAutoTumblingTemplate).length;
+  const ratioMax = autoSeriesMax(opts);
+  if (ratioMax !== null && throws + tumblings > ratioMax) return false;
   return (
     throws <= (opts.maxAutoThrows ?? DEFAULT_MAX_AUTO_THROWS) &&
     tumblings <= (opts.maxAutoTumblings ?? DEFAULT_MAX_AUTO_TUMBLINGS)
@@ -700,12 +850,16 @@ function greedyAttempt(
   let cur = evaluateUsed(used, opts);
   /** 自動生成の候補を種類ごとに何本使ったか */
   const autoUsed = new Map<string, number>();
+  let autoTotal = 0;
   const countAuto = (t: SeriesTemplate) => {
     if (autoLimitOf(t, opts) === null) return;
     const kind = isAutoThrowTemplate(t) ? "throw" : "tumbling";
     autoUsed.set(kind, (autoUsed.get(kind) ?? 0) + 1);
+    autoTotal += 1;
   };
   start.forEach(countAuto);
+  // 自動生成にしてよい割合（`autoRatio`）ぶんの本数。null＝割合では制限しない
+  const ratioMax = autoSeriesMax(opts);
 
   // ① ランダムな順に見て、評価が上がるものだけ足す。
   //    登録テンプレートを先に見て、足りないところを自動生成で補う。
@@ -717,6 +871,8 @@ function greedyAttempt(
     const limit = autoLimitOf(t, opts);
     const kind = isAutoThrowTemplate(t) ? "throw" : "tumbling";
     if (limit !== null && (autoUsed.get(kind) ?? 0) >= limit) continue;
+    // 自動生成の割合の上限（種類をまとめた本数）
+    if (limit !== null && ratioMax !== null && autoTotal >= ratioMax) continue;
     const next = [...used, t];
     const ev = evaluateUsed(next, opts);
     if (ev.value > cur.value + 1e-9) {
@@ -797,7 +953,7 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   if (own.length + auto.length === 0) return null;
 
   const attempts = opts.attempts ?? 40;
-  const maxSeries = opts.maxSeries ?? 8;
+  const maxSeries = opts.maxSeries ?? DEFAULT_MAX_SERIES;
 
   let best: { used: SeriesTemplate[]; ev: Evaluation } | null = null;
 
