@@ -17,6 +17,8 @@ import {
   NON_HAND_TAG,
   NON_HAND_CATCH_MAX_MOTIONS,
   patternMotions,
+  rollFinishShape,
+  ROLL_FINISH_OTHER_CATCH_WEIGHT,
   throwStylesForPattern,
   VERTICAL_THREE_OTHER_CATCH_WEIGHT,
   cheneCountRange,
@@ -406,7 +408,7 @@ describe("ランダム生成への組み込み", () => {
   });
 
   it("手以外のキャッチは手具ごとに実施しやすさが違う", () => {
-    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree)!;
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree && !rollFinishShape(x))!;
     const normalThrow = autoThrowStyles("stick").find((t) => t.id === "normal")!;
     const nonHand = autoCatchStyles("stick").find((c) => c.id === NON_HAND_TAG)!;
     const w = (apparatus: ApparatusKey, motions: number) =>
@@ -440,6 +442,40 @@ describe("ランダム生成への組み込み", () => {
     expect(many("rope")).toBe(true);
   });
 
+  it("クラブ・リングは転がり・前転のあと手具を使ったキャッチが定番", () => {
+    expect(ROLL_FINISH_OTHER_CATCH_WEIGHT).toBeLessThan(1);
+    // 動作の最後が転がり・前転の形
+    const roll = AUTO_THROW_PATTERNS.find((x) => rollFinishShape(x) && !x.verticalThree)!;
+    const plain = AUTO_THROW_PATTERNS.find((x) => !rollFinishShape(x) && !x.verticalThree)!;
+    const throwStyle = autoThrowStyles("clubs").find((t) => t.id === "normal")!;
+    const w = (apparatus: ApparatusKey, pattern: typeof roll, catchId: string) =>
+      catchStyleWeight({
+        throwStyle,
+        catchStyle: autoCatchStyles(apparatus).find((c) => c.id === catchId)!,
+        pattern,
+        apparatus,
+        motions: 2,
+      });
+    // クラブ・リングは押さえつけ以外を引きにくくする
+    (["clubs", "ring"] as ApparatusKey[]).forEach((app) => {
+      expect(w(app, roll, CATCH_USE_APPARATUS)).toBe(1);
+      expect(w(app, roll, "normal")).toBe(ROLL_FINISH_OTHER_CATCH_WEIGHT);
+      // 転がり・前転で終わらない形は変えない
+      expect(w(app, plain, "normal")).toBe(1);
+    });
+    // 実際に組み立てた候補でも、その形の受け方は押さえつけが最も多い
+    const count = new Map<string, number>();
+    for (let seed = 0; seed < 20; seed++)
+      autoThrowSpecs("clubs", { random: seeded(seed) })
+        .filter((sp) => rollFinishShape(sp.pattern) && !sp.pattern.verticalThree)
+        .forEach((sp) => count.set(sp.catchStyle.id, (count.get(sp.catchStyle.id) ?? 0) + 1));
+    const useapp = count.get(CATCH_USE_APPARATUS) ?? 0;
+    expect(useapp).toBeGreaterThan(0);
+    [...count.entries()]
+      .filter(([id]) => id !== CATCH_USE_APPARATUS)
+      .forEach(([, n]) => expect(useapp).toBeGreaterThan(n));
+  });
+
   it("前転3回（縦3動作）は手具を使ったキャッチが主流", () => {
     expect(VERTICAL_THREE_OTHER_CATCH_WEIGHT).toBeLessThan(1);
     const pattern = AUTO_THROW_PATTERNS.find((x) => x.verticalThree)!;
@@ -459,7 +495,7 @@ describe("ランダム生成への組み込み", () => {
 
   it("左手投げを視野外で受ける候補はかなり少ない", () => {
     expect(LEFT_HAND_NO_VIEW_CATCH_WEIGHT).toBeLessThan(1);
-    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree)!;
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree && !rollFinishShape(x))!;
     const left = autoThrowStyles("stick").find((t) => (t.reqTypes || []).includes(LEFT_HAND_TAG))!;
     const noView = autoCatchStyles("stick").find((c) => c.id === NO_VIEW_TAG)!;
     const normal = autoCatchStyles("stick").find((c) => c.id === "normal")!;

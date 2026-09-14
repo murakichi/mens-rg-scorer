@@ -144,6 +144,18 @@ export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean):
 export const NO_VIEW_TAG = "noview";
 /** 手以外の受け・投げの技術タグ */
 export const NON_HAND_TAG = "nonhand";
+/**
+ * 動作の最後が**転がり・前転**の形。クラブ・リングは、そこから
+ * **手具を使ったキャッチ（押さえつけ）**で受けるのが定番。
+ */
+export const ROLL_FINISH_MOTIONS: string[] = [FWD_ROLL, ROLL];
+export const rollFinishShape = (pattern: AutoThrowPattern): boolean => {
+  const last = pattern.after[pattern.after.length - 1];
+  return !!last && ROLL_FINISH_MOTIONS.includes(last.motionId);
+};
+/** その形で手具を使ったキャッチ以外を引く重み（クラブ・リングのみ） */
+export const ROLL_FINISH_OTHER_CATCH_WEIGHT = 0.2;
+
 /** その他の受け・投げの技術タグ */
 export const OTHER_TAG = "other";
 /** その他のキャッチから次の投げに続ける確率は低い */
@@ -206,6 +218,9 @@ export function catchStyleWeight({
   // 縦3動作の形は手具で押さえつけて受けるのが主流
   if (pattern.verticalThree && catchStyle.id !== CATCH_USE_APPARATUS)
     return VERTICAL_THREE_OTHER_CATCH_WEIGHT;
+  // クラブ・リングは、転がり・前転で終わってから手具で押さえつけて受けるのが定番
+  if (APPARATUS_USE[apparatus] && rollFinishShape(pattern) && catchStyle.id !== CATCH_USE_APPARATUS)
+    return ROLL_FINISH_OTHER_CATCH_WEIGHT;
   // 左手投げを視野外で受けることはかなり少ない
   if ((throwStyle.reqTypes || []).includes(LEFT_HAND_TAG) && catchStyle.id === NO_VIEW_TAG)
     return LEFT_HAND_NO_VIEW_CATCH_WEIGHT;

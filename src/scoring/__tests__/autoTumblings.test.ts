@@ -43,6 +43,7 @@ import {
   BACKWARD_END_ZERO_SCORE,
   THROW_IN_SIDE_SALTO_WEIGHT,
   THROW_IN_SKILL_ROUNDOFF_WEIGHT,
+  ROLL_FINISH_PRESS_CATCH_CHANCE,
   TEMPO_CONNECT_WEIGHT,
   PAIR_AFTER_THROW_FIRST_CHANCE,
   PAIR_AFTER_THROW_IN_SKILL_CHANCE,
@@ -768,6 +769,42 @@ describe("つなぎ技", () => {
     expect(other).toBeGreaterThan(0);
     // 残すのは低い確率（他の形のほうが多い）
     expect(kirimomi * 3).toBeLessThan(other);
+  }, 60_000);
+
+  it("クラブ・リングは投げタンの前転のあとも手具を使ったキャッチで受ける", () => {
+    expect(ROLL_FINISH_PRESS_CATCH_CHANCE).toBeGreaterThan(0);
+    const series = buildAutoTumblingSeries({
+      pattern: pattern("throwRoll"),
+      saltoCount: 1,
+      entry: [],
+      saltoIds: ["b_front"],
+      connectId: "",
+      pressCatch: true,
+    });
+    const last = series.items[series.items.length - 1];
+    expect(last.kind === "catch" && last.catchTypes).toEqual(["useapp"]);
+    // 前転を入れない形（側宙で終わる）では押さえつけない
+    const side = buildAutoTumblingSeries({
+      pattern: pattern("throwRoll"),
+      saltoCount: 1,
+      entry: [],
+      saltoIds: ["b_sidesalto"],
+      connectId: "",
+      pressCatch: true,
+    });
+    const sideLast = side.items[side.items.length - 1];
+    expect(sideLast.kind === "catch" && sideLast.catchTypes).toBeUndefined();
+    // 手具が1つの種目では入力できないので落ちる
+    const hasUseApp = (list: ReturnType<typeof autoTumblingTemplates>) =>
+      list.some((t) =>
+        t.series.items.some((it) => it.kind === "catch" && (it.catchTypes || []).includes("useapp")),
+      );
+    let clubs = false;
+    for (let seed = 0; seed < 20 && !clubs; seed++)
+      clubs = hasUseApp(autoTumblingTemplates("clubs", { random: seeded(seed) }));
+    expect(clubs).toBe(true);
+    for (let seed = 0; seed < 20; seed++)
+      expect(hasUseApp(autoTumblingTemplates("stick", { random: seeded(seed) }))).toBe(false);
   }, 60_000);
 
   it("加点を狙わないタンブリングの手具操作は最低限", () => {
