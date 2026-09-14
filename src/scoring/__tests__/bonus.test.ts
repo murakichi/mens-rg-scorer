@@ -10,37 +10,41 @@ const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 /** 徒手動作を count 回まとめた1アイテム */
 const mot = (motionId: string, count = 1): Item => ({ kind: "motion", motionId, count });
 
-describe("E難度ボーナス（§3.5.5.5(3) 投げを含むE難度の転回系）", () => {
-  it("E難度タンブリングに技中の投げが含まれると +0.10", () => {
-    // 後方伸身2回宙返り(E) を投げながら実施 → 難度E(0.70) + ボーナス(0.10)
+describe("§3.5.5.5(3) 操作を伴う難易度の高い転回系 — 投げのトリガー", () => {
+  it("手具を保持したE難度転回系の最中に投げれば +0.10（操作1回でも成立）", () => {
+    // 手具を持ったまま後方伸身2回宙返り(E)の最中に投げる
     const r = computeScore(
-      [S({ kind: "skill", skillId: "e_doublelay", isThrow: true }, { kind: "catch" })],
+      [S({ kind: "skill", skillId: "e_doublelay", hasApparatus: true, isThrow: true }, { kind: "catch" })],
       "stick",
     );
-    expect(r.tumblingScore).toBeCloseTo(0.8, 5);
-  });
-
-  it("投げが無ければ難度点のみ（ボーナスなし）", () => {
-    const r = computeScore([S({ kind: "skill", skillId: "e_doublelay" }, { kind: "catch" })], "stick");
+    expect(r.apparatusOpBonus).toBeCloseTo(0.1, 5);
+    // 加点は難度点とは別枠（難度点はE難度の0.70のまま）
     expect(r.tumblingScore).toBeCloseTo(0.7, 5);
   });
 
-  it("E難度でなければ投げを含んでもボーナスは付かない", () => {
-    // 後方宙返り(B) + 投げタンで1ランクアップ → C(0.30) のみ
-    const r = computeScore(
-      [S({ kind: "skill", skillId: "b_backsalto", isThrow: true }, { kind: "catch" })],
-      "stick",
-    );
-    expect(r.tumblingScore).toBeCloseTo(0.3, 5);
-  });
-
-  it("内訳の行（tumRows）にもボーナス込みの点数が入る", () => {
+  it("手具を保持していない投げでは付かない", () => {
     const r = computeScore(
       [S({ kind: "skill", skillId: "e_doublelay", isThrow: true }, { kind: "catch" })],
       "stick",
     );
-    expect(r.seriesBreakdowns[0].tumRows[0].score).toBeCloseTo(0.8, 5);
-    expect(r.seriesBreakdowns[0].tumDiff).toBeCloseTo(0.8, 5);
+    expect(r.apparatusOpBonus).toBe(0);
+    expect(r.tumblingScore).toBeCloseTo(0.7, 5);
+  });
+
+  it("投げも操作も無ければ付かない", () => {
+    const r = computeScore([S({ kind: "skill", skillId: "e_doublelay" }, { kind: "catch" })], "stick");
+    expect(r.apparatusOpBonus).toBe(0);
+    expect(r.tumblingScore).toBeCloseTo(0.7, 5);
+  });
+
+  it("E難度でなければ投げを含んでも付かない", () => {
+    // 後方宙返り(B) + 投げタンで1ランクアップ → C
+    const r = computeScore(
+      [S({ kind: "skill", skillId: "b_backsalto", hasApparatus: true, isThrow: true }, { kind: "catch" })],
+      "stick",
+    );
+    expect(r.apparatusOpBonus).toBe(0);
+    expect(r.tumblingScore).toBeCloseTo(0.3, 5);
   });
 });
 
@@ -278,12 +282,8 @@ describe("技術加点：「その他の投げ／受け」の扱い（issue #2 �
   });
 });
 
-// ---------------------------------------------------------------------
-// 以下はルールと実装の乖離として起票済み。修正が入ったら skip を外す。
-// ---------------------------------------------------------------------
-
-describe("§3.5.5.5(3) の上限0.10（issue #3 — 未解決）", () => {
-  it.skip("投げと2回以上の操作の両方が揃っても、E系の加点は合計0.10まで", () => {
+describe("§3.5.5.5(3) の上限0.10（issue #3）", () => {
+  it("投げと2回以上の操作の両方が揃っても、E系の加点は合計0.10まで", () => {
     // 手具を保持したE難度転回系（操作2回）を投げながら実施
     const r = computeScore(
       [
@@ -299,7 +299,7 @@ describe("§3.5.5.5(3) の上限0.10（issue #3 — 未解決）", () => {
     expect(r.tumblingScore + r.apparatusOpBonus).toBeCloseTo(0.8, 5);
   });
 
-  it.skip("複数シリーズが該当しても演技全体で0.10まで", () => {
+  it("複数シリーズが該当しても演技全体で0.10まで", () => {
     const s1 = S(
       { kind: "skill", skillId: "e_doublelay", hasApparatus: true },
       { kind: "skill", skillId: "b_backsalto", hasApparatus: true },
@@ -314,8 +314,8 @@ describe("§3.5.5.5(3) の上限0.10（issue #3 — 未解決）", () => {
   });
 });
 
-describe("§3.5.5.5(3) の局所性（issue #6 — 未解決）", () => {
-  it.skip("E難度転回系そのものに操作が無ければ加点しない", () => {
+describe("§3.5.5.5(3) の局所性（issue #6）", () => {
+  it("E難度転回系そのものに操作が無ければ加点しない", () => {
     const r = computeScore(
       [
         S(
@@ -332,8 +332,44 @@ describe("§3.5.5.5(3) の局所性（issue #6 — 未解決）", () => {
   });
 });
 
-describe("二つ投げ4動作加点の重複（issue #23 — 未解決）", () => {
-  it.skip("同じ内容の二つ投げ4動作は重複して数えない（§3.5.5.5(2)⑦）", () => {
+describe("二つ投げ4動作加点の重複（issue #23）", () => {
+  const twoThrowChene4 = (): Series =>
+    S({ kind: "throw", reqTypes: ["twothrow"] }, mot("chene", 4), { kind: "catch" });
+
+  it("シリーズをまたいでも同じ内容なら1回だけ", () => {
+    const r = computeScore([twoThrowChene4(), S(...twoThrowChene4().items, mot("roll", 1))], "clubs");
+    expect(r.twoThrowMotionBonus).toBeCloseTo(0.1, 5);
+  });
+
+  it("内訳が違えばそれぞれ数える（順序違いは同じ技）", () => {
+    const a = S({ kind: "throw", reqTypes: ["twothrow"] }, mot("chene", 3), mot("roll", 1), { kind: "catch" });
+    const b = S({ kind: "throw", reqTypes: ["twothrow"] }, mot("roll", 1), mot("chene", 3), { kind: "catch" });
+    // a と b は順序が違うだけ＝同じ技。4シェネはそれとは別の技
+    expect(computeScore([a, b], "clubs").twoThrowMotionBonus).toBeCloseTo(0.1, 5);
+    expect(computeScore([a, twoThrowChene4()], "clubs").twoThrowMotionBonus).toBeCloseTo(0.2, 5);
+  });
+
+  it("手ありシェネと手なしシェネは別の技（Q&A Q28）", () => {
+    const hands = S(
+      { kind: "throw", reqTypes: ["twothrow"] },
+      { kind: "motion", motionId: "chene", count: 4, hands: true },
+      { kind: "catch" },
+    );
+    expect(computeScore([twoThrowChene4(), hands], "clubs").twoThrowMotionBonus).toBeCloseTo(0.2, 5);
+  });
+
+  it("「重複ではない」宣言のシリーズは同じ内容でも数える", () => {
+    const second: Series = { ...twoThrowChene4(), notDuplicate: true };
+    expect(computeScore([twoThrowChene4(), second], "clubs").twoThrowMotionBonus).toBeCloseTo(0.2, 5);
+  });
+
+  it("シリーズ内訳の合計が全体の加点と一致する", () => {
+    const r = computeScore([twoThrowChene4(), twoThrowChene4()], "clubs");
+    const sum = r.seriesBreakdowns.reduce((n, b) => n + b.twoMot, 0);
+    expect(sum).toBeCloseTo(r.twoThrowMotionBonus, 5);
+  });
+
+  it("同じ内容の二つ投げ4動作は重複して数えない（§3.5.5.5(2)⑦）", () => {
     const r = computeScore(
       [
         S(

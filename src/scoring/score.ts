@@ -15,6 +15,7 @@ import {
   APPARATUS_OP_BONUS,
   ropeJumpDef,
   TWOTHROW_MOTION_BONUS,
+  DEFAULT_HANDS_TYPE,
   JUMP_VARIETY_BONUS,
   NO_APP_SALTO_DEDUCTION,
   NO_APP_ALL_DEDUCTION,
@@ -172,6 +173,13 @@ const isHandUnit = (u: Unit) => u.type === "throw" && !u.isThrowTumbling;
 /** そのユニットが難度点に寄与する点数。採用の優劣比較に使う。 */
 const unitScore = (u: Unit) => DIFF_SCORE[u.finalDiff];
 
+/** 二つ投げ4動作加点の「同じ技」判定キー：投げ〜受けの間の徒手の内訳（順序非依存） */
+const twoThrowMotionKey = (composition: Map<string, number>): string =>
+  [...composition.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([id, n]) => `${id}:${n}`)
+    .join(",");
+
 export interface ComputeOptions {
   overallExecutionDeduction?: number;
   /** §3.2 実施した手具別必須要素のid */
@@ -306,6 +314,9 @@ export function computeScore(
   const inTop = new Set<Unit>([...topTumbling, ...topHand]);
   const unitInTop = analysis.map((a) => a.units.map((u) => inTop.has(u)));
 
+  // 二つ投げ4動作加点は演技全体で「同じ技」を1回しか数えない（§3.5.5.5(2)⑦）
+  const seenTwoThrowMotions = new Set<string>();
+
   // ---- 各シリーズ内訳（先に算出し、総和系グローバル値はこれを再利用）----
   const seriesBreakdowns: SeriesBreakdown[] = series.map((ser, i) => {
     const a = analysis[i];
@@ -360,34 +371,41 @@ export function computeScore(
 
     let appOp = 0;
     if (!isDup) {
-      const ops = ser.items.filter((item) => item.kind === "skill" && item.hasApparatus).length;
-      // 「投げ**または**2回以上の操作」（§3.5.5.5(3)）。手具を保持した技の最中に投げた場合は
-      // 操作1回でも条件を満たす（手具が1つの種目では投げた後は保持できないので、この形になる）
-      const heldThrow = ser.items.some(
-        (item) => item.kind === "skill" && item.hasApparatus && item.isThrow,
-      );
-      if (ops >= 2 || heldThrow) {
-        const maxD = a.units.reduce(
-          (m, u, j) => (overLimitUnit[i][j] ? m : Math.max(m, DIFF_VALUE[u.finalDiff] || 0)),
-          0,
-        );
-        if (maxD === DIFF_VALUE.E) appOp = APPARATUS_OP_BONUS;
-      }
+      // §3.5.5.5(3)「手具を保持して行うE難度の転回系**に**、投げまたは2回以上の操作が含まれて
+      // いた場合」。条件はE難度の転回系ユニットそのものが満たす必要があり、同じシリーズでも
+      // 別のユニットにある操作では成立しない。
+      // 手具を保持した技の最中に投げた場合は操作1回でも条件を満たす
+      // （手具が1つの種目では投げた後は保持できないので、この形になる）
+      const qualifies = a.units.some((u, j) => {
+        if (overLimitUnit[i][j]) return false;
+        if (!isTumblingUnit(u) || DIFF_VALUE[u.finalDiff] !== DIFF_VALUE.E) return false;
+        const skills = u.skills || [];
+        const heldThrow = skills.some((s) => s.hasApparatus && s.isThrow);
+        return heldThrow || skills.filter((s) => s.hasApparatus).length >= 2;
+      });
+      if (qualifies) appOp = APPARATUS_OP_BONUS;
     }
 
+    // §3.5.5.5(2)⑦「2本投げで4動作をして受けた場合（ただし同じ技は重複して数えない）」。
+    // 「同じ技」は投げ〜受けの間の徒手の内訳（種類×回数、順序は問わない）で判定し、
+    // 演技全体で1回だけ数える。難度採用の §3.4.4 と同じ粒度。
     let twoMot = 0;
     if (!isDup) {
+      const scope = ser.notDuplicate ? `${i}#` : "";
       let inTwo = false;
       let motSum = 0;
-      let added = false;
+      let composition = new Map<string, number>();
       const fin = () => {
-        if (inTwo && motSum >= 4 && !added) {
-          twoMot += TWOTHROW_MOTION_BONUS;
-          added = true;
+        if (inTwo && motSum >= 4) {
+          const key = scope + twoThrowMotionKey(composition);
+          if (!seenTwoThrowMotions.has(key)) {
+            seenTwoThrowMotions.add(key);
+            twoMot += TWOTHROW_MOTION_BONUS;
+          }
         }
         inTwo = false;
         motSum = 0;
-        added = false;
+        composition = new Map();
       };
       ser.items.forEach((item, j) => {
         if (item.kind === "throw") {
@@ -398,7 +416,18 @@ export function computeScore(
           fin();
         } else if (item.kind === "motion" && inTwo) {
           const m = motionDef(item.motionId, junior);
-          if (m) motSum += m.motions * motionTimes(item.count);
+          if (m) {
+            const times = motionTimes(item.count);
+            motSum += m.motions * times;
+            if (times > 0) {
+              // 手あり／手なしのシェネは別の技（Q&A Q28）なので内訳でも区別する
+              const id =
+                m.hasHandsOption && item.hands
+                  ? `${item.motionId}:h:${item.handsType || DEFAULT_HANDS_TYPE}`
+                  : item.motionId;
+              composition.set(id, (composition.get(id) ?? 0) + times);
+            }
+          }
         }
       });
       fin();
