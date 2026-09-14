@@ -156,18 +156,55 @@ export const LEFT_HAND_TAG = "lefthand";
 /** 左手投げを**視野外で受ける**確率はかなり低い */
 export const LEFT_HAND_NO_VIEW_CATCH_WEIGHT = 0.1;
 
-/** その投げ方・形で受け方を引く重み（1が既定） */
-export function catchStyleWeight(
-  throwStyle: AutoThrowStyle,
-  catchStyle: AutoCatchStyle,
-  pattern: AutoThrowPattern,
-): number {
+/**
+ * 手以外のキャッチの実施しやすさは手具で違う。
+ *  - スティック：**低難度の投げ**（徒手が少ない投げ受け）で実施する
+ *  - クラブ：低難度の投げで、しかも**低確率**
+ *  - リング・ロープ：普通に実施する（ロープは足に絡めて受け、そのまま演技を締めることが多い）
+ */
+export const NON_HAND_CATCH_MAX_MOTIONS = 1;
+export const NON_HAND_CATCH_RULE: Record<ApparatusKey, { lowDifficultyOnly: boolean; weight: number }> = {
+  stick: { lowDifficultyOnly: true, weight: 1 },
+  clubs: { lowDifficultyOnly: true, weight: 0.2 },
+  ring: { lowDifficultyOnly: false, weight: 1 },
+  rope: { lowDifficultyOnly: false, weight: 1 },
+};
+
+/** その形で実施する徒手動作の数（シェネの回数＋形に含まれる動作） */
+export const patternMotions = (pattern: AutoThrowPattern, cheneCount: number): number =>
+  cheneCount + pattern.after.reduce((n, m) => n + m.count, 0);
+
+/** その投げ方・形で受け方を引く重み（1が既定。0は実施しない） */
+export function catchStyleWeight({
+  throwStyle,
+  catchStyle,
+  pattern,
+  apparatus,
+  motions,
+}: {
+  throwStyle: AutoThrowStyle;
+  catchStyle: AutoCatchStyle;
+  pattern: AutoThrowPattern;
+  apparatus: ApparatusKey;
+  /** その投げ受けで実施する徒手動作の数（`patternMotions`） */
+  motions: number;
+}): number {
+  const nonHandRule = NON_HAND_CATCH_RULE[apparatus];
+  // 手以外のキャッチを低難度の投げでしか実施しない手具では、徒手が多い形では実施しない
+  if (
+    catchStyle.id === NON_HAND_TAG &&
+    nonHandRule.lowDifficultyOnly &&
+    motions > NON_HAND_CATCH_MAX_MOTIONS
+  )
+    return 0;
   // 縦3動作の形は手具で押さえつけて受けるのが主流
   if (pattern.verticalThree && catchStyle.id !== CATCH_USE_APPARATUS)
     return VERTICAL_THREE_OTHER_CATCH_WEIGHT;
   // 左手投げを視野外で受けることはかなり少ない
   if ((throwStyle.reqTypes || []).includes(LEFT_HAND_TAG) && catchStyle.id === NO_VIEW_TAG)
     return LEFT_HAND_NO_VIEW_CATCH_WEIGHT;
+  // 手以外のキャッチの実施しやすさは手具で違う
+  if (catchStyle.id === NON_HAND_TAG) return nonHandRule.weight;
   return 1;
 }
 
@@ -320,11 +357,16 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   const limit = Math.max(0, opts.limit ?? combos.length);
   // 受け方は「形 × 二つ投げかどうか」ごとに配る（使える受け方が違うので偏らせない）
   const catchCyclers = new Map<string, () => AutoCatchStyle>();
-  const nextCatchFor = (pattern: AutoThrowPattern, throwStyle: AutoThrowStyle): AutoCatchStyle => {
+  const nextCatchFor = (
+    pattern: AutoThrowPattern,
+    throwStyle: AutoThrowStyle,
+    motions: number,
+  ): AutoCatchStyle => {
     const twoThrow = !!throwStyle.two;
     const styles = catchStylesForPattern(apparatus, twoThrow, pattern);
-    // 引きにくい受け方がある形・投げ方（縦3動作・左手投げの視野外）は重み付きで引く
-    const weight = (c: AutoCatchStyle) => catchStyleWeight(throwStyle, c, pattern);
+    // 引きにくい受け方がある形・投げ方（縦3動作・左手投げの視野外・手以外）は重み付きで引く
+    const weight = (c: AutoCatchStyle) =>
+      catchStyleWeight({ throwStyle, catchStyle: c, pattern, apparatus, motions });
     if (styles.some((c) => weight(c) !== 1)) return pickWeighted(styles, rand, weight);
     // それ以外は被らないように配る
     const key = `${pattern.noViewPair ? "noViewPair" : "-"}:${twoThrow}`;
@@ -356,7 +398,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       // シェネが無い形では手の種類は使わない（順番も消費しない）
       hands: cheneCount > 0 ? nextHands() : null,
       throwStyle,
-      catchStyle: nextCatchFor(pattern, throwStyle),
+      catchStyle: nextCatchFor(pattern, throwStyle, patternMotions(pattern, cheneCount)),
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
     };
   });

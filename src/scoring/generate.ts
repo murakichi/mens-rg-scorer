@@ -27,7 +27,13 @@
 // =====================================================================
 
 import { analyzeSeries, motionDef, motionTimes } from "./analysis";
-import { autoThrowTemplates, cheneCountRange, isAutoThrowTemplate, withCheneCount } from "./autoThrows";
+import {
+  NON_HAND_TAG,
+  autoThrowTemplates,
+  cheneCountRange,
+  isAutoThrowTemplate,
+  withCheneCount,
+} from "./autoThrows";
 import {
   LIMITED_SKILLS,
   LIMITED_SKILL_MAX,
@@ -700,11 +706,29 @@ function orderSeries(
   const junior = !!opts.junior;
   const tumbling = used.filter((t) => isTumblingSeries(t.series, junior));
   const throws = used.filter((t) => !isTumblingSeries(t.series, junior));
-  if (tumbling.length === 0 || throws.length === 0) return { used, ev: cur };
-  const ordered =
-    tumbling.length >= throws.length ? interleave(tumbling, throws) : interleave(throws, tumbling);
+  let ordered = used;
+  if (tumbling.length > 0 && throws.length > 0)
+    ordered =
+      tumbling.length >= throws.length ? interleave(tumbling, throws) : interleave(throws, tumbling);
+  ordered = nonHandLast(ordered, opts.apparatus);
+  if (ordered === used) return { used, ev: cur };
   const ev = evaluateUsed(ordered, opts);
   return ev.value >= cur.value - 1e-9 ? { used: ordered, ev } : { used, ev: cur };
+}
+
+/**
+ * ロープは**足に絡めた手以外のキャッチで演技を締める**ことがとても多いので、
+ * その投げ受けで終わるシリーズを最後に置く（並びで点数は変わらない）。
+ */
+function nonHandLast(list: SeriesTemplate[], apparatus: ApparatusKey): SeriesTemplate[] {
+  if (apparatus !== "rope" || list.length < 2) return list;
+  const endsWithNonHand = (t: SeriesTemplate) => {
+    const last = t.series.items[t.series.items.length - 1];
+    return last?.kind === "catch" && (last.catchTypes || []).includes(NON_HAND_TAG);
+  };
+  const idx = list.findIndex(endsWithNonHand);
+  if (idx < 0 || endsWithNonHand(list[list.length - 1])) return list;
+  return [...list.filter((_, i) => i !== idx), list[idx]];
 }
 
 /** 自動生成のシリーズの本数が上限を超えていないか */

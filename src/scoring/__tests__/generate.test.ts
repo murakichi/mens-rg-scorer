@@ -660,3 +660,39 @@ describe("難度点と加点の優先度", () => {
     });
   });
 });
+
+describe("ロープは手以外のキャッチで締める", () => {
+  const nonHand = () =>
+    S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 3 }, { kind: "catch", catchTypes: ["nonhand"] });
+  const plain = () =>
+    S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4 }, { kind: "catch" });
+  const tumbling = () => S(skill("a_roundoff"), skill("b_backsalto"), skill("b_front"), { kind: "catch" });
+
+  it("手以外のキャッチで終わるシリーズを最後に置く", () => {
+    const templates = [
+      tpl("足に絡めて受ける", "rope", nonHand()),
+      tpl("投げ4シェネ", "common", plain()),
+      tpl("三宙", "common", tumbling()),
+    ];
+    [1, 5, 9].forEach((seed) => {
+      const r = generateRoutine(templates, { apparatus: "rope", random: seeded(seed), ...noAuto })!;
+      // 3本とも使う構成なら、手以外のキャッチのシリーズが最後
+      if (!r.used.some((t) => t.name === "足に絡めて受ける")) return;
+      expect(r.used[r.used.length - 1].name).toBe("足に絡めて受ける");
+    });
+  });
+
+  it("他の手具では並べ替えない", () => {
+    const templates = [
+      tpl("手以外で受ける", "common", nonHand()),
+      tpl("投げ4シェネ", "common", plain()),
+      tpl("三宙", "common", tumbling()),
+    ];
+    // スティックでは投げとタンブリングの交互並べだけが効く（最後が手以外とは限らない）
+    const last = [1, 5, 9, 13].map((seed) => {
+      const r = generateRoutine(templates, { apparatus: "stick", random: seeded(seed), ...noAuto })!;
+      return r.used[r.used.length - 1].name;
+    });
+    expect(last.some((n) => n !== "手以外で受ける")).toBe(true);
+  });
+});

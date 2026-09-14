@@ -15,6 +15,8 @@ import {
   LEFT_HAND_NO_VIEW_CATCH_WEIGHT,
   catchStyleWeight,
   NON_HAND_TAG,
+  NON_HAND_CATCH_MAX_MOTIONS,
+  patternMotions,
   throwStylesForPattern,
   VERTICAL_THREE_OTHER_CATCH_WEIGHT,
   cheneCountRange,
@@ -403,6 +405,41 @@ describe("ランダム生成への組み込み", () => {
     );
   });
 
+  it("手以外のキャッチは手具ごとに実施しやすさが違う", () => {
+    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree)!;
+    const normalThrow = autoThrowStyles("stick").find((t) => t.id === "normal")!;
+    const nonHand = autoCatchStyles("stick").find((c) => c.id === NON_HAND_TAG)!;
+    const w = (apparatus: ApparatusKey, motions: number) =>
+      catchStyleWeight({ throwStyle: normalThrow, catchStyle: nonHand, pattern: plain, apparatus, motions });
+    // スティックは低難度の投げ（徒手0〜1動作）で実施する
+    expect(w("stick", 0)).toBe(1);
+    expect(w("stick", NON_HAND_CATCH_MAX_MOTIONS)).toBe(1);
+    expect(w("stick", NON_HAND_CATCH_MAX_MOTIONS + 1)).toBe(0);
+    // クラブは低難度の投げで、しかも低確率
+    expect(w("clubs", 0)).toBeLessThan(1);
+    expect(w("clubs", 0)).toBeGreaterThan(0);
+    expect(w("clubs", NON_HAND_CATCH_MAX_MOTIONS + 1)).toBe(0);
+    // リング・ロープは普通に実施する
+    expect(w("ring", 4)).toBe(1);
+    expect(w("rope", 4)).toBe(1);
+    // 組み立てた候補でも、スティックの手以外のキャッチは徒手0〜1動作のものだけ
+    (["stick", "clubs"] as ApparatusKey[]).forEach((app) =>
+      autoThrowSpecs(app).forEach((sp) => {
+        if (sp.catchStyle.id !== NON_HAND_TAG) return;
+        expect(patternMotions(sp.pattern, sp.cheneCount)).toBeLessThanOrEqual(NON_HAND_CATCH_MAX_MOTIONS);
+      }),
+    );
+    // リング・ロープは徒手の多い投げでも手以外で受ける候補が出る
+    const many = (app: ApparatusKey) =>
+      autoThrowSpecs(app).some(
+        (sp) =>
+          sp.catchStyle.id === NON_HAND_TAG &&
+          patternMotions(sp.pattern, sp.cheneCount) > NON_HAND_CATCH_MAX_MOTIONS,
+      );
+    expect(many("ring")).toBe(true);
+    expect(many("rope")).toBe(true);
+  });
+
   it("前転3回（縦3動作）は手具を使ったキャッチが主流", () => {
     expect(VERTICAL_THREE_OTHER_CATCH_WEIGHT).toBeLessThan(1);
     const pattern = AUTO_THROW_PATTERNS.find((x) => x.verticalThree)!;
@@ -426,11 +463,13 @@ describe("ランダム生成への組み込み", () => {
     const left = autoThrowStyles("stick").find((t) => (t.reqTypes || []).includes(LEFT_HAND_TAG))!;
     const noView = autoCatchStyles("stick").find((c) => c.id === NO_VIEW_TAG)!;
     const normal = autoCatchStyles("stick").find((c) => c.id === "normal")!;
-    expect(catchStyleWeight(left, noView, plain)).toBe(LEFT_HAND_NO_VIEW_CATCH_WEIGHT);
-    expect(catchStyleWeight(left, normal, plain)).toBe(1);
+    const w = (throwStyle: typeof left, catchStyle: typeof noView, motions = 0) =>
+      catchStyleWeight({ throwStyle, catchStyle, pattern: plain, apparatus: "stick", motions });
+    expect(w(left, noView)).toBe(LEFT_HAND_NO_VIEW_CATCH_WEIGHT);
+    expect(w(left, normal)).toBe(1);
     // 左手投げ以外なら視野外のキャッチも普通に出る
     const nomal = autoThrowStyles("stick").find((t) => t.id === "normal")!;
-    expect(catchStyleWeight(nomal, noView, plain)).toBe(1);
+    expect(w(nomal, noView)).toBe(1);
     // 実際に組み立てた候補でも、左手投げの視野外キャッチは他の受け方より少ない
     let noViewCatch = 0;
     let other = 0;
