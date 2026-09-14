@@ -43,6 +43,8 @@ import {
   BACKWARD_END_ZERO_SCORE,
   THROW_IN_SIDE_SALTO_WEIGHT,
   THROW_IN_SKILL_ROUNDOFF_WEIGHT,
+  ROUNDOFF_ENTRY_CONNECT_MAX_SCORE,
+  roundoffEntryWeight,
   ROLL_FINISH_PRESS_CATCH_CHANCE,
   TEMPO_CONNECT_WEIGHT,
   PAIR_AFTER_THROW_FIRST_CHANCE,
@@ -863,6 +865,33 @@ describe("つなぎ技", () => {
           else other += 1;
         });
     expect(roundoff).toBeGreaterThan(other);
+  }, 60_000);
+
+  it("通常のタンブリングもロンダートから入るのを優先する（Dスコアが上がるほど頻度が下がる）", () => {
+    // 上限を指定しない＝難度を狙いきる構成では優先しない
+    expect(roundoffEntryWeight(null)).toBe(1);
+    // 低いDスコアほど強く優先し、1未満にはならない
+    expect(roundoffEntryWeight(1.5)).toBeGreaterThan(roundoffEntryWeight(2.5));
+    expect(roundoffEntryWeight(2.5)).toBeGreaterThan(1);
+    expect(roundoffEntryWeight(5.0)).toBe(1);
+    // 低いDスコアでつなぎを満たす形はさらに優先する（高いDスコアでは変わらない）
+    expect(roundoffEntryWeight(2.0, true)).toBeGreaterThan(roundoffEntryWeight(2.0));
+    expect(roundoffEntryWeight(ROUNDOFF_ENTRY_CONNECT_MAX_SCORE, true)).toBe(
+      roundoffEntryWeight(ROUNDOFF_ENTRY_CONNECT_MAX_SCORE),
+    );
+    // 候補の1本目が後方系（＝ロンダート入り）になる割合は、低いDスコアのほうが高い
+    const backwardShare = (targetScore: number | null) => {
+      let backward = 0;
+      let all = 0;
+      for (let seed = 1; seed <= 20; seed++)
+        autoTumblingSpecs({ targetScore, random: seeded(seed) }).forEach((sp) => {
+          if (sp.pattern.throwCatch) return;
+          all += 1;
+          if (skillDef(sp.saltoIds[0])?.category === CATEGORY.BACKWARD) backward += 1;
+        });
+      return backward / all;
+    };
+    expect(backwardShare(1.5)).toBeGreaterThan(backwardShare(4.0));
   }, 60_000);
 
   it("投げタンのキャッチのあとに連続投げを続ける形がある", () => {
