@@ -16,6 +16,7 @@ import {
   throwCountPenalty,
   extraThrowOperation,
   verticalThreeThrowCount,
+  DIFFICULTY_PREFERENCE_WEIGHT,
   VERTICAL_THREE_THROW_WEIGHT,
   shortfallPenalty,
   usableTemplates,
@@ -598,4 +599,64 @@ describe("前転3回（縦3動作）の投げ", () => {
     });
     expect(count).toBe(0);
   }, 60_000);
+});
+
+describe("難度点と加点の優先度", () => {
+  // どちらもDスコアは同じ0.7だが、中身が違う
+  //  A：シェネ4動作＝徒手E難度 0.7（難度点だけ）
+  //  B：シェネ3動作＝D難度 0.5 ＋ 手以外の投げ0.1 ＋ 視野外のキャッチ0.1（加点で0.2）
+  const byDifficulty = () =>
+    S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 4 }, { kind: "catch" });
+  // 視野外の投げは「右投げ右受け」を満たすので、A側はどちらも同じになる
+  const byBonus = () =>
+    S(
+      { kind: "throw", throwTypes: ["noview"] },
+      { kind: "motion", motionId: "chene", count: 3 },
+      { kind: "catch", catchTypes: ["noview"] },
+    );
+
+  it("同じDスコアなら難度点で取っている構成を選ぶ", () => {
+    expect(DIFFICULTY_PREFERENCE_WEIGHT).toBeGreaterThan(0);
+    const a = computeScore([byDifficulty()], "stick");
+    const b = computeScore([byBonus()], "stick");
+    // 前提：Dスコアは同じで、内訳（難度点と加点）が違い、A側は同じ
+    expect(a.dScore).toBeCloseTo(b.dScore, 5);
+    expect(a.handScore).toBeGreaterThan(b.handScore);
+    expect(a.techniqueBonus).toBeLessThan(b.techniqueBonus);
+    expect(a.aScore).toBeCloseTo(b.aScore, 5);
+    // 1シリーズしか入れられないなら、難度点で取るほうを選ぶ
+    const templates = [
+      tpl("加点で取る", "common", byBonus()),
+      tpl("難度点で取る", "common", byDifficulty()),
+    ];
+    [1, 5, 9].forEach((seed) => {
+      const r = generateRoutine(templates, {
+        apparatus: "stick",
+        maxSeries: 1,
+        random: seeded(seed),
+        ...noAuto,
+      })!;
+      expect(r.used.map((t) => t.name)).toEqual(["難度点で取る"]);
+    });
+  });
+
+  it("難度点の上乗せはDスコアの刻みより小さい（Dを下げてまで難度点は取らない）", () => {
+    // 難度点0.1ぶんの上乗せ（0.03）＜ Dスコア0.1
+    expect(DIFFICULTY_PREFERENCE_WEIGHT * 0.1).toBeLessThan(0.1);
+    // 加点込みで0.7取れる構成と、難度点だけで0.1の構成なら、点数の高いほうを選ぶ
+    const cheap = () => S({ kind: "throw" }, { kind: "catch" }); // 徒手A難度 0.1
+    const templates = [
+      tpl("加点で取る", "common", byBonus()), // 0.7
+      tpl("難度点だけ少し", "common", cheap()), // 0.1
+    ];
+    [1, 3, 5].forEach((seed) => {
+      const r = generateRoutine(templates, {
+        apparatus: "stick",
+        maxSeries: 1,
+        random: seeded(seed),
+        ...noAuto,
+      })!;
+      expect(r.used.map((t) => t.name)).toEqual(["加点で取る"]);
+    });
+  });
 });
