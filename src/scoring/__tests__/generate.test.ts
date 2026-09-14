@@ -545,18 +545,22 @@ describe("投げ上げの回数", () => {
     // 難度に採用されるのは投げタン＋上位3本だけ。自動生成の投げの本数の上限は
     // それより多く取れるようにしてあり、本数は最頻値の重みで決まる
     expect(DEFAULT_MAX_AUTO_THROWS).toBeGreaterThan(ADOPT_COUNT);
-    const counts: number[] = [];
+    const routines: { count: number; mode: number }[] = [];
     for (let seed = 1; seed <= 12; seed++) {
       const r = generateRoutine(pool(), { apparatus: "stick", maxScore: 4.5, random: seeded(seed * 13 + 5) });
-      if (r) counts.push(computeScore(r.series, "stick").totalThrowCount);
+      if (!r) continue;
+      const sc = computeScore(r.series, "stick");
+      routines.push({ count: sc.totalThrowCount, mode: preferredThrowCount(sc.dScore) });
     }
-    expect(counts.length).toBeGreaterThan(0);
-    const hist = new Map<number, number>();
-    counts.forEach((n) => hist.set(n, (hist.get(n) ?? 0) + 1));
-    const mode = [...hist.entries()].sort((a, b) => b[1] - a[1])[0][0];
-    expect(mode).toBe(5);
-    // 最頻値より多い構成も出る（加点のために投げを足す）
-    expect(counts.some((n) => n >= 6)).toBe(true);
+    expect(routines.length).toBeGreaterThan(0);
+    // 回数はその構成のDスコアの最頻値の近くに収まる
+    routines.forEach(({ count, mode }) => {
+      expect(count).toBeGreaterThanOrEqual(mode - 1);
+      expect(count).toBeLessThanOrEqual(mode + 2);
+    });
+    // 大半は最頻値以上で、最頻値より多い構成も出る（加点のために投げを足す）
+    expect(routines.filter((r) => r.count >= r.mode).length).toBeGreaterThanOrEqual(routines.length / 2);
+    expect(routines.some((r) => r.count > r.mode)).toBe(true);
   }, 120_000);
 
   it("Dスコアの上限が低くてもルールの回数は満たす", () => {
