@@ -37,12 +37,18 @@ export interface AutoThrowPattern {
    */
   verticalThree?: boolean;
   /**
-   * 先に最低限の投げ受け（投げ→キャッチ、徒手なし）を1本足すか。
+   * 先に投げ受けを1本足すか（連続投げの1回目。`LEAD_THROW_CHENE_COUNT` 回のシェネを挟む）。
    * 投げ方を1種類増やすのに操作を足さずに済むので、日本トップの演技でも
    * 「手以外の投げ→キャッチ→視野外の投げ→シェネ→キャッチ」のように実施する。
    */
   leadPair?: boolean;
 }
+
+/**
+ * 連続投げの1回目（`leadPair` の先に置く投げ受け）で実施するシェネの回数。
+ * 1回目が低難度になる形では1シェネを挟む。
+ */
+export const LEAD_THROW_CHENE_COUNT = 1;
 
 /** 徒手動作のid（自動生成で使うものだけ） */
 const CHENE = "chene";
@@ -261,6 +267,34 @@ export function throwStylesForPattern(
 export type AutoHands = string | null;
 export const autoHandsVariants = (): AutoHands[] => [null, ...HANDS_TYPES.map((h) => h.id)];
 
+/**
+ * シェネの手を引く重み。**手なしが最優先**で、手ありは
+ * 片手上げ＝両手上げ ＞ その他 ＞ 回旋 の順に実施される。
+ */
+export const HANDS_NONE_WEIGHT = 1;
+export const HANDS_PICK_WEIGHT: Record<string, number> = {
+  one: 0.5,
+  both: 0.5,
+  other: 0.25,
+  spin: 0.1,
+};
+export const handsWeight = (hands: AutoHands): number =>
+  hands === null ? HANDS_NONE_WEIGHT : (HANDS_PICK_WEIGHT[hands] ?? 1);
+
+/**
+ * 回旋は2動作までがメインで、3動作は頻度が下がる（4動作はさらに下がる）。
+ * シェネの回数はいままでどおり形ごとに配り、**その回数で回旋を引く重み**を下げる
+ * （3動作以上しか取れない形では回旋がほとんど出ない）。ほかの手は回数で変わらない。
+ */
+export const SPIN_HANDS_ID = "spin";
+export const SPIN_MAIN_CHENE_COUNT = 2;
+export const SPIN_THIRD_CHENE_WEIGHT = 0.3;
+export const SPIN_OVER_CHENE_WEIGHT = 0.1;
+export const cheneCountWeight = (hands: AutoHands, count: number): number => {
+  if (hands !== SPIN_HANDS_ID || count <= SPIN_MAIN_CHENE_COUNT) return 1;
+  return count === SPIN_MAIN_CHENE_COUNT + 1 ? SPIN_THIRD_CHENE_WEIGHT : SPIN_OVER_CHENE_WEIGHT;
+};
+
 /** 1本ぶんの自動生成の内容 */
 export interface AutoThrowSpec {
   pattern: AutoThrowPattern;
@@ -283,6 +317,8 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
       kind: "throw",
       ...(spec.leadThrowStyle.throwTypes ? { throwTypes: [...spec.leadThrowStyle.throwTypes] } : {}),
     });
+    // 連続投げの1回目が低難度になる形では、1シェネを挟む
+    items.push({ kind: "motion", motionId: CHENE, count: LEAD_THROW_CHENE_COUNT, hands: false });
     items.push({ kind: "catch" });
   }
   items.push({
@@ -398,7 +434,10 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     }
     return next();
   };
-  const nextHands = cycler(autoHandsVariants(), rand);
+  // シェネの手は重み付きで引く（手なし ＞ 片手＝両手 ＞ その他 ＞ 回旋）。
+  // 回旋は2動作までがメインなので、回数が多い形では引きにくくする
+  const nextHands = (cheneCount: number): AutoHands =>
+    pickWeighted(autoHandsVariants(), rand, (h) => handsWeight(h) * cheneCountWeight(h, cheneCount));
   // 先に足す投げ受けの投げ方。二つ投げは2つ同時キャッチで受ける形になるので使わない
   const nextLeadThrow = cycler(
     throwStyles.filter((t) => !t.two),
@@ -416,8 +455,8 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     return {
       pattern,
       cheneCount,
-      // シェネが無い形では手の種類は使わない（順番も消費しない）
-      hands: cheneCount > 0 ? nextHands() : null,
+      // シェネが無い形では手の種類は使わない
+      hands: cheneCount > 0 ? nextHands(cheneCount) : null,
       throwStyle,
       catchStyle: nextCatchFor(pattern, throwStyle, patternMotions(pattern, cheneCount)),
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),

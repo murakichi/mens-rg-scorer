@@ -190,6 +190,25 @@ export const canEndChain = (id: string, allowBackwardEnd = false): boolean => {
 export const THROW_IN_SKILL_ROUNDOFF_WEIGHT = 3;
 
 /**
+ * ロンダートから入る（＝後方系の宙返りから始める）ことを優先する重み。投げタンに限らず
+ * 通常のタンブリングもロンダート入りがいちばん多いが、狙うDスコアが上がるほど前方系・側方系から
+ * 直接入る形が増えるので、目標Dスコアで減衰させる（1点ごとに `ROUNDOFF_ENTRY_DECAY` 倍、1未満にはしない）。
+ * 低いDスコアでつなぎ技を満たす形（ロンダート→宙返り→つなぎ→宙返り）はとくに多いので、
+ * `ROUNDOFF_ENTRY_CONNECT_MAX_SCORE` 未満のつなぎの形ではさらに優先する。
+ * 上限を指定しない＝難度を狙いきる構成では優先しない。
+ */
+export const ROUNDOFF_ENTRY_WEIGHT = 3;
+export const ROUNDOFF_ENTRY_DECAY = 0.7;
+export const ROUNDOFF_ENTRY_CONNECT_BOOST = 2;
+export const ROUNDOFF_ENTRY_CONNECT_MAX_SCORE = 3.0;
+export function roundoffEntryWeight(targetScore?: number | null, connect = false): number {
+  if (targetScore == null) return 1;
+  const lowConnect = connect && targetScore < ROUNDOFF_ENTRY_CONNECT_MAX_SCORE;
+  const base = ROUNDOFF_ENTRY_WEIGHT * (lowConnect ? ROUNDOFF_ENTRY_CONNECT_BOOST : 1);
+  return Math.max(1, base * ROUNDOFF_ENTRY_DECAY ** Math.max(0, targetScore));
+}
+
+/**
  * 側宙の実施中に投げる構成の重み。クラブでの練習動画はあるが、実戦で使われた記録は
  * 無いので稀。連続の最後で投げる形（`throwInSkill`）で側宙を引く確率を下げる。
  */
@@ -915,14 +934,17 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           TEMPO_SKILLS.map((id) => [id, (firstWeights[id] ?? 1) * TEMPO_CONNECT_WEIGHT]),
         ),
       };
-    // 宙返りの途中で投げる投げタンは、ロンダートから入る（＝後方系から始める）ことを優先する
-    if (pattern.throwInSkill)
+    // ロンダートから入る（＝後方系から始める）ことを優先する。宙返りの途中で投げる投げタンは
+    // 目標Dスコアに関わらず優先し、通常のタンブリングは目標Dスコアで減衰させる
+    const roundoff = Math.max(
+      roundoffEntryWeight(opts.targetScore, !!pattern.connect),
+      pattern.throwInSkill ? THROW_IN_SKILL_ROUNDOFF_WEIGHT : 1,
+    );
+    if (roundoff !== 1)
       firstWeights = {
         ...firstWeights,
         ...Object.fromEntries(
-          firsts
-            .filter((id) => isBackwardSalto(id))
-            .map((id) => [id, (firstWeights[id] ?? 1) * THROW_IN_SKILL_ROUNDOFF_WEIGHT]),
+          firsts.filter((id) => isBackwardSalto(id)).map((id) => [id, (firstWeights[id] ?? 1) * roundoff]),
         ),
       };
     const nextFirst = () => {

@@ -3,6 +3,8 @@ import {
   AUTO_THROW_PATTERNS,
   autoCatchStyles,
   autoHandsVariants,
+  handsWeight,
+  cheneCountWeight,
   autoThrowName,
   autoThrowSpecs,
   autoThrowStyles,
@@ -11,6 +13,7 @@ import {
   catchStylesForThrow,
   catchStylesForPattern,
   NO_VIEW_TAG,
+  LEAD_THROW_CHENE_COUNT,
   LEFT_HAND_TAG,
   LEFT_HAND_NO_VIEW_CATCH_WEIGHT,
   catchStyleWeight,
@@ -191,22 +194,58 @@ describe("投げ方・受け方の網羅", () => {
 
 describe("シェネの手", () => {
   it("手なしと手ありの各種類を使う", () => {
-    const hands = autoThrowSpecs("clubs", { random: seeded(3) })
-      .filter((s) => s.cheneCount > 0)
-      .map((s) => s.hands);
+    // 回旋は稀なので、何回か作ったなかに出てくればよい
+    const hands: (string | null)[] = [];
+    for (let seed = 1; seed <= 10; seed++)
+      autoThrowSpecs("clubs", { random: seeded(seed) })
+        .filter((s) => s.cheneCount > 0)
+        .forEach((s) => hands.push(s.hands));
     autoHandsVariants().forEach((v) => expect(hands).toContain(v));
   });
 
-  it("できる限り被らせない（ひと回りするまで同じ手を使わない）", () => {
-    const variants = autoHandsVariants().length;
-    // シェネのある形だけが手の種類を消費する
-    const hands = autoThrowSpecs("stick", { random: seeded(29) })
-      .filter((s) => s.cheneCount > 0)
-      .map((s) => s.hands);
-    // 連続する variants 個を切り出すと、どの周も同じ手は1回ずつ
-    for (let i = 0; i + variants <= hands.length; i += variants) {
-      expect(new Set(hands.slice(i, i + variants)).size).toBe(variants);
-    }
+  it("手なしが最優先で、片手＝両手 ＞ その他 ＞ 回旋 の順に多い", () => {
+    const count = new Map<string, number>();
+    for (let seed = 1; seed <= 40; seed++)
+      autoThrowSpecs("stick", { random: seeded(seed) })
+        .filter((s) => s.cheneCount > 0)
+        .forEach((s) => {
+          const key = s.hands ?? "none";
+          count.set(key, (count.get(key) ?? 0) + 1);
+        });
+    const n = (k: string) => count.get(k) ?? 0;
+    expect(n("none")).toBeGreaterThan(n("one"));
+    expect(n("none")).toBeGreaterThan(n("both"));
+    expect(n("one")).toBeGreaterThan(n("other"));
+    expect(n("both")).toBeGreaterThan(n("other"));
+    expect(n("other")).toBeGreaterThan(n("spin"));
+    expect(n("spin")).toBeGreaterThan(0);
+  });
+
+  it("重みは手なし ＞ 片手＝両手 ＞ その他 ＞ 回旋", () => {
+    expect(handsWeight(null)).toBeGreaterThan(handsWeight("one"));
+    expect(handsWeight("one")).toBe(handsWeight("both"));
+    expect(handsWeight("both")).toBeGreaterThan(handsWeight("other"));
+    expect(handsWeight("other")).toBeGreaterThan(handsWeight("spin"));
+  });
+
+  it("回旋は2動作までがメインで、3動作以上の頻度が下がる", () => {
+    expect(cheneCountWeight("spin", 1)).toBe(1);
+    expect(cheneCountWeight("spin", 2)).toBe(1);
+    expect(cheneCountWeight("spin", 3)).toBeLessThan(1);
+    expect(cheneCountWeight("spin", 4)).toBeLessThan(cheneCountWeight("spin", 3));
+    // ほかの手では回数に重みを付けない
+    [1, 2, 3, 4].forEach((n) => {
+      expect(cheneCountWeight("one", n)).toBe(1);
+      expect(cheneCountWeight(null, n)).toBe(1);
+    });
+    const counts: number[] = [];
+    for (let seed = 1; seed <= 40; seed++)
+      autoThrowSpecs("stick", { random: seeded(seed) })
+        .filter((s) => s.hands === "spin")
+        .forEach((s) => counts.push(s.cheneCount));
+    expect(counts.length).toBeGreaterThan(0);
+    const main = counts.filter((n) => n <= 2).length;
+    expect(main).toBeGreaterThan(counts.length - main);
   });
 
   it("シェネのない形は手の種類を持たない（名前にも出さない）", () => {
@@ -320,7 +359,10 @@ describe("ランダム生成への組み込み", () => {
           if (!isAutoThrowTemplate(t)) return;
           expect(cheneCountRange(t.spec.pattern)).toContain(t.spec.cheneCount);
           // 組み立てた内容とシリーズの中身が食い違わない
-          const item = r.series[i].items.find((x) => x.kind === "motion" && x.motionId === "chene");
+          // （先に投げ受けを1本置く形は、その1シェネが先に入る）
+          const chenes = r.series[i].items.filter((x) => x.kind === "motion" && x.motionId === "chene");
+          const main = t.spec.pattern.leadPair ? chenes.slice(1) : chenes;
+          const item = main[0];
           if (item?.kind === "motion") expect(item.count).toBe(t.spec.cheneCount);
         });
       });
@@ -339,16 +381,18 @@ describe("ランダム生成への組み込み", () => {
     expect(withCheneCount(t, 1)).toBeNull(); // この形の範囲外
   });
 
-  it("先に最低限の投げ受けを1本置く形がある（日本トップのロープの1シリーズ目）", () => {
+  it("先に投げ受けを1本置く形がある（連続投げの1回目は1シェネ）", () => {
     const list = autoThrowTemplates("rope").filter((t) => t.spec.pattern.leadPair);
     expect(list.length).toBeGreaterThan(0);
     list.forEach((t) => {
       const items = t.series.items;
-      // 投げ→キャッチ（徒手なし）→本体の投げ→…→キャッチ
+      // 投げ→1シェネ→キャッチ→本体の投げ→…→キャッチ
       expect(items[0].kind).toBe("throw");
-      expect(items[1].kind).toBe("catch");
-      expect(items[2].kind).toBe("throw");
-      expect(items[1].kind === "catch" && items[1].catchTypes).toBeUndefined();
+      expect(items[1].kind === "motion" && items[1].motionId).toBe("chene");
+      expect(items[1].kind === "motion" && items[1].count).toBe(LEAD_THROW_CHENE_COUNT);
+      expect(items[2].kind).toBe("catch");
+      expect(items[3].kind).toBe("throw");
+      expect(items[2].kind === "catch" && items[2].catchTypes).toBeUndefined();
       // 先の投げは二つ投げにしない（2つ同時キャッチが要るので通常のキャッチで受けられない）
       expect(t.spec.leadThrowStyle?.two).toBeFalsy();
       expect(analyzeSeries(t.series).throwCount).toBe(2);
