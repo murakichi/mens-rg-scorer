@@ -49,7 +49,13 @@ import {
   skillOptions,
 } from "./constants";
 import { calcTumblingDifficulty, needsRoundoffBefore, prevSkillId, stripForApparatus } from "./analysis";
-import { NON_HAND_TAG, NO_VIEW_TAG, autoThrowStyles, type AutoThrowStyle } from "./autoThrows";
+import {
+  CATCH_USE_APPARATUS,
+  NON_HAND_TAG,
+  NO_VIEW_TAG,
+  autoThrowStyles,
+  type AutoThrowStyle,
+} from "./autoThrows";
 import { newTemplateId, type SeriesTemplate } from "./templates";
 import type { ApparatusKey, Difficulty, Item, Series } from "./types";
 
@@ -111,6 +117,13 @@ export const pairAfterChance = (pattern: AutoTumblingPattern): number =>
 export function secondThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   return autoThrowStyles(apparatus).filter((t) => t.id !== NON_HAND_TAG);
 }
+
+/**
+ * 投げタンの着地を前転でつないだあと、**手具を使ったキャッチ（押さえつけ）**で受ける確率。
+ * クラブ・リングは転がり・前転のあと押さえつけて受けるのが定番
+ * （スティック・ロープは手具が1つなので `stripForApparatus` が落とす）。
+ */
+export const ROLL_FINISH_PRESS_CATCH_CHANCE = 0.5;
 
 /** 投げ受けの着地でつなぐ徒手動作（前転） */
 export const THROW_ROLL_MOTION = "fwd_roll";
@@ -538,6 +551,8 @@ export interface AutoTumblingSpec {
   allowRareEnd?: boolean;
   /** 後ろ向きで終わる宙返り→前方系の位置で投げてよい候補か（きりもみの視野外投げだけ） */
   allowBackToForwardThrow?: boolean;
+  /** 前転でつないだ着地を手具を使ったキャッチ（押さえつけ）で受ける候補か */
+  pressCatch?: boolean;
 }
 
 type SkillItem = Extract<Item, { kind: "skill" }>;
@@ -610,9 +625,14 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     items.push(next);
   });
   // 投げ受けの着地は前転でつなぐ（側宙の後は前転を実施しないので、そのまま受ける）
-  if (pattern.rollFinish && !noRollAfter(saltos[saltos.length - 1]))
-    items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
-  if (pattern.throwCatch) items.push({ kind: "catch" });
+  const rolled = !!pattern.rollFinish && !noRollAfter(saltos[saltos.length - 1]);
+  if (rolled) items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
+  // 転がり・前転のあとは手具を使ったキャッチ（押さえつけ）で受けるのが定番
+  if (pattern.throwCatch)
+    items.push({
+      kind: "catch",
+      ...(rolled && spec.pressCatch ? { catchTypes: [CATCH_USE_APPARATUS] } : {}),
+    });
   // 投げタンのキャッチのあとに連続投げを続ける形
   if (pattern.throwCatch && spec.secondThrow) {
     const style = spec.secondThrow;
@@ -1002,6 +1022,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       specs.push({
         pattern,
         saltoCount,
+        pressCatch: rand() < ROLL_FINISH_PRESS_CATCH_CHANCE,
         entry: [],
         saltoIds,
         connectId,
