@@ -62,7 +62,14 @@ import {
   withSaltoCount,
   type AutoTumblingSpec,
 } from "../autoTumblings";
-import { analyzeSeries, checkApparatusFlow, hasConnect, maxSaltoChain, prevSkillId } from "../analysis";
+import {
+  analyzeSeries,
+  checkApparatusFlow,
+  hasConnect,
+  hasConnectWithoutApparatus,
+  maxSaltoChain,
+  prevSkillId,
+} from "../analysis";
 import {
   CATEGORY,
   DIFF_VALUE,
@@ -763,6 +770,49 @@ describe("つなぎ技", () => {
     expect(kirimomi * 3).toBeLessThan(other);
   }, 60_000);
 
+  it("加点を狙わないタンブリングの手具操作は最低限", () => {
+    // D難度の連続（加点は狙えない）：最後の宙返りだけに手具操作を付ける
+    const dChain = buildAutoTumblingSeries({
+      pattern: pattern("chain"),
+      saltoCount: 2,
+      entry: [ROUNDOFF_SKILL_ID],
+      saltoIds: ["c_back15", "b_front"],
+      connectId: "",
+    });
+    expect(dChain.items.filter((it) => it.kind === "skill" && it.hasApparatus)).toHaveLength(1);
+    const last = dChain.items.filter((it) => it.kind === "skill").pop();
+    expect(last?.kind === "skill" && last.hasApparatus).toBe(true);
+    // A減点は受けない（手具操作なし・つなぎの手具操作なし）
+    const r = computeScore([dChain], "stick");
+    expect(r.noApparatusDeduction).toBe(0);
+    expect(r.connectNoApparatus).toBe(false);
+    expect(r.apparatusOpBonus).toBe(0); // D難度なので加点は狙えない
+
+    // E難度の連続：加点（操作2回以上）を狙って2本に付ける
+    const eChain = buildAutoTumblingSeries({
+      pattern: pattern("chain"),
+      saltoCount: 3,
+      entry: [ROUNDOFF_SKILL_ID],
+      saltoIds: ["c_back15", "b_front", "b_sidesalto"],
+      connectId: "",
+    });
+    expect(eChain.items.filter((it) => it.kind === "skill" && it.hasApparatus)).toHaveLength(2);
+    const e = computeScore([eChain], "stick");
+    expect(e.apparatusOpBonus).toBeCloseTo(0.1, 5);
+    expect(e.noApparatusDeduction).toBe(0);
+
+    // 投げタンは手具操作なしでも減点されないので最低限＝0
+    const throwRoll = buildAutoTumblingSeries({
+      pattern: pattern("throwRoll"),
+      saltoCount: 1,
+      entry: [],
+      saltoIds: ["b_front"],
+      connectId: "",
+    });
+    expect(throwRoll.items.filter((it) => it.kind === "skill" && it.hasApparatus)).toHaveLength(0);
+    expect(computeScore([throwRoll], "stick").noApparatusDeduction).toBe(0);
+  });
+
   it("宙返りの途中で投げる投げタンはロンダートから入るのを優先する", () => {
     expect(THROW_IN_SKILL_ROUNDOFF_WEIGHT).toBeGreaterThan(1);
     let roundoff = 0;
@@ -830,8 +880,10 @@ describe("つなぎ技", () => {
     specs.forEach((sp) => {
       const s = buildAutoTumblingSeries(sp);
       expect(hasConnect(skillsOf(s))).toBe(true);
-      // つなぎ技にも手具操作を付ける（§3.5.6.3 の −0.2 を受けないように）
-      expect(skillsOf(s).every((x) => x.hasApparatus)).toBe(true);
+      // つなぎ技には手具操作を付ける（§3.5.6.3 の −0.2 を受けないように）
+      expect(hasConnectWithoutApparatus(skillsOf(s))).toBe(false);
+      // 手具操作は最低限（入りの技などには付けない）
+      expect(skillsOf(s).every((x) => x.hasApparatus)).toBe(false);
     });
   });
 });
