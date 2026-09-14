@@ -4,6 +4,7 @@ import { APPARATUS } from "../scoring/constants";
 import {
   DEFAULT_MAX_AUTO_THROWS,
   DEFAULT_MAX_AUTO_TUMBLINGS,
+  DEFAULT_MAX_SERIES,
   generateForApparatus,
   usableTemplates,
   type GenerateResult,
@@ -29,11 +30,15 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
   const [maxScore, setMaxScore] = useState("");
   const [autoThrows, setAutoThrows] = useState(true);
   const [autoTumblings, setAutoTumblings] = useState(true);
+  /** 自動生成にしてよい割合（%）。100%＝種類ごとの上限だけ */
+  const [autoPercent, setAutoPercent] = useState(100);
   const [result, setResult] = useState<(GenerateResult & { apparatus: ApparatusKey }) | null>(null);
   const [note, setNote] = useState("");
   if (!open) return null;
 
   const usable = target ? usableTemplates(templates, target).length : templates.length;
+  /** その割合で入れられる自動生成のシリーズの本数 */
+  const autoMax = Math.round((autoPercent / 100) * DEFAULT_MAX_SERIES);
 
   const run = () => {
     const r = generateForApparatus(templates, {
@@ -41,6 +46,7 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
       junior,
       autoThrows,
       autoTumblings,
+      autoRatio: autoPercent / 100,
       minScore: minScore ? parseFloat(minScore) : null,
       maxScore: maxScore ? parseFloat(maxScore) : null,
     });
@@ -88,6 +94,22 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
             <input type="checkbox" checked={autoTumblings} onChange={(e) => setAutoTumblings(e.target.checked)} />
             タンブリング（最大{DEFAULT_MAX_AUTO_TUMBLINGS}本）
           </label>
+          <div className="gen-ratio">
+            <input
+              className="gen-ratio-range"
+              type="range"
+              min={0}
+              max={100}
+              step={25}
+              value={autoPercent}
+              onChange={(e) => setAutoPercent(parseInt(e.target.value, 10))}
+              aria-label="自動生成の割合"
+            />
+            <span className="gen-ratio-value">
+              自動生成の割合 {autoPercent}%
+              {autoPercent === 0 ? "（テンプレートだけで組む）" : `（最大${autoMax}本）`}
+            </span>
+          </div>
           <p className="hint">
             テンプレートを先に使い、足りないところをシステム側で組んだシリーズで補います（点数が上がらなければ使われません）。
             投げは 投げ→シェネ→前転→キャッチ などの形を、投げ方（左手投げ・二つ投げ・視野外・手以外…）と
@@ -95,6 +117,8 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
             タンブリングは<b>テンプレートに出てくる技だけ</b>を使い、入力画面と同じ制約
             （後方系はロンダートから入る、ロンダート・バク転の直後は後方系）で並べます。
             テンプレートが1つも無いときは技の一覧から組みます。
+            <b>自動生成の割合</b>は、構成のうち自動生成のシリーズにしてよい本数の上限
+            （シリーズ数の上限{DEFAULT_MAX_SERIES}本に対する割合）です。0%にすると登録テンプレートだけで組みます。
           </p>
 
           <div className="line-head">Dスコアの範囲</div>

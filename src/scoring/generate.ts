@@ -70,8 +70,14 @@ export interface GenerateOptions {
   maxScore?: number | null;
   /** 試行回数（多いほど良い構成が出やすいが遅くなる） */
   attempts?: number;
-  /** シリーズ数の上限 */
+  /** シリーズ数の上限（既定 `DEFAULT_MAX_SERIES`） */
   maxSeries?: number;
+  /**
+   * 自動生成のシリーズにしてよい**割合**（0〜1。既定1＝種類ごとの上限だけ）。
+   * シリーズ数の上限（`maxSeries`）に対する本数に換算する（`autoSeriesMax`）。
+   * 0 なら自動生成を使わず、登録テンプレートだけで組む。
+   */
+  autoRatio?: number;
   /**
    * 必須要素を必ず満たすか。未指定なら狙うDスコアで決まる
    * （上限なし、または `REQUIRE_ALL_ELEMENTS_MIN_SCORE` 以上で満たしにいく）。
@@ -123,6 +129,23 @@ export const DEFAULT_MAX_THROW_TUMBLING = 1;
  * 難度点に採用されるのは上位3本（`ADOPT_COUNT`）までで、4本目は評価されないため。
  */
 export const DEFAULT_MAX_TUMBLINGS = ADOPT_COUNT;
+
+/** シリーズ数の上限の既定値 */
+export const DEFAULT_MAX_SERIES = 8;
+
+/** 自動生成の割合の既定値（1＝種類ごとの上限だけで、割合では制限しない） */
+export const DEFAULT_AUTO_RATIO = 1;
+
+/**
+ * その構成に入れてよい自動生成のシリーズの本数（種類の合計）。
+ * `autoRatio` をシリーズ数の上限に対する本数に換算する。null＝割合では制限しない。
+ */
+export function autoSeriesMax(opts: GenerateOptions): number | null {
+  const ratio = opts.autoRatio ?? DEFAULT_AUTO_RATIO;
+  if (ratio >= 1) return null;
+  const maxSeries = opts.maxSeries ?? DEFAULT_MAX_SERIES;
+  return Math.max(0, Math.round(Math.max(0, ratio) * maxSeries));
+}
 
 /**
  * 生成する構成に入れる自動生成の投げの本数の上限。
@@ -632,6 +655,8 @@ export function usableTemplates(templates: SeriesTemplate[], apparatus: Apparatu
  */
 function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () => number): SeriesTemplate[] {
   const pool: SeriesTemplate[] = [];
+  // 割合が0＝自動生成を使わない（候補を作るだけ無駄なので作らない）
+  if (autoSeriesMax(opts) === 0) return pool;
   if (opts.autoThrows !== false)
     pool.push(...autoThrowTemplates(opts.apparatus, { random: rand, limit: opts.autoThrowLimit }));
   if (opts.autoTumblings !== false)
@@ -758,10 +783,12 @@ function nonHandLast(list: SeriesTemplate[], apparatus: ApparatusKey): SeriesTem
   return [...list.filter((_, i) => i !== idx), list[idx]];
 }
 
-/** 自動生成のシリーズの本数が上限を超えていないか */
+/** 自動生成のシリーズの本数が上限（種類ごと・割合）を超えていないか */
 function withinAutoLimits(list: SeriesTemplate[], opts: GenerateOptions): boolean {
   const throws = list.filter(isAutoThrowTemplate).length;
   const tumblings = list.filter(isAutoTumblingTemplate).length;
+  const ratioMax = autoSeriesMax(opts);
+  if (ratioMax !== null && throws + tumblings > ratioMax) return false;
   return (
     throws <= (opts.maxAutoThrows ?? DEFAULT_MAX_AUTO_THROWS) &&
     tumblings <= (opts.maxAutoTumblings ?? DEFAULT_MAX_AUTO_TUMBLINGS)
@@ -823,12 +850,16 @@ function greedyAttempt(
   let cur = evaluateUsed(used, opts);
   /** 自動生成の候補を種類ごとに何本使ったか */
   const autoUsed = new Map<string, number>();
+  let autoTotal = 0;
   const countAuto = (t: SeriesTemplate) => {
     if (autoLimitOf(t, opts) === null) return;
     const kind = isAutoThrowTemplate(t) ? "throw" : "tumbling";
     autoUsed.set(kind, (autoUsed.get(kind) ?? 0) + 1);
+    autoTotal += 1;
   };
   start.forEach(countAuto);
+  // 自動生成にしてよい割合（`autoRatio`）ぶんの本数。null＝割合では制限しない
+  const ratioMax = autoSeriesMax(opts);
 
   // ① ランダムな順に見て、評価が上がるものだけ足す。
   //    登録テンプレートを先に見て、足りないところを自動生成で補う。
@@ -840,6 +871,8 @@ function greedyAttempt(
     const limit = autoLimitOf(t, opts);
     const kind = isAutoThrowTemplate(t) ? "throw" : "tumbling";
     if (limit !== null && (autoUsed.get(kind) ?? 0) >= limit) continue;
+    // 自動生成の割合の上限（種類をまとめた本数）
+    if (limit !== null && ratioMax !== null && autoTotal >= ratioMax) continue;
     const next = [...used, t];
     const ev = evaluateUsed(next, opts);
     if (ev.value > cur.value + 1e-9) {
@@ -920,7 +953,7 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   if (own.length + auto.length === 0) return null;
 
   const attempts = opts.attempts ?? 40;
-  const maxSeries = opts.maxSeries ?? 8;
+  const maxSeries = opts.maxSeries ?? DEFAULT_MAX_SERIES;
 
   let best: { used: SeriesTemplate[]; ev: Evaluation } | null = null;
 
