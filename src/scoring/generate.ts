@@ -125,11 +125,13 @@ export const DEFAULT_MAX_TUMBLINGS = ADOPT_COUNT;
 
 /**
  * 生成する構成に入れる自動生成の投げの本数の上限。
- * 技術加点（視野外・手以外…）に上限が無いため、放っておくと自動生成の投げだけで
- * 構成が埋まってしまう。難度に採用されるのも上位3本（`ADOPT_COUNT`）までなので、
- * 「テンプレートで足りない投げ方を補う」本数にとどめる。
+ * 難度を狙う投げは投げタン＋上位3本（`ADOPT_COUNT`）までだが、それを超える投げは
+ * **技術加点のために実施する**ので、本数そのものは投げ上げの回数の最頻値
+ * （`preferredThrowCount` / `throwCountPenalty`）で決める。上限はその判断が効く範囲で
+ * 「構成が自動生成の投げだけで埋まらない」ようにするためだけのもので、実測では
+ * 5本と8本で結果が完全に一致する（＝最頻値の重みが先に効く）。
  */
-export const DEFAULT_MAX_AUTO_THROWS = 3;
+export const DEFAULT_MAX_AUTO_THROWS = 5;
 
 /**
  * 生成する構成に入れる自動生成のタンブリングの本数の上限。
@@ -382,16 +384,17 @@ export const THROW_COUNT_UNDER_WEIGHT = 0.1;
  * 最頻値より**1回多い**投げの重み。1回多い構成は十分ありえる（Dスコア4点台でも6回を
  * 実施する）ので弱めに嫌う。それでも難度の刻み（0.1）より強くするのは、技術加点に
  * 上限が無く、投げを足すほど点が伸びてしまうため。
+ * 自動生成の投げの本数の上限（`DEFAULT_MAX_AUTO_THROWS`）を上げたぶん、
+ * 「最頻値を保つ」のはこの重みの仕事になっている。
  */
-export const THROW_COUNT_OVER_WEIGHT = 0.12;
+export const THROW_COUNT_OVER_WEIGHT = 0.2;
 /**
  * Dスコアが高い構成での、最頻値より1回多い投げの重み。
- * Dスコアの上限が低い構成では1回足すだけで上限を超えるが、`THROW_COUNT_HIGH_SCORE`
- * 以上を狙う構成では投げを足すほど素直に点が伸びるので、最頻値を5に保つには少し強い
- * 重みが必要になる（それでも実測では6回の割合はこちらのほうが高い）。
+ * `THROW_COUNT_HIGH_SCORE` 以上を狙う構成では6回を実施する確率が上がる
+ * （最頻値は5回のまま）ので、1回多いぶんの重みを**弱める**。
  */
 export const THROW_COUNT_HIGH_SCORE = 5.0;
-export const THROW_COUNT_OVER_WEIGHT_HIGH = 0.2;
+export const THROW_COUNT_OVER_WEIGHT_HIGH = 0.15;
 /** 最頻値より2回以上多い投げ1回ぶんの重み（実際にはほぼ無いので強く嫌う） */
 export const THROW_COUNT_FAR_OVER_WEIGHT = 0.3;
 
