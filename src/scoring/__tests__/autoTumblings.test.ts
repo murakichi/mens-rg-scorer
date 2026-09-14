@@ -278,6 +278,27 @@ describe("宙返りの連続の組み方", () => {
     expect(count.get("E") ?? 0).toBeLessThan(count.get("B") ?? 0);
   });
 
+  it("ハンドスプリングはとくに少ない（入りの技も順番では回さない）", () => {
+    const w = saltoWeights("b_front");
+    // 実質の重みは 0.1（`SKILL_PICK_WEIGHT` 0.5 × `RARE_PICK_WEIGHT` 0.2）
+    expect(w.a_handspring).toBeLessThan((w.a_flicflac ?? 1) / 2);
+    // 候補の入りの技・つなぎ技としてもほとんど出ない
+    let entry = 0;
+    let connect = 0;
+    let all = 0;
+    for (let seed = 1; seed <= 10; seed++)
+      autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
+        all += 1;
+        if (sp.entry.includes("a_handspring")) entry += 1;
+        if (sp.connectId === "a_handspring") connect += 1;
+      });
+    expect(all).toBeGreaterThan(0);
+    // 「ひと回りするまで同じものを使わない」抽選に入れると必ず1本は出てしまうので、
+    // 実施が少ない技の入りは重みだけで引く
+    expect(entry).toBeLessThan(all * 0.02);
+    expect(connect).toBeLessThan(all * 0.03);
+  }, 60_000);
+
   it("同じ難度の技の中では実施の多い技が選ばれやすい", () => {
     const w = saltoWeights("b_front");
     const weightOf = (id: string) => w[id] ?? 1;
@@ -948,9 +969,13 @@ describe("つなぎ技", () => {
       expect(hasConnect(skillsOf(s))).toBe(true);
       // つなぎ技には手具操作を付ける（§3.5.6.3 の −0.2 を受けないように）
       expect(hasConnectWithoutApparatus(skillsOf(s))).toBe(false);
-      // 手具操作は最低限（入りの技などには付けない）
-      expect(skillsOf(s).every((x) => x.hasApparatus)).toBe(false);
+      // 手具操作は最低限：入りの技には付けない
+      if (sp.entry.length > 0) expect(skillsOf(s)[0].hasApparatus).toBe(false);
     });
+    // 全体としても、手具操作を付けない技がある（必要なところだけに付けている）
+    expect(
+      specs.some((sp) => skillsOf(buildAutoTumblingSeries(sp)).some((x) => !x.hasApparatus)),
+    ).toBe(true);
   });
 });
 

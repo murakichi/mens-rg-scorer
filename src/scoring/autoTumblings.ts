@@ -328,8 +328,11 @@ const limitedWeights = (): Record<string, number> =>
  *  - テンポひねりは後方系のC難度のなかで最も少ない（ただし屈伸より上）
  */
 export const SKILL_PICK_WEIGHT: Record<string, number> = {
-  // ロンダート（重み無し＝1）＞ バク転 ＞ ハンドスプリング（`LIMITED_SKILLS` で 0.2）
+  // ロンダート（重み無し＝1）＞ バク転 ＞ ハンドスプリング
   a_flicflac: 0.5,
+  // ハンドスプリングは実施がとくに少ないので、`LIMITED_SKILLS` の 0.2 にさらに掛けて
+  // 実質 0.1（ロンダート 1 ＞ バク転 0.5 ＞ ハンドスプリング 0.1）にする
+  a_handspring: 0.5,
   // 前方宙返り1回ひねり（1）＞ 伸身前宙 ＞ きりもみ転回
   c_kirimomiten: 0.3,
   // 側宙（1）＞ 転宙（`LIMITED_SKILLS` で 0.2）
@@ -1057,10 +1060,14 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
   });
 
   // 入りの技は1本目の系統に合わせて配る（投げてから実施する投げタンには付けない）。
-  // 入りの技も実施の多さで選ぶ（ロンダート＞バク転＞ハンドスプリング）
+  // 入りの技も実施の多さで選ぶ（ロンダート＞バク転＞ハンドスプリング）。
+  // 実施が少ない技（ハンドスプリング）は `LIMITED_SKILLS` の重みも掛ける
   const entryUsed = new Map<string, string[]>();
   const entryWeight = (entry: string[]) =>
-    entry.reduce((w, id) => w * (SKILL_PICK_WEIGHT[id] ?? 1), 1);
+    entry.reduce(
+      (w, id) => w * (SKILL_PICK_WEIGHT[id] ?? 1) * (LIMITED_SKILLS.includes(id) ? RARE_PICK_WEIGHT : 1),
+      1,
+    );
   specs.forEach((spec) => {
     if (spec.pattern.throwCatch && !spec.pattern.throwInSkill) return;
     const category = skillDef(spec.saltoIds[0])?.category ?? CATEGORY.FORWARD;
@@ -1070,8 +1077,11 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     const list = entries.length > 0 ? entries : [[]];
     const keys = list.map((_, i) => String(i));
     const weights = Object.fromEntries(list.map((entry, i) => [String(i), entryWeight(entry)]));
+    // 実施が少ない技の入りは「ひと回り」の順番では回さない（回すと必ず1本は出てしまう）。
+    // 使用済み扱いにしておき、重みだけで引く
+    const rare = keys.filter((k) => list[Number(k)].some((id) => LIMITED_SKILLS.includes(id)));
     const used = entryUsed.get(category) ?? [];
-    const key = pickDifferent(keys, used, rand, weights) ?? keys[0];
+    const key = pickDifferent(keys, [...used, ...rare], rand, weights) ?? keys[0];
     used.push(key);
     entryUsed.set(category, used);
     spec.entry = list[Number(key)];
