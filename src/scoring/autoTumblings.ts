@@ -48,7 +48,7 @@ import {
   skillFlowAfter,
   skillOptions,
 } from "./constants";
-import { needsRoundoffBefore, prevSkillId, stripForApparatus } from "./analysis";
+import { calcTumblingDifficulty, needsRoundoffBefore, prevSkillId, stripForApparatus } from "./analysis";
 import { NON_HAND_TAG, NO_VIEW_TAG, autoThrowStyles, type AutoThrowStyle } from "./autoThrows";
 import { newTemplateId, type SeriesTemplate } from "./templates";
 import type { ApparatusKey, Difficulty, Item, Series } from "./types";
@@ -549,7 +549,47 @@ const skillItem = (skillId: string, isThrow = false): SkillItem => ({
 });
 
 /** 自動生成の内容からシリーズを組み立てる */
-export function buildAutoTumblingSeries(spec: AutoTumblingSpec): Series {
+/**
+ * 手具操作を付ける位置。**加点を狙わないタンブリングでは最低限**にする。
+ *  - 減点を避けるのに必要なのは、宙返り1本（`NO_APP_SALTO_DEDUCTION`・
+ *    `NO_APP_ALL_DEDUCTION` を避ける＝最後の宙返り）と、つなぎ技のA難度
+ *    （`connectNoApparatus` の −0.2 を避ける）だけ
+ *  - 手具操作加点（§3.5.5.5(3)）が狙えるのはE難度のときだけなので、そのときだけ
+ *    宙返り2本（＝1本目にも付ける）にする
+ *  - 投げタンは手具操作なしでも減点されない（A減点は投げの無いシリーズだけを見る）ので
+ *    最低限＝0。技の最中に投げる形でE難度になるときだけ、その技に付けて加点を狙う
+ */
+function applyApparatusOps(items: Item[], pattern: AutoTumblingPattern, junior: boolean): void {
+  const skills = items.flatMap((it, i) => (it.kind === "skill" && it.skillId ? [{ it, i }] : []));
+  skills.forEach(({ it }) => {
+    if (it.kind === "skill") it.hasApparatus = false;
+  });
+  const isA = (id: string) => skillDifficulty(id, junior) === "A";
+  const saltoIdx = skills.filter(({ it }) => it.kind === "skill" && !isA(it.skillId));
+  if (saltoIdx.length === 0) return;
+  const setOp = (item: Item | undefined) => {
+    if (item?.kind === "skill") item.hasApparatus = true;
+  };
+  const ids = saltoIdx.map(({ it }) => (it.kind === "skill" ? it.skillId : ""));
+  const isE = calcTumblingDifficulty(ids, !!pattern.throwCatch, junior) === "E";
+  if (pattern.throwCatch) {
+    // 技の最中に投げる形は、その技を保持していればE難度で加点が付く
+    if (isE && pattern.throwInSkill) setOp(items.find((it) => it.kind === "skill" && it.isThrow));
+    return;
+  }
+  // 最後の宙返り（手具操作なしの減点を避ける最低限）
+  setOp(saltoIdx[saltoIdx.length - 1].it);
+  // つなぎ技のA難度（宙返りの間に入ったもの）
+  const first = saltoIdx[0].i;
+  const last = saltoIdx[saltoIdx.length - 1].i;
+  skills
+    .filter(({ it, i }) => i > first && i < last && it.kind === "skill" && isA(it.skillId))
+    .forEach(({ it }) => setOp(it));
+  // E難度なら手具操作加点（操作2回以上）を狙う
+  if (isE && saltoIdx.length >= 2) setOp(saltoIdx[0].it);
+}
+
+export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false): Series {
   const { pattern } = spec;
   const items: Item[] = [];
   // 技の最中に投げる形では、先頭に投げを置かず最後の宙返りに投げを付ける
@@ -583,6 +623,7 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec): Series {
     });
     items.push({ kind: "catch", ...(style.two ? { catchTwo: true } : {}) });
   }
+  applyApparatusOps(items, pattern, junior);
   return { executionDeduction: 0, items };
 }
 

@@ -144,6 +144,10 @@ export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean):
 export const NO_VIEW_TAG = "noview";
 /** 手以外の受け・投げの技術タグ */
 export const NON_HAND_TAG = "nonhand";
+/** その他の受け・投げの技術タグ */
+export const OTHER_TAG = "other";
+/** その他のキャッチから次の投げに続ける確率は低い */
+export const OTHER_CATCH_BEFORE_THROW_WEIGHT = 0.2;
 
 /**
  * 縦3動作（前転3回）の形で、**手具を使ったキャッチ以外**の受け方を引く重み。
@@ -189,6 +193,8 @@ export function catchStyleWeight({
   /** その投げ受けで実施する徒手動作の数（`patternMotions`） */
   motions: number;
 }): number {
+  // その他のキャッチから次の投げに続けるのは少ない（`noViewPair` は受けたあと投げる形）
+  if (pattern.noViewPair && catchStyle.id === OTHER_TAG) return OTHER_CATCH_BEFORE_THROW_WEIGHT;
   const nonHandRule = NON_HAND_CATCH_RULE[apparatus];
   // 手以外のキャッチを低難度の投げでしか実施しない手具では、徒手が多い形では実施しない
   if (
