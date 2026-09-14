@@ -7,6 +7,8 @@ import {
   REQUIRE_ALL_ELEMENTS_MIN_SCORE,
   generateRoutine,
   DEFAULT_MAX_AUTO_THROWS,
+  otherStyleCount,
+  OTHER_STYLE_WEIGHT,
   requiresAllElements,
   saltoRepeatCount,
   SHAPE_PRIORITY_WEIGHT,
@@ -22,7 +24,7 @@ import {
   shortfallPenalty,
   usableTemplates,
 } from "../generate";
-import { ADOPT_COUNT, DIFF_SCORE } from "../constants";
+import { ADOPT_COUNT, DIFF_SCORE, TECHNIQUE_BONUS } from "../constants";
 import { analyzeSeries, seriesSignature } from "../analysis";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
@@ -576,6 +578,35 @@ describe("投げ上げの回数", () => {
     // 3本以下なら全部採用されるので0
     expect(extraThrowOperation(computeScore([cheneThrow(4), cheneThrow(3)], "stick"))).toBe(0);
   });
+});
+
+describe("その他の投げ・その他のキャッチ", () => {
+  it("数えるのは投げ・キャッチ・技の最中の投げに付いたその他だけ", () => {
+    expect(
+      otherStyleCount([
+        S({ kind: "throw", throwTypes: ["other"] }, { kind: "catch", catchTypes: ["other"] }),
+        S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch" }),
+      ]),
+    ).toBe(2);
+    expect(otherStyleCount([S({ kind: "throw" }, { kind: "catch", catchTypes: ["nonhand"] })])).toBe(0);
+  });
+
+  it("技術加点より強い重みで嫌う（加点のためだけには実施しない）", () => {
+    expect(OTHER_STYLE_WEIGHT).toBeGreaterThan(TECHNIQUE_BONUS);
+  });
+
+  it("生成される構成にはほとんど出ない", () => {
+    let others = 0;
+    let routines = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed * 13 + 5) });
+      if (!r) continue;
+      routines += 1;
+      others += otherStyleCount(r.series);
+    }
+    expect(routines).toBeGreaterThan(0);
+    expect(others).toBeLessThanOrEqual(routines);
+  }, 120_000);
 });
 
 describe("前転3回（縦3動作）の投げ", () => {

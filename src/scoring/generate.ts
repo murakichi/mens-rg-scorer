@@ -29,6 +29,7 @@
 import { analyzeSeries, motionDef, motionTimes } from "./analysis";
 import {
   NON_HAND_TAG,
+  OTHER_TAG,
   autoThrowTemplates,
   cheneCountRange,
   isAutoThrowTemplate,
@@ -306,6 +307,26 @@ export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false)
  * 難度点より大きい重み（`VERTICAL_THREE_THROW_WEIGHT`）で嫌い、Dスコアの範囲を満たすのに
  * どうしても必要なとき（範囲外のペナルティは×100）だけ入るようにする。
  */
+/**
+ * その他の投げ・その他のキャッチは自動生成では**可能な限り使わない**。
+ * 技術加点（`TECHNIQUE_BONUS`＝0.1）より強い重みで嫌うので、加点のためだけには実施せず、
+ * 多様な投げ受け（必須要素＝`REQUIRED_ELEMENT_WEIGHT`）を満たすのにどうしても必要なときだけ入る。
+ */
+export const OTHER_STYLE_WEIGHT = 0.15;
+
+/** その他の投げ・その他のキャッチの回数 */
+export function otherStyleCount(series: Series[]): number {
+  let count = 0;
+  series.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "throw" || (item.kind === "skill" && item.isThrow))
+        count += (item.throwTypes || []).filter((t) => t === OTHER_TAG).length;
+      else if (item.kind === "catch") count += (item.catchTypes || []).filter((t) => t === OTHER_TAG).length;
+    }),
+  );
+  return count;
+}
+
 export function verticalThreeThrowCount(series: Series[], junior = false): number {
   let count = 0;
   series.forEach((ser) => {
@@ -517,6 +538,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   // 前転3回（縦3動作）を手具を使ったキャッチ以外で受ける形は基本実施しない
   const verticalThree =
     verticalThreeThrowCount(series, !!opts.junior) * VERTICAL_THREE_THROW_WEIGHT;
+  // その他の投げ・その他のキャッチは可能な限り使わない
+  const otherStyle = otherStyleCount(series) * OTHER_STYLE_WEIGHT;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
@@ -535,6 +558,7 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       throwCount -
       extraOperation -
       verticalThree -
+      otherStyle -
       auto -
       limitedUsed * LIMITED_SKILL_WEIGHT -
       (highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT)) /

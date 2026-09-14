@@ -134,8 +134,24 @@ export function autoCatchStyles(apparatus: ApparatusKey): AutoCatchStyle[] {
   // クラブ・リングは、もう一方の手具で押さえつけて受けられる
   if (APPARATUS_USE[apparatus])
     styles.push({ id: CATCH_USE_APPARATUS, name: "手具で押さえつけてキャッチ", catchTypes: [CATCH_USE_APPARATUS] });
+  // 2種類を同時に満たす受け方（`COMBINED_CATCH_WEIGHT`）
+  styles.push({
+    id: `${NO_VIEW_TAG}+${NON_HAND_TAG}`,
+    name: "視野外＋手以外のキャッチ",
+    catchTypes: [NO_VIEW_TAG, NON_HAND_TAG],
+  });
+  if (APPARATUS_USE[apparatus])
+    styles.push({
+      id: `${NO_VIEW_TAG}+${CATCH_USE_APPARATUS}`,
+      name: "視野外＋手具を使ったキャッチ",
+      catchTypes: [NO_VIEW_TAG, CATCH_USE_APPARATUS],
+    });
   return styles;
 }
+
+/** その受け方がその技術タグを含むか（2種類を同時に満たす受け方があるのでタグで見る） */
+export const catchHasTag = (catchStyle: AutoCatchStyle, tag: string): boolean =>
+  (catchStyle.catchTypes || []).includes(tag);
 
 /**
  * その投げ方で使える受け方。
@@ -143,7 +159,7 @@ export function autoCatchStyles(apparatus: ApparatusKey): AutoCatchStyle[] {
  */
 export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean): AutoCatchStyle[] {
   const styles = autoCatchStyles(apparatus);
-  return twoThrow ? styles.filter((c) => c.id !== CATCH_USE_APPARATUS) : styles;
+  return twoThrow ? styles.filter((c) => !catchHasTag(c, CATCH_USE_APPARATUS)) : styles;
 }
 
 /** 視野外の受け・投げの技術タグ */
@@ -166,6 +182,21 @@ export const ROLL_FINISH_OTHER_CATCH_WEIGHT = 0.2;
 export const OTHER_TAG = "other";
 /** その他のキャッチから次の投げに続ける確率は低い */
 export const OTHER_CATCH_BEFORE_THROW_WEIGHT = 0.2;
+/**
+ * その他の投げ・その他のキャッチは自動生成では**可能な限り使わない**。
+ * 受け方は引く重みを下げ（ここ）、投げ方は候補としては残したまま
+ * 生成側の評価で嫌う（`generate.ts` の `OTHER_STYLE_WEIGHT`）。
+ */
+export const OTHER_CATCH_WEIGHT = 0.1;
+
+/**
+ * 2種類を同時に満たす受け方の重み。単独の受け方より実施は少ない。
+ *  - 視野外＋手以外のキャッチ：低難度の投げで実施する（手以外の規則 `NON_HAND_CATCH_RULE` に従う）
+ *  - 視野外＋手具を使ったキャッチ：クラブ・リングで、難度に関わらず起こりうる
+ *    （クラブは実施例が無いので `NO_VIEW_USE_APPARATUS_WEIGHT` でさらに低く）
+ */
+export const COMBINED_CATCH_WEIGHT = 0.1;
+export const NO_VIEW_USE_APPARATUS_WEIGHT: Partial<Record<ApparatusKey, number>> = { clubs: 0.3 };
 
 /**
  * 縦3動作（前転3回）の形で、**手具を使ったキャッチ以外**の受け方を引く重み。
@@ -211,28 +242,32 @@ export function catchStyleWeight({
   /** その投げ受けで実施する徒手動作の数（`patternMotions`） */
   motions: number;
 }): number {
-  // その他のキャッチから次の投げに続けるのは少ない（`noViewPair` は受けたあと投げる形）
-  if (pattern.noViewPair && catchStyle.id === OTHER_TAG) return OTHER_CATCH_BEFORE_THROW_WEIGHT;
+  const has = (tag: string) => catchHasTag(catchStyle, tag);
   const nonHandRule = NON_HAND_CATCH_RULE[apparatus];
   // 手以外のキャッチを低難度の投げでしか実施しない手具では、徒手が多い形では実施しない
-  if (
-    catchStyle.id === NON_HAND_TAG &&
-    nonHandRule.lowDifficultyOnly &&
-    motions > NON_HAND_CATCH_MAX_MOTIONS
-  )
+  if (has(NON_HAND_TAG) && nonHandRule.lowDifficultyOnly && motions > NON_HAND_CATCH_MAX_MOTIONS)
     return 0;
+  let weight = 1;
+  // その他のキャッチは可能な限り使わない
+  if (has(OTHER_TAG)) weight *= OTHER_CATCH_WEIGHT;
+  // その他のキャッチから次の投げに続けるのは少ない（`noViewPair` は受けたあと投げる形）
+  if (pattern.noViewPair && has(OTHER_TAG)) weight *= OTHER_CATCH_BEFORE_THROW_WEIGHT;
   // 縦3動作の形は手具で押さえつけて受けるのが主流
-  if (pattern.verticalThree && catchStyle.id !== CATCH_USE_APPARATUS)
-    return VERTICAL_THREE_OTHER_CATCH_WEIGHT;
+  if (pattern.verticalThree && !has(CATCH_USE_APPARATUS)) weight *= VERTICAL_THREE_OTHER_CATCH_WEIGHT;
   // クラブ・リングは、転がり・前転で終わってから手具で押さえつけて受けるのが定番
-  if (APPARATUS_USE[apparatus] && rollFinishShape(pattern) && catchStyle.id !== CATCH_USE_APPARATUS)
-    return ROLL_FINISH_OTHER_CATCH_WEIGHT;
+  if (APPARATUS_USE[apparatus] && rollFinishShape(pattern) && !has(CATCH_USE_APPARATUS))
+    weight *= ROLL_FINISH_OTHER_CATCH_WEIGHT;
   // 左手投げを視野外で受けることはかなり少ない
-  if ((throwStyle.reqTypes || []).includes(LEFT_HAND_TAG) && catchStyle.id === NO_VIEW_TAG)
-    return LEFT_HAND_NO_VIEW_CATCH_WEIGHT;
+  if ((throwStyle.reqTypes || []).includes(LEFT_HAND_TAG) && has(NO_VIEW_TAG))
+    weight *= LEFT_HAND_NO_VIEW_CATCH_WEIGHT;
   // 手以外のキャッチの実施しやすさは手具で違う
-  if (catchStyle.id === NON_HAND_TAG) return nonHandRule.weight;
-  return 1;
+  if (has(NON_HAND_TAG)) weight *= nonHandRule.weight;
+  // 2種類を同時に満たす受け方は単独より少ない（視野外＋手具を使ったキャッチはクラブでさらに低く）
+  if ((catchStyle.catchTypes || []).length >= 2)
+    weight *=
+      COMBINED_CATCH_WEIGHT *
+      (has(CATCH_USE_APPARATUS) ? (NO_VIEW_USE_APPARATUS_WEIGHT[apparatus] ?? 1) : 1);
+  return weight;
 }
 
 /**
@@ -248,7 +283,7 @@ export function catchStylesForPattern(
 ): AutoCatchStyle[] {
   const styles = catchStylesForThrow(apparatus, twoThrow);
   if (!pattern.noViewPair) return styles;
-  return styles.filter((c) => c.id !== NO_VIEW_TAG && c.id !== NON_HAND_TAG);
+  return styles.filter((c) => !catchHasTag(c, NO_VIEW_TAG) && !catchHasTag(c, NON_HAND_TAG));
 }
 
 /**
