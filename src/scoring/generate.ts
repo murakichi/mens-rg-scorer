@@ -425,6 +425,13 @@ export function reversedThrowOrderCount(r: ScoreResult): number {
 /** 連続投げで2回目以降のほうが難度が高いシリーズ1本ぶんの評価の重み */
 export const THROW_ORDER_WEIGHT = 0.005;
 
+/**
+ * 難度点（タンブリング＋徒手）1点あたりの上乗せ。Dスコアを上げるときは、
+ * **加点よりも高難度の実施を優先する**。同じDスコアなら難度点で取っている構成を選び、
+ * 難度点と加点が競合する場面（シリーズの枠は限られている）では難度点を取る。
+ */
+export const DIFFICULTY_PREFERENCE_WEIGHT = 0.3;
+
 /** 演技中に何度実施しても不自然でない宙返り（前宙） */
 export const REPEATABLE_SALTOS = ["b_front"];
 
@@ -510,6 +517,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       -(penalty + overThrowTum + overTumbling + overLimited) * 100 -
       shortfall +
       r.dScore +
+      // 加点よりも高難度の実施を優先する
+      (r.tumblingScore + r.handScore) * DIFFICULTY_PREFERENCE_WEIGHT +
       r.aScore -
       variety -
       shape -
