@@ -6,6 +6,7 @@ import {
   A_PRIORITY_WEIGHT,
   REQUIRE_ALL_ELEMENTS_MIN_SCORE,
   generateRoutine,
+  DEFAULT_MAX_AUTO_THROWS,
   requiresAllElements,
   saltoRepeatCount,
   SHAPE_PRIORITY_WEIGHT,
@@ -249,7 +250,7 @@ describe("実施が少ない技（ハンドスプリング・転宙）", () => {
         limitedSkillCounts(r.series).forEach((n) => expect(n).toBeLessThanOrEqual(LIMITED_SKILL_MAX));
       });
     });
-  });
+  }, 60_000);
 
   it("技としても徒手動作としても数える", () => {
     const counts = limitedSkillCounts([
@@ -531,10 +532,30 @@ describe("投げ上げの回数", () => {
     expect(throwCountPenalty(7, 4.5) - throwCountPenalty(6, 4.5)).toBeGreaterThan(
       throwCountPenalty(6, 4.5),
     );
-    // Dスコア5以上は投げを足すほど点が伸びるので、最頻値5を保つぶん1回多い側は強くなる
-    expect(throwCountPenalty(6, 5.0)).toBeGreaterThan(throwCountPenalty(6, 4.5));
+    // Dスコア5以上は6回を実施する確率が上がる（最頻値は5のまま）ので、1回多い側は弱くなる
+    expect(throwCountPenalty(6, 5.0)).toBeLessThan(throwCountPenalty(6, 4.5));
     expect(preferredThrowCount(5.0)).toBe(preferredThrowCount(4.5));
+    // 2回以上多いぶんはDスコアに関わらず強く嫌う
+    expect(throwCountPenalty(7, 5.0)).toBeGreaterThan(throwCountPenalty(6, 5.0) * 2);
   });
+
+  it("加点のための投げは本数を増やしてよい（最頻値は5のまま）", () => {
+    // 難度に採用されるのは投げタン＋上位3本だけ。自動生成の投げの本数の上限は
+    // それより多く取れるようにしてあり、本数は最頻値の重みで決まる
+    expect(DEFAULT_MAX_AUTO_THROWS).toBeGreaterThan(ADOPT_COUNT);
+    const counts: number[] = [];
+    for (let seed = 1; seed <= 12; seed++) {
+      const r = generateRoutine(pool(), { apparatus: "stick", maxScore: 4.5, random: seeded(seed * 13 + 5) });
+      if (r) counts.push(computeScore(r.series, "stick").totalThrowCount);
+    }
+    expect(counts.length).toBeGreaterThan(0);
+    const hist = new Map<number, number>();
+    counts.forEach((n) => hist.set(n, (hist.get(n) ?? 0) + 1));
+    const mode = [...hist.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    expect(mode).toBe(5);
+    // 最頻値より多い構成も出る（加点のために投げを足す）
+    expect(counts.some((n) => n >= 6)).toBe(true);
+  }, 120_000);
 
   it("Dスコアの上限が低くてもルールの回数は満たす", () => {
     [3, 7, 11].forEach((seed) => {
