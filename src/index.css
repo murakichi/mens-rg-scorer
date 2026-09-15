@@ -140,6 +140,32 @@ body {
   flex-wrap: wrap;
 }
 
+/* 自動保存したドラフトを復元したときの通知 */
+.draft-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--teal-soft);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xs);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.draft-notice-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--teal);
+}
+.draft-notice-btns {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* ---- ガラスカード ---- */
 .card {
   background: var(--glass);
