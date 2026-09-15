@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from "react";
-import { Download, Upload, Link2, BookMarked, Save, Shuffle } from "lucide-react";
+import { Download, Upload, Link2, BookMarked, Save, Shuffle, Lightbulb } from "lucide-react";
 import {
   APPARATUS,
   APPARATUS_REQUIRED_ELEMENTS,
@@ -16,6 +16,7 @@ import { JsonModal, type JsonModalMode } from "./JsonModal";
 import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
 import { TemplateModal } from "./TemplateModal";
 import { GenerateModal } from "./GenerateModal";
+import { SuggestModal } from "./SuggestModal";
 import { ScoreSummary } from "./ScoreSummary";
 import {
   addRoutineTemplate,
@@ -81,6 +82,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [templates, setTemplates] = useState<TemplateStore>(() => loadTemplates());
   const [templateOpen, setTemplateOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
+  const [suggestOpen, setSuggestOpen] = useState(false);
   const updateTemplates = (next: TemplateStore) => {
     setTemplates(next);
     if (!saveTemplates(next)) alert("テンプレートを保存できませんでした（ブラウザの設定をご確認ください）");
@@ -296,6 +298,16 @@ export function IndividualScorer({ initialData }: Props = {}) {
           setGenerateOpen(false);
         }}
       />
+      <SuggestModal
+        open={suggestOpen}
+        series={series}
+        apparatus={apparatus}
+        junior={junior}
+        apparatusElements={apparatusElements}
+        violations={violations}
+        artDeductions={artDeductions}
+        onClose={() => setSuggestOpen(false)}
+      />
       <TemplateModal
         open={templateOpen}
         store={templates}
@@ -342,6 +354,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
         </button>
         <button className="io-btn" onClick={() => setGenerateOpen(true)}>
           <Shuffle size={14} /> ランダム生成
+        </button>
+        <button className="io-btn" onClick={() => setSuggestOpen(true)}>
+          <Lightbulb size={14} /> 改善提案
         </button>
         <input
           ref={fileInputRef}
