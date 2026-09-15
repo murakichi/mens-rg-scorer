@@ -26,7 +26,7 @@ The scoring logic is covered by vitest suites in `src/scoring/__tests__/` (analy
 （手順とテンプレは `.claude/skills/report-issue`）。対象は詰まり（判断・情報がないと進めない）だけでなく、
 改善提案・リファクタ候補・ドキュメントの肥大化・欲しいテストツールなど何でもよい。タイトル接頭辞は
 `[blocked]` / `[idea]` / `[docs]`（採点バグは従来どおり `bug` ラベル）。溜まった issue は
-`/loop resolve-issue` が1周1件ずつ片付ける（`.claude/skills/resolve-issue`）。
+`/loop /resolve-issue <ラベル>` が1周1件ずつ片付ける（ラベル省略可。`.claude/skills/resolve-issue`）。
 
 ## 作業ログを残す
 
