@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { SUGGESTION_KIND_NAMES, suggestImprovements, type Suggestion } from "../suggest";
 import { computeScore } from "../score";
-import { skillOptions, skillFlowAfter, ROUNDOFF_SKILL_ID } from "../constants";
-import { prevSkillId } from "../analysis";
+import { ART_DEDUCTION_ITEMS, VIOLATION_OPTIONS, skillOptions, skillFlowAfter, ROUNDOFF_SKILL_ID } from "../constants";
+import { needsRoundoffBefore, prevSkillId, roundoffItem } from "../analysis";
+import type { Item } from "../types";
 import type { ApparatusKey, Series } from "../types";
 
 const skill = (skillId: string, extra: Record<string, unknown> = {}) =>
@@ -182,5 +183,69 @@ describe("提案の中身", () => {
   it("すべての種類に表示名がある", () => {
     const list = suggestImprovements(routine(), "stick", { limit: 50 });
     list.forEach((s: Suggestion) => expect(SUGGESTION_KIND_NAMES[s.kind]).toBeTruthy());
+  });
+});
+
+describe("編集画面と同じ結果になること", () => {
+  /** `SeriesListEditor.updateItem` をそのまま写した手順 */
+  const editorReplace = (items: Item[], iIdx: number, skillId: string): Item[] => {
+    const next = structuredClone(items);
+    next[iIdx] = { ...next[iIdx], skillId } as Item;
+    if (needsRoundoffBefore(next, iIdx)) next.splice(iIdx, 0, roundoffItem());
+    return next;
+  };
+
+  it("技の差し替えが、編集画面で同じ操作をしたときと同一の構成になる", () => {
+    // 提案どおりに入力したら提案どおりの点になる、という一番大事な性質。
+    // suggest.ts が editor と別の手順に分岐したらここで落ちる。
+    const cases: Series[] = [
+      { executionDeduction: 0, items: [{ kind: "throw", throwTypes: [], reqTypes: [] }, skill(ROUNDOFF_SKILL_ID), skill("b_backsalto"), { kind: "catch", catchTypes: [] }] },
+      { executionDeduction: 0, items: [skill(ROUNDOFF_SKILL_ID), skill("a_flicflac"), skill("b_backsalto"), skill("b_front")] },
+      { executionDeduction: 0, items: [skill("b_front"), skill("b_backsalto")] },
+    ];
+    let compared = 0;
+    cases.forEach((ser) => {
+      ser.items.forEach((item, iIdx) => {
+        if (item.kind !== "skill") return;
+        skillOptions(false, skillFlowAfter(prevSkillId(ser.items, iIdx))).forEach((opt) => {
+          compared++;
+          const viaEditor = editorReplace(ser.items, iIdx, opt.id);
+          const viaSuggest = (() => {
+            const next = ser.items.map((x, k) => (k === iIdx ? { ...x, skillId: opt.id } : x)) as Item[];
+            if (needsRoundoffBefore(next, iIdx)) next.splice(iIdx, 0, roundoffItem());
+            return next;
+          })();
+          expect(viaSuggest).toEqual(viaEditor);
+        });
+      });
+    });
+    expect(compared).toBeGreaterThan(100);
+  });
+});
+
+describe("審判が入れたA減点を踏まえる", () => {
+  it("A減点が10点に達していると、A側だけの改善は提案しない（残点は増えないので）", () => {
+    // 違反・欠如をすべてチェックして A残点 を0に張り付かせる
+    const violations = VIOLATION_OPTIONS.map((v) => v.id);
+    const artDeductions: Record<string, number> = {};
+    ART_DEDUCTION_ITEMS.forEach((i) => (artDeductions[i.id] = i.max));
+    // 必須要素をほとんど満たさない最小構成にして、A減点を10点に張り付かせる
+    const bare: Series[] = [{ executionDeduction: 0, items: [skill(ROUNDOFF_SKILL_ID), skill("b_backsalto")] }];
+    const opts = { violations, artDeductions };
+    const r = computeScore(bare, "stick", opts);
+    expect(r.aScore).toBe(0);
+
+    const list = suggestImprovements(bare, "stick", { ...opts, limit: 50 });
+    list.forEach((s) => {
+      const after = computeScore(s.series, "stick", opts);
+      // 増えると言った分は、その入力のもとで本当に増える
+      expect(after.dScore + after.aScore - (r.dScore + r.aScore)).toBeCloseTo(s.totalDelta, 6);
+      // A残点は0で頭打ちなので、A側だけを直す案は「上がる」と言わない
+      expect(s.dDelta).toBeGreaterThan(0);
+    });
+
+    // 審判入力を渡さないと基準がずれる（この引数を落としてはいけない、という回帰）
+    const ignored = suggestImprovements(bare, "stick", { limit: 50 });
+    expect(ignored.some((s) => s.dDelta === 0 && s.aDelta > 0)).toBe(true);
   });
 });

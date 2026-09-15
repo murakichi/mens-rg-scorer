@@ -152,13 +152,17 @@ function skillEdits(list: Series[], junior: boolean): Candidate[] {
       skillOptions(junior, skillFlowAfter(item.skillId)).forEach((skill) => {
         const items = [...ser.items];
         items.splice(iIdx + 1, 0, { kind: "skill", skillId: skill.id, hasApparatus: false, isThrow: false });
-        if (needsRoundoffBefore(items, iIdx + 1)) items.splice(iIdx + 1, 0, roundoffItem());
+        const roundoff = needsRoundoffBefore(items, iIdx + 1);
+        if (roundoff) items.splice(iIdx + 1, 0, roundoffItem());
         out.push({
           kind: "addSkill",
           seriesIndex: sIdx,
           target: `addSkill:${sIdx}:${iIdx}`,
           realism: skillRealism(skill),
-          label: `シリーズ${sIdx + 1}の「${currentName}」の後に「${skill.name}」を足す`,
+          // 挿入されるロンダートも「1手」の内訳なので隠さない
+          label: `シリーズ${sIdx + 1}の「${currentName}」の後に${
+            roundoff ? "ロンダート→" : ""
+          }「${skill.name}」を足す`,
           series: withItems(list, sIdx, items),
         });
       });

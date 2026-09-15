@@ -303,6 +303,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
         series={series}
         apparatus={apparatus}
         junior={junior}
+        apparatusElements={apparatusElements}
+        violations={violations}
+        artDeductions={artDeductions}
         onClose={() => setSuggestOpen(false)}
       />
       <TemplateModal

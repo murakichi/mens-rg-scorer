@@ -13,17 +13,36 @@ interface Props {
   series: Series[];
   apparatus: ApparatusKey;
   junior: boolean;
+  /**
+   * 採点画面で入力済みのA側の減点。これを渡さないと A残点 の基準がずれる
+   * （とくに減点が10点に達していると、実際には増えない分を「上がる」と出してしまう）。
+   */
+  apparatusElements: string[];
+  violations: string[];
+  artDeductions: Record<string, number>;
   onClose: () => void;
 }
 
 const signed = (n: number): string => `${n > 0 ? "+" : n < 0 ? "−" : "±"}${Math.abs(n).toFixed(1)}`;
 
 /** 「あと0.1上げる1手」を並べるダイアログ。表示だけで、構成は変更しない。 */
-export function SuggestModal({ open, series, apparatus, junior, onClose }: Props) {
+export function SuggestModal({
+  open,
+  series,
+  apparatus,
+  junior,
+  apparatusElements,
+  violations,
+  artDeductions,
+  onClose,
+}: Props) {
   // 開いている間だけ計算する（候補ごとに computeScore を回すので閉じているときは走らせない）
   const list = useMemo<Suggestion[]>(
-    () => (open ? suggestImprovements(series, apparatus, { junior }) : []),
-    [open, series, apparatus, junior],
+    () =>
+      open
+        ? suggestImprovements(series, apparatus, { junior, apparatusElements, violations, artDeductions })
+        : [],
+    [open, series, apparatus, junior, apparatusElements, violations, artDeductions],
   );
   if (!open) return null;
 
