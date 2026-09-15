@@ -93,8 +93,9 @@ npm run build
 /code-review high
 ```
 指摘が出たら直して push し、`npm test` / `npm run build` を取り直す。
-**PR に CI は無い**（`.github/workflows/deploy.yml` は main への push でしか動かない）ので、
-緑の根拠はローカルのこの2コマンドと、セルフレビューの結果しかない。
+push すると **PR の CI**（`.github/workflows/ci.yml` — `npm ci` → `npm run build` → `npm test`）が
+回るので、その結果も確認する（`gh pr checks` / `mcp__github__get_check_run`）。
+CI が赤いまま次へ進まない。
 
 そのうえで、**変更したファイル** で2つに分かれる：
 
@@ -106,7 +107,7 @@ npm run build
 **自己マージの条件（すべて満たすこと）**：
 
 1. 変更ファイルが上の「だけ」の範囲に収まっている（`git diff --name-only origin/main...HEAD` で確認）
-2. `npm test` と `npm run build` が緑
+2. `npm test` と `npm run build` がローカルで緑で、**PR の CI も緑**
 3. `/code-review` の指摘がゼロ、または全部対応済みで再レビューが緑
 4. その issue に「オーナーの判断が要る」論点が残っていない
 
@@ -115,7 +116,7 @@ npm run build
 `Closes #N` により issue は自動でクローズされる。1つでも欠けたら **預ける側** に倒す。
 
 **預ける場合**：セルフレビューの所見を PR に残し（`/code-review --comment`、指摘ゼロなら
-「セルフレビュー済み・指摘なし」と1行コメント）、`npm test` / `npm run build` の結果を添えて
+「セルフレビュー済み・指摘なし」と1行コメント）、`npm test` / `npm run build` と CI の結果を添えて
 「レビュー済み・マージ待ち」で終える。**採点結果が変わりうる変更は必ず人が見る。**
 
 ### 7. オーナーの判断が要るとき

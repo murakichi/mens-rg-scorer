@@ -35,6 +35,10 @@ The scoring logic is covered by vitest suites in `src/scoring/__tests__/` (analy
 短くてよく、判断の根拠・試して駄目だったこと・やり残しが書いてあればよい。ルール準拠テストの回だけは
 `test-reports/` に書き、work-logs からはそれを参照する。
 
+## CI
+
+`.github/workflows/ci.yml` runs on every pull request (and `workflow_dispatch`): `npm ci` → `npm run build` → `npm test`. `deploy.yml` runs the same two checks before publishing, so a red main never reaches Pages. The generator suites are randomized and slow (~5 s per test), so `vitest.config.ts` sets `testTimeout: 30000` — a test that exceeds that is a real hang, not a flake.
+
 ## Deployment
 
 GitHub Pages via `.github/workflows/deploy.yml` (builds on push to `main`, uploads `dist/`). The Pages source must be set to **GitHub Actions**. `vite.config.ts` sets `base: "/mens-rg-scorer/"` — this must match the repo name or assets 404 on Pages.
