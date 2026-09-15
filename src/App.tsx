@@ -43,11 +43,11 @@ export default function App() {
         <div className="footer-links">
           <a
             className="footer-link"
-            href="https://instagram.com/murakichi"
+            href="https://instagram.com/murakionfire"
             target="_blank"
             rel="noopener noreferrer"
           >
-            Instagram @murakichi
+            Instagram @murakionfire
           </a>
           <a className="footer-link" href="https://x.com/rijsp" target="_blank" rel="noopener noreferrer">
             X @rijsp
