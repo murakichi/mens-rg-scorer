@@ -94,6 +94,9 @@ EOF
 - `label` が無ければ `--label` を外す（存在しないラベルは作成に失敗する）。
 - 判断がつかない（ルールが曖昧）ものは `--label question` 相当で、本文に「要確認」と明記。
 - **既存の同一issueが無いか `gh issue list` で先に確認** し、重複を作らない。
+- `gh` が無い環境（Claude Code on the web など）では GitHub MCP の `mcp__github__issue_write` を使う。
+- 採点の食い違い以外の気づき（作業上の詰まり、改善案、ドキュメントの肥大化、欲しいテストツール）は
+  `report-issue` スキルの接頭辞ルール（`[blocked]`/`[idea]`/`[docs]`）で起票する。
 
 ### 7. レポートを書く
 
