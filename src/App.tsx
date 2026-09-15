@@ -35,6 +35,25 @@ export default function App() {
       ) : (
         <TeamScorer initialData={teamInit} />
       )}
+
+      <footer className="site-footer">
+        <p>
+          不具合の報告・機能のご要望は、Instagram または X のDMでお気軽にお知らせください。
+        </p>
+        <div className="footer-links">
+          <a
+            className="footer-link"
+            href="https://instagram.com/murakichi"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Instagram @murakichi
+          </a>
+          <a className="footer-link" href="https://x.com/rijsp" target="_blank" rel="noopener noreferrer">
+            X @rijsp
+          </a>
+        </div>
+      </footer>
     </div>
   );
 }
