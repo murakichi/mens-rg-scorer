@@ -96,6 +96,29 @@ describe("ドラフトの正規化", () => {
     expect(d.violations).toEqual([]);
   });
 
+  it("壊れたアイテムが混ざっていても落ちない（起動が止まらない）", () => {
+    // 復元は state の初期化中に走るので、ここで throw すると画面が真っ白のまま戻せない
+    expect(() => normalizeIndividualDraft({ series: [{ items: [null] }] })).not.toThrow();
+    const d = normalizeIndividualDraft({
+      series: [{ items: [null, "x", 3, { kind: "nope" }, filledSeries().items[0]] }],
+    })!;
+    // 読めるアイテムだけが残る
+    expect(d.series[0].items).toHaveLength(1);
+    expect((d.series[0].items[0] as { skillId: string }).skillId).toBe("b_front");
+  });
+
+  it("items が配列でないシリーズは丸ごと捨てる", () => {
+    const d = normalizeIndividualDraft({ series: [{ items: "no" }, null, filledSeries()] })!;
+    expect(d.series).toHaveLength(1);
+  });
+
+  it("シリーズの他のフラグは残す（notDuplicate）", () => {
+    const d = normalizeIndividualDraft({
+      series: [{ ...filledSeries(), notDuplicate: true }],
+    })!;
+    expect(d.series[0].notDuplicate).toBe(true);
+  });
+
   it("芸術の欠点は項目ごとに 0〜上限 に丸め、未知のidは捨てる", () => {
     const d = normalizeIndividualDraft({
       artDeductions: { tumVariety: 9, handVariety: 0.3, rhythm: -1, unknownItem: 0.2 },
@@ -157,6 +180,15 @@ describe("復元する価値があるか（個人）", () => {
     expect(isBlankIndividualDraft(draft({ apparatus: "rope" }))).toBe(true);
   });
 
+  it("シリーズやアイテムを増やしただけでも空ではない（技を選ぶ前の組み立てを守る）", () => {
+    expect(isBlankIndividualDraft(draft({ series: [blankSeries(), blankSeries()] }))).toBe(false);
+    expect(
+      isBlankIndividualDraft(
+        draft({ series: [{ executionDeduction: 0, items: [...blankSeries().items, ...blankSeries().items] }] }),
+      ),
+    ).toBe(false);
+  });
+
   it("技を選んだ・投げを置いた時点で空ではない", () => {
     expect(isBlankIndividualDraft(draft({ series: [filledSeries()] }))).toBe(false);
     expect(
@@ -189,13 +221,26 @@ describe("復元する価値があるか（団体）", () => {
     expect(isBlankTeamState({ series: [emptyTeamSeries(3)], executionDeduction: 0.2 })).toBe(false);
   });
 
-  it("徒手セルは選ばれていなければ空扱い", () => {
-    const s = emptyTeamSeries(1);
-    s.content = "motion";
-    s.lanes = [[{ type: "motion", motionId: "" }]];
-    expect(isBlankTeamState({ series: [s] })).toBe(true);
-    s.lanes = [[{ type: "motion", motionId: "jump_a" }]];
-    expect(isBlankTeamState({ series: [s] })).toBe(false);
+  it("グリッドを組み替えただけでも空ではない（スロット数・シリーズ数・徒手への切り替え）", () => {
+    const more = initialTeamState();
+    more.series.push(emptyTeamSeries(3));
+    expect(isBlankTeamState(more)).toBe(false);
+
+    const wider = initialTeamState();
+    wider.series[0] = emptyTeamSeries(5);
+    expect(isBlankTeamState(wider)).toBe(false);
+
+    const together = initialTeamState();
+    together.series[0].mode = "allTogether";
+    expect(isBlankTeamState(together)).toBe(false);
+  });
+
+  it("徒手セルは、選ばれていなければセルとしては空扱い（形が初期状態なら全体も空）", () => {
+    const base = initialTeamState();
+    base.series[0].lanes[0][0] = { type: "motion", motionId: "" };
+    expect(isBlankTeamState(base)).toBe(true);
+    base.series[0].lanes[0][0] = { type: "motion", motionId: "jump_a" };
+    expect(isBlankTeamState(base)).toBe(false);
   });
 });
 

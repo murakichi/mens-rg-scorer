@@ -58,15 +58,22 @@ export function TeamScorer({ initialData }: Props = {}) {
   const [jsonText, setJsonText] = useState("");
 
   // ---- 入力中の構成を自動保存する ----
-  // マウント直後の1回は書き込まない：共有URLを開いただけで自分のドラフトを
-  // 上書きしないため（ユーザーが何か編集した時点から保存が始まる）。
-  const savedOnce = useRef(false);
+  // 起動時の内容と同じあいだは書き込まない：共有URLを開いただけで自分のドラフトを
+  // 上書きしないため。内容そのものを比べるのは、StrictMode が effect を2回走らせても
+  // ref が残って「1回目を飛ばす」だけの判定が素通りしてしまうため。
+  const initialPayload = useRef<string | null>(null);
+  const saveFailed = useRef(false);
   useEffect(() => {
-    if (!savedOnce.current) {
-      savedOnce.current = true;
+    const json = JSON.stringify(team);
+    if (initialPayload.current === null) {
+      initialPayload.current = json;
       return;
     }
-    saveTeamDraft(team);
+    if (json === initialPayload.current) return;
+    if (!saveTeamDraft(team) && !saveFailed.current) {
+      saveFailed.current = true;
+      alert("入力内容を自動保存できませんでした（ブラウザの設定・空き容量をご確認ください）。\nエクスポートか共有URLで控えを取ってください。");
+    }
   }, [team]);
 
   /** 復元した内容を破棄して最初からにする */

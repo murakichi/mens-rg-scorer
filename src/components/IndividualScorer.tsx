@@ -95,15 +95,26 @@ export function IndividualScorer({ initialData }: Props = {}) {
   );
 
   // ---- 入力中の構成を自動保存する ----
-  // マウント直後の1回は書き込まない：共有URLを開いただけで自分のドラフトを
+  // 起動時の内容と同じあいだは書き込まない：共有URLを開いただけで自分のドラフトを
   // 上書きしないため（ユーザーが何か編集した時点から保存が始まる）。
-  const savedOnce = useRef(false);
+  // 「1回目の実行を飛ばす」ではなく内容そのものを比べるのは、StrictMode が
+  // effect を2回走らせても ref が残って素通りしてしまうため。
+  const initialPayload = useRef<string | null>(null);
+  const saveFailed = useRef(false);
   useEffect(() => {
-    if (!savedOnce.current) {
-      savedOnce.current = true;
+    const data = saveData();
+    const json = JSON.stringify(data);
+    if (initialPayload.current === null) {
+      initialPayload.current = json;
       return;
     }
-    saveIndividualDraft(saveData());
+    if (json === initialPayload.current) return;
+    // 保存できないまま（容量超過・プライベートモード）気づかないと、
+    // 古いドラフトを「復元しました」と出してしまうので一度だけ知らせる。
+    if (!saveIndividualDraft(data) && !saveFailed.current) {
+      saveFailed.current = true;
+      alert("入力内容を自動保存できませんでした（ブラウザの設定・空き容量をご確認ください）。\nエクスポートか共有URLで控えを取ってください。");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apparatus, series, overallExecution, apparatusElements, violations, junior, artDeductions]);
 

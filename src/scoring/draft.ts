@@ -44,8 +44,23 @@ export function normalizeArtDeductions(v: unknown): Record<string, number> {
   return out;
 }
 
-const isSeriesLike = (v: unknown): v is Series =>
-  !!v && typeof v === "object" && Array.isArray((v as { items?: unknown }).items);
+const ITEM_KINDS = new Set<string>(["throw", "catch", "skill", "motion", "ropeJump"]);
+
+/** 判別共用体として扱えるアイテムか（kind が既知のオブジェクト） */
+const isItemLike = (v: unknown): v is Item =>
+  !!v && typeof v === "object" && ITEM_KINDS.has((v as { kind?: unknown }).kind as string);
+
+/**
+ * シリーズらしきオブジェクトを取り込む。**アイテムまで検証する** —
+ * `items: [null]` のような壊れたデータが `stripForApparatus` を落とすと、
+ * 復元は state の初期化中に走るので画面が真っ白のまま復旧できなくなる。
+ */
+const normalizeSeries = (v: unknown): Series | null => {
+  if (!v || typeof v !== "object") return null;
+  const s = v as Partial<Series> & { items?: unknown };
+  if (!Array.isArray(s.items)) return null;
+  return { ...(s as Series), items: s.items.filter(isItemLike), executionDeduction: Number(s.executionDeduction) || 0 };
+};
 
 /**
  * 保存データ（ドラフト／共有URL）を個人モードの状態に正規化する。
@@ -57,7 +72,7 @@ export function normalizeIndividualDraft(data: unknown): IndividualDraft | null 
   const d = data as Record<string, unknown>;
   const apparatus: ApparatusKey =
     typeof d.apparatus === "string" && d.apparatus in APPARATUS ? (d.apparatus as ApparatusKey) : "stick";
-  const raw = Array.isArray(d.series) ? d.series.filter(isSeriesLike) : [];
+  const raw = Array.isArray(d.series) ? d.series.flatMap((x) => normalizeSeries(x) ?? []) : [];
   return {
     version: 1,
     apparatus,
@@ -80,11 +95,14 @@ const isBlankItem = (item: Item): boolean => {
 
 /**
  * 復元する価値が無い（＝初期状態と変わらない）ドラフトか。
- * 手具の選択だけは「入力」に数えない — 起動しただけで復元の通知が出ないようにする。
+ * シリーズを増やした・アイテムを足したといった**入れ物の編集も「入力」に数える**
+ * （技を選ぶ前にリロードして構成が消えるのを防ぐ）。
+ * 手具の選択だけは数えない — 起動して手具を押しただけで復元の通知が出ないようにする。
  */
 export function isBlankIndividualDraft(d: IndividualDraft): boolean {
   return (
-    d.series.every((ser) => ser.items.every(isBlankItem) && !ser.executionDeduction) &&
+    d.series.length <= 1 &&
+    d.series.every((ser) => ser.items.length <= 1 && ser.items.every(isBlankItem) && !ser.executionDeduction) &&
     !d.executionDeduction &&
     !d.junior &&
     d.apparatusElements.length === 0 &&
@@ -93,11 +111,20 @@ export function isBlankIndividualDraft(d: IndividualDraft): boolean {
   );
 }
 
-/** 団体モードで復元する価値が無い状態か（技も徒手も選ばれておらず、減点も無い） */
+/**
+ * 団体モードで復元する価値が無い状態か（技も徒手も選ばれておらず、減点も無い）。
+ * シリーズ数・スロット数・同時実施／徒手の切り替えといったグリッドの組み立ても
+ * 「入力」なので、初期状態（`initialTeamState`）と同じ形のときだけ空とみなす。
+ */
 export function isBlankTeamState(t: TeamState): boolean {
+  const init = initialTeamState();
   return (
+    t.series.length === init.series.length &&
     t.series.every(
-      (ser) =>
+      (ser, i) =>
+        ser.mode === init.series[i].mode &&
+        ser.content === init.series[i].content &&
+        ser.slots === init.series[i].slots &&
         ser.lanes.every((lane) => lane.every((c) => c.type === "empty" || (c.type === "motion" && !c.motionId))) &&
         ser.crossGroups.length === 0 &&
         ser.unionGroups.length === 0 &&
