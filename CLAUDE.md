@@ -28,6 +28,13 @@ The scoring logic is covered by vitest suites in `src/scoring/__tests__/` (analy
 `[blocked]` / `[idea]` / `[docs]`（採点バグは従来どおり `bug` ラベル）。溜まった issue は
 `/loop resolve-issue` が1周1件ずつ片付ける（`.claude/skills/resolve-issue`）。
 
+## 作業ログを残す
+
+作業が終わったら `work-logs/YYYY-MM-DD-<slug>.md` を1本書き、**変更と同じコミット / 同じ PR に含める**
+（テンプレ `work-logs/_TEMPLATE.md`、運用は `work-logs/README.md`）。普段の作業もループで回すスキルも対象。
+短くてよく、判断の根拠・試して駄目だったこと・やり残しが書いてあればよい。ルール準拠テストの回だけは
+`test-reports/` に書き、work-logs からはそれを参照する。
+
 ## Deployment
 
 GitHub Pages via `.github/workflows/deploy.yml` (builds on push to `main`, uploads `dist/`). The Pages source must be set to **GitHub Actions**. `vite.config.ts` sets `base: "/mens-rg-scorer/"` — this must match the repo name or assets 404 on Pages.
