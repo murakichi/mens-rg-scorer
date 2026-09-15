@@ -1,14 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { IndividualScorer } from "./components/IndividualScorer";
 import { TeamScorer } from "./components/TeamScorer";
 import { consumeShareHash } from "./scoring/share";
+import { loadDraftMode, saveDraftMode, type ScorerMode } from "./scoring/draft";
 
-type Mode = "individual" | "team";
+type Mode = ScorerMode;
 
 export default function App() {
   // 起動時にURLハッシュから構成を復元（あれば）。一度だけ評価。
   const [shared] = useState(consumeShareHash);
-  const [mode, setMode] = useState<Mode>(shared?.mode ?? "individual");
+  // 共有URL ＞ 前回のモード ＞ 個人
+  const [mode, setMode] = useState<Mode>(() => shared?.mode ?? loadDraftMode() ?? "individual");
+
+  // どちらのモードのドラフトを見せるか、次回の起動に引き継ぐ
+  useEffect(() => saveDraftMode(mode), [mode]);
 
   const individualInit = shared?.mode === "individual" ? shared.data : undefined;
   const teamInit = shared?.mode === "team" ? shared.data : undefined;
