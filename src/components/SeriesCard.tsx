@@ -7,6 +7,8 @@ import {
   CATCH_OPTIONS_COMMON,
   CATCH_OPTIONS_APPARATUS,
   REQUIRED_THROW_OPTIONS,
+  TWO_THROW_TAG,
+  USE_APPARATUS_TAG,
   APPARATUS_USE,
   skillDef,
   skillAllowed,
@@ -31,6 +33,7 @@ import {
 import {
   checkApparatusFlow,
   handsEmptyFlags,
+  catchTwoFlags,
   maxSaltoChain,
   needsRoundoffBefore,
   prevSkillId,
@@ -128,6 +131,7 @@ function ItemEditor({
   flow,
   prevMotionId,
   handsEmpty,
+  catchTwoAllowed,
   onUpdate,
 }: {
   item: Item;
@@ -144,32 +148,48 @@ function ItemEditor({
   prevMotionId?: string;
   /** 投げている間（手元に手具が無い）か。手具操作は付けられない */
   handsEmpty?: boolean;
+  /** このキャッチで2つ同時キャッチを入力できるか（2つとも空中にあるときだけ） */
+  catchTwoAllowed?: boolean;
   onUpdate: (patch: Partial<Item>) => void;
 }) {
   if (item.kind === "throw") {
+    // 二つ投げ（両方を投げる）と手具を使った投げ（もう一方で押さえる）は排他
+    const twoThrow = (item.reqTypes || []).includes(TWO_THROW_TAG);
+    const useApparatusThrow = (item.throwTypes || []).includes(USE_APPARATUS_TAG);
     return (
       <>
         <div className="throw-tag">投げ</div>
-        {[...THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map((opt) => (
-          <label key={opt.id} className="check">
-            <input
-              type="checkbox"
-              checked={(item.throwTypes || []).includes(opt.id)}
-              onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
-            />
-            {opt.name}
-          </label>
-        ))}
-        {(common ? [] : REQUIRED_THROW_OPTIONS[apparatus]).map((opt) => (
-          <label key={opt.id} className="check-req">
-            <input
-              type="checkbox"
-              checked={(item.reqTypes || []).includes(opt.id)}
-              onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
-            />
-            {opt.name}
-          </label>
-        ))}
+        {[...THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map((opt) => {
+          const on = (item.throwTypes || []).includes(opt.id);
+          // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
+          const blocked = opt.id === USE_APPARATUS_TAG && !on && twoThrow;
+          return (
+            <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={blocked}
+                onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
+              />
+              {opt.name}
+            </label>
+          );
+        })}
+        {(common ? [] : REQUIRED_THROW_OPTIONS[apparatus]).map((opt) => {
+          const on = (item.reqTypes || []).includes(opt.id);
+          const blocked = opt.id === TWO_THROW_TAG && !on && useApparatusThrow;
+          return (
+            <label key={opt.id} className={blocked ? "check-req is-disabled" : "check-req"}>
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={blocked}
+                onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
+              />
+              {opt.name}
+            </label>
+          );
+        })}
       </>
     );
   }
@@ -187,7 +207,8 @@ function ItemEditor({
             {opt.name}
           </label>
         ))}
-        {!common && APPARATUS_USE[apparatus] && (
+        {/* 2つ同時キャッチは二つ投げで2つとも空中にあるときだけ（すでに付いていれば外せるように残す） */}
+        {!common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) && (
           <label className="check-req">
             <input
               type="checkbox"
@@ -476,6 +497,8 @@ export function SeriesCard({
   const flowErrors = checkApparatusFlow(ser, apparatus);
   // 投げてからキャッチするまでは手元に手具が無いので、その間の技に手具操作は付けられない
   const handsEmpty = handsEmptyFlags(ser.items, apparatus);
+  // 2つ同時キャッチは「2つとも空中にある（＝二つ投げの間）」ときだけ入力できる
+  const catchTwoAllowed = catchTwoFlags(ser.items, apparatus);
   // タンブリング技の入力パターン（一覧／手動入力）。既定は一覧で、
   // ボタンで切り替えたブロックだけを覚えておく（キーはアイテムの位置）。
   const [twistModes, setTwistModes] = useState<Record<number, boolean>>({});
@@ -616,6 +639,7 @@ export function SeriesCard({
               flow={skillFlowAfter(prevSkillId(ser.items, iIdx))}
               prevMotionId={prevMotionId(ser.items, iIdx)}
               handsEmpty={handsEmpty[iIdx]}
+              catchTwoAllowed={catchTwoAllowed[iIdx]}
               onUpdate={(patch) => updateItemAt(iIdx, patch)}
             />
             {/* 技の両端：隣の技と入れ替える矢印（中央は削除） */}

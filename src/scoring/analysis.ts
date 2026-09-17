@@ -21,6 +21,7 @@ import {
   isBackwardSkill,
   leadsBackward,
   ROUNDOFF_SKILL_ID,
+  TWO_THROW_TAG,
 } from "./constants";
 import type {
   ApparatusKey,
@@ -551,7 +552,7 @@ export function handsEmptyFlags(items: Item[], apparatus: ApparatusKey): boolean
   let inHand = total;
   return items.map((item) => {
     if (item.kind === "throw") {
-      inHand = Math.max(0, inHand - ((item.reqTypes || []).includes("twothrow") ? 2 : 1));
+      inHand = Math.max(0, inHand - ((item.reqTypes || []).includes(TWO_THROW_TAG) ? 2 : 1));
       return false;
     }
     if (item.kind === "catch") {
@@ -561,6 +562,29 @@ export function handsEmptyFlags(items: Item[], apparatus: ApparatusKey): boolean
     const empty = inHand === 0;
     if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - 1);
     return empty;
+  });
+}
+
+/**
+ * 各アイテムの位置で **2つ同時キャッチ**を入力できるか。
+ * 手具が2つある種目（クラブ・リング）で、そのキャッチの時点で**2つとも空中にある**
+ * ときだけ（＝二つ投げで両方を投げている間）。片方が手元にあるなら同時には受けられない。
+ */
+export function catchTwoFlags(items: Item[], apparatus: ApparatusKey): boolean[] {
+  const total = APPARATUS_COUNT[apparatus];
+  let inHand = total;
+  return items.map((item) => {
+    if (item.kind === "throw") {
+      inHand = Math.max(0, inHand - ((item.reqTypes || []).includes(TWO_THROW_TAG) ? 2 : 1));
+      return false;
+    }
+    if (item.kind === "catch") {
+      const allowed = total > 1 && inHand === 0;
+      inHand = Math.min(total, inHand + (item.catchTwo ? 2 : 1));
+      return allowed;
+    }
+    if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - 1);
+    return false;
   });
 }
 
