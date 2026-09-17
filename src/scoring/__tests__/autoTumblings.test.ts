@@ -985,6 +985,22 @@ describe("つなぎ技", () => {
     expect(rolled).toBeLessThan(ends);
   }, 60_000);
 
+  it("連続投げを続ける投げタンは押さえつけて受けない（押さえた状態からは投げられない）", () => {
+    let pairs = 0;
+    for (let seed = 1; seed <= 12; seed++)
+      autoTumblingSpecs({ apparatus: "clubs", random: seeded(seed) })
+        .filter((sp) => sp.pattern.throwCatch && sp.secondThrow)
+        .forEach((sp) => {
+          pairs += 1;
+          const items = buildAutoTumblingSeries(sp).items;
+          items.forEach((it, i) => {
+            if (it.kind !== "catch" || items[i + 1]?.kind !== "throw") return;
+            expect(it.catchTypes || []).not.toContain("useapp");
+          });
+        });
+    expect(pairs).toBeGreaterThan(0);
+  }, 60_000);
+
   it("投げタンの投げを二つ投げにできる（クラブ・リングで、投げてから跳ぶ形だけ）", () => {
     const throwFirst = AUTO_TUMBLING_PATTERNS.find((p) => p.throwCatch && !p.throwInSkill)!;
     const inSkill = AUTO_TUMBLING_PATTERNS.find((p) => p.throwInSkill)!;

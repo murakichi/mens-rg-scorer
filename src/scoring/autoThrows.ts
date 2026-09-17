@@ -288,10 +288,20 @@ export function catchStyleWeight({
 }
 
 /**
- * その形で使える受け方。**次の投げに続ける受け**（`noViewPair` の直前の受け）では、
- * そこから投げに繋げない受け方を外す：
+ * その受け方からは**次の投げに繋げられない**（連続投げの1回目には使えない）技術タグ。
  *  - 視野外のキャッチ → 視野外の投げ（物理的に実施できない）
- *  - 手以外のキャッチ → 連続投げ（ほぼ不可能）
+ *  - 手以外のキャッチ → 連続投げ（足や体で受けた手具はすぐには投げられない）
+ *  - 手具を使ったキャッチ（押さえつけ）→ 連続投げ（押さえた状態からは投げられない）
+ */
+export const NO_THROW_AFTER_CATCH_TAGS: string[] = [NO_VIEW_TAG, NON_HAND_TAG, CATCH_USE_APPARATUS];
+
+/** その受け方のあとに投げを続けられるか */
+export const canThrowAfterCatch = (catchStyle: AutoCatchStyle): boolean =>
+  !NO_THROW_AFTER_CATCH_TAGS.some((tag) => catchHasTag(catchStyle, tag));
+
+/**
+ * その形で使える受け方。**次の投げに続ける受け**（`noViewPair`・`trailPair` の直前の受け）では、
+ * そこから投げに繋げない受け方（`NO_THROW_AFTER_CATCH_TAGS`）を外す。
  */
 export function catchStylesForPattern(
   apparatus: ApparatusKey,
@@ -300,7 +310,7 @@ export function catchStylesForPattern(
 ): AutoCatchStyle[] {
   const styles = catchStylesForThrow(apparatus, twoThrow);
   if (!throwsAfterCatch(pattern)) return styles;
-  return styles.filter((c) => !catchHasTag(c, NO_VIEW_TAG) && !catchHasTag(c, NON_HAND_TAG));
+  return styles.filter(canThrowAfterCatch);
 }
 
 /**
