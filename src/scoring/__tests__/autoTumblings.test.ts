@@ -22,6 +22,8 @@ import {
   rollAfterChance,
   ROLL_AFTER_FORWARD_CHANCE,
   ROLL_AFTER_FRONT_CHANCE,
+  ROLL_AFTER_BACK_FORWARD_LANDING_CHANCE,
+  ROLL_AFTER_SWITCH_CHANCE,
   FRONT_SALTO_ID,
   connectFinishWeights,
   THROW_FINISH_SALTOS,
@@ -958,10 +960,19 @@ describe("つなぎ技", () => {
     ["b_kirimomi", "c_kirimomiten", "a_frontroll"].forEach((id) =>
       expect(rollAfterChance(id)).toBe(0),
     );
-    // 側宙・後方系の後も前転をしない
+    // 側宙・後ろ向きで終わる後方系の後は前転をしない
     expect(rollAfterChance("b_sidesalto")).toBe(0);
     expect(rollAfterChance("b_backsalto")).toBe(0);
-    expect(rollAfterChance("c_backlay15")).toBe(0);
+    // 前向きで終わる後方宙返り（半ひねり系・ダイビング前宙）は、前転・終了・前宙どれもある
+    expect(rollAfterChance("b_backhalf")).toBe(ROLL_AFTER_BACK_FORWARD_LANDING_CHANCE);
+    expect(rollAfterChance("c_backlay15")).toBe(ROLL_AFTER_BACK_FORWARD_LANDING_CHANCE);
+    expect(rollAfterChance("b_divefront")).toBe(ROLL_AFTER_BACK_FORWARD_LANDING_CHANCE);
+    // 切り返し（後ろ向きで終わる宙返り→前方系）のあとは前転しないことが多い
+    expect(rollAfterChance("b_front", "b_backlayout")).toBe(ROLL_AFTER_SWITCH_CHANCE);
+    expect(rollAfterChance("c_front1full", "b_backsalto")).toBe(ROLL_AFTER_SWITCH_CHANCE);
+    expect(ROLL_AFTER_SWITCH_CHANCE).toBeLessThan(ROLL_AFTER_FRONT_CHANCE);
+    // つなぎ技を挟めば向きが変わるので切り返しではない（直前がロンダートなら通常どおり）
+    expect(rollAfterChance("c_front1full", "a_roundoff")).toBe(ROLL_AFTER_FORWARD_CHANCE);
     // 組み立てたシリーズでも、前方系で終わる連続には前転が付く（抽選ぶん）
     let ends = 0;
     let rolled = 0;
