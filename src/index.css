@@ -1759,6 +1759,12 @@ input[type="checkbox"] {
   font-size: 9pt;
   margin: 0 4pt;
 }
+.print-sum {
+  font-weight: 700;
+  border-top: 0.5pt solid #999;
+  margin-top: 2pt;
+  padding-top: 2pt;
+}
 .print-missing {
   margin-top: 3pt;
   font-weight: 700;
