@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Download, Upload, Link2, BookMarked, Save, Shuffle } from "lucide-react";
 import {
   APPARATUS,
@@ -17,6 +17,16 @@ import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
 import { TemplateModal } from "./TemplateModal";
 import { GenerateModal } from "./GenerateModal";
 import { ScoreSummary } from "./ScoreSummary";
+import {
+  DRAFT_KEY_INDIVIDUAL,
+  asStringArray,
+  clearDraft,
+  loadIndividualDraft,
+  normalizeArtDeductions,
+  normalizeIndividualDraft,
+  saveIndividualDraft,
+  type IndividualDraft,
+} from "../scoring/draft";
 import {
   addRoutineTemplate,
   addSeriesTemplate,
@@ -43,37 +53,22 @@ interface Props {
   };
 }
 
-const asStringArray = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
-
-/** 保存データの欠点テーブルを項目ごとに丸めて取り込む */
-const normalizeArt = (v: unknown): Record<string, number> => {
-  const src = (v ?? {}) as Record<string, unknown>;
-  const out: Record<string, number> = {};
-  ART_DEDUCTION_ITEMS.forEach((item) => {
-    const n = clampArtDeduction(item.id, src[item.id]);
-    if (n > 0) out[item.id] = n;
-  });
-  return out;
-};
-
 export function IndividualScorer({ initialData }: Props = {}) {
-  const [apparatus, setApparatus] = useState<ApparatusKey>(() =>
-    initialData?.apparatus && APPARATUS[initialData.apparatus as ApparatusKey]
-      ? (initialData.apparatus as ApparatusKey)
-      : "stick",
-  );
+  // 起動時の優先順位は 共有URL ＞ 自動保存されたドラフト ＞ 空。
+  // 共有URLで開いたときは、他人の構成で自分のドラフトを踏まないよう復元しない。
+  const [restored] = useState(() => (initialData ? null : loadIndividualDraft()));
+  const [init] = useState<IndividualDraft | null>(() => restored ?? normalizeIndividualDraft(initialData));
+  const [draftNotice, setDraftNotice] = useState(!!restored);
+
+  const [apparatus, setApparatus] = useState<ApparatusKey>(init?.apparatus ?? "stick");
   const [series, setSeries] = useState<Series[]>(() =>
-    Array.isArray(initialData?.series) && initialData!.series.length > 0
-      ? (initialData!.series as Series[])
-      : [emptySeries()],
+    init && init.series.length > 0 ? init.series : [emptySeries()],
   );
-  const [overallExecution, setOverallExecution] = useState(() => Number(initialData?.executionDeduction) || 0);
-  const [apparatusElements, setApparatusElements] = useState<string[]>(() => asStringArray(initialData?.apparatusElements));
-  const [violations, setViolations] = useState<string[]>(() => asStringArray(initialData?.violations));
-  const [junior, setJunior] = useState<boolean>(() => !!initialData?.junior);
-  const [artDeductions, setArtDeductions] = useState<Record<string, number>>(() =>
-    normalizeArt(initialData?.artDeductions),
-  );
+  const [overallExecution, setOverallExecution] = useState(init?.executionDeduction ?? 0);
+  const [apparatusElements, setApparatusElements] = useState<string[]>(() => init?.apparatusElements ?? []);
+  const [violations, setViolations] = useState<string[]>(() => init?.violations ?? []);
+  const [junior, setJunior] = useState<boolean>(init?.junior ?? false);
+  const [artDeductions, setArtDeductions] = useState<Record<string, number>>(() => init?.artDeductions ?? {});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
   const [jsonText, setJsonText] = useState("");
@@ -99,13 +94,51 @@ export function IndividualScorer({ initialData }: Props = {}) {
     [series, apparatus, overallExecution, apparatusElements, violations, junior, artDeductions],
   );
 
+  // ---- 入力中の構成を自動保存する ----
+  // 起動時の内容と同じあいだは書き込まない：共有URLを開いただけで自分のドラフトを
+  // 上書きしないため（ユーザーが何か編集した時点から保存が始まる）。
+  // 「1回目の実行を飛ばす」ではなく内容そのものを比べるのは、StrictMode が
+  // effect を2回走らせても ref が残って素通りしてしまうため。
+  const initialPayload = useRef<string | null>(null);
+  const saveFailed = useRef(false);
+  useEffect(() => {
+    const data = saveData();
+    const json = JSON.stringify(data);
+    if (initialPayload.current === null) {
+      initialPayload.current = json;
+      return;
+    }
+    if (json === initialPayload.current) return;
+    // 保存できないまま（容量超過・プライベートモード）気づかないと、
+    // 古いドラフトを「復元しました」と出してしまうので一度だけ知らせる。
+    if (!saveIndividualDraft(data) && !saveFailed.current) {
+      saveFailed.current = true;
+      alert("入力内容を自動保存できませんでした（ブラウザの設定・空き容量をご確認ください）。\nエクスポートか共有URLで控えを取ってください。");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apparatus, series, overallExecution, apparatusElements, violations, junior, artDeductions]);
+
+  /** 復元した内容を破棄して最初からにする */
+  const discardDraft = () => {
+    if (!window.confirm("復元した入力を破棄して、最初からやり直しますか？")) return;
+    setSeries([emptySeries()]);
+    setOverallExecution(0);
+    setApparatusElements([]);
+    setViolations([]);
+    setJunior(false);
+    setArtDeductions({});
+    clearDraft(DRAFT_KEY_INDIVIDUAL);
+    setDraftNotice(false);
+  };
+
   // 自動判定の要素（auto付き）は手動チェック欄に出さない
   const manualElements = APPARATUS_REQUIRED_ELEMENTS[apparatus].filter((el) => !el.auto);
 
   const toggleId = (list: string[], id: string, on: boolean) => (on ? [...list, id] : list.filter((x) => x !== id));
 
   // ---- ファイル入出力 ----
-  const saveData = () => ({
+  // エクスポート・共有URL・自動保存のドラフトはすべてこの形（型で固定する）
+  const saveData = (): IndividualDraft => ({
     version: 1,
     apparatus,
     executionDeduction: overallExecution,
@@ -136,7 +169,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setApparatusElements(asStringArray(data.apparatusElements));
     setViolations(asStringArray(data.violations));
     setJunior(!!data.junior);
-    setArtDeductions(normalizeArt(data.artDeductions));
+    setArtDeductions(normalizeArtDeductions(data.artDeductions));
     if (Array.isArray(data.series) && data.series.length > 0) {
       // 読み込んだ内容のうち、その手具で入力できないものは落とす
       setSeries(stripForApparatus(data.series, ap));
@@ -317,6 +350,20 @@ export function IndividualScorer({ initialData }: Props = {}) {
         onCopy={handleCopyJson}
         onImport={handleImportText}
       />
+
+      {draftNotice && (
+        <div className="draft-notice">
+          <span className="draft-notice-text">前回の入力を復元しました。</span>
+          <span className="draft-notice-btns">
+            <button className="io-btn" onClick={discardDraft}>
+              破棄して最初から
+            </button>
+            <button className="io-btn" onClick={() => setDraftNotice(false)}>
+              閉じる
+            </button>
+          </span>
+        </div>
+      )}
 
       <div className="io-wrap">
         <button className="io-btn" onClick={handleExport}>

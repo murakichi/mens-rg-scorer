@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Plus, X, Trash2, Download, Upload, Link2 } from "lucide-react";
 import {
   HAND_ELEMENTS,
@@ -26,6 +26,7 @@ import {
   type TeamState,
 } from "../scoring/team";
 import { buildShareUrl } from "../scoring/share";
+import { DRAFT_KEY_TEAM, clearDraft, loadTeamDraft, saveTeamDraft } from "../scoring/draft";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
 
 const newId = () =>
@@ -42,14 +43,47 @@ interface Props {
 }
 
 export function TeamScorer({ initialData }: Props = {}) {
+  // 起動時の優先順位は 共有URL ＞ 自動保存されたドラフト ＞ 空。
+  // 共有URLで開いたときは、他人の構成で自分のドラフトを踏まないよう復元しない。
+  const [restored] = useState(() => (initialData ? null : loadTeamDraft()));
   const [team, setTeam] = useState<TeamState>(
-    () => (initialData ? normalizeTeamState(initialData.team ?? initialData) : null) ?? initialTeamState(),
+    () =>
+      (initialData ? normalizeTeamState(initialData.team ?? initialData) : restored) ?? initialTeamState(),
   );
+  const [draftNotice, setDraftNotice] = useState(!!restored);
   // グループ編集中の対象 { シリーズ, グループid, 種別 }。アクティブ時はセルクリックで所属を切替。
   const [pick, setPick] = useState<{ sIdx: number; gid: string; kind: GroupKind } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
   const [jsonText, setJsonText] = useState("");
+
+  // ---- 入力中の構成を自動保存する ----
+  // 起動時の内容と同じあいだは書き込まない：共有URLを開いただけで自分のドラフトを
+  // 上書きしないため。内容そのものを比べるのは、StrictMode が effect を2回走らせても
+  // ref が残って「1回目を飛ばす」だけの判定が素通りしてしまうため。
+  const initialPayload = useRef<string | null>(null);
+  const saveFailed = useRef(false);
+  useEffect(() => {
+    const json = JSON.stringify(team);
+    if (initialPayload.current === null) {
+      initialPayload.current = json;
+      return;
+    }
+    if (json === initialPayload.current) return;
+    if (!saveTeamDraft(team) && !saveFailed.current) {
+      saveFailed.current = true;
+      alert("入力内容を自動保存できませんでした（ブラウザの設定・空き容量をご確認ください）。\nエクスポートか共有URLで控えを取ってください。");
+    }
+  }, [team]);
+
+  /** 復元した内容を破棄して最初からにする */
+  const discardDraft = () => {
+    if (!window.confirm("復元した入力を破棄して、最初からやり直しますか？")) return;
+    setTeam(initialTeamState());
+    setPick(null);
+    clearDraft(DRAFT_KEY_TEAM);
+    setDraftNotice(false);
+  };
 
   // ---- インポート / エクスポート ----
   const saveData = () => ({ version: 1, kind: "team", team });
@@ -306,6 +340,20 @@ export function TeamScorer({ initialData }: Props = {}) {
         onCopy={handleCopyJson}
         onImport={handleImportText}
       />
+
+      {draftNotice && (
+        <div className="draft-notice">
+          <span className="draft-notice-text">前回の入力を復元しました。</span>
+          <span className="draft-notice-btns">
+            <button className="io-btn" onClick={discardDraft}>
+              破棄して最初から
+            </button>
+            <button className="io-btn" onClick={() => setDraftNotice(false)}>
+              閉じる
+            </button>
+          </span>
+        </div>
+      )}
 
       <div className="io-wrap">
         <button className="io-btn" onClick={handleExport}>
