@@ -19,6 +19,8 @@ import {
   RARE_CHAIN_END_CHANCE,
   LAYOUT_AFTER_CONNECT_CHANCE,
   layoutOnlyAfterConnect,
+  CONNECT_AT_SECOND_CHANCE,
+  DEFAULT_CONNECT_AT,
   rollAfterChance,
   ROLL_AFTER_FORWARD_CHANCE,
   ROLL_AFTER_FRONT_CHANCE,
@@ -924,6 +926,40 @@ describe("つなぎ技", () => {
       return backward / all;
     };
     expect(backwardShare(1.5)).toBeGreaterThan(backwardShare(4.0));
+  }, 60_000);
+
+  it("つなぎ技は2本目の宙返りの後にも入る（前向きで終わる後方系→前宙→つなぎ→宙返り）", () => {
+    expect(DEFAULT_CONNECT_AT).toBe(1);
+    expect(CONNECT_AT_SECOND_CHANCE).toBeGreaterThan(0);
+    let at2 = 0;
+    let all = 0;
+    let checked = 0;
+    for (let seed = 1; seed <= 12; seed++)
+      autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
+        if (!sp.pattern.connect) return;
+        all += 1;
+        const at = sp.connectAt ?? DEFAULT_CONNECT_AT;
+        if (at !== 2) return;
+        at2 += 1;
+        // つなぎの前に2本、後ろに1本以上（つなぎで終わる形は作らない）
+        expect(sp.saltoCount).toBeGreaterThanOrEqual(3);
+        const series = buildAutoTumblingSeries(sp);
+        const ids = series.items.flatMap((it) => (it.kind === "skill" && it.skillId ? [it.skillId] : []));
+        // つなぎ技のid が2本目の宙返りの後に入っている
+        const at2Index = ids.indexOf(sp.connectId, 1);
+        expect(at2Index).toBeGreaterThan(0);
+        expect(ids[ids.length - 1]).not.toBe(sp.connectId);
+        // 宙返り−A難度−宙返り の並び（つなぎ技として数えられる）
+        expect(hasConnect(series.items.filter((it) => it.kind === "skill") as Item[])).toBe(true);
+        // 入力画面の制約にも反しない
+        expect(tumblingFlowErrors(series)).toEqual([]);
+        checked += 1;
+      });
+    expect(all).toBeGreaterThan(0);
+    expect(at2).toBeGreaterThan(0);
+    expect(checked).toBe(at2);
+    // 1本目の後に入る形のほうが多い
+    expect(at2).toBeLessThan(all - at2);
   }, 60_000);
 
   it("つなぎのあとに伸身を1本だけ実施して終わる形は稀（その後に前方系を続ける）", () => {

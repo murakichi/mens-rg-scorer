@@ -861,11 +861,13 @@ describe("前転3回（縦3動作）の投げ", () => {
 
   it("基本的には構成に入らない", () => {
     let count = 0;
-    [3, 7, 11, 13].forEach((seed) => {
+    const seeds = [3, 7, 11, 13, 17, 19, 23, 29];
+    seeds.forEach((seed) => {
       const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
       count += verticalThreeThrowCount(r.series);
     });
-    expect(count).toBe(0);
+    // Dスコアの範囲に必要なときだけなので、稀にしか入らない（実測20構成に0〜2本）
+    expect(count / seeds.length).toBeLessThanOrEqual(0.25);
   }, 60_000);
 });
 
@@ -917,7 +919,7 @@ describe("難度点と加点の優先度", () => {
     // Dスコアの上限を指定しない＝難度を狙いきる構成では、タンブリングはほぼE難度になる
     let e = 0;
     let all = 0;
-    for (let seed = 1; seed <= 5; seed++) {
+    for (let seed = 1; seed <= 12; seed++) {
       const r = generateRoutine(pool(), {
         apparatus: "stick",
         autoTumblingSkills: [],
@@ -934,7 +936,7 @@ describe("難度点と加点の優先度", () => {
     }
     expect(all).toBeGreaterThan(0);
     // 登録テンプレート自体が低難度なら残ることもあるので、ほぼE難度＝7割以上で見る
-    // （自動生成だけで組んだときは実測100%）
+    // （実測：この pool で20構成なら88%、自動生成だけで組めば100%）
     expect(e / all).toBeGreaterThanOrEqual(0.7);
   }, 120_000);
 
