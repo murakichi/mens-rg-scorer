@@ -47,6 +47,8 @@ import {
   skillDifficulty,
   skillFlowAfter,
   skillOptions,
+  hasTwoThrow,
+  TWO_THROW_TAG,
 } from "./constants";
 import { calcTumblingDifficulty, needsRoundoffBefore, prevSkillId, stripForApparatus } from "./analysis";
 import {
@@ -109,6 +111,21 @@ export const PAIR_AFTER_THROW_IN_SKILL_CHANCE = 0.2;
 /** その形で投げタンのキャッチのあとに連続投げを続ける確率 */
 export const pairAfterChance = (pattern: AutoTumblingPattern): number =>
   pattern.throwInSkill ? PAIR_AFTER_THROW_IN_SKILL_CHANCE : PAIR_AFTER_THROW_FIRST_CHANCE;
+
+/**
+ * 投げタンの投げを**二つ投げ**にする確率（クラブ・リングだけ）。
+ * 立って両方の手具を投げてからタンブリングし、2つ同時キャッチで受ける形。
+ * 必須投げ（二つ投げ）と転回系の投げ受けを1シリーズで両方満たせる。
+ * 技の最中に投げる形（`throwInSkill`）では使わない：宙返りの最中に両方を投げるのは実施されないし、
+ * 必須投げは投げアイテムにしか付かない。
+ */
+export const TWO_THROW_IN_TUMBLING_CHANCE = 0.3;
+
+/** その手具・その形で投げタンの投げを二つ投げにできるか */
+export const canTwoThrowTumbling = (
+  apparatus: ApparatusKey | undefined,
+  pattern: AutoTumblingPattern,
+): boolean => !!apparatus && hasTwoThrow(apparatus) && !!pattern.throwCatch && !pattern.throwInSkill;
 
 /**
  * 連続投げの2回目に使える投げ方。手以外の投げは2回目には実施できない。
@@ -575,6 +592,8 @@ export interface AutoTumblingSpec {
   allowBackToForwardThrow?: boolean;
   /** 前転でつないだ着地を手具を使ったキャッチ（押さえつけ）で受ける候補か */
   pressCatch?: boolean;
+  /** 投げタンの投げを二つ投げにする候補か（クラブ・リングで、投げてから跳ぶ形だけ） */
+  twoThrow?: boolean;
 }
 
 type SkillItem = Extract<Item, { kind: "skill" }>;
@@ -630,7 +649,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   const { pattern } = spec;
   const items: Item[] = [];
   // 技の最中に投げる形では、先頭に投げを置かず最後の宙返りに投げを付ける
-  if (pattern.throwCatch && !pattern.throwInSkill) items.push({ kind: "throw" });
+  if (pattern.throwCatch && !pattern.throwInSkill)
+    items.push({ kind: "throw", ...(spec.twoThrow ? { reqTypes: [TWO_THROW_TAG] } : {}) });
   spec.entry.forEach((id) => items.push(skillItem(id)));
   const saltos = spec.saltoIds.slice(0, spec.saltoCount);
   saltos.forEach((id, i) => {
@@ -653,7 +673,9 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   if (pattern.throwCatch)
     items.push({
       kind: "catch",
-      ...(rolled && spec.pressCatch ? { catchTypes: [CATCH_USE_APPARATUS] } : {}),
+      // 二つ投げは2つとも空中にあるので、押さえつけては受けられない（2つ同時キャッチで受ける）
+      ...(rolled && spec.pressCatch && !spec.twoThrow ? { catchTypes: [CATCH_USE_APPARATUS] } : {}),
+      ...(spec.twoThrow ? { catchTwo: true } : {}),
     });
   // 投げタンのキャッチのあとに連続投げを続ける形
   if (pattern.throwCatch && spec.secondThrow) {
@@ -1044,10 +1066,14 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         pattern.throwCatch && apparatus && rand() < pairAfterChance(pattern)
           ? nextSecondThrow(apparatus)
           : undefined;
+      // クラブ・リングは投げタンの投げを二つ投げにすることがある（投げてから跳ぶ形だけ）
+      const twoThrow =
+        canTwoThrowTumbling(apparatus, pattern) && rand() < TWO_THROW_IN_TUMBLING_CHANCE;
       specs.push({
         pattern,
         saltoCount,
         pressCatch: rand() < ROLL_FINISH_PRESS_CATCH_CHANCE,
+        ...(twoThrow ? { twoThrow } : {}),
         entry: [],
         saltoIds,
         connectId,

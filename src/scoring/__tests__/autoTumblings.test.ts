@@ -48,6 +48,8 @@ import {
   ROLL_FINISH_PRESS_CATCH_CHANCE,
   TEMPO_CONNECT_WEIGHT,
   PAIR_AFTER_THROW_FIRST_CHANCE,
+  TWO_THROW_IN_TUMBLING_CHANCE,
+  canTwoThrowTumbling,
   PAIR_AFTER_THROW_IN_SKILL_CHANCE,
   pairAfterChance,
   secondThrowStyles,
@@ -68,6 +70,7 @@ import {
 import {
   analyzeSeries,
   checkApparatusFlow,
+  handsEmptyFlags,
   hasConnect,
   hasConnectWithoutApparatus,
   maxSaltoChain,
@@ -913,6 +916,49 @@ describe("つなぎ技", () => {
       return backward / all;
     };
     expect(backwardShare(1.5)).toBeGreaterThan(backwardShare(4.0));
+  }, 60_000);
+
+  it("投げタンの投げを二つ投げにできる（クラブ・リングで、投げてから跳ぶ形だけ）", () => {
+    const throwFirst = AUTO_TUMBLING_PATTERNS.find((p) => p.throwCatch && !p.throwInSkill)!;
+    const inSkill = AUTO_TUMBLING_PATTERNS.find((p) => p.throwInSkill)!;
+    const plain = AUTO_TUMBLING_PATTERNS.find((p) => !p.throwCatch)!;
+    // クラブ・リングの「投げてから跳ぶ」形だけ
+    expect(canTwoThrowTumbling("clubs", throwFirst)).toBe(true);
+    expect(canTwoThrowTumbling("ring", throwFirst)).toBe(true);
+    expect(canTwoThrowTumbling("stick", throwFirst)).toBe(false);
+    expect(canTwoThrowTumbling("rope", throwFirst)).toBe(false);
+    // 宙返りの最中に両方を投げる形は作らない（必須投げは投げアイテムにしか付かない）
+    expect(canTwoThrowTumbling("clubs", inSkill)).toBe(false);
+    expect(canTwoThrowTumbling("clubs", plain)).toBe(false);
+    expect(TWO_THROW_IN_TUMBLING_CHANCE).toBeGreaterThan(0);
+
+    // 組み立てたシリーズは 二つ投げ→タンブリング→2つ同時キャッチ になる
+    const specs = autoTumblingSpecs({ apparatus: "clubs", random: seeded(3) }).filter((sp) => sp.twoThrow);
+    expect(specs.length).toBeGreaterThan(0);
+    specs.forEach((sp) => {
+      const items = buildAutoTumblingSeries(sp).items;
+      const first = items[0];
+      expect(first.kind === "throw" && (first.reqTypes || [])).toContain("twothrow");
+      const close = items.find((it) => it.kind === "catch")!;
+      expect(close.kind === "catch" && close.catchTwo).toBe(true);
+      // 2つとも空中にあるので押さえつけては受けられない
+      expect(close.kind === "catch" && (close.catchTypes || [])).not.toContain("useapp");
+      // 投げている間は手元に手具が無いので、その間の技に手具操作は付かない
+      const series = buildAutoTumblingSeries(sp);
+      const empty = handsEmptyFlags(series.items, "clubs");
+      series.items.forEach((it, i) => {
+        if (it.kind === "skill" && empty[i]) expect(it.hasApparatus).toBe(false);
+      });
+      // 手具の流れ（手元・空中）に矛盾が無い
+      expect(checkApparatusFlow(series, "clubs")).toEqual([]);
+    });
+    // 宙返りの本数を調整しても二つ投げは残る
+    const t = autoTumblingTemplates("clubs", { random: seeded(3) }).find((x) => x.spec.twoThrow);
+    if (t) {
+      const range = saltoCountRange(t.spec.pattern).filter((n) => n !== t.spec.saltoCount);
+      const tuned = range.map((n) => withSaltoCount(t, n)).find((x) => x);
+      if (tuned) expect(tuned.spec.twoThrow).toBe(true);
+    }
   }, 60_000);
 
   it("投げタンのキャッチのあとに連続投げを続ける形がある", () => {
