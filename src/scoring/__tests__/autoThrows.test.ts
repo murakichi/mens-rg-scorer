@@ -14,6 +14,7 @@ import {
   catchStylesForPattern,
   NO_VIEW_TAG,
   LEAD_THROW_CHENE_COUNT,
+  throwsAfterCatch,
   LEFT_HAND_TAG,
   LEFT_HAND_NO_VIEW_CATCH_WEIGHT,
   catchStyleWeight,
@@ -195,6 +196,63 @@ describe("投げ方・受け方の網羅", () => {
       });
     });
   });
+});
+
+describe("あとに投げ受けを1本足す形（連続投げの1回目で難度を採る）", () => {
+  const trail = () => AUTO_THROW_PATTERNS.filter((p) => p.trailPair);
+
+  it("主役の投げ受けのあとに徒手なしの投げ受けが1本付く", () => {
+    expect(trail().length).toBeGreaterThan(0);
+    trail().forEach((pattern) => {
+      // 徒手（シェネ・前転）は1回目に付く＝1回目のほうが難度が高い
+      expect(pattern.chene.max).toBeGreaterThan(0);
+      const style = autoThrowStyles("stick").find((t) => t.id === "normal")!;
+      const items = buildAutoThrowSeries({
+        pattern,
+        cheneCount: pattern.chene.max,
+        hands: null,
+        throwStyle: style,
+        catchStyle: autoCatchStyles("stick")[0],
+        trailThrowStyle: style,
+      }).items;
+      // 投げ→…→キャッチ→投げ→キャッチ の並び
+      const kinds = items.map((it) => it.kind);
+      expect(kinds[0]).toBe("throw");
+      expect(kinds[kinds.length - 1]).toBe("catch");
+      expect(kinds[kinds.length - 2]).toBe("throw");
+      expect(kinds.filter((k) => k === "throw").length).toBe(2);
+      // 2回目の投げの前に徒手は入らない
+      const secondThrowAt = kinds.lastIndexOf("throw");
+      expect(kinds.slice(secondThrowAt).filter((k) => k === "motion").length).toBe(0);
+    });
+  });
+
+  it("2回目の投げには手以外を使わず、受け方はそのキャッチから投げに繋げるものだけ", () => {
+    // そのキャッチのあとに投げが続く形として扱う（視野外・手以外のキャッチを外す）
+    trail().forEach((pattern) => {
+      expect(throwsAfterCatch(pattern)).toBe(true);
+      const ids = catchStylesForPattern("ring", false, pattern).map((c) => c.id);
+      expect(ids).not.toContain(NO_VIEW_TAG);
+      expect(ids).not.toContain(NON_HAND_TAG);
+    });
+    // 実際に配られる2回目の投げ方に手以外は出ない
+    const specs = autoThrowSpecs("rope", { random: seeded(5) }).filter((sp) => sp.pattern.trailPair);
+    expect(specs.length).toBeGreaterThan(0);
+    specs.forEach((sp) => expect(sp.trailThrowStyle?.id).not.toBe(NON_HAND_TAG));
+  });
+
+  it("最後の投げ受けは手具ごとの締めの受け方にもなる（クラブの押さえつけ・ロープの足）", () => {
+    const styles = (app: ApparatusKey) => {
+      const ids = new Set<string>();
+      for (let seed = 1; seed <= 12; seed++)
+        autoThrowSpecs(app, { random: seeded(seed) })
+          .filter((sp) => sp.pattern.trailPair)
+          .forEach((sp) => (sp.trailCatchStyle?.catchTypes || []).forEach((t) => ids.add(t)));
+      return ids;
+    };
+    expect(styles("clubs").has(CATCH_USE_APPARATUS)).toBe(true);
+    expect(styles("rope").has(NON_HAND_TAG)).toBe(true);
+  }, 60_000);
 });
 
 describe("シェネの手", () => {
