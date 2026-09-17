@@ -714,8 +714,11 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   if (pattern.throwCatch)
     items.push({
       kind: "catch",
-      // 二つ投げは2つとも空中にあるので、押さえつけては受けられない（2つ同時キャッチで受ける）
-      ...(rolled && spec.pressCatch && !spec.twoThrow ? { catchTypes: [CATCH_USE_APPARATUS] } : {}),
+      // 二つ投げは2つとも空中にあるので、押さえつけては受けられない（2つ同時キャッチで受ける）。
+      // 連続投げを続ける形でも押さえつけない（押さえた状態からは投げられない）
+      ...(rolled && spec.pressCatch && !spec.twoThrow && !spec.secondThrow
+        ? { catchTypes: [CATCH_USE_APPARATUS] }
+        : {}),
       ...(spec.twoThrow ? { catchTwo: true } : {}),
     });
   // 投げタンのキャッチのあとに連続投げを続ける形

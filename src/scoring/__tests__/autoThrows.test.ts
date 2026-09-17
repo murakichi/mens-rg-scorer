@@ -15,6 +15,8 @@ import {
   NO_VIEW_TAG,
   LEAD_THROW_CHENE_COUNT,
   throwsAfterCatch,
+  canThrowAfterCatch,
+  NO_THROW_AFTER_CATCH_TAGS,
   LEFT_HAND_TAG,
   LEFT_HAND_NO_VIEW_CATCH_WEIGHT,
   catchStyleWeight,
@@ -196,6 +198,47 @@ describe("投げ方・受け方の網羅", () => {
       });
     });
   });
+});
+
+describe("その受け方から投げに繋げられるか", () => {
+  it("視野外・手以外・手具を使ったキャッチのあとに投げは続けられない", () => {
+    expect(NO_THROW_AFTER_CATCH_TAGS).toContain(NO_VIEW_TAG);
+    expect(NO_THROW_AFTER_CATCH_TAGS).toContain(NON_HAND_TAG);
+    expect(NO_THROW_AFTER_CATCH_TAGS).toContain(CATCH_USE_APPARATUS);
+    const style = (apparatus: ApparatusKey, id: string) =>
+      autoCatchStyles(apparatus).find((c) => c.id === id)!;
+    expect(canThrowAfterCatch(style("clubs", "normal"))).toBe(true);
+    expect(canThrowAfterCatch(style("clubs", CATCH_USE_APPARATUS))).toBe(false);
+    expect(canThrowAfterCatch(style("clubs", NON_HAND_TAG))).toBe(false);
+    expect(canThrowAfterCatch(style("clubs", NO_VIEW_TAG))).toBe(false);
+    // 2種類を同時に満たす受け方も、含むタグで判定する
+    expect(canThrowAfterCatch(style("clubs", `${NO_VIEW_TAG}+${CATCH_USE_APPARATUS}`))).toBe(false);
+  });
+
+  it("投げが続く形ではそれらの受け方を配らない", () => {
+    AUTO_THROW_PATTERNS.filter(throwsAfterCatch).forEach((pattern) => {
+      APPARATUS_KEYS.forEach((app) =>
+        catchStylesForPattern(app, false, pattern).forEach((c) =>
+          expect(canThrowAfterCatch(c)).toBe(true),
+        ),
+      );
+    });
+    // 組み立てた候補にも「投げに繋げない受け→投げ」は出ない
+    APPARATUS_KEYS.forEach((app) => {
+      for (let seed = 1; seed <= 5; seed++)
+        autoThrowSpecs(app, { random: seeded(seed) }).forEach((sp) => {
+          const items = buildAutoThrowSeries(sp).items;
+          items.forEach((it, i) => {
+            if (it.kind !== "catch") return;
+            const next = items[i + 1];
+            if (next?.kind !== "throw") return;
+            NO_THROW_AFTER_CATCH_TAGS.forEach((tag) =>
+              expect(it.catchTypes || []).not.toContain(tag),
+            );
+          });
+        });
+    });
+  }, 60_000);
 });
 
 describe("あとに投げ受けを1本足す形（連続投げの1回目で難度を採る）", () => {
@@ -651,10 +694,14 @@ describe("ランダム生成への組み込み", () => {
       expect(w(app, plain, "normal")).toBe(1);
     });
     // 実際に組み立てた候補でも、その形の受け方は押さえつけが最も多い
+    // （そのキャッチのあとに投げが続く形は、押さえた状態から投げられないので対象外）
     const count = new Map<string, number>();
     for (let seed = 0; seed < 20; seed++)
       autoThrowSpecs("clubs", { random: seeded(seed) })
-        .filter((sp) => rollFinishShape(sp.pattern) && !sp.pattern.verticalThree)
+        .filter(
+          (sp) =>
+            rollFinishShape(sp.pattern) && !sp.pattern.verticalThree && !throwsAfterCatch(sp.pattern),
+        )
         .forEach((sp) => count.set(sp.catchStyle.id, (count.get(sp.catchStyle.id) ?? 0) + 1));
     const useapp = count.get(CATCH_USE_APPARATUS) ?? 0;
     expect(useapp).toBeGreaterThan(0);
