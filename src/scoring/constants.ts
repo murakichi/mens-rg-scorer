@@ -448,14 +448,15 @@ export const SKILL_LIST: Skill[] = [
   { id: "e_rudolph", name: "後方2回宙返り2回ひねり（ルドルフ）", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
   // ---- 十年後モードでのみ実施できる技（F・G難度）----
   // ひねり系は §3.6.2 の刻み（半ひねり1段・1難度2段）をそのまま伸ばしたもの。
-  // 2回宙返り系は現行の表に無いので、ひねり1回ぶんをE→Fの1段として置いた。
+  // 2回宙返り系（`teamOnly`）は団体でしか実施しないので、個人モードの選択肢には出さない。
   { id: "f_backlay4twist", name: "後方伸身宙返り4回ひねり", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, future: true, twist: { base: "back", twist: 4, posture: "layout" } },
   { id: "f_backlay45twist", name: "後方伸身宙返り4回半ひねり", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, future: true, twist: { base: "back", twist: 4.5, posture: "layout" } },
   { id: "g_backlay5twist", name: "後方伸身宙返り5回ひねり", category: CATEGORY.BACKWARD, difficulty: "G", isSalto: true, future: true, twist: { base: "back", twist: 5, posture: "layout" } },
   { id: "f_frontlay3", name: "伸身前宙3回ひねり", category: CATEGORY.FORWARD, difficulty: "F", isSalto: true, future: true, twist: { base: "front", twist: 3, posture: "layout" } },
   { id: "g_frontlay4", name: "伸身前宙4回ひねり", category: CATEGORY.FORWARD, difficulty: "G", isSalto: true, future: true, twist: { base: "front", twist: 4, posture: "layout" } },
-  { id: "f_double3twist", name: "後方2回宙返り3回ひねり（トリプルフル）", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, isDoubleSalto: true, future: true },
-  { id: "g_tripleback", name: "後方3回宙返り", category: CATEGORY.BACKWARD, difficulty: "G", isSalto: true, isDoubleSalto: true, future: true },
+  { id: "f_rudolphhalf", name: "後方2回宙返り2回半ひねり（ルドルフハーフ）", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, isDoubleSalto: true, future: true, teamOnly: true },
+  { id: "f_doublelay1twist", name: "後方伸身2回宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, isDoubleSalto: true, future: true, teamOnly: true },
+  { id: "g_rijonson", name: "後方2回宙返り3回ひねり（リジョンソン）", category: CATEGORY.BACKWARD, difficulty: "G", isSalto: true, isDoubleSalto: true, future: true, teamOnly: true },
 ];
 
 // ---- ひねり・姿勢で組み立てる宙返り（§3.6.2 の表を素直に表現する） ----
@@ -596,12 +597,19 @@ export function skillDef(id: string): Skill | undefined {
  * 適用規則で実施できる技か。
  *  - ジュニアは2回宙返り系が禁止（§10 変更規則1）
  *  - F・G難度の技（`future`）は十年後モードのときだけ。上限（F/G）を超える技も出さない
+ *  - `teamOnly` の技（十年後モードの2回宙返り系）は団体モードだけ（`team`）
  */
-export function skillAllowed(id: string, junior = false, future: FutureLevel = null): boolean {
+export function skillAllowed(
+  id: string,
+  junior = false,
+  future: FutureLevel = null,
+  team = false,
+): boolean {
   const s = skillDef(id);
   if (!s) return true;
   if (junior && s.isDoubleSalto) return false;
   if (s.future && (!future || DIFF_VALUE[s.difficulty] > DIFF_VALUE[future])) return false;
+  if (s.teamOnly && !team) return false;
   return true;
 }
 
@@ -610,9 +618,27 @@ export function skillAllowed(id: string, junior = false, future: FutureLevel = n
  * まだ誰も実施していない技なので、ランダム生成では「テンプレートに出てくる技」の
  * 制限を受けずに使ってよい（`autoTumblingSpecs`）。
  */
-export function futureSkillIds(future: FutureLevel, junior = false): string[] {
+export function futureSkillIds(future: FutureLevel, junior = false, team = false): string[] {
   if (!future) return [];
-  return SKILL_LIST.filter((s) => s.future && skillAllowed(s.id, junior, future)).map((s) => s.id);
+  return SKILL_LIST.filter((s) => s.future && skillAllowed(s.id, junior, future, team)).map((s) => s.id);
+}
+
+/**
+ * その技が選択肢に出ない理由（出るなら空文字）。選択済みの技を選択肢に残すときの但し書きに使う。
+ * 判定の順序は `skillAllowed` と同じ。
+ */
+export function skillBlockedReason(
+  id: string,
+  junior = false,
+  future: FutureLevel = null,
+  team = false,
+): string {
+  const s = skillDef(id);
+  if (!s || skillAllowed(id, junior, future, team)) return "";
+  if (junior && s.isDoubleSalto) return "ジュニア禁止";
+  if (s.future && (!future || DIFF_VALUE[s.difficulty] > DIFF_VALUE[future])) return "十年後モード専用";
+  if (s.teamOnly) return "団体のみ";
+  return "";
 }
 
 /** ロンダートの技id（後方の宙返りに入るときに自動で補う） */
@@ -691,10 +717,15 @@ export function skillFlowAfter(prevSkillId: string | undefined): SkillFlow {
  * `flow` を渡すと、その位置で実施しない系統（後ろ向きで終わった後の前方系・側方系）を
  * 選択肢から外す。
  */
-export function skillOptions(junior = false, flow: SkillFlow = ANY_SKILL_FLOW, future: FutureLevel = null): Skill[] {
+export function skillOptions(
+  junior = false,
+  flow: SkillFlow = ANY_SKILL_FLOW,
+  future: FutureLevel = null,
+  team = false,
+): Skill[] {
   const allows = (category: string) =>
     category === CATEGORY.BACKWARD ? flow.backward : category === CATEGORY.SIDE ? flow.side : flow.forward;
-  return SKILL_LIST.filter((s) => skillAllowed(s.id, junior, future) && allows(s.category));
+  return SKILL_LIST.filter((s) => skillAllowed(s.id, junior, future, team) && allows(s.category));
 }
 
 /** タンブリング技のプルダウンをまとめる系統の表示順 */
@@ -705,8 +736,9 @@ export function skillOptionGroups(
   junior = false,
   flow: SkillFlow = ANY_SKILL_FLOW,
   future: FutureLevel = null,
+  team = false,
 ): { name: string; skills: Skill[] }[] {
-  const opts = skillOptions(junior, flow, future);
+  const opts = skillOptions(junior, flow, future, team);
   const groups = SKILL_CATEGORY_ORDER.map((name) => ({ name, skills: opts.filter((s) => s.category === name) }));
   // 表示順に無いカテゴリが増えても落とさない
   const rest = opts.filter((s) => !SKILL_CATEGORY_ORDER.includes(s.category));
@@ -801,7 +833,8 @@ export const JUNIOR_SKILL_DIFFICULTY: Record<string, Difficulty> = {
 
 /**
  * 適用規則に応じた転回系の難度。
- * ジュニアは JUNIOR_SKILL_DIFFICULTY で上書きし、F・G難度は十年後モードの上限で丸める
+ * ジュニアは JUNIOR_SKILL_DIFFICULTY、十年後モードは FUTURE_SKILL_DIFFICULTY で上書きし、
+ * F・G難度は十年後モードの上限で丸める
  * （モードOFFのままF難度の技が残っている保存データを読んでも E までしか付かない）。
  */
 export function skillDifficulty(id: string, junior = false, future: FutureLevel = null): Difficulty | undefined {
@@ -812,9 +845,17 @@ export function skillDifficulty(id: string, junior = false, future: FutureLevel 
     const p = parseTwistSkillId(id);
     if (p && p.base === "back" && p.twist === 0.5) return "C";
   }
-  const d = skillDef(id)?.difficulty;
+  const d = (future && FUTURE_SKILL_DIFFICULTY[id]) || skillDef(id)?.difficulty;
   return d ? clampDifficulty(DIFF_VALUE[d], future) : undefined;
 }
+
+/**
+ * 十年後モードで難度認定が変わる転回系。現行規則の技でも、十年後の基準では上がるものがある
+ * （ジュニアの `JUNIOR_SKILL_DIFFICULTY` と同じ仕組み）。上限（F/G）で丸めるのは共通。
+ */
+export const FUTURE_SKILL_DIFFICULTY: Record<string, Difficulty> = {
+  e_rudolph: "F", // 後方2回宙返り2回ひねり（ルドルフ）
+};
 
 /** 適用規則に応じた投げ上げの最低回数 */
 export function throwCountRequired(junior = false): number {

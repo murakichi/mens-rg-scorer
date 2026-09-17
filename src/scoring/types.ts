@@ -106,6 +106,8 @@ export interface Skill {
    * 上限（`FutureLevel`）より高い難度の技も出さないので、F設定ではG難度の技は選べない。
    */
   future?: boolean;
+  /** 団体でしか実施しない技（個人モードの選択肢に出さない） */
+  teamOnly?: boolean;
   /** ひねり・姿勢から組み立てられる宙返りか（`TwistParams` と1対1） */
   twist?: TwistParams;
 }

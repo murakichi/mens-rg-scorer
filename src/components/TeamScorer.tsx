@@ -8,7 +8,7 @@ import {
   JUNIOR_SERIES_EXECUTION_MAX,
   clampSeriesExecution,
   normalizeFutureLevel,
-  skillAllowed,
+  skillBlockedReason,
   skillDef,
   skillDifficulty,
   skillOptionGroups,
@@ -568,10 +568,12 @@ export function TeamScorer({ initialData }: Props = {}) {
                         // 後方の宙返りはロンダート・バク転の直後だけ、その後に前方系は出さない
                         // （隣のスロットが直前の技）
                         const prev = slot > 0 ? lane[slot - 1] : undefined;
+                        // 団体なので team=true（十年後モードの2回宙返り系は団体だけに出す）
                         const skillGroups = skillOptionGroups(
                           junior,
                           skillFlowAfter(prev?.type === "skill" ? prev.skillId : undefined),
                           future,
+                          true,
                         );
                         const skillListed = skillGroups.some((g) => g.skills.some((sk) => sk.id === cell.skillId));
                         return (
@@ -615,11 +617,10 @@ export function TeamScorer({ initialData }: Props = {}) {
                                   {cell.skillId && !skillListed && (
                                     <option value={cell.skillId}>
                                       {skillDef(cell.skillId)?.name}
-                                      {skillAllowed(cell.skillId, junior, future)
-                                        ? ""
-                                        : skillDef(cell.skillId)?.future
-                                          ? "（十年後モード専用）"
-                                          : "（ジュニア禁止）"}
+                                      {(() => {
+                                        const r = skillBlockedReason(cell.skillId, junior, future, true);
+                                        return r && `（${r}）`;
+                                      })()}
                                     </option>
                                   )}
                                   {/* 前方系・側方系・後方系に分けて表示 */}

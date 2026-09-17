@@ -11,7 +11,7 @@ import {
   USE_APPARATUS_TAG,
   APPARATUS_USE,
   skillDef,
-  skillAllowed,
+  skillBlockedReason,
   skillOptionGroups,
   skillDifficulty,
   hasTwoThrow,
@@ -237,6 +237,8 @@ function ItemEditor({
     // 選択中の技が選択肢に無いとき（ジュニア禁止・その位置で実施しない系統・
     // 一覧に無いひねりの組み合わせ）は、消さずに選択値として残す
     const listed = groups.some((g) => g.skills.some((sk) => sk.id === item.skillId));
+    // 選択肢に無い技を残すときの但し書き（ジュニア禁止・十年後モード専用・団体のみ）
+    const blockedReason = skillBlockedReason(item.skillId, junior, future);
     // すでに選ばれている向きは、その位置で実施しない系統でも残す
     const bases = TWIST_BASES.filter((b) =>
       b.id === cur.base ? true : b.id === "back" ? flow.backward : flow.forward,
@@ -309,12 +311,7 @@ function ItemEditor({
               {item.skillId && !listed && (
                 <option value={item.skillId}>
                   {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior, future)}
-                  {skillAllowed(item.skillId, junior, future)
-                    ? ""
-                    : skillDef(item.skillId)?.future
-                      ? "・十年後モード専用"
-                      : "・ジュニア禁止"}
-                  ）
+                  {blockedReason && `・${blockedReason}`}）
                 </option>
               )}
               {/* 前方系・側方系・後方系に分けて表示 */}

@@ -13,7 +13,9 @@ import {
   futureSkillIds,
   maxDiff,
   normalizeFutureLevel,
+  FUTURE_SKILL_DIFFICULTY,
   skillAllowed,
+  skillBlockedReason,
   skillDef,
   skillDifficulty,
   skillOptions,
@@ -127,26 +129,63 @@ describe("十年後モード — 技の選択肢", () => {
 
   it("F・G難度の技は現行規則の選択肢に出ない", () => {
     expect(futureListed.length).toBeGreaterThan(0);
-    const ids = skillOptions().map((s) => s.id);
-    futureListed.forEach((s) => expect(ids).not.toContain(s.id));
-    futureListed.forEach((s) => expect(skillAllowed(s.id)).toBe(false));
+    const solo = skillOptions().map((s) => s.id);
+    const team = skillOptions(false, undefined, null, true).map((s) => s.id);
+    futureListed.forEach((s) => {
+      expect(solo).not.toContain(s.id);
+      expect(team).not.toContain(s.id);
+      expect(skillAllowed(s.id)).toBe(false);
+      expect(skillAllowed(s.id, false, null, true)).toBe(false);
+      expect(skillBlockedReason(s.id)).toBe("十年後モード専用");
+    });
   });
 
-  it("上限Fでは F難度の技だけ、上限Gでは両方出る", () => {
-    const f = skillOptions(false, undefined, "F").map((s) => s.id);
-    const g = skillOptions(false, undefined, "G").map((s) => s.id);
+  it("上限Fでは F難度の技だけ、上限Gでは両方出る（団体の選択肢で見る）", () => {
+    const f = skillOptions(false, undefined, "F", true).map((s) => s.id);
+    const g = skillOptions(false, undefined, "G", true).map((s) => s.id);
     futureListed.forEach((s) => {
       expect(f.includes(s.id)).toBe(s.difficulty === "F");
       expect(g).toContain(s.id);
     });
   });
 
-  it("ジュニアの2回宙返り禁止は十年後モードでも効く", () => {
-    const ids = skillOptions(true, undefined, "G").map((s) => s.id);
-    expect(ids).not.toContain("g_tripleback"); // 後方3回宙返り
-    expect(ids).toContain("g_backlay5twist");
-    expect(futureSkillIds("G", true)).not.toContain("f_double3twist");
+  it("十年後モードの2回宙返り系は団体だけに出る", () => {
+    const teamOnly = futureListed.filter((s) => s.teamOnly);
+    // ルドルフハーフ・後方伸身2回宙返り1回ひねり・リジョンソン
+    expect(teamOnly.map((s) => s.id)).toEqual(["f_rudolphhalf", "f_doublelay1twist", "g_rijonson"]);
+    teamOnly.forEach((s) => expect(s.isDoubleSalto).toBe(true));
+    const solo = skillOptions(false, undefined, "G").map((s) => s.id);
+    const team = skillOptions(false, undefined, "G", true).map((s) => s.id);
+    teamOnly.forEach((s) => {
+      expect(solo).not.toContain(s.id);
+      expect(team).toContain(s.id);
+      expect(skillAllowed(s.id, false, "G")).toBe(false);
+      expect(skillAllowed(s.id, false, "G", true)).toBe(true);
+      expect(skillBlockedReason(s.id, false, "G")).toBe("団体のみ");
+    });
+    // 個人の自動生成に使う語彙にも入らない
+    expect(futureSkillIds("G")).not.toContain("g_rijonson");
+    expect(futureSkillIds("G", false, true)).toContain("g_rijonson");
     expect(futureSkillIds(null)).toEqual([]);
+  });
+
+  it("ジュニアの2回宙返り禁止は十年後モードでも効く", () => {
+    const ids = skillOptions(true, undefined, "G", true).map((s) => s.id);
+    expect(ids).not.toContain("g_rijonson"); // 2回宙返り系
+    expect(ids).toContain("g_backlay5twist");
+    expect(futureSkillIds("G", true, true)).not.toContain("f_rudolphhalf");
+    expect(skillBlockedReason("g_rijonson", true, "G", true)).toBe("ジュニア禁止");
+  });
+
+  it("ルドルフは十年後モードでF難度（現行規則ではEのまま）", () => {
+    expect(FUTURE_SKILL_DIFFICULTY.e_rudolph).toBe("F");
+    expect(skillDifficulty("e_rudolph")).toBe("E");
+    expect(skillDifficulty("e_rudolph", false, "F")).toBe("F");
+    expect(skillDifficulty("e_rudolph", false, "G")).toBe("F");
+    // 現行規則の技なので、十年後モードでなくても個人の選択肢には出る
+    expect(skillOptions().map((s) => s.id)).toContain("e_rudolph");
+    // ジュニアは従来どおり禁止
+    expect(skillAllowed("e_rudolph", true, "G")).toBe(false);
   });
 
   it("技の難度は適用中の上限で丸める（OFFのまま残ったF難度の技はE止め）", () => {
@@ -209,7 +248,7 @@ describe("十年後モード — 難度計算", () => {
     // 3人以上が同じ難度に到達するとシリーズ難度になる（団体のD）
     team.series[0].lanes.forEach((lane) => {
       lane[0] = { type: "skill", skillId: "a_roundoff" };
-      lane[1] = { type: "skill", skillId: "g_backlay5twist" };
+      lane[1] = { type: "skill", skillId: "g_rijonson" }; // 団体だけの2回宙返り系（G）
     });
     const off = computeTeamScore({ ...team, future: null });
     const on = computeTeamScore({ ...team, future: "G" });
@@ -239,6 +278,21 @@ describe("十年後モード — ランダム生成", () => {
     // 上限Fの候補にG難度の技は出てこない
     const f = usedIds("F");
     expect(f.every((id) => skillDifficulty(id, false, "G") !== "G")).toBe(true);
+  });
+
+  it("モードOFFでは、テンプレートにF難度の技が入っていても自動生成は使わない", () => {
+    // 十年後モードで作ったテンプレートを、モードを戻してから使う場合
+    const specs = autoTumblingSpecs({
+      apparatus: "stick",
+      future: null,
+      skillIds: ["a_roundoff", "b_front", "f_backlay4twist", "g_backlay5twist", "e_rudolph"],
+      random: seeded(11),
+    });
+    expect(specs.length).toBeGreaterThan(0);
+    const ids = specs.flatMap((sp) => [...sp.entry, ...sp.saltoIds, sp.connectId]);
+    expect(ids.some((id) => skillDef(id)?.future)).toBe(false);
+    // 2回宙返り系は現行どおり「テンプレートに出てくるときだけ」
+    expect(ids).not.toContain("e_moonsault");
   });
 
   it("生成した構成の難度がモードONで上がる", () => {
