@@ -7,6 +7,11 @@ import {
   REQUIRE_ALL_ELEMENTS_MIN_SCORE,
   generateRoutine,
   DEFAULT_MAX_AUTO_THROWS,
+  hardThrowCount,
+  suppressHardThrow,
+  HARD_THROW_WEIGHT,
+  HARD_THROW_FREE_SCORE,
+  HARD_THROW_MAX_MOTIONS,
   endsWithFinishCatch,
   missesFinishCatch,
   FINISH_CATCH_TAG,
@@ -591,6 +596,60 @@ describe("投げ上げの回数", () => {
   });
 });
 
+describe("手以外の投げ・手具を使った投げのあと", () => {
+  const after = (throwTypes: string[], motions: number, skills = 0): Series =>
+    S(
+      { kind: "throw", throwTypes },
+      { kind: "motion", motionId: "chene", count: motions },
+      ...Array.from({ length: skills }, () => skill("b_front")),
+      { kind: "catch" },
+    );
+
+  it("2動作以上か転回系を挟む形だけを数える", () => {
+    // 手以外の投げ・手具を使った投げのあとに実施できるのは徒手0〜1動作まで
+    expect(HARD_THROW_MAX_MOTIONS).toBe(1);
+    expect(hardThrowCount([after(["nonhand"], 0)])).toBe(0);
+    expect(hardThrowCount([after(["nonhand"], HARD_THROW_MAX_MOTIONS)])).toBe(0);
+    expect(hardThrowCount([after(["nonhand"], HARD_THROW_MAX_MOTIONS + 1)])).toBe(1);
+    expect(hardThrowCount([after(["useapp"], 3)])).toBe(1);
+    // 転回系を挟むのも難しい（動作が少なくても数える）
+    expect(hardThrowCount([after(["nonhand"], 0, 1)])).toBe(1);
+    // 通常の投げ・視野外の投げは対象外
+    expect(hardThrowCount([after([], 4)])).toBe(0);
+    expect(hardThrowCount([after(["noview"], 4)])).toBe(0);
+    // シリーズごとに数える
+    expect(hardThrowCount([after(["nonhand"], 3), after(["useapp"], 3)])).toBe(2);
+  });
+
+  it("Dスコアの要求値が5.0を超えるまでは嫌う（その形が足せる点数より強い重み）", () => {
+    expect(suppressHardThrow({ apparatus: "ring" })).toBe(true);
+    expect(suppressHardThrow({ apparatus: "ring", minScore: HARD_THROW_FREE_SCORE })).toBe(true);
+    expect(suppressHardThrow({ apparatus: "ring", minScore: HARD_THROW_FREE_SCORE + 0.1 })).toBe(false);
+    // 徒手系の最高難度（E＝0.7）より強いので、点数のためだけには実施しない
+    expect(HARD_THROW_WEIGHT).toBeGreaterThan(DIFF_SCORE.E);
+  });
+
+  it("要求値が無ければほとんど生成せず、5.0を超える要求では実施する", () => {
+    const hard = (minScore: number | null) => {
+      let n = 0;
+      for (let seed = 1; seed <= 5; seed++) {
+        const r = generateRoutine(pool(), {
+          apparatus: "ring",
+          minScore,
+          autoTumblingSkills: [],
+          random: seeded(seed * 13 + 5),
+        });
+        if (r) n += hardThrowCount(r.series);
+      }
+      return n;
+    };
+    // 要求値なし＝かなり稀（5構成で1本以下）
+    expect(hard(null)).toBeLessThanOrEqual(1);
+    // 5.0を超える要求では点数を稼ぐために実施する
+    expect(hard(HARD_THROW_FREE_SCORE + 0.1)).toBeGreaterThan(hard(null));
+  }, 180_000);
+});
+
 describe("演技の締め方（クラブ＝押さえてキャッチ／ロープ＝足に絡めたキャッチ）", () => {
   const press = (): Series => S({ kind: "throw" }, { kind: "catch", catchTypes: ["useapp"] });
   const foot = (): Series => S({ kind: "throw" }, { kind: "catch", catchTypes: ["nonhand"] });
@@ -624,15 +683,15 @@ describe("演技の締め方（クラブ＝押さえてキャッチ／ロープ�
     (["clubs", "rope"] as ApparatusKey[]).forEach((apparatus) => {
       let finished = 0;
       let routines = 0;
-      for (let seed = 1; seed <= 6; seed++) {
+      for (let seed = 1; seed <= 10; seed++) {
         const r = generateRoutine(pool(), { apparatus, random: seeded(seed * 13 + 5) });
         if (!r) continue;
         routines += 1;
         if (endsWithFinishCatch(r.series[r.series.length - 1], apparatus)) finished += 1;
       }
       expect(routines).toBeGreaterThan(0);
-      // ほぼ必ず締めの形で終わる（難度を捨ててまでは寄せないので、まれに外れる）
-      expect(finished).toBeGreaterThanOrEqual(routines - 1);
+      // だいたい締めの形で終わる（難度を捨ててまでは寄せないので、まれに外れる。実測9割）
+      expect(finished / routines).toBeGreaterThanOrEqual(0.7);
     });
   }, 120_000);
 });

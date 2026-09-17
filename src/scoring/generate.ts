@@ -331,6 +331,59 @@ export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false)
  * どうしても必要なとき（範囲外のペナルティは×100）だけ入るようにする。
  */
 /**
+ * **手以外の投げ・手具を使った投げのあとに多くの徒手やタンブリングを実施するのは難しい**。
+ * 足や手具で投げた直後なので、現実的なのは徒手 `HARD_THROW_MAX_MOTIONS`（1）動作までで、
+ * 転回系を挟むこともまずない。狙うDスコアの**要求値**（下限）が `HARD_THROW_FREE_SCORE`（5.0）を
+ * 超えるまでは、この形を `HARD_THROW_WEIGHT`（0.9／本＝その形が足せる点数より大きい）だけ嫌うので、
+ * **かなり稀にしか出ない**。5.0を超える要求では点数を稼ぐために必要になるので嫌わない。
+ */
+export const HARD_THROW_TAGS: string[] = [NON_HAND_TAG, USE_APPARATUS_TAG];
+export const HARD_THROW_MAX_MOTIONS = 1;
+export const HARD_THROW_WEIGHT = 0.9;
+export const HARD_THROW_FREE_SCORE = 5.0;
+
+/** その構成で「手以外・手具を使った投げのあとに徒手を2動作以上または転回系」を実施している回数 */
+export function hardThrowCount(series: Series[], junior = false): number {
+  let count = 0;
+  series.forEach((ser) => {
+    let open = false;
+    let hard = false;
+    let motions = 0;
+    let skills = 0;
+    ser.items.forEach((item) => {
+      if (item.kind === "throw") {
+        open = true;
+        hard = (item.throwTypes || []).some((t) => HARD_THROW_TAGS.includes(t));
+        motions = 0;
+        skills = 0;
+        return;
+      }
+      if (!open) return;
+      if (item.kind === "motion") {
+        const def = motionDef(item.motionId, junior);
+        if (def) motions += motionTimes(item.count);
+        return;
+      }
+      if (item.kind === "skill") {
+        skills += 1;
+        return;
+      }
+      if (item.kind === "catch") {
+        if (hard && (motions > HARD_THROW_MAX_MOTIONS || skills > 0)) count += 1;
+        open = false;
+        hard = false;
+      }
+    });
+  });
+  return count;
+}
+
+/** その構成で手以外・手具を使った投げのあとの実施を嫌うか（要求値が5.0を超えるなら嫌わない） */
+export function suppressHardThrow(opts: GenerateOptions): boolean {
+  return (opts.minScore ?? 0) <= HARD_THROW_FREE_SCORE;
+}
+
+/**
  * **演技の締め方**。手具によって「最後の投げ受けをこう受けて、そのまま演技を終える」形が決まっている。
  *  - クラブ：もう一方の手具で**押さえてキャッチ**
  *  - ロープ：**足に絡めたキャッチ**（手以外のキャッチ）
@@ -606,6 +659,10 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   const otherStyle = otherStyleCount(series) * OTHER_STYLE_WEIGHT;
   // クラブは押さえてキャッチ、ロープは足に絡めたキャッチで演技を締める
   const finishCatch = missesFinishCatch(series, opts.apparatus) ? FINISH_CATCH_WEIGHT : 0;
+  // 手以外・手具を使った投げのあとに徒手を多く実施する形は、要求値が5.0を超えるまで嫌う
+  const hardThrow = suppressHardThrow(opts)
+    ? hardThrowCount(series, !!opts.junior) * HARD_THROW_WEIGHT
+    : 0;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
@@ -627,6 +684,7 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       verticalThree -
       otherStyle -
       finishCatch -
+      hardThrow -
       auto -
       limitedUsed * LIMITED_SKILL_WEIGHT -
       (highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT)) /
