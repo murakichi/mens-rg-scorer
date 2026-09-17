@@ -7,6 +7,10 @@ import {
   REQUIRE_ALL_ELEMENTS_MIN_SCORE,
   generateRoutine,
   DEFAULT_MAX_AUTO_THROWS,
+  endsWithFinishCatch,
+  missesFinishCatch,
+  FINISH_CATCH_TAG,
+  FINISH_CATCH_WEIGHT,
   DEFAULT_MAX_SERIES,
   autoSeriesMax,
   otherStyleCount,
@@ -584,6 +588,52 @@ describe("投げ上げの回数", () => {
     // 3本以下なら全部採用されるので0
     expect(extraThrowOperation(computeScore([cheneThrow(4), cheneThrow(3)], "stick"))).toBe(0);
   });
+});
+
+describe("演技の締め方（クラブ＝押さえてキャッチ／ロープ＝足に絡めたキャッチ）", () => {
+  const press = (): Series => S({ kind: "throw" }, { kind: "catch", catchTypes: ["useapp"] });
+  const foot = (): Series => S({ kind: "throw" }, { kind: "catch", catchTypes: ["nonhand"] });
+  const plain = (): Series => S({ kind: "throw" }, { kind: "catch" });
+
+  it("手具ごとの締めの受け方だけを締めとみなす", () => {
+    expect(FINISH_CATCH_TAG.clubs).toBe("useapp");
+    expect(FINISH_CATCH_TAG.rope).toBe("nonhand");
+    // スティック・リングには決まった締め方が無い
+    expect(FINISH_CATCH_TAG.stick).toBeUndefined();
+    expect(FINISH_CATCH_TAG.ring).toBeUndefined();
+    expect(endsWithFinishCatch(press(), "clubs")).toBe(true);
+    expect(endsWithFinishCatch(foot(), "clubs")).toBe(false);
+    expect(endsWithFinishCatch(foot(), "rope")).toBe(true);
+    expect(endsWithFinishCatch(press(), "stick")).toBe(false);
+    // キャッチで終わらないシリーズは締めにならない
+    expect(endsWithFinishCatch(S(skill("b_front")), "clubs")).toBe(false);
+    // 締め方の無い手具では「締めていない」とも判定しない
+    expect(missesFinishCatch([plain()], "stick")).toBe(false);
+    expect(missesFinishCatch([plain()], "clubs")).toBe(true);
+    expect(missesFinishCatch([plain(), press()], "clubs")).toBe(false);
+    // 締めのシリーズが最後でなければ締めていない
+    expect(missesFinishCatch([press(), plain()], "clubs")).toBe(true);
+  });
+
+  it("難度を捨ててまで締めの形にはしない（重みは難度の刻みより小さい）", () => {
+    expect(FINISH_CATCH_WEIGHT).toBeLessThan(0.1);
+  });
+
+  it("クラブ・ロープの構成は締めの受け方で終わる", () => {
+    (["clubs", "rope"] as ApparatusKey[]).forEach((apparatus) => {
+      let finished = 0;
+      let routines = 0;
+      for (let seed = 1; seed <= 6; seed++) {
+        const r = generateRoutine(pool(), { apparatus, random: seeded(seed * 13 + 5) });
+        if (!r) continue;
+        routines += 1;
+        if (endsWithFinishCatch(r.series[r.series.length - 1], apparatus)) finished += 1;
+      }
+      expect(routines).toBeGreaterThan(0);
+      // ほぼ必ず締めの形で終わる（難度を捨ててまでは寄せないので、まれに外れる）
+      expect(finished).toBeGreaterThanOrEqual(routines - 1);
+    });
+  }, 120_000);
 });
 
 describe("自動生成の割合（ユーザー指定）", () => {
