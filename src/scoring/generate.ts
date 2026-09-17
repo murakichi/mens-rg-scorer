@@ -26,6 +26,7 @@
 //  - 同じ宙返りの繰り返しは避ける（前宙は例外）。必須ではないので弱い重み付けにとどめる
 // =====================================================================
 
+import { shuffled } from "./pick";
 import { analyzeSeries, motionDef, motionTimes } from "./analysis";
 import {
   NON_HAND_TAG,
@@ -732,15 +733,6 @@ export function shortfallPenalty(r: ScoreResult, apparatus: ApparatusKey, mandat
   add(failed("dir"), A_PRIORITY.other);
   add(failed("tumCount"), A_PRIORITY.other);
   return total;
-}
-
-function shuffled<T>(list: T[], rand: () => number): T[] {
-  const a = [...list];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
 }
 
 /** テンプレートの並びを、採点できるシリーズの並びに直す */

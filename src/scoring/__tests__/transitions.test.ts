@@ -1,0 +1,191 @@
+import { describe, it, expect } from "vitest";
+import {
+  AUTO_TUMBLING_PATTERNS,
+  AFTER_BACK_LAYOUT_SALTOS,
+  CHAIN_END_SKILLS,
+  KIRIMOMI_THROW_SKILL_ID,
+  RARE_CHAIN_END_SKILLS,
+  ROLL_AFTER_FORWARD_CHANCE,
+  ROLL_AFTER_FRONT_CHANCE,
+  ROLL_AFTER_SWITCH_CHANCE,
+  ROUNDOFF_ENTRY_WEIGHT,
+  SIDE_SALTO_ID,
+  THROW_FINISH_SALTOS,
+  THROW_IN_SIDE_SALTO_WEIGHT,
+  THROW_IN_SKILL_ROUNDOFF_WEIGHT,
+  buildTransitions,
+  canEndWith,
+  canThrowAt,
+  edgeCanEnd,
+  edgeCanThrow,
+  usableSkills,
+  type AutoTumblingPattern,
+  type SaltoEdge,
+} from "../autoTumblings";
+import { DIFF_VALUE, ROUNDOFF_SKILL_ID, isBackwardSalto, skillDifficulty } from "../constants";
+
+const pattern = (id: string): AutoTumblingPattern =>
+  AUTO_TUMBLING_PATTERNS.find((p) => p.id === id) as AutoTumblingPattern;
+
+/** 既定の条件（上級者・手具の指定なし）の遷移表 */
+const table = (patternId: string, over: Record<string, unknown> = {}) =>
+  buildTransitions({ pattern: pattern(patternId), ...over });
+
+const ids = (edges: SaltoEdge[]) => edges.map((e) => e.id);
+const find = (edges: SaltoEdge[], id: string) => edges.find((e) => e.id === id);
+const value = (id: string) => {
+  const d = skillDifficulty(id);
+  return d ? DIFF_VALUE[d] : 0;
+};
+
+describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
+  it("表を引くだけで、その技に何が続けられるか分かる", () => {
+    const tr = table("chain");
+    // 後方伸身宙返りの後は 前宙・きりもみ・きりもみ転回 だけ
+    expect(ids(tr.next("b_backlayout")).sort()).toEqual(AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id).sort());
+    // 首から背中に着地する技・側宙の後には何も続かない
+    CHAIN_END_SKILLS.forEach((id) => expect(tr.next(id)).toEqual([]));
+    // テンポ以外の後方系（後ろ向きに降りる）の後も続かない
+    expect(tr.next("b_backsalto")).toEqual([]);
+  });
+
+  it("連続の難度はだんだん下がる（テンポと例外を除く）", () => {
+    const tr = table("chain");
+    ["c_back15", "b_fronthalf", "b_backhalf"].forEach((prev) => {
+      tr.next(prev).forEach((e) => {
+        // 後方宙返り半ひねり→前方宙返り1回ひねり だけが上がってよい例外
+        if (prev === "b_backhalf" && e.id === "c_front1full") return;
+        expect(value(e.id)).toBeLessThanOrEqual(value(prev));
+      });
+    });
+    // テンポは例外（そのあと難度が上がってよい）
+    expect(tr.next("b_tempo").some((e) => value(e.id) > value("b_tempo"))).toBe(true);
+    expect(tr.next("c_tempotwist").some((e) => value(e.id) > value("c_tempotwist"))).toBe(true);
+  });
+
+  it("ロンダート入り（後方系の1本目）の重みは、宙返りの途中で投げる形でいちばん高い", () => {
+    const backward = (edges: SaltoEdge[]) => edges.filter((e) => isBackwardSalto(e.id));
+    const plain = table("chain", { targetScore: 4.5 });
+    const inSkill = table("chainThrowInSkill", { targetScore: 4.5 });
+    const w = (edges: SaltoEdge[]) => backward(edges)[0]?.weight ?? 0;
+    expect(w(inSkill.first)).toBeGreaterThan(w(plain.first));
+    // 目標Dスコアが上がるほど、ロンダート入りの優先は弱まる
+    const low = w(table("chain", { targetScore: 1.5 }).first);
+    const high = w(table("chain", { targetScore: 4.5 }).first);
+    expect(low).toBeGreaterThan(high);
+    expect(ROUNDOFF_ENTRY_WEIGHT).toBeGreaterThan(1);
+    expect(THROW_IN_SKILL_ROUNDOFF_WEIGHT).toBeGreaterThan(1);
+  });
+
+  it("投げてから跳ぶ投げ受けは、1本目が前方系・続きは側宙か転宙だけ", () => {
+    const tr = table("throwSalto");
+    tr.first.forEach((e) => expect(isBackwardSalto(e.id)).toBe(false));
+    ids(tr.next("b_front")).forEach((id) => expect(THROW_FINISH_SALTOS).toContain(id));
+  });
+
+  it("側宙で投げる形は稀（辺の重みが下がる）", () => {
+    const inSkill = table("chainThrowInSkill");
+    const plain = table("chain");
+    const a = find(inSkill.next("c_back15"), SIDE_SALTO_ID);
+    const b = find(plain.next("c_back15"), SIDE_SALTO_ID);
+    expect(a && b && a.weight).toBeCloseTo((b?.weight ?? 0) * THROW_IN_SIDE_SALTO_WEIGHT, 6);
+  });
+
+  it("辺に「終われるか」が載っている（抽選が要るものは印が付く）", () => {
+    const tr = table("chain");
+    const front = find(tr.next("c_back15"), "b_front");
+    expect(front && edgeCanEnd(front)).toBe(true);
+    // 後ろ向きで終わる後方宙返りは、抽選が通ったときだけ終われる
+    const back = find(tr.first, "b_backsalto");
+    expect(back?.endNeedsBackwardDraw).toBe(true);
+    expect(back && edgeCanEnd(back)).toBe(false);
+    expect(back && edgeCanEnd(back, { backwardEnd: true })).toBe(true);
+    // 後方宙返り半ひねりで終わるのは稀
+    RARE_CHAIN_END_SKILLS.forEach((id) => {
+      expect(canEndWith(id)).toBe(false);
+      expect(canEndWith(id, { rareEnd: true })).toBe(true);
+    });
+    // 前方の半ひねりは抽選が通っても終われない
+    expect(canEndWith("b_fronthalf", { backwardEnd: true, rareEnd: true })).toBe(false);
+  });
+
+  it("辺に「その位置で投げてよいか」が載っている", () => {
+    const tr = table("chainThrowInSkill");
+    // 後ろ向きで終わる宙返り（後方伸身）→ 前方系 の位置では投げない（きりもみだけ抽選で残る）
+    const kirimomi = find(tr.next("b_backlayout"), KIRIMOMI_THROW_SKILL_ID);
+    expect(kirimomi?.throwRule).toBe("kirimomiDraw");
+    expect(kirimomi && edgeCanThrow(kirimomi)).toBe(false);
+    expect(kirimomi && edgeCanThrow(kirimomi, { backToForwardThrow: true })).toBe(true);
+    expect(find(tr.next("b_backlayout"), "b_front")?.throwRule).toBe("never");
+    // 前向きに降りた後（半ひねり系）は普通に投げられる
+    expect(find(tr.next("c_back15"), "b_front")?.throwRule).toBe("ok");
+    expect(find(tr.next("b_backhalf"), "b_front")?.throwRule).toBe("ok");
+    expect(canThrowAt(undefined, "b_front")).toBe(true);
+  });
+
+  it("辺に「そのあと前転を付ける確率」が載っている", () => {
+    const tr = table("chain");
+    // 前宙はありなし半々、それ以外の前方系はほぼ必ず前転
+    expect(find(tr.next("b_backhalf"), "b_front")?.rollChance).toBeCloseTo(ROLL_AFTER_FRONT_CHANCE, 6);
+    expect(find(tr.next("c_back15"), "c_front1full")?.rollChance).toBeCloseTo(
+      ROLL_AFTER_FORWARD_CHANCE,
+      6,
+    );
+    // 切り返し（後ろ向きで終わる宙返り → 前方系）のあとは前転をしないことが多い
+    expect(find(tr.next("b_backlayout"), "b_front")?.rollChance).toBeCloseTo(
+      ROLL_AFTER_SWITCH_CHANCE,
+      6,
+    );
+    // 側宙・きりもみ系のあとは前転をしない
+    expect(find(tr.next("b_backlayout"), "b_kirimomi")?.rollChance).toBe(0);
+  });
+
+  it("つなぎ技は前向きに降りた後だけ（テンポの後はバク転）", () => {
+    const tr = table("connect");
+    expect(ids(tr.connects("b_front") as SaltoEdge[])).toContain(ROUNDOFF_SKILL_ID);
+    expect(ids(tr.connects("b_tempo") as SaltoEdge[])).toEqual(["a_flicflac"]);
+    expect(tr.connects("b_backsalto")).toEqual([]);
+    expect(tr.connects("b_kirimomi")).toEqual([]);
+  });
+
+  it("つなぎの後に難度が上がる辺は重みが下がる", () => {
+    const tr = table("connect");
+    // つなぎの前が B難度なら、C難度に上がる辺だけ重みが落ちる
+    const afterB = tr.afterConnect(ROUNDOFF_SKILL_ID, "b_front");
+    const afterC = tr.afterConnect(ROUNDOFF_SKILL_ID, "c_back15");
+    const id = "c_back1full";
+    const rise = find(afterB, id);
+    const flat = find(afterC, id);
+    expect(rise && flat && rise.weight).toBeLessThan(flat?.weight ?? 0);
+  });
+
+  it("基本的な構成（低いDスコア）ではD難度以上が表に出ない", () => {
+    const tr = table("chain", { basicLevel: true, targetScore: 1.5 });
+    ids(tr.first).forEach((id) => expect(value(id)).toBeLessThanOrEqual(DIFF_VALUE.C));
+    // つなぎの形自体が作られないので、ここでは連続だけを見る
+    ids(tr.next("c_back15")).forEach((id) => expect(value(id)).toBeLessThanOrEqual(DIFF_VALUE.C));
+  });
+
+  it("使ってよい技を絞ると、表もその範囲だけになる", () => {
+    const allowed = ["b_front", SIDE_SALTO_ID, "c_back15"];
+    const tr = table("chain", { skillIds: allowed });
+    ids(tr.first).forEach((id) => expect(allowed).toContain(id));
+    ids(tr.next("c_back15")).forEach((id) => expect(allowed).toContain(id));
+    // 2回宙返り系は、実際に実施している（指定に入っている）ときだけ使う
+    expect(usableSkills({})(["d_doubleback"])).toEqual([]);
+    expect(usableSkills({ skillIds: ["d_doubleback"] })(["d_doubleback"])).toEqual(["d_doubleback"]);
+  });
+
+  it("同じ条件の表は1回だけ作れば足りる（引き直しても同じ辺が返る）", () => {
+    const tr = table("chain");
+    expect(tr.next("c_back15")).toBe(tr.next("c_back15"));
+    expect(tr.connects("b_front")).toBe(tr.connects("b_front"));
+    expect(tr.afterConnect(ROUNDOFF_SKILL_ID, "b_front")).toBe(
+      tr.afterConnect(ROUNDOFF_SKILL_ID, "b_front"),
+    );
+    // つなぎの前の技が変われば別の表
+    expect(tr.afterConnect(ROUNDOFF_SKILL_ID, "b_front")).not.toBe(
+      tr.afterConnect(ROUNDOFF_SKILL_ID, "c_back15"),
+    );
+  });
+});

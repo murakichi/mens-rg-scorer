@@ -18,6 +18,7 @@
 // 評価が上がるものだけが構成に入る。
 // =====================================================================
 
+import { cycler, pickWeighted, shuffled } from "./pick";
 import { APPARATUS_USE, HANDS_TYPES, REQUIRED_THROW_OPTIONS } from "./constants";
 import { newTemplateId, type SeriesTemplate } from "./templates";
 import type { ApparatusKey, Item, Series } from "./types";
@@ -432,37 +433,6 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
 /** 生成結果の表示名。中身はシリーズの内容で分かるので、種類だけを出す。 */
 export const AUTO_THROW_NAME = "自動生成の投げ";
 export const autoThrowName = (): string => AUTO_THROW_NAME;
-
-function shuffled<T>(list: T[], rand: () => number): T[] {
-  const a = [...list];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-/**
- * 候補をできる限り被らせずに配る。ひと回りしたら並べ直して次の周に入るので、
- * 候補数より多く要求されても偏らない。
- */
-function cycler<T>(list: T[], rand: () => number): () => T {
-  let rest: T[] = [];
-  return () => {
-    if (rest.length === 0) rest = shuffled(list, rand);
-    return rest.pop() as T;
-  };
-}
-
-/** 重み付きで1つ選ぶ（重みは1が既定） */
-function pickWeighted<T>(list: T[], rand: () => number, weightOf: (x: T) => number): T {
-  let left = rand() * list.reduce((n, x) => n + weightOf(x), 0);
-  for (const x of list) {
-    left -= weightOf(x);
-    if (left < 0) return x;
-  }
-  return list[list.length - 1];
-}
 
 /** その形で取り得るシェネの回数 */
 export function cheneCountRange(pattern: AutoThrowPattern): number[] {
