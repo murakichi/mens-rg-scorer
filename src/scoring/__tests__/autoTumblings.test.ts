@@ -17,6 +17,12 @@ import {
   withJuniorBoost,
   JUNIOR_UPGRADE_BOOST_MAX_SCORE,
   RARE_CHAIN_END_CHANCE,
+  LAYOUT_AFTER_CONNECT_CHANCE,
+  layoutOnlyAfterConnect,
+  rollAfterChance,
+  ROLL_AFTER_FORWARD_CHANCE,
+  ROLL_AFTER_FRONT_CHANCE,
+  FRONT_SALTO_ID,
   connectFinishWeights,
   THROW_FINISH_SALTOS,
   THROW_ROLL_MOTION,
@@ -916,6 +922,67 @@ describe("つなぎ技", () => {
       return backward / all;
     };
     expect(backwardShare(1.5)).toBeGreaterThan(backwardShare(4.0));
+  }, 60_000);
+
+  it("つなぎのあとに伸身を1本だけ実施して終わる形は稀（その後に前方系を続ける）", () => {
+    const connect = AUTO_TUMBLING_PATTERNS.find((p) => p.connect)!;
+    const plain = AUTO_TUMBLING_PATTERNS.find((p) => !p.connect && !p.throwCatch)!;
+    // つなぎの形で、つなぎの後の1本が後方伸身系＝2本で終わる形だけが対象
+    expect(layoutOnlyAfterConnect(connect, ["c_back25", "c_backlay15"], 2)).toBe(true);
+    // もう1本（前方系）続けるなら問題ない
+    expect(layoutOnlyAfterConnect(connect, ["c_back25", "c_backlay15", "b_front"], 3)).toBe(false);
+    // 伸身でなければ対象外／つなぎでない形も対象外
+    expect(layoutOnlyAfterConnect(connect, ["c_back25", "b_divefront"], 2)).toBe(false);
+    expect(layoutOnlyAfterConnect(plain, ["c_back25", "c_backlay15"], 2)).toBe(false);
+    expect(LAYOUT_AFTER_CONNECT_CHANCE).toBeLessThan(0.5);
+    // 候補にもほとんど出ない（抽選を通した分だけ）
+    let layoutEnd = 0;
+    let connects = 0;
+    for (let seed = 1; seed <= 12; seed++)
+      autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
+        if (!sp.pattern.connect) return;
+        connects += 1;
+        if (layoutOnlyAfterConnect(sp.pattern, sp.saltoIds, sp.saltoCount)) layoutEnd += 1;
+      });
+    expect(connects).toBeGreaterThan(0);
+    expect(layoutEnd / connects).toBeLessThan(0.05);
+  }, 60_000);
+
+  it("前方系で終わったあとは大抵前転をする（前宙は半々、きりもみ系の後は何もしない）", () => {
+    // 前宙以外の前方系はほぼ必ず前転
+    expect(rollAfterChance("c_front1full")).toBe(ROLL_AFTER_FORWARD_CHANCE);
+    expect(ROLL_AFTER_FORWARD_CHANCE).toBeGreaterThan(ROLL_AFTER_FRONT_CHANCE);
+    // 前宙はありなし両方
+    expect(rollAfterChance(FRONT_SALTO_ID)).toBe(ROLL_AFTER_FRONT_CHANCE);
+    // きりもみ・きりもみ転回・とび前転の後は何もしない
+    ["b_kirimomi", "c_kirimomiten", "a_frontroll"].forEach((id) =>
+      expect(rollAfterChance(id)).toBe(0),
+    );
+    // 側宙・後方系の後も前転をしない
+    expect(rollAfterChance("b_sidesalto")).toBe(0);
+    expect(rollAfterChance("b_backsalto")).toBe(0);
+    expect(rollAfterChance("c_backlay15")).toBe(0);
+    // 組み立てたシリーズでも、前方系で終わる連続には前転が付く（抽選ぶん）
+    let ends = 0;
+    let rolled = 0;
+    for (let seed = 1; seed <= 12; seed++)
+      autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
+        if (sp.pattern.throwCatch) return;
+        const last = sp.saltoIds[sp.saltoCount - 1];
+        if (rollAfterChance(last) === 0) {
+          // 前転を付けない技のあとに前転が入っていないこと
+          const items = buildAutoTumblingSeries(sp).items;
+          expect(items[items.length - 1].kind).toBe("skill");
+          return;
+        }
+        ends += 1;
+        const items = buildAutoTumblingSeries(sp).items;
+        const tail = items[items.length - 1];
+        if (tail.kind === "motion" && tail.motionId === THROW_ROLL_MOTION) rolled += 1;
+      });
+    expect(ends).toBeGreaterThan(0);
+    expect(rolled).toBeGreaterThan(0);
+    expect(rolled).toBeLessThan(ends);
   }, 60_000);
 
   it("投げタンの投げを二つ投げにできる（クラブ・リングで、投げてから跳ぶ形だけ）", () => {

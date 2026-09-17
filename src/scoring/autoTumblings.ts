@@ -188,6 +188,39 @@ export const RARE_CHAIN_END_SKILLS: string[] = ["b_backhalf"];
 export const RARE_CHAIN_END_CHANCE = 0.1;
 
 /**
+ * **つなぎ技のあとに後方伸身宙返り系を1本だけ**実施して終わる形
+ * （2回半ひねり→ロンダート→後方伸身1回半ひねり など）は、上級者ではあまり実施されない。
+ * あり得ない並びではないので `LAYOUT_AFTER_CONNECT_CHANCE` の確率では許し、
+ * それ以外は**もう1本（前方系）続ける**（後方伸身の後は `AFTER_BACK_LAYOUT_SALTOS`）。
+ * Dスコアの低い選手（`basicLevel`）はそのまま終わってよい。
+ */
+export const LAYOUT_AFTER_CONNECT_CHANCE = 0.1;
+
+/** つなぎ技のあとに伸身を1本だけ実施して終わる形か（`saltoIds` の n 本ぶんで判定） */
+export const layoutOnlyAfterConnect = (
+  pattern: AutoTumblingPattern,
+  saltoIds: string[],
+  n: number,
+): boolean => !!pattern.connect && n === 2 && isBackLayoutSalto(saltoIds[1]);
+
+/**
+ * **前方系の宙返りで終わったあとは、大抵そのまま前転をする**
+ * （後方系→前方系の連続でも同じ）。前宙だけは前転のありなし両方あるので半々
+ * （`ROLL_AFTER_FRONT_CHANCE`）、それ以外の前方系（前方1回ひねり・伸身前宙など）は
+ * ほぼ必ず前転をする（`ROLL_AFTER_FORWARD_CHANCE`）。
+ * 首から背中に着地する技（とび前転・きりもみ系＝`CHAIN_END_SKILLS`）と
+ * 側宙・後ろ向きで終わる技のあとは前転をしない（`noRollAfter`）。
+ */
+export const FRONT_SALTO_ID = "b_front";
+export const ROLL_AFTER_FORWARD_CHANCE = 0.9;
+export const ROLL_AFTER_FRONT_CHANCE = 0.5;
+export function rollAfterChance(id: string): number {
+  if (skillDef(id)?.category !== CATEGORY.FORWARD || !skillDef(id)?.isSalto) return 0;
+  if (noRollAfter(id) || CHAIN_END_SKILLS.includes(id)) return 0;
+  return id === FRONT_SALTO_ID ? ROLL_AFTER_FRONT_CHANCE : ROLL_AFTER_FORWARD_CHANCE;
+}
+
+/**
  * 連続の**最後**に置ける技か。後ろ向きで終わる技の後に何も実施せず終わることはない。
  *  - 後方宙返り（整数ひねり）：Dスコアの低い選手は実施するので、`allowBackwardEnd`
  *    （`backwardEndChance` の抽選）が通ったときだけ許す
@@ -588,6 +621,10 @@ export interface AutoTumblingSpec {
   secondThrow?: AutoThrowStyle;
   /** 稀な終わり方（後方宙返り半ひねりで終わる）をしてよい候補か */
   allowRareEnd?: boolean;
+  /** つなぎのあとに伸身を1本だけ実施して終わってよい候補か（`LAYOUT_AFTER_CONNECT_CHANCE` の抽選結果） */
+  allowLayoutAfterConnect?: boolean;
+  /** 最後の前方系のあとに前転を付けるかの抽選値（0〜1。`rollAfterChance` と比べる） */
+  rollDraw?: number;
   /** 後ろ向きで終わる宙返り→前方系の位置で投げてよい候補か（きりもみの視野外投げだけ） */
   allowBackToForwardThrow?: boolean;
   /** 前転でつないだ着地を手具を使ったキャッチ（押さえつけ）で受ける候補か */
@@ -666,6 +703,10 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
     items.push(next);
   });
+  // 前方系で終わったあとは、大抵そのまま前転をする（前宙だけは半々）
+  const lastSalto = saltos[saltos.length - 1];
+  if (!pattern.throwCatch && (spec.rollDraw ?? 1) < rollAfterChance(lastSalto))
+    items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
   // 投げ受けの着地は前転でつなぐ（側宙の後は前転を実施しないので、そのまま受ける）
   const rolled = !!pattern.rollFinish && !noRollAfter(saltos[saltos.length - 1]);
   if (rolled) items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
@@ -1040,6 +1081,10 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       const allowBackwardEnd = rand() < backwardEndChance(opts.targetScore);
       // 後方宙返り半ひねりで終わるのは稀（大抵そのあとに前宙か側宙を実施する）
       const allowRareEnd = basicLevel || rand() < RARE_CHAIN_END_CHANCE;
+      // つなぎのあとに伸身を1本だけ実施して終わる形は、上級者ではあまり実施しない
+      const allowLayoutAfterConnect = basicLevel || rand() < LAYOUT_AFTER_CONNECT_CHANCE;
+      // 最後の前方系のあとに前転を付けるかの抽選（本数を変えても同じ判断を使う）
+      const rollDraw = rand();
       // 後ろ向きで終わる宙返り→前方系の位置で投げるのは、きりもみの視野外投げだけ低確率で残す
       const allowBackToForwardThrow = rand() < BACK_TO_FORWARD_THROW_CHANCE;
       const throwOk = (n: number) => {
@@ -1051,6 +1096,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       const endsOk = (n: number) =>
         canEndChain(saltoIds[n - 1], allowBackwardEnd) &&
         (allowRareEnd || !RARE_CHAIN_END_SKILLS.includes(saltoIds[n - 1])) &&
+        (allowLayoutAfterConnect || !layoutOnlyAfterConnect(pattern, saltoIds, n)) &&
         throwOk(n);
       // 終われる本数を探す：まず伸ばして（前宙・側宙に続ける）、だめなら縮める
       let end = saltoCount;
@@ -1079,6 +1125,8 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         connectId,
         allowBackwardEnd,
         allowRareEnd,
+        allowLayoutAfterConnect,
+        rollDraw,
         allowBackToForwardThrow,
         ...(secondThrow ? { secondThrow } : {}),
       });
@@ -1180,6 +1228,12 @@ export function withSaltoCount(t: AutoTumblingTemplate, saltoCount: number): Aut
   const last = t.spec.saltoIds[saltoCount - 1];
   if (!canEndChain(last, t.spec.allowBackwardEnd)) return null;
   if (!t.spec.allowRareEnd && RARE_CHAIN_END_SKILLS.includes(last)) return null;
+  // つなぎのあとに伸身を1本だけ実施して終わる形も、候補を作ったときの抽選に従う
+  if (
+    !t.spec.allowLayoutAfterConnect &&
+    layoutOnlyAfterConnect(t.spec.pattern, t.spec.saltoIds, saltoCount)
+  )
+    return null;
   // 後ろ向きで終わる宙返り→前方系の位置で投げる形も、候補を作ったときの抽選に従う
   if (
     t.spec.pattern.throwInSkill &&
