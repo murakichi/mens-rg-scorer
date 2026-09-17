@@ -85,7 +85,8 @@ describe("技idの組み立てと復元", () => {
   it("往復しても同じ内容になる", () => {
     SKILL_LIST.filter((s) => s.twist).forEach((s) => {
       expect(buildTwistSkillId(s.twist!)).toBe(s.id);
-      expect(skillDef(s.id)!.difficulty).toBe(twistDifficulty(s.twist!));
+      // skillDef は技そのものの定義なので、難度は上限で丸めない（十年後モードのF・Gも素のまま）
+      expect(skillDef(s.id)!.difficulty).toBe(twistDifficulty(s.twist!, "G"));
     });
   });
 

@@ -59,7 +59,7 @@ import {
 } from "./tumblingTransitions";
 import { newTemplateId, type SeriesTemplate } from "./templates";
 import { CATEGORY } from "./constants";
-import type { ApparatusKey, Item, Series } from "./types";
+import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
 // 入力画面・生成側から今までどおり `autoTumblings` 1か所で参照できるようにしておく
 export * from "./tumblingPatterns";
@@ -269,6 +269,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
   const apparatus = opts.apparatus;
   const ctxBase = {
     junior,
+    future: opts.future ?? null,
     basicLevel,
     apparatus,
     targetScore: opts.targetScore,
@@ -425,6 +426,8 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
 
 export interface AutoTumblingOptions {
   junior?: boolean;
+  /** 十年後モードの上限難度（"F" / "G"）。F・G難度の技も候補に含める。 */
+  future?: FutureLevel;
   /**
    * 組む手具。単発で高難度な技の出やすさが手具で変わる
    * （`APPARATUS_HIGH_DIFFICULTY_WEIGHT`：リングは重く持ったままひねりにくい）。

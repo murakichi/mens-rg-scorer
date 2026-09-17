@@ -6,6 +6,7 @@ import {
   DIFF_VALUE,
   VALUE_DIFF,
   MAX_DIFF,
+  clampDifficulty,
   HAND_MOTIONS,
   DEFAULT_HANDS_TYPE,
   HANDS_TYPE_OTHER,
@@ -29,6 +30,7 @@ import {
 import type {
   ApparatusKey,
   Difficulty,
+  FutureLevel,
   Item,
   Series,
   SeriesAnalysis,
@@ -74,26 +76,37 @@ export function needsRoundoffBefore(items: Item[], iIdx: number): boolean {
   return !leadsBackward(prev);
 }
 
-/** タンブリング塊の難度を算出。先頭技の値 + 以降の非A技ごとに +1、投げ含みで +1、E止め。 */
+/**
+ * タンブリング塊の難度を算出。先頭技の値 + 以降の非A技ごとに +1、投げ含みで +1。
+ * 上限は現行規則ならE、十年後モードならその上限（F・G）。
+ */
 export function calcTumblingDifficulty(
   skillIds: string[],
   hasThrow: boolean,
   junior = false,
+  future: FutureLevel = null,
 ): Difficulty | null {
   const diffs = skillIds
-    .map((id) => skillDifficulty(id, junior))
+    .map((id) => skillDifficulty(id, junior, future))
     .filter((d): d is Difficulty => !!d && d !== "A");
   if (diffs.length === 0) return null;
   let v = DIFF_VALUE[diffs[0]];
   for (let i = 1; i < diffs.length; i++) v += DIFF_VALUE[diffs[i]] - 1;
   if (hasThrow) v += 1;
-  return VALUE_DIFF[Math.min(v, MAX_DIFF)];
+  return clampDifficulty(v, future);
 }
 
-/** 徒手難度。縦3動作は無条件E、それ以外は動作数を A 起点で加算。 */
-export function calcHandDifficulty(motionCount: number, verticalThree: boolean): Difficulty {
+/**
+ * 徒手難度。縦3動作は無条件E、それ以外は動作数を A 起点で加算。
+ * 十年後モードでは動作を積んだぶんだけ上限（F・G）まで伸びる。
+ */
+export function calcHandDifficulty(
+  motionCount: number,
+  verticalThree: boolean,
+  future: FutureLevel = null,
+): Difficulty {
   if (verticalThree) return "E";
-  return VALUE_DIFF[Math.min(DIFF_VALUE.A + motionCount, MAX_DIFF)];
+  return clampDifficulty(DIFF_VALUE.A + motionCount, future);
 }
 
 /**
@@ -138,8 +151,8 @@ export function tumblingFlags(skillIds: string[]): boolean[] {
  * A難度技（側転・ロンダート・バク転・ハンドスプリング・とび前転）は縦の一回転の徒手で1動作、
  * きりもみ（B）は1動作、きりもみ転回（C）は2動作＝難度をそのまま徒手系難度に読み替える。
  */
-export function handMotionsOfSkill(skillId: string, junior = false): number {
-  const d = skillDifficulty(skillId, junior);
+export function handMotionsOfSkill(skillId: string, junior = false, future: FutureLevel = null): number {
+  const d = skillDifficulty(skillId, junior, future);
   return d ? Math.max(1, DIFF_VALUE[d] - 1) : 0;
 }
 
@@ -149,6 +162,7 @@ export function handMotionsOfSkill(skillId: string, junior = false): number {
 export function motionDef(
   id: string,
   junior = false,
+  future: FutureLevel = null,
 ): {
   motions: number;
   verticalThree: boolean;
@@ -167,7 +181,7 @@ export function motionDef(
       generic: !!m.legacy && !m.verticalThree,
     };
   if (skillDef(id)) {
-    const n = handMotionsOfSkill(id, junior);
+    const n = handMotionsOfSkill(id, junior, future);
     // 徒手扱いの転回技はすべて縦回転の徒手
     return { motions: n, verticalThree: false, vertical: n, hasHandsOption: false, generic: false };
   }
@@ -268,9 +282,10 @@ function unitSignatures(
   tumblingSkillIds: string[],
   composition: Map<string, number>,
   junior: boolean,
+  future: FutureLevel,
 ): string[] {
   // 難度に効く非A難度技だけをキーにする（つなぎ技のA難度技は含めない：Q&A Q22）
-  const tumIds = tumblingSkillIds.filter((id) => skillDifficulty(id, junior) !== "A");
+  const tumIds = tumblingSkillIds.filter((id) => skillDifficulty(id, junior, future) !== "A");
   if (tumIds.length > 0) return [`tum:${tumIds.join(">")}`];
   const base = `hand:${compositionKey(composition)}`;
   const { cheneNoHands, cheneHandsTypes } = buf;
@@ -280,7 +295,7 @@ function unitSignatures(
   return cheneNoHands > 0 ? [base, ...keys] : keys;
 }
 
-function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
+function finalizeUnit(buf: UnitBuffer, junior: boolean, future: FutureLevel): Unit {
   const hasSkill = buf.skills.length > 0;
   const skillThrow = buf.skills.some((s) => s.isThrow);
   const isThrow = buf.throwItems > 0 || skillThrow;
@@ -292,7 +307,7 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   const tumFlags = tumblingFlags(ids);
   const tumblingSkillIds = ids.filter((_id, i) => tumFlags[i]);
   const hasTumbling = tumblingSkillIds.length > 0;
-  const skillMotions = ids.reduce((n, id, i) => n + (tumFlags[i] ? 0 : handMotionsOfSkill(id, junior)), 0);
+  const skillMotions = ids.reduce((n, id, i) => n + (tumFlags[i] ? 0 : handMotionsOfSkill(id, junior, future)), 0);
   const motionCount = buf.motionCount + skillMotions;
   // 徒手として数える技も内訳に含める（タンブリング技として入れても徒手動作として入れても同じ）
   const composition = new Map(buf.composition);
@@ -303,10 +318,10 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   // 縦回転の徒手が3動作分そろえば縦3動作（E難度）
   const verticalThree = buf.verticalThree || buf.verticalCount + skillMotions >= VERTICAL_THREE_COUNT;
 
-  const tumblingDiff = hasTumbling ? calcTumblingDifficulty(tumblingSkillIds, isThrow, junior) : null;
-  const handDiff = isThrow || motionCount > 0 ? calcHandDifficulty(motionCount, verticalThree) : null;
+  const tumblingDiff = hasTumbling ? calcTumblingDifficulty(tumblingSkillIds, isThrow, junior, future) : null;
+  const handDiff = isThrow || motionCount > 0 ? calcHandDifficulty(motionCount, verticalThree, future) : null;
 
-  const signatures = unitSignatures(buf, tumblingSkillIds, composition, junior);
+  const signatures = unitSignatures(buf, tumblingSkillIds, composition, junior, future);
   const neverDuplicate = buf.hasOtherHands;
 
   if (!isThrow) {
@@ -431,8 +446,9 @@ export function unitSplitFlags(items: Item[]): boolean[] {
  * items を左から走査し、catch を区切りに unit へ分類する中核関数。
  * 投げを含まない連続技 → tumbling、投げを含む塊 → throw。
  * junior＝ジュニア適用規則（変更規則1）での難度認定を使う。
+ * future＝十年後モードの上限難度（null で現行規則どおりE止め）。
  */
-export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
+export function analyzeSeries(series: Series, junior = false, future: FutureLevel = null): SeriesAnalysis {
   const units: Unit[] = [];
   let throwCount = 0;
   let buf: UnitBuffer | null = null;
@@ -449,7 +465,7 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
   });
   const flush = () => {
     if (buf && (buf.skills.length || buf.motionCount > 0 || buf.throwItems > 0)) {
-      const u = finalizeUnit(buf, junior);
+      const u = finalizeUnit(buf, junior, future);
       if (u.finalDiff) units.push(u);
       const skillThrows = buf.skills.filter((s) => s.isThrow).length;
       throwCount += buf.throwItems + skillThrows;
@@ -471,7 +487,7 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
       buf.skills.push({ skillId: item.skillId, hasApparatus: !!item.hasApparatus, isThrow: !!item.isThrow });
     } else if (item.kind === "motion") {
       if (!buf) buf = newBuf();
-      const m = motionDef(item.motionId, junior);
+      const m = motionDef(item.motionId, junior, future);
       const times = motionTimes(item.count);
       // 0回の動作は何も数えない（構成にも入れない）
       if (m && times > 0) {

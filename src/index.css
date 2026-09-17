@@ -750,6 +750,8 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* 上限難度のプルダウンを添えても、狭い画面では折り返して label を潰さない */
+  flex-wrap: wrap;
 }
 .switch {
   position: relative;
@@ -789,6 +791,13 @@ input[type="checkbox"] {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-soft);
+  white-space: nowrap;
+}
+/** 切り替えの横に添えるプルダウン（十年後モードの上限難度） */
+.switch-select {
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
 }
 
 .exec-label {

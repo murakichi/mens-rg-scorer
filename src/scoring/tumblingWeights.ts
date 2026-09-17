@@ -10,7 +10,15 @@
 // 値はすべて**実測して決めた**もので、根拠は `app-scoring-spec.md` と work-logs に残す。
 // =====================================================================
 
-import { JUNIOR_SKILL_DIFFICULTY, CATEGORY, DIFF_VALUE, skillDef, skillDifficulty, skillOptions } from "./constants";
+import {
+  ANY_SKILL_FLOW,
+  JUNIOR_SKILL_DIFFICULTY,
+  CATEGORY,
+  DIFF_VALUE,
+  skillDef,
+  skillDifficulty,
+  skillOptions,
+} from "./constants";
 import {
   AFTER_BACK_LAYOUT_SALTOS,
   CHAIN_END_SKILLS,
@@ -22,7 +30,7 @@ import {
   noRollAfter,
 } from "./tumblingChain";
 import type { AutoTumblingPattern } from "./tumblingPatterns";
-import type { ApparatusKey, Difficulty } from "./types";
+import type { ApparatusKey, Difficulty, FutureLevel } from "./types";
 
 /**
  * 投げタンのキャッチのあとに**連続投げ**を続ける確率。現実にあり得る形で、
@@ -167,8 +175,9 @@ export function saltoWeights(
   prevId: string,
   junior = false,
   apparatus?: ApparatusKey,
+  future: FutureLevel = null,
 ): Record<string, number> {
-  const weights = baseSkillWeights(junior, apparatus);
+  const weights = baseSkillWeights(junior, apparatus, future);
   // 難度が上がる例外（後方半ひねり→前方1回ひねり など）は機会が少ない
   (DIFFICULTY_RISE_AFTER[prevId] ?? []).forEach((id) => {
     weights[id] = (weights[id] ?? 1) * DIFFICULTY_RISE_WEIGHT;
@@ -244,7 +253,13 @@ export const SKILL_PICK_WEIGHT: Record<string, number> = {
  * 難度ごとの選ばれやすさ。**単発で高難度な技ほど、演技内での実施回数も頻度も少ない**。
  * 表に無い難度（A〜C）は1（そのまま）。
  */
-export const SALTO_DIFFICULTY_WEIGHT: Partial<Record<Difficulty, number>> = { D: 0.6, E: 0.3 };
+export const SALTO_DIFFICULTY_WEIGHT: Partial<Record<Difficulty, number>> = {
+  D: 0.6,
+  E: 0.3,
+  // 十年後モードのF・G難度。Eからさらに半分ずつ（単発の高難度ほど実施は少ない）
+  F: 0.15,
+  G: 0.08,
+};
 
 /**
  * 手具ごとの、単発で高難度な技の出やすさの倍率（`SALTO_DIFFICULTY_WEIGHT` に掛ける）。
@@ -261,8 +276,8 @@ export const apparatusHighDifficultyWeight = (apparatus?: ApparatusKey): number 
 export const HIGH_DIFFICULTY_MIN: Difficulty = "D";
 
 /** 単発で高難度（D難度以上）な技か */
-export function isHighDifficultySkill(id: string, junior = false): boolean {
-  const d = skillDifficulty(id, junior);
+export function isHighDifficultySkill(id: string, junior = false, future: FutureLevel = null): boolean {
+  const d = skillDifficulty(id, junior, future);
   return !!d && DIFF_VALUE[d] >= DIFF_VALUE[HIGH_DIFFICULTY_MIN];
 }
 
@@ -291,11 +306,15 @@ export function withJuniorBoost(
 }
 
 /** 技の選ばれやすさの土台（高難度の単発・実施が少ない技を下げる） */
-export function baseSkillWeights(junior: boolean, apparatus?: ApparatusKey): Record<string, number> {
+export function baseSkillWeights(
+  junior: boolean,
+  apparatus?: ApparatusKey,
+  future: FutureLevel = null,
+): Record<string, number> {
   const weights = limitedWeights();
   const factor = apparatusHighDifficultyWeight(apparatus);
-  skillOptions(junior).forEach((sk) => {
-    const d = skillDifficulty(sk.id, junior);
+  skillOptions(junior, ANY_SKILL_FLOW, future).forEach((sk) => {
+    const d = skillDifficulty(sk.id, junior, future);
     const w = d ? SALTO_DIFFICULTY_WEIGHT[d] : undefined;
     if (w !== undefined) weights[sk.id] = Math.min(weights[sk.id] ?? 1, w * factor);
   });
@@ -314,8 +333,9 @@ export function connectFinishWeights(
   basicLevel = false,
   junior = false,
   apparatus?: ApparatusKey,
+  future: FutureLevel = null,
 ): Record<string, number> {
-  const weights = baseSkillWeights(junior, apparatus);
+  const weights = baseSkillWeights(junior, apparatus, future);
   if (basicLevel) return weights;
   return { ...weights, ...Object.fromEntries(CONNECT_FINISH_RARE.map((id) => [id, RARE_PICK_WEIGHT])) };
 }

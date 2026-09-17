@@ -61,11 +61,16 @@ import {
   skillDef,
   throwCountRequired,
 } from "./constants";
-import type { ApparatusKey, Series } from "./types";
+import type { ApparatusKey, FutureLevel, Series } from "./types";
 
 export interface GenerateOptions {
   apparatus: ApparatusKey;
   junior?: boolean;
+  /**
+   * 十年後モードの上限難度（"F" / "G"）。採点も自動生成のタンブリングも
+   * F・G難度を前提に組む（null・未指定は現行規則）。
+   */
+  future?: FutureLevel;
   /** Dスコアの下限・上限（未指定＝制限なし） */
   minScore?: number | null;
   maxScore?: number | null;
@@ -290,11 +295,16 @@ export function limitedSkillCounts(series: Series[]): Map<string, number> {
 export const HIGH_DIFFICULTY_WEIGHT = 0.02;
 
 /** 演技全体での、単発で高難度（D難度以上）な技の数 */
-export function highDifficultyCount(series: Series[], junior = false): number {
+export function highDifficultyCount(
+  series: Series[],
+  junior = false,
+  future: FutureLevel = null,
+): number {
   let n = 0;
   series.forEach((ser) =>
     ser.items.forEach((item) => {
-      if (item.kind === "skill" && item.skillId && isHighDifficultySkill(item.skillId, junior)) n += 1;
+      if (item.kind === "skill" && item.skillId && isHighDifficultySkill(item.skillId, junior, future))
+        n += 1;
     }),
   );
   return n;
@@ -311,12 +321,17 @@ export const SHAPE_PRIORITY_WEIGHT = 0.005;
  * 構成全体で、実施されにくい組み方ぶんの順位の合計（`TUMBLING_SHAPE_ORDER`）。
  * 転回系のユニットが1つのシリーズだけを見る（テンプレートの複合シリーズは対象外）。
  */
-export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false): number {
+export function shapeRankTotal(
+  series: Series[],
+  r: ScoreResult,
+  junior = false,
+  future: FutureLevel = null,
+): number {
   let total = 0;
   series.forEach((ser, i) => {
     const units = (r.analysis[i]?.units ?? []).filter((u) => u.type === "tumbling" || u.isThrowTumbling);
     if (units.length !== 1) return;
-    const shape = readTumblingShape(ser, junior);
+    const shape = readTumblingShape(ser, junior, future);
     if (!shape) return;
     total += units[0].isThrowTumbling
       ? throwTumblingShapeRank(shape, units[0].finalDiff)
@@ -344,7 +359,7 @@ export const HARD_THROW_WEIGHT = 0.9;
 export const HARD_THROW_FREE_SCORE = 5.0;
 
 /** その構成で「手以外・手具を使った投げのあとに徒手を2動作以上または転回系」を実施している回数 */
-export function hardThrowCount(series: Series[], junior = false): number {
+export function hardThrowCount(series: Series[], junior = false, future: FutureLevel = null): number {
   let count = 0;
   series.forEach((ser) => {
     let open = false;
@@ -361,7 +376,7 @@ export function hardThrowCount(series: Series[], junior = false): number {
       }
       if (!open) return;
       if (item.kind === "motion") {
-        const def = motionDef(item.motionId, junior);
+        const def = motionDef(item.motionId, junior, future);
         if (def) motions += motionTimes(item.count);
         return;
       }
@@ -438,7 +453,7 @@ export function otherStyleCount(series: Series[]): number {
   return count;
 }
 
-export function verticalThreeThrowCount(series: Series[], junior = false): number {
+export function verticalThreeThrowCount(series: Series[], junior = false, future: FutureLevel = null): number {
   let count = 0;
   series.forEach((ser) => {
     let vertical = 0;
@@ -450,7 +465,7 @@ export function verticalThreeThrowCount(series: Series[], junior = false): numbe
         return;
       }
       if (item.kind === "motion" && open) {
-        const def = motionDef(item.motionId, junior);
+        const def = motionDef(item.motionId, junior, future);
         if (def) vertical += def.vertical * motionTimes(item.count);
         return;
       }
@@ -622,7 +637,7 @@ interface Evaluation {
  * 「必須要素を満たしつつ難度を上げる」方向に進む。
  */
 function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evaluation {
-  const r = computeScore(series, opts.apparatus, { junior: !!opts.junior });
+  const r = computeScore(series, opts.apparatus, { junior: !!opts.junior, future: opts.future ?? null });
   const penalty = rangePenalty(r.dScore, opts.minScore, opts.maxScore);
   // 投げタンの本数制限（既定1本）。超えた分は範囲外と同じ強さで嫌う。
   const maxThrowTum = opts.maxThrowTumbling ?? DEFAULT_MAX_THROW_TUMBLING;
@@ -634,7 +649,7 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   // タンブリングは投げタンを含めて3本までしか評価されない。4本目は入れない
   const overTumbling = Math.max(0, r.nonDupTumblingCount - (opts.maxTumblings ?? DEFAULT_MAX_TUMBLINGS));
   // 単発で高難度（D難度以上）な技は数が少ない。上限は決めず、重みで抑える
-  const highDifficulty = highDifficultyCount(series, !!opts.junior);
+  const highDifficulty = highDifficultyCount(series, !!opts.junior, opts.future ?? null);
   // 実施が少ない技（ハンドスプリング・転宙）は演技内で1回まで。使うこと自体も弱く嫌う
   const limited = limitedSkillCounts(series);
   let limitedUsed = 0;
@@ -649,7 +664,7 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   // 上級者（難度の高い構成）になるほど宙返りの種類が増えるので、この減点は自然に小さくなる
   const tumVariety = r.tumVariety.deduction;
   // 同じ難度なら、より実施される組み方（C→B→B など）を選ぶ
-  const shape = shapeRankTotal(series, r, !!opts.junior) * SHAPE_PRIORITY_WEIGHT;
+  const shape = shapeRankTotal(series, r, !!opts.junior, opts.future ?? null) * SHAPE_PRIORITY_WEIGHT;
   // 連続投げは1回目のほうが難度が高いのが普通（逆の構成も現実にあるので弱く嫌うだけ）
   const throwOrder = reversedThrowOrderCount(r) * THROW_ORDER_WEIGHT;
   // 投げ上げの回数はDスコアに応じた最頻値に寄せる
@@ -658,14 +673,14 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   const extraOperation = extraThrowOperation(r) * EXTRA_THROW_OPERATION_WEIGHT;
   // 前転3回（縦3動作）を手具を使ったキャッチ以外で受ける形は基本実施しない
   const verticalThree =
-    verticalThreeThrowCount(series, !!opts.junior) * VERTICAL_THREE_THROW_WEIGHT;
+    verticalThreeThrowCount(series, !!opts.junior, opts.future ?? null) * VERTICAL_THREE_THROW_WEIGHT;
   // その他の投げ・その他のキャッチは可能な限り使わない
   const otherStyle = otherStyleCount(series) * OTHER_STYLE_WEIGHT;
   // クラブは押さえてキャッチ、ロープは足に絡めたキャッチで演技を締める
   const finishCatch = missesFinishCatch(series, opts.apparatus) ? FINISH_CATCH_WEIGHT : 0;
   // 手以外・手具を使った投げのあとに徒手を多く実施する形は、要求値が5.0を超えるまで嫌う
   const hardThrow = suppressHardThrow(opts)
-    ? hardThrowCount(series, !!opts.junior) * HARD_THROW_WEIGHT
+    ? hardThrowCount(series, !!opts.junior, opts.future ?? null) * HARD_THROW_WEIGHT
     : 0;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
@@ -762,6 +777,8 @@ function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () => numb
     pool.push(
       ...autoTumblingTemplates(opts.apparatus, {
         junior: !!opts.junior,
+        // 十年後モードではF・G難度の技もタンブリングの候補にする
+        future: opts.future ?? null,
         // 低いDスコアを狙うなら、基本的な構成の選手とみなして候補を寄せる
         basicLevel: opts.maxScore != null && opts.maxScore < BASIC_LEVEL_MAX_SCORE,
         // 後ろ向きで終わる後方宙返りで終わる確率は狙うDスコアで決まる
@@ -824,8 +841,10 @@ function tuneAutoSeries(
 }
 
 /** 転回系（宙返り・投げタン）を含むシリーズか。並べ替えの区分に使う。 */
-function isTumblingSeries(series: Series, junior: boolean): boolean {
-  return analyzeSeries(series, junior).units.some((u) => u.type === "tumbling" || u.isThrowTumbling);
+function isTumblingSeries(series: Series, junior: boolean, future: FutureLevel = null): boolean {
+  return analyzeSeries(series, junior, future).units.some(
+    (u) => u.type === "tumbling" || u.isThrowTumbling,
+  );
 }
 
 /** 多いほうの並びに、少ないほうを均等に挟み込む */
@@ -855,8 +874,9 @@ function orderSeries(
   opts: GenerateOptions,
 ): { used: SeriesTemplate[]; ev: Evaluation } {
   const junior = !!opts.junior;
-  const tumbling = used.filter((t) => isTumblingSeries(t.series, junior));
-  const throws = used.filter((t) => !isTumblingSeries(t.series, junior));
+  const future = opts.future ?? null;
+  const tumbling = used.filter((t) => isTumblingSeries(t.series, junior, future));
+  const throws = used.filter((t) => !isTumblingSeries(t.series, junior, future));
   let ordered = used;
   if (tumbling.length > 0 && throws.length > 0)
     ordered =
@@ -940,7 +960,7 @@ function upgradeTumblings(
   opts: GenerateOptions,
 ): { used: SeriesTemplate[]; ev: Evaluation } {
   const junior = !!opts.junior;
-  const tumblings = pool.filter((t) => isTumblingSeries(t.series, junior));
+  const tumblings = pool.filter((t) => isTumblingSeries(t.series, junior, opts.future ?? null));
   if (tumblings.length === 0) return best;
   const swapped = swapIn(best.used, best.ev, tumblings, opts, TUMBLING_UPGRADE_ROUNDS);
   if (swapped.ev.value <= best.ev.value + 1e-9) return best;

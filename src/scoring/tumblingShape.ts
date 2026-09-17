@@ -7,7 +7,7 @@
 
 import { skillDef, skillDifficulty } from "./constants";
 import { THROW_FINISH_SALTOS, THROW_ROLL_MOTION } from "./tumblingChain";
-import type { Difficulty, Series } from "./types";
+import type { Difficulty, FutureLevel, Series } from "./types";
 
 /**
  * タンブリングで同じ難度に到達する組み方の並び（前が実施が多い。同じ配列内は同順位）。
@@ -36,7 +36,11 @@ export interface TumblingShape {
 }
 
 /** シリーズの組み方を読み取る（宙返りが無ければ null） */
-export function readTumblingShape(series: Series, junior = false): TumblingShape | null {
+export function readTumblingShape(
+  series: Series,
+  junior = false,
+  future: FutureLevel = null,
+): TumblingShape | null {
   const seq: Difficulty[] = [];
   let throwInSkill = false;
   let hasConnect = false;
@@ -44,7 +48,7 @@ export function readTumblingShape(series: Series, junior = false): TumblingShape
   let rollFinish = false;
   series.items.forEach((item) => {
     if (item.kind === "skill" && item.skillId) {
-      const d = skillDifficulty(item.skillId, junior);
+      const d = skillDifficulty(item.skillId, junior, future);
       if (item.isThrow) throwInSkill = true;
       if (d === "A") {
         // 宙返りの間に入ったA難度＝つなぎ技（入りの技は宙返りの前なので数えない）

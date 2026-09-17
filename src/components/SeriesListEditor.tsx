@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 import { SeriesCard } from "./SeriesCard";
 import { needsRoundoffBefore, roundoffItem } from "../scoring/analysis";
 import { computeScore } from "../scoring/score";
-import type { ApparatusKey, Item, Series } from "../scoring/types";
+import type { ApparatusKey, FutureLevel, Item, Series } from "../scoring/types";
 
 export const emptySeries = (): Series => ({
   executionDeduction: 0,
@@ -36,6 +36,8 @@ interface Props {
   series: Series[];
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 十年後モードの上限難度（null＝OFF）。技の選択肢と難度表示に反映する。 */
+  future?: FutureLevel;
   onChange: (next: Series[]) => void;
   /** 採点結果。省略時はこのコンポーネント内で計算する（テンプレート編集用） */
   result?: ReturnType<typeof computeScore>;
@@ -61,6 +63,7 @@ export function SeriesListEditor({
   series,
   apparatus,
   junior,
+  future = null,
   onChange,
   result,
   templateOptions,
@@ -71,7 +74,7 @@ export function SeriesListEditor({
   showExec = true,
   common = false,
 }: Props) {
-  const score = result ?? computeScore(series, apparatus, { junior });
+  const score = result ?? computeScore(series, apparatus, { junior, future });
 
   const edit = (fn: (draft: Series[]) => void) => {
     const n = structuredClone(series);
@@ -121,6 +124,7 @@ export function SeriesListEditor({
           sIdx={sIdx}
           apparatus={apparatus}
           junior={junior}
+          future={future}
           analysis={score.analysis[sIdx]}
           unitAdopted={score.unitAdopted[sIdx]}
           breakdown={score.seriesBreakdowns[sIdx]}

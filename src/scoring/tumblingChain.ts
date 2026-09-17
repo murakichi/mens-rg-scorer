@@ -31,7 +31,7 @@
 import {
   CATEGORY,
   DIFF_VALUE,
-  MAX_DIFF,
+  maxDiff,
   ROUNDOFF_SKILL_ID,
   isBackwardSalto,
   leadsBackward,
@@ -43,7 +43,7 @@ import {
 import { needsRoundoffBefore, prevSkillId } from "./analysis";
 import { NO_VIEW_TAG } from "./autoThrows";
 import { DEFAULT_CONNECT_AT, type AutoTumblingPattern } from "./tumblingPatterns";
-import type { Series } from "./types";
+import type { FutureLevel, Series } from "./types";
 
 /** 投げ受けの着地でつなぐ徒手動作（前転） */
 export const THROW_ROLL_MOTION = "fwd_roll";
@@ -200,21 +200,25 @@ export const TUMBLING_CONNECTS: { id: string; next: string }[] = [
   // 側転は徒手扱いなので、宙返りの間に挟んでもつなぎ技にはならない
 ];
 
-export const difficultyValue = (id: string, junior: boolean): number => {
-  const d = skillDifficulty(id, junior);
+export const difficultyValue = (id: string, junior: boolean, future: FutureLevel = null): number => {
+  const d = skillDifficulty(id, junior, future);
   return d ? DIFF_VALUE[d] : 0;
 };
 
 /** 連続に使う宙返り（きりもみ系は宙返りの連続の中でだけ宙返りになるので使わない） */
-function saltoList(junior: boolean, prevId?: string): { id: string; category: string }[] {
-  return skillOptions(junior, skillFlowAfter(prevId))
+function saltoList(
+  junior: boolean,
+  prevId?: string,
+  future: FutureLevel = null,
+): { id: string; category: string }[] {
+  return skillOptions(junior, skillFlowAfter(prevId), future)
     .filter((s) => s.isSalto && !s.saltoOnlyInChain)
     .map((s) => ({ id: s.id, category: s.category }));
 }
 
 /** 連続の1本目に実施できる宙返り */
-export function firstSaltoOptions(junior = false): string[] {
-  return saltoList(junior).map((s) => s.id);
+export function firstSaltoOptions(junior = false, future: FutureLevel = null): string[] {
+  return saltoList(junior, undefined, future).map((s) => s.id);
 }
 
 /**
@@ -223,10 +227,10 @@ export function firstSaltoOptions(junior = false): string[] {
  *  - 難度は直前以下（テンポの後だけ制限なし）
  *  - テンポ以外の後方系のあとは続けない（後方系の連続は実際には少ない）
  */
-export function nextSaltoOptions(prevId: string, junior = false): string[] {
+export function nextSaltoOptions(prevId: string, junior = false, future: FutureLevel = null): string[] {
   // 首から背中にかけて着地する技（とび前転・きりもみ）の後には続けられない
   if (endsChain(prevId)) return [];
-  const offered = new Set(skillOptions(junior, skillFlowAfter(prevId)).map((s) => s.id));
+  const offered = new Set(skillOptions(junior, skillFlowAfter(prevId), future).map((s) => s.id));
   // 後方伸身宙返り（ひねりを含む）の後は 前宙・きりもみ・きりもみ転回
   if (isBackLayoutSalto(prevId))
     return AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id).filter((id) => offered.has(id));
@@ -235,12 +239,12 @@ export function nextSaltoOptions(prevId: string, junior = false): string[] {
   // 前方の半ひねりのように**前方系から後ろ向きに降りた**後に後方系へ入るのは普通に実施する
   // （例：ロンダート→後方1回半ひねり→前宙半ひねり→ダイビング前宙）。
   if (backward && !isTempoSalto(prevId) && isBackwardSalto(prevId)) return [];
-  const ceiling = isTempoSalto(prevId) ? MAX_DIFF : difficultyValue(prevId, junior);
+  const ceiling = isTempoSalto(prevId) ? maxDiff(future) : difficultyValue(prevId, junior, future);
   // 難度が上がってよい例外（後方宙返り半ひねり→前方宙返り1回ひねり など）
   const rise = DIFFICULTY_RISE_AFTER[prevId] ?? [];
-  return saltoList(junior, prevId)
+  return saltoList(junior, prevId, future)
     .filter((s) => (backward ? isBackwardSalto(s.id) : !isBackwardSalto(s.id)))
-    .filter((s) => difficultyValue(s.id, junior) <= ceiling || rise.includes(s.id))
+    .filter((s) => difficultyValue(s.id, junior, future) <= ceiling || rise.includes(s.id))
     .map((s) => s.id);
 }
 
@@ -250,18 +254,22 @@ export function nextSaltoOptions(prevId: string, junior = false): string[] {
  *  - テンポの後：バク転
  *  - それ以外（後ろ向きに降りる宙返りの後）は無し
  */
-export function connectOptionsAfter(prevId: string, junior = false): string[] {
+export function connectOptionsAfter(prevId: string, junior = false, future: FutureLevel = null): string[] {
   if (endsChain(prevId)) return [];
-  const offered = new Set(skillOptions(junior, skillFlowAfter(prevId)).map((s) => s.id));
+  const offered = new Set(skillOptions(junior, skillFlowAfter(prevId), future).map((s) => s.id));
   if (isTempoSalto(prevId)) return ["a_flicflac"].filter((id) => offered.has(id));
   if (leadsBackward(prevId)) return [];
   return TUMBLING_CONNECTS.map((c) => c.id).filter((id) => offered.has(id) && id !== "a_flicflac");
 }
 
 /** つなぎ技のあとに実施できる宙返り（つなぎで勢いを作り直すので難度の制限はしない） */
-export function saltoOptionsAfterConnect(connectId: string, junior = false): string[] {
+export function saltoOptionsAfterConnect(
+  connectId: string,
+  junior = false,
+  future: FutureLevel = null,
+): string[] {
   const next = TUMBLING_CONNECTS.find((c) => c.id === connectId)?.next;
-  return saltoList(junior, connectId)
+  return saltoList(junior, connectId, future)
     .filter((s) => (next === CATEGORY.SIDE ? s.category !== CATEGORY.BACKWARD : s.category === next))
     .map((s) => s.id);
 }
@@ -273,14 +281,14 @@ export function saltoOptionsAfterConnect(connectId: string, junior = false): str
  *    ロンダート・バク転の直後は後方系だけ、ジュニアは2回宙返り系なし）
  *  - 後方系はロンダートを補わずに実施できる位置にあること（`needsRoundoffBefore`）
  */
-export function tumblingFlowErrors(series: Series, junior = false): string[] {
+export function tumblingFlowErrors(series: Series, junior = false, future: FutureLevel = null): string[] {
   const errors: string[] = [];
   series.items.forEach((item, i) => {
     if (item.kind !== "skill" || !item.skillId) return;
     const name = skillDef(item.skillId)?.name ?? item.skillId;
     if (needsRoundoffBefore(series.items, i)) errors.push(`${i + 1}番目の${name}：手前にロンダートが必要`);
     const prev = prevSkillId(series.items, i);
-    if (!skillOptions(junior, skillFlowAfter(prev)).some((s) => s.id === item.skillId)) {
+    if (!skillOptions(junior, skillFlowAfter(prev), future).some((s) => s.id === item.skillId)) {
       const prevName = prev ? skillDef(prev)?.name ?? prev : "先頭";
       errors.push(`${i + 1}番目の${name}：${prevName}の位置では選べない技`);
     }
