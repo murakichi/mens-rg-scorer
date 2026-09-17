@@ -331,6 +331,40 @@ export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false)
  * どうしても必要なとき（範囲外のペナルティは×100）だけ入るようにする。
  */
 /**
+ * **演技の締め方**。手具によって「最後の投げ受けをこう受けて、そのまま演技を終える」形が決まっている。
+ *  - クラブ：もう一方の手具で**押さえてキャッチ**
+ *  - ロープ：**足に絡めたキャッチ**（手以外のキャッチ）
+ * スティック・リングには決まった締め方が無いので指定しない。
+ */
+export const FINISH_CATCH_TAG: Partial<Record<ApparatusKey, string>> = {
+  clubs: USE_APPARATUS_TAG,
+  rope: NON_HAND_TAG,
+};
+
+/**
+ * 締めの受け方で終わらない構成を嫌う重み。並べ替え（`finishCatchLast`）だけでは
+ * 「締めの形になるシリーズが1本も無い」ときに何もできないので、そのときに1本入れさせるための重み。
+ * 難度の刻み（0.1）より小さくしてあるので、**難度を捨ててまで締めの形にはしない**。
+ * 実測（20構成ずつ）：並べ替えだけでクラブ19/20・ロープ18/20、この重みでクラブ20/20・ロープ19/20
+ * （Dスコア平均は 4.32／4.13 のまま変わらない）。
+ */
+export const FINISH_CATCH_WEIGHT = 0.05;
+
+/** そのシリーズが手具の締めの受け方で終わっているか */
+export function endsWithFinishCatch(series: Series, apparatus: ApparatusKey): boolean {
+  const tag = FINISH_CATCH_TAG[apparatus];
+  if (!tag) return false;
+  const last = series.items[series.items.length - 1];
+  return last?.kind === "catch" && (last.catchTypes || []).includes(tag);
+}
+
+/** 構成が手具の締めの受け方で終わっていないか（締め方の無い手具では常に false） */
+export function missesFinishCatch(series: Series[], apparatus: ApparatusKey): boolean {
+  if (!FINISH_CATCH_TAG[apparatus] || series.length === 0) return false;
+  return !endsWithFinishCatch(series[series.length - 1], apparatus);
+}
+
+/**
  * その他の投げ・その他のキャッチは自動生成では**可能な限り使わない**。
  * 技術加点（`TECHNIQUE_BONUS`＝0.1）より強い重みで嫌うので、加点のためだけには実施せず、
  * 多様な投げ受け（必須要素＝`REQUIRED_ELEMENT_WEIGHT`）を満たすのにどうしても必要なときだけ入る。
@@ -563,6 +597,8 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
     verticalThreeThrowCount(series, !!opts.junior) * VERTICAL_THREE_THROW_WEIGHT;
   // その他の投げ・その他のキャッチは可能な限り使わない
   const otherStyle = otherStyleCount(series) * OTHER_STYLE_WEIGHT;
+  // クラブは押さえてキャッチ、ロープは足に絡めたキャッチで演技を締める
+  const finishCatch = missesFinishCatch(series, opts.apparatus) ? FINISH_CATCH_WEIGHT : 0;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
@@ -582,6 +618,7 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       extraOperation -
       verticalThree -
       otherStyle -
+      finishCatch -
       auto -
       limitedUsed * LIMITED_SKILL_WEIGHT -
       (highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT)) /
@@ -762,24 +799,22 @@ function orderSeries(
   if (tumbling.length > 0 && throws.length > 0)
     ordered =
       tumbling.length >= throws.length ? interleave(tumbling, throws) : interleave(throws, tumbling);
-  ordered = nonHandLast(ordered, opts.apparatus);
+  ordered = finishCatchLast(ordered, opts.apparatus);
   if (ordered === used) return { used, ev: cur };
   const ev = evaluateUsed(ordered, opts);
   return ev.value >= cur.value - 1e-9 ? { used: ordered, ev } : { used, ev: cur };
 }
 
 /**
- * ロープは**足に絡めた手以外のキャッチで演技を締める**ことがとても多いので、
- * その投げ受けで終わるシリーズを最後に置く（並びで点数は変わらない）。
+ * クラブは**もう一方の手具で押さえたキャッチ**、ロープは**足に絡めたキャッチ**で
+ * 演技を締めることがとても多いので（`FINISH_CATCH_TAG`）、その受けで終わるシリーズを
+ * 最後に置く（並びで点数は変わらないが、`FINISH_CATCH_WEIGHT` ぶん評価が上がる）。
  */
-function nonHandLast(list: SeriesTemplate[], apparatus: ApparatusKey): SeriesTemplate[] {
-  if (apparatus !== "rope" || list.length < 2) return list;
-  const endsWithNonHand = (t: SeriesTemplate) => {
-    const last = t.series.items[t.series.items.length - 1];
-    return last?.kind === "catch" && (last.catchTypes || []).includes(NON_HAND_TAG);
-  };
-  const idx = list.findIndex(endsWithNonHand);
-  if (idx < 0 || endsWithNonHand(list[list.length - 1])) return list;
+function finishCatchLast(list: SeriesTemplate[], apparatus: ApparatusKey): SeriesTemplate[] {
+  if (!FINISH_CATCH_TAG[apparatus] || list.length < 2) return list;
+  const ends = (t: SeriesTemplate) => endsWithFinishCatch(t.series, apparatus);
+  const idx = list.findIndex(ends);
+  if (idx < 0 || ends(list[list.length - 1])) return list;
   return [...list.filter((_, i) => i !== idx), list[idx]];
 }
 
