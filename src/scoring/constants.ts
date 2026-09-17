@@ -61,10 +61,13 @@ export const APPARATUS_COUNT: Record<ApparatusKey, number> = {
   rope: 1,
 };
 
+/** 二つ投げ（両方の手具を同時に投げる）の必須投げのid */
+export const TWO_THROW_TAG = "twothrow";
+
 export const REQUIRED_THROW_OPTIONS: Record<ApparatusKey, { id: string; name: string }[]> = {
   stick: [{ id: "lefthand", name: "左手投げ" }],
-  clubs: [{ id: "twothrow", name: "二つ投げ" }],
-  ring: [{ id: "twothrow", name: "二つ投げ" }],
+  clubs: [{ id: TWO_THROW_TAG, name: "二つ投げ" }],
+  ring: [{ id: TWO_THROW_TAG, name: "二つ投げ" }],
   rope: [],
 };
 
@@ -76,7 +79,7 @@ export const requiredThrowName = (id: string): string =>
 
 /** 二つ投げが必須投げの手具（リング・クラブ）か。二つ投げ関連の表示条件に使う。 */
 export function hasTwoThrow(apparatus: ApparatusKey): boolean {
-  return REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === "twothrow");
+  return REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === TWO_THROW_TAG);
 }
 
 export const DIFF_VALUE: Record<Difficulty, number> = { A: 1, B: 2, C: 3, D: 4, E: 5 };

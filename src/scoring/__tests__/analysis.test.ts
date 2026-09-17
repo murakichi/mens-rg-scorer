@@ -14,6 +14,7 @@ import {
   apparatusBlockers,
   stripForApparatus,
   handsEmptyFlags,
+  catchTwoFlags,
 } from "../analysis";
 import { ropeJumpDef, MOTION_OPTIONS, SKILL_LIST, legacyMotionDef, motionOptionsFor } from "../constants";
 import type { Series, Item } from "../types";
@@ -605,6 +606,25 @@ describe("その手具では入力できない内容", () => {
       { kind: "catch" },
     ];
     expect(handsEmptyFlags(inSkill, "stick")).toEqual([false, true, false]);
+  });
+
+  it("2つ同時キャッチは2つとも空中にあるときだけ入力できる", () => {
+    // 二つ投げなら2つとも空中にあるので、そのキャッチで入力できる
+    const two: Item[] = [
+      { kind: "throw", reqTypes: ["twothrow"] },
+      { kind: "motion", motionId: "chene", count: 1 },
+      { kind: "catch" },
+    ];
+    expect(catchTwoFlags(two, "clubs")).toEqual([false, false, true]);
+    // 片方だけ投げたときは、もう片方が手元にあるので同時には受けられない
+    const one: Item[] = [{ kind: "throw" }, { kind: "catch" }];
+    expect(catchTwoFlags(one, "clubs")).toEqual([false, false]);
+    // 続けて2つ投げた場合も2つとも空中（1本目のキャッチで入力できる）
+    const twice: Item[] = [{ kind: "throw" }, { kind: "throw" }, { kind: "catch" }, { kind: "catch" }];
+    expect(catchTwoFlags(twice, "clubs")).toEqual([false, false, true, false]);
+    // 手具が1つの種目には同時キャッチが無い
+    expect(catchTwoFlags(two, "stick")).toEqual([false, false, false]);
+    expect(catchTwoFlags([{ kind: "throw" }, { kind: "catch" }], "rope")).toEqual([false, false]);
   });
 
   it("投げている間の手具操作は落とす", () => {

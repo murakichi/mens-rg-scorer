@@ -476,6 +476,12 @@ button {
   color: var(--accent);
   font-weight: 600;
 }
+/* 同時に実施できない組み合わせ（二つ投げ × 手具を使った投げ）で選べない側 */
+.check.is-disabled,
+.check-req.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 input[type="checkbox"] {
   accent-color: var(--accent);
   width: 15px;
