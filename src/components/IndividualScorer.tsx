@@ -4,6 +4,7 @@ import {
   APPARATUS,
   APPARATUS_REQUIRED_ELEMENTS,
   ART_DEDUCTION_ITEMS,
+  TUM_VARIETY_ITEM_ID,
   ART_DEDUCTION_STEP,
   VIOLATION_OPTIONS,
   clampArtDeduction,
@@ -525,8 +526,33 @@ export function IndividualScorer({ initialData }: Props = {}) {
                   {item.name}
                   <span className="art-row-note">
                     上限 {item.max.toFixed(2)}／減点幅 {item.note}
+                    {item.id === TUM_VARIETY_ITEM_ID && (
+                      <>
+                        {" "}
+                        ／宙返り{result.tumVariety.total}個・{result.tumVariety.distinct}種類
+                      </>
+                    )}
                   </span>
                 </span>
+                {item.id === TUM_VARIETY_ITEM_ID && (
+                  <button
+                    type="button"
+                    className="io-btn art-auto-btn"
+                    title="実施した宙返りの種類から自動計算します（全部違う技なら減点なし）"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const v = result.tumVariety.deduction;
+                      setArtDeductions((p) => {
+                        const n = { ...p };
+                        if (v > 0) n[item.id] = v;
+                        else delete n[item.id];
+                        return n;
+                      });
+                    }}
+                  >
+                    自動計算
+                  </button>
+                )}
                 <select
                   className="select art-select"
                   value={value}

@@ -22,6 +22,9 @@ import {
   leadsBackward,
   ROUNDOFF_SKILL_ID,
   TWO_THROW_TAG,
+  artDeductionItem,
+  TUM_VARIETY_ITEM_ID,
+  TUM_VARIETY_DEDUCTION_STEP,
 } from "./constants";
 import type {
   ApparatusKey,
@@ -699,6 +702,40 @@ export function checkApparatusFlow(series: Series, apparatusKey: keyof typeof AP
 }
 
 /** 重複シリーズ判定用の正規化シグネチャ */
+/**
+ * **転回系の種類・組み合わせの多様性**（§3.5.6.4 の欠点テーブル）の自動判定。
+ * A難度の転回技（ロンダート・バク転・側転など）は数えず、**宙返り（B難度以上の転回技）**だけを数える。
+ * 全部違う技なら減点なし、同じ技を繰り返したぶん（`repeats`＝実施数−種類数）だけ減点する。
+ * ひねり・姿勢が違えば別の技（`skillId` が違う）として数える。
+ */
+export interface TumblingVariety {
+  /** 実施した宙返り（A難度を除く転回技）の数 */
+  total: number;
+  /** そのうち何種類か */
+  distinct: number;
+  /** 種類が減っているぶん（＝ total − distinct） */
+  repeats: number;
+  /** 自動計算した減点（`TUM_VARIETY_DEDUCTION_STEP` × repeats、項目の上限で丸め） */
+  deduction: number;
+}
+
+export function tumblingVariety(list: Series[], junior = false): TumblingVariety {
+  const ids: string[] = [];
+  list.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind !== "skill" || !item.skillId) return;
+      if (skillDifficulty(item.skillId, junior) === "A") return;
+      ids.push(item.skillId);
+    }),
+  );
+  const total = ids.length;
+  const distinct = new Set(ids).size;
+  const repeats = Math.max(0, total - distinct);
+  const max = artDeductionItem(TUM_VARIETY_ITEM_ID)?.max ?? 0;
+  const deduction = Math.min(max, Math.round(repeats * TUM_VARIETY_DEDUCTION_STEP * 10) / 10);
+  return { total, distinct, repeats, deduction };
+}
+
 export function seriesSignature(series: Series): string {
   return JSON.stringify(
     series.items.map((item) => {

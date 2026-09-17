@@ -644,6 +644,9 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
   });
   // 同じ宙返りの繰り返しは弱く嫌う（同点のときに多様な構成が選ばれる程度）
   const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
+  // 転回系の多様性の減点（§3.5.6.4）は手入力の項目だが、自動計算した値を評価では負う。
+  // 上級者（難度の高い構成）になるほど宙返りの種類が増えるので、この減点は自然に小さくなる
+  const tumVariety = r.tumVariety.deduction;
   // 同じ難度なら、より実施される組み方（C→B→B など）を選ぶ
   const shape = shapeRankTotal(series, r, !!opts.junior) * SHAPE_PRIORITY_WEIGHT;
   // 連続投げは1回目のほうが難度が高いのが普通（逆の構成も現実にあるので弱く嫌うだけ）
@@ -677,6 +680,7 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       r.tumblingScore * TUMBLING_PREFERENCE_WEIGHT +
       r.aScore -
       variety -
+      tumVariety -
       shape -
       throwOrder -
       throwCount -

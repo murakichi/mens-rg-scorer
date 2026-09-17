@@ -15,6 +15,7 @@ import {
   stripForApparatus,
   handsEmptyFlags,
   catchTwoFlags,
+  tumblingVariety,
 } from "../analysis";
 import { ropeJumpDef, MOTION_OPTIONS, SKILL_LIST, legacyMotionDef, motionOptionsFor } from "../constants";
 import type { Series, Item } from "../types";
@@ -606,6 +607,38 @@ describe("その手具では入力できない内容", () => {
       { kind: "catch" },
     ];
     expect(handsEmptyFlags(inSkill, "stick")).toEqual([false, true, false]);
+  });
+
+  it("転回系の多様性は宙返りの種類数から自動計算する", () => {
+    const sk = (id: string): Item => ({ kind: "skill", skillId: id, hasApparatus: true, isThrow: false });
+    const S2 = (...items: Item[]): Series => ({ executionDeduction: 0, items });
+    // A難度の転回技（ロンダート・バク転・側転）は数えない
+    const onlyA = tumblingVariety([S2(sk("a_roundoff"), sk("a_flicflac"), sk("a_cartwheel"))]);
+    expect(onlyA).toEqual({ total: 0, distinct: 0, repeats: 0, deduction: 0 });
+    // 全部違う技なら減点なし
+    const varied = tumblingVariety([
+      S2(sk("a_roundoff"), sk("c_back15"), sk("b_front")),
+      S2(sk("a_roundoff"), sk("b_backlayout"), sk("b_sidesalto")),
+    ]);
+    expect(varied.total).toBe(4);
+    expect(varied.distinct).toBe(4);
+    expect(varied.deduction).toBe(0);
+    // 同じ技を繰り返したぶんだけ減点する（1つにつき0.1）
+    const repeated = tumblingVariety([S2(sk("a_roundoff"), sk("b_front"), sk("b_front"), sk("b_front"))]);
+    expect(repeated).toEqual({ total: 3, distinct: 1, repeats: 2, deduction: 0.2 });
+    // 上限（項目の0.50）で止まる
+    const many = tumblingVariety([S2(...Array.from({ length: 9 }, () => sk("b_front")))]);
+    expect(many.repeats).toBe(8);
+    expect(many.deduction).toBe(0.5);
+    // ひねり・姿勢が違えば別の技として数える
+    const twists = tumblingVariety([S2(sk("b_backsalto"), sk("b_backlayout"), sk("b_backhalf"))]);
+    expect(twists.distinct).toBe(3);
+    expect(twists.deduction).toBe(0);
+    // 徒手動作として入れた転回技は数えない（転回系ではない）
+    const asMotion = tumblingVariety([
+      S2(sk("b_front"), { kind: "motion", motionId: "b_kirimomi", count: 1 }),
+    ]);
+    expect(asMotion.total).toBe(1);
   });
 
   it("2つ同時キャッチは2つとも空中にあるときだけ入力できる", () => {

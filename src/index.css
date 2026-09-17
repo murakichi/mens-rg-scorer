@@ -1462,6 +1462,13 @@ input[type="checkbox"] {
   border-color: var(--accent);
   box-shadow: var(--ring);
 }
+/* 欠点テーブルの自動計算ボタン（転回系の多様性） */
+.art-auto-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* 自動生成の割合（ランダム生成ダイアログ） */
 .gen-ratio {
   display: flex;
