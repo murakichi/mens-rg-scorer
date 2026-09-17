@@ -276,8 +276,9 @@ describe("実施が少ない技（ハンドスプリング・転宙）", () => {
   });
 
   it("同じ点数なら使わない構成を選ぶ", () => {
-    // 前宙2連続（D 0.3）と 転宙→前宙（同じくD 0.3）なら、転宙を使わないほうを採る
-    const plain = tpl("前宙2連続", "common", S(skill("b_front"), skill("b_front")));
+    // 前宙→側宙（D 0.3）と 転宙→前宙（同じくD 0.3）なら、転宙を使わないほうを採る
+    // （どちらも別の技の組み合わせなので、転回系の多様性の減点は両方0）
+    const plain = tpl("前宙側宙", "common", S(skill("b_front"), skill("b_sidesalto")));
     const limited = tpl("転宙入り", "common", S(skill("b_tenchu"), skill("b_front")));
     [3, 7, 11].forEach((seed) => {
       const r = generateRoutine([plain, limited], {
@@ -286,7 +287,7 @@ describe("実施が少ない技（ハンドスプリング・転宙）", () => {
         ...noAuto,
         random: seeded(seed),
       })!;
-      expect(r.used.map((t) => t.name)).toEqual(["前宙2連続"]);
+      expect(r.used.map((t) => t.name)).toEqual(["前宙側宙"]);
     });
   });
 });
@@ -647,6 +648,53 @@ describe("手以外の投げ・手具を使った投げのあと", () => {
     expect(hard(null) / 5).toBeLessThan(0.5);
     // 5.0を超える要求では点数を稼ぐために実施する
     expect(hard(HARD_THROW_FREE_SCORE + 0.1)).toBeGreaterThan(hard(null));
+  }, 180_000);
+});
+
+describe("転回系の多様性の減点（自動計算）", () => {
+  it("A減点には自動では入れない（手動入力の値だけを見る）", () => {
+    const repeated = [
+      S(skill("a_roundoff"), skill("b_front"), skill("b_front"), skill("b_front")),
+    ];
+    const r = computeScore(repeated, "stick");
+    // 自動計算の結果は返すが、A減点には入っていない
+    expect(r.tumVariety.deduction).toBeGreaterThan(0);
+    expect(r.artDeduction).toBe(0);
+    // 入力すればA減点に入る
+    const withInput = computeScore(repeated, "stick", {
+      artDeductions: { tumVariety: r.tumVariety.deduction },
+    });
+    expect(withInput.artDeduction).toBe(r.tumVariety.deduction);
+  });
+
+  it("上級者の構成ほど宙返りの種類が増えて減点が小さくなる", () => {
+    const run = (maxScore: number | null) => {
+      const ded: number[] = [];
+      const totals: number[] = [];
+      for (let seed = 1; seed <= 8; seed++) {
+        const r = generateRoutine(pool(), {
+          apparatus: "stick",
+          maxScore,
+          autoTumblingSkills: [],
+          random: seeded(seed * 13 + 5),
+        });
+        if (!r) continue;
+        const sc = computeScore(r.series, "stick");
+        ded.push(sc.tumVariety.deduction);
+        totals.push(sc.tumVariety.total);
+      }
+      const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+      return { deduction: avg(ded), total: avg(totals), n: ded.length };
+    };
+    const mid = run(3.5);
+    const top = run(null);
+    expect(mid.n).toBeGreaterThan(0);
+    // 上限なし（難度を狙いきる構成）は宙返りが6〜10個入り、種類が増えるので減点が小さい
+    expect(top.total).toBeGreaterThanOrEqual(6);
+    expect(top.total).toBeLessThanOrEqual(10);
+    expect(top.deduction).toBeLessThanOrEqual(mid.deduction);
+    // どのレベルでも上限（0.5）に張り付くことはない
+    expect(top.deduction).toBeLessThan(0.3);
   }, 180_000);
 });
 

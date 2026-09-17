@@ -204,6 +204,16 @@ export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
   { id: "volume", group: "その他の技術的価値", name: "運動量", max: 0.5, note: "0.1 / 0.2" },
 ];
 
+/**
+ * 「転回系の種類・組み合わせの多様性」（§3.5.6.4）の自動計算。
+ * 上級者が必須要素をすべて満たす構成では、ロンダート等のA難度を含めて9〜11個の転回が入り、
+ * A難度を除くと**6〜8個の宙返り**になる。それが**全部違う技なら減点なし**で、
+ * 同じ技を繰り返したぶん（＝種類が減ったぶん）1つにつき `TUM_VARIETY_DEDUCTION_STEP` を引く。
+ * 上限は欠点テーブルの項目の上限（0.50）。
+ */
+export const TUM_VARIETY_ITEM_ID = "tumVariety";
+export const TUM_VARIETY_DEDUCTION_STEP = 0.1;
+
 export function artDeductionItem(id: string): ArtDeductionItem | undefined {
   return ART_DEDUCTION_ITEMS.find((x) => x.id === id);
 }

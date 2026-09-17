@@ -52,6 +52,8 @@ import {
   hasConnect,
   hasConnectWithoutApparatus,
   stripForApparatus,
+  tumblingVariety,
+  type TumblingVariety,
 } from "./analysis";
 import type { ApparatusKey, Difficulty, Series, SeriesAnalysis, Unit } from "./types";
 
@@ -127,6 +129,11 @@ export interface ScoreResult {
   artDeduction: number;
   /** 欠点テーブルの内訳（入力があった項目だけでなく全項目を返す） */
   artRows: { id: string; name: string; group: string; max: number; note: string; value: number }[];
+  /**
+   * 「転回系の種類・組み合わせの多様性」の**自動計算**（`tumblingVariety`）。
+   * A減点には自動では入れない（手動入力の欄に入れる値として画面に出す）。
+   */
+  tumVariety: TumblingVariety;
   noApparatusDeduction: number;
   connectNoApparatus: boolean;
   missingDirCount: number;
@@ -681,6 +688,8 @@ export function computeScore(
     value: clampArtDeduction(item.id, artDeductions[item.id]),
   }));
   const artDeduction = artRows.reduce((s, r) => s + r.value, 0);
+  // 転回系の多様性は自動で計算して返すだけ（A減点に入れるかは入力しだい）
+  const tumVariety = tumblingVariety(series, junior);
 
   const aDeduction =
     artDeduction +
@@ -719,6 +728,7 @@ export function computeScore(
     violationDeduction,
     artDeduction,
     artRows,
+    tumVariety,
     noApparatusDeduction,
     connectNoApparatus,
     missingDirCount,
