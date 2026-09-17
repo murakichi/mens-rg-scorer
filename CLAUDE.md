@@ -20,6 +20,21 @@ Two rule documents live at the repo root — keep both and `src/scoring/constant
 
 The scoring logic is covered by vitest suites in `src/scoring/__tests__/` (analysis / score / team / junior / templates / generate / tags / options / twist). **After changing scoring logic, add or update a test there and run `npm test` plus `npm run build`.** `test-reports/` holds the reports written by the `scoring-test` skill (`.claude/skills/scoring-test`), which walks one rule-compliance pass: compare `mens-rg-rules.md` against `src/scoring/`, add tests for an angle no past report covered, and file an issue for anything wrong.
 
+## 作業中の気づきは issue にする
+
+範囲外だが放置したくないものを見つけたら、その場で直さず **GitHub issue を1件起票** して元の作業に戻る
+（手順とテンプレは `.claude/skills/report-issue`）。対象は詰まり（判断・情報がないと進めない）だけでなく、
+改善提案・リファクタ候補・ドキュメントの肥大化・欲しいテストツールなど何でもよい。タイトル接頭辞は
+`[blocked]` / `[idea]` / `[docs]`（採点バグは従来どおり `bug` ラベル）。溜まった issue は
+`/loop /resolve-issue <ラベル>` が1周1件ずつ片付ける（ラベル省略可。`.claude/skills/resolve-issue`）。
+
+## 作業ログを残す
+
+作業が終わったら `work-logs/YYYY-MM-DD-<slug>.md` を1本書き、**変更と同じコミット / 同じ PR に含める**
+（テンプレ `work-logs/_TEMPLATE.md`、運用は `work-logs/README.md`）。普段の作業もループで回すスキルも対象。
+短くてよく、判断の根拠・試して駄目だったこと・やり残しが書いてあればよい。ルール準拠テストの回だけは
+`test-reports/` に書き、work-logs からはそれを参照する。
+
 ## Deployment
 
 GitHub Pages via `.github/workflows/deploy.yml` (builds on push to `main`, uploads `dist/`). The Pages source must be set to **GitHub Actions**. `vite.config.ts` sets `base: "/mens-rg-scorer/"` — this must match the repo name or assets 404 on Pages.

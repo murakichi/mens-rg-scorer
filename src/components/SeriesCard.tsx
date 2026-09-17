@@ -518,7 +518,8 @@ export function SeriesCard({
   };
 
   return (
-    <section className="card">
+    // id は改善提案（SuggestModal）からのジャンプ先
+    <section className="card" id={`series-${sIdx}`}>
       <div className="line-head">
         <span>
           シリーズ {sIdx + 1}
