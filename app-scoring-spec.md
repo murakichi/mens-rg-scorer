@@ -444,12 +444,12 @@ F難度（0.9点）・G難度（1.1点）を足す。規則書に対応する条
 - **難度の丸め**：`skillDifficulty(id, junior, future)` が適用中の上限で丸めるので、**モードをOFFに戻しても
   F難度の技が0.9点で残ることはない**（E止めで採点される）。`skillDef()` が返すのは技そのものの定義なので
   丸めない（F・Gのまま）。
-- **ランダム生成**：`GenerateOptions.future` を `autoTumblingTemplates` まで引き渡す。
-  F・G難度の技は**まだ誰も実施していない技**なので、「テンプレートに出てくる技だけで組む」制限の例外として
-  候補に加える（2回宙返り系は現行どおりテンプレートに出てくるときだけで、`teamOnly` の技は個人の生成では
-  そもそも候補に入らない）。**モードOFFのときは候補の技に一切入らない** — 連続の技は
-  `skillOptions(junior, flow, future)` から引くので、テンプレートにF難度の技が入っていても
-  自動生成の連続には現れない。選ばれやすさは
+- **ランダム生成**：`GenerateOptions.future` を `autoTumblingTemplates` → `TransitionContext.future` まで
+  引き渡す。F・G難度の技は**まだ誰も実施していない技**なので、「テンプレートに出てくる技だけで組む」制限の
+  例外として候補に加える（`usableSkills` in `tumblingTransitions.ts`。2回宙返り系は現行どおり
+  テンプレートに出てくるときだけで、`teamOnly` の技は個人の生成ではそもそも候補に入らない）。
+  **モードOFFのときは候補の技に一切入らない** — 遷移表の技は `skillOptions(junior, flow, future)` から
+  引くので、テンプレートにF難度の技が入っていても自動生成の連続には現れない。選ばれやすさは
   `SALTO_DIFFICULTY_WEIGHT`（D 0.6 → E 0.3 → F 0.15 → G 0.08）で、単発の高難度ほど出にくいのも同じ。
   連続の「難度は下がっていく」ルールも上限が上がるだけで変わらない
   （実測：上限なしで生成したときのDスコアが 現行4.9 → 上限F 5.5前後 → 上限G 6.0前後）。
@@ -761,9 +761,37 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 - テンプレートが1本も無いときは生成しない（投げだけの構成にはしない）。
   自動生成の投げは `SeriesTemplate` に `auto: true` を付けて返すだけで、localStorage には保存しない
 
-#### 自動生成のタンブリング（`autoTumblings.ts`）
+#### 自動生成のタンブリング（`autoTumblings.ts` ほか）
 
-技そのものではなく**組み合わせ**を自動化する。判定は2階建て。
+技そのものではなく**組み合わせ**を自動化する。中身は役割ごとに5ファイルに分かれている。
+
+| ファイル | 受け持ち |
+| --- | --- |
+| `tumblingPatterns.ts` | 組む**形**（宙返りの本数・つなぎの有無・投げ受けかどうか）。`AUTO_TUMBLING_PATTERNS` / `saltoCountRange` / `basicLevelPattern` |
+| `tumblingChain.ts` | **連鎖のルール**（何に何が続けられるか・どこで終われるか）。`nextSaltoOptions` / `connectOptionsAfter` / `canEndChain` / `tumblingFlowErrors` |
+| `tumblingWeights.ts` | **選ばれやすさと抽選の確率**（実際の演技での多さ）。`SKILL_PICK_WEIGHT` / `saltoWeights` / `rollAfterChance` / `backwardEndChance` |
+| `tumblingTransitions.ts` | 上の2つから**導出した遷移表**。`buildTransitions(ctx)` |
+| `autoTumblings.ts` | **候補の組み立て**（表を歩いて `AutoTumblingSpec` にし、`Series` に起こす）。従来の参照先を変えずに済むよう、上の4つを再エクスポートする |
+
+**遷移表（`buildTransitions`）** は「直前の技 → 続けて実施できる技」を1本ずつの辺
+（`SaltoEdge`）に畳んだもの。辺は `id` / `weight`（選ばれやすさ）に加えて、
+`endNever`・`endNeedsBackwardDraw`・`endNeedsRareDraw`（そこで終われるか。抽選待ちなら印）、
+`rollChance`（そのあと前転を付ける確率）、`throwRule`（`ok` / `never` / `kirimomiDraw`）を持つ。
+**表は手書きせず、①②のルールから毎回導出する**（入力画面の制約は `skillOptions` に聞いたままなので、
+プルダウンの絞り込みが変われば表も追随する）。「なぜこの技が生成されないのか」は表を1つ引けば分かる：
+候補に出ていない（①②のルール）／重みが小さい／終われない（`endNever`・抽選待ち）／
+投げられない位置（`throwRule`）。表の内容そのものは `__tests__/transitions.test.ts` が検証する
+（シードを固定した生成結果ではなく、表を直接読むテスト）。
+
+**1本ぶんの候補で1回だけ引く抽選**は `AutoTumblingSpec.draws`（`TumblingDraws`）にまとめてある
+（`backwardEnd` / `rareEnd` / `layoutAfterConnect` / `backToForwardThrow` / `roll` /
+`pressCatch` / `twoThrow` / `secondThrow`）。宙返りの本数を変える `withSaltoCount` が
+**同じ判断を使い回す**ためで、終われる本数の判定は `chainEndsOk` 1か所に集約されている。
+
+抽選のユーティリティ（`shuffled` / `cycler` / `pickWeighted` / `pickDifferent`）は `pick.ts` に共通化した
+（`autoThrows.ts` / `autoTumblings.ts` / `generate.ts` に同じ実装が3つあったもの）。
+
+判定そのものは2階建て。
 
 **① 入力画面の制約**（`tumblingFlowErrors` で検算。判定は入力画面のプルダウンと同じ
 `skillOptions(junior, skillFlowAfter(prev))` を使うので、系統の絞り込みが変わっても追随する）
@@ -868,6 +896,12 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
     終わりの本数を決めるときに**1本伸ばして**前宙・側宙に続け、続けられなければその候補は作らない。
     Dスコアの低い選手（`basicLevel`）はそのまま終わってよい。
     実測（上限なし・タンブリング75本）：最後の技は 側宙24／前宙18／…／後方宙返り半ひねり0
+  - **つなぎ技は1本目の後だけでなく2本目の後にも入る**（`connectAt`。既定は `DEFAULT_CONNECT_AT`＝1、
+    2本目の後は `CONNECT_AT_SECOND_CHANCE`＝0.4 の抽選で、宙返りを3本取れる候補だけ）。
+    「前向きで終わる後方系→前宙→つなぎ→宙返り」はよくあるシリーズなので、この位置も作る。
+    つなぎで終わる形は作らない（`endsOk` は `n > connectAt` を要求し、`withSaltoCount` も
+    つなぎの後の1本を残す）。実測：つなぎ候補38本のうち2本目の後が5本（入力制約エラーは0）、
+    生成20構成に2本（例：ロンダート→後方伸身宙返り半ひねり→前宙→ロンダート→後方宙返り1回半ひねり）
   - **つなぎのあとに後方伸身系を1本だけ実施して終わる形は稀**
     （`layoutOnlyAfterConnect` / `LAYOUT_AFTER_CONNECT_CHANCE`＝0.1）。
     2回半ひねり→ロンダート→後方伸身1回半ひねり で終わるような形は上級者ではあまり実施しない。

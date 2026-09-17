@@ -19,6 +19,8 @@ import {
   RARE_CHAIN_END_CHANCE,
   LAYOUT_AFTER_CONNECT_CHANCE,
   layoutOnlyAfterConnect,
+  CONNECT_AT_SECOND_CHANCE,
+  DEFAULT_CONNECT_AT,
   rollAfterChance,
   ROLL_AFTER_FORWARD_CHANCE,
   ROLL_AFTER_FRONT_CHANCE,
@@ -61,6 +63,7 @@ import {
   PAIR_AFTER_THROW_IN_SKILL_CHANCE,
   pairAfterChance,
   secondThrowStyles,
+  type TumblingDraws,
   noRollAfter,
   TEMPO_SKILL_ID,
   TEMPO_TWIST_SKILL_ID,
@@ -137,6 +140,18 @@ const skillsOf = (series: Series) => analyzeSeries(series).units.flatMap((u) => 
 const allTemplates = (junior = false) =>
   [3, 7, 11, 19].flatMap((seed) => autoTumblingTemplates("stick", { junior, random: seeded(seed) }));
 
+/** 抽選はすべて「引かなかった」状態（形だけを確かめるとき用） */
+const noDraws = (over: Partial<TumblingDraws> = {}): TumblingDraws => ({
+  backwardEnd: false,
+  rareEnd: false,
+  layoutAfterConnect: false,
+  backToForwardThrow: false,
+  roll: 1,
+  pressCatch: false,
+  twoThrow: false,
+  ...over,
+});
+
 describe("入力画面の制約", () => {
   it("どの技もその位置のプルダウンに出る（一般・ジュニア）", () => {
     [false, true].forEach((junior) => {
@@ -158,6 +173,7 @@ describe("入力画面の制約", () => {
       entry: [],
       saltoIds: ["b_backsalto"],
       connectId: "",
+      draws: noDraws(),
     });
     expect(names(s)).toEqual(["ロンダート", "後方宙返り"]);
     expect(tumblingFlowErrors(s)).toEqual([]);
@@ -406,6 +422,7 @@ describe("宙返りの連続の組み方", () => {
       entry: [],
       saltoIds: ["b_front", "b_backlayout", "b_front"],
       connectId: ROUNDOFF_SKILL_ID,
+      draws: noDraws(),
     });
     expect(names(s)).toEqual(["前宙", "ロンダート", "後方伸身宙返り", "前宙"]);
     expect(tumblingFlowErrors(s)).toEqual([]);
@@ -649,6 +666,7 @@ describe("つなぎ技", () => {
       entry: [],
       saltoIds: ["c_back15", "b_sidesalto"],
       connectId: "",
+      draws: noDraws(),
     });
     const names = series.items.map((it) =>
       it.kind === "motion" ? it.motionId : it.kind === "skill" ? it.skillId : it.kind,
@@ -662,6 +680,7 @@ describe("つなぎ技", () => {
       entry: [],
       saltoIds: ["c_back15", "b_front"],
       connectId: "",
+      draws: noDraws(),
     });
     expect(roll.items.some((it) => it.kind === "motion" && it.motionId === THROW_ROLL_MOTION)).toBe(true);
     // 組み立てた候補すべてで、側宙の直後に前転が来ない
@@ -762,7 +781,7 @@ describe("つなぎ技", () => {
       // 投げタンとして数えられる（難度は連続の内容から1ランクアップ）。
       // キャッチのあとに連続投げを続けた形では、その投げ受けが2つ目のユニットになる
       const a = analyzeSeries(t.series);
-      expect(a.units).toHaveLength(t.spec.secondThrow ? 2 : 1);
+      expect(a.units).toHaveLength(t.spec.draws.secondThrow ? 2 : 1);
       expect(a.units[0].isThrowTumbling).toBe(true);
       // 入力画面の制約・手具の流れとも矛盾しない
       expect(tumblingFlowErrors(t.series)).toEqual([]);
@@ -813,7 +832,7 @@ describe("つなぎ技", () => {
       entry: [],
       saltoIds: ["b_front"],
       connectId: "",
-      pressCatch: true,
+      draws: noDraws({ pressCatch: true }),
     });
     const last = series.items[series.items.length - 1];
     expect(last.kind === "catch" && last.catchTypes).toEqual(["useapp"]);
@@ -824,7 +843,7 @@ describe("つなぎ技", () => {
       entry: [],
       saltoIds: ["b_sidesalto"],
       connectId: "",
-      pressCatch: true,
+      draws: noDraws({ pressCatch: true }),
     });
     const sideLast = side.items[side.items.length - 1];
     expect(sideLast.kind === "catch" && sideLast.catchTypes).toBeUndefined();
@@ -849,6 +868,7 @@ describe("つなぎ技", () => {
       entry: [ROUNDOFF_SKILL_ID],
       saltoIds: ["c_back15", "b_front"],
       connectId: "",
+      draws: noDraws(),
     });
     expect(dChain.items.filter((it) => it.kind === "skill" && it.hasApparatus)).toHaveLength(1);
     const last = dChain.items.filter((it) => it.kind === "skill").pop();
@@ -866,6 +886,7 @@ describe("つなぎ技", () => {
       entry: [ROUNDOFF_SKILL_ID],
       saltoIds: ["c_back15", "b_front", "b_sidesalto"],
       connectId: "",
+      draws: noDraws(),
     });
     expect(eChain.items.filter((it) => it.kind === "skill" && it.hasApparatus)).toHaveLength(2);
     const e = computeScore([eChain], "stick");
@@ -879,6 +900,7 @@ describe("つなぎ技", () => {
       entry: [],
       saltoIds: ["b_front"],
       connectId: "",
+      draws: noDraws(),
     });
     expect(throwRoll.items.filter((it) => it.kind === "skill" && it.hasApparatus)).toHaveLength(0);
     expect(computeScore([throwRoll], "stick").noApparatusDeduction).toBe(0);
@@ -924,6 +946,40 @@ describe("つなぎ技", () => {
       return backward / all;
     };
     expect(backwardShare(1.5)).toBeGreaterThan(backwardShare(4.0));
+  }, 60_000);
+
+  it("つなぎ技は2本目の宙返りの後にも入る（前向きで終わる後方系→前宙→つなぎ→宙返り）", () => {
+    expect(DEFAULT_CONNECT_AT).toBe(1);
+    expect(CONNECT_AT_SECOND_CHANCE).toBeGreaterThan(0);
+    let at2 = 0;
+    let all = 0;
+    let checked = 0;
+    for (let seed = 1; seed <= 12; seed++)
+      autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
+        if (!sp.pattern.connect) return;
+        all += 1;
+        const at = sp.connectAt ?? DEFAULT_CONNECT_AT;
+        if (at !== 2) return;
+        at2 += 1;
+        // つなぎの前に2本、後ろに1本以上（つなぎで終わる形は作らない）
+        expect(sp.saltoCount).toBeGreaterThanOrEqual(3);
+        const series = buildAutoTumblingSeries(sp);
+        const ids = series.items.flatMap((it) => (it.kind === "skill" && it.skillId ? [it.skillId] : []));
+        // つなぎ技のid が2本目の宙返りの後に入っている
+        const at2Index = ids.indexOf(sp.connectId, 1);
+        expect(at2Index).toBeGreaterThan(0);
+        expect(ids[ids.length - 1]).not.toBe(sp.connectId);
+        // 宙返り−A難度−宙返り の並び（つなぎ技として数えられる）
+        expect(hasConnect(series.items.filter((it) => it.kind === "skill") as Item[])).toBe(true);
+        // 入力画面の制約にも反しない
+        expect(tumblingFlowErrors(series)).toEqual([]);
+        checked += 1;
+      });
+    expect(all).toBeGreaterThan(0);
+    expect(at2).toBeGreaterThan(0);
+    expect(checked).toBe(at2);
+    // 1本目の後に入る形のほうが多い
+    expect(at2).toBeLessThan(all - at2);
   }, 60_000);
 
   it("つなぎのあとに伸身を1本だけ実施して終わる形は稀（その後に前方系を続ける）", () => {
@@ -1000,7 +1056,7 @@ describe("つなぎ技", () => {
     let pairs = 0;
     for (let seed = 1; seed <= 12; seed++)
       autoTumblingSpecs({ apparatus: "clubs", random: seeded(seed) })
-        .filter((sp) => sp.pattern.throwCatch && sp.secondThrow)
+        .filter((sp) => sp.pattern.throwCatch && sp.draws.secondThrow)
         .forEach((sp) => {
           pairs += 1;
           const items = buildAutoTumblingSeries(sp).items;
@@ -1027,7 +1083,7 @@ describe("つなぎ技", () => {
     expect(TWO_THROW_IN_TUMBLING_CHANCE).toBeGreaterThan(0);
 
     // 組み立てたシリーズは 二つ投げ→タンブリング→2つ同時キャッチ になる
-    const specs = autoTumblingSpecs({ apparatus: "clubs", random: seeded(3) }).filter((sp) => sp.twoThrow);
+    const specs = autoTumblingSpecs({ apparatus: "clubs", random: seeded(3) }).filter((sp) => sp.draws.twoThrow);
     expect(specs.length).toBeGreaterThan(0);
     specs.forEach((sp) => {
       const items = buildAutoTumblingSeries(sp).items;
@@ -1047,11 +1103,11 @@ describe("つなぎ技", () => {
       expect(checkApparatusFlow(series, "clubs")).toEqual([]);
     });
     // 宙返りの本数を調整しても二つ投げは残る
-    const t = autoTumblingTemplates("clubs", { random: seeded(3) }).find((x) => x.spec.twoThrow);
+    const t = autoTumblingTemplates("clubs", { random: seeded(3) }).find((x) => x.spec.draws.twoThrow);
     if (t) {
       const range = saltoCountRange(t.spec.pattern).filter((n) => n !== t.spec.saltoCount);
       const tuned = range.map((n) => withSaltoCount(t, n)).find((x) => x);
-      if (tuned) expect(tuned.spec.twoThrow).toBe(true);
+      if (tuned) expect(tuned.spec.draws.twoThrow).toBe(true);
     }
   }, 60_000);
 
@@ -1071,7 +1127,7 @@ describe("つなぎ技", () => {
     let inSkillKind = 0;
     for (let seed = 0; seed < 20; seed++)
       autoTumblingTemplates("stick", { random: seeded(seed) })
-        .filter((t) => t.spec.secondThrow)
+        .filter((t) => t.spec.draws.secondThrow)
         .forEach((t) => {
           paired += 1;
           if (t.spec.pattern.throwInSkill) inSkillKind += 1;
@@ -1147,6 +1203,7 @@ describe("投げタン", () => {
       entry: [],
       saltoIds: ["b_front"],
       connectId: "",
+      draws: noDraws(),
     });
     expect(names(roll)).toEqual(["throw", "前宙", THROW_ROLL_MOTION, "catch"]);
     autoTumblingSpecs({ random: seeded(11) })
@@ -1161,6 +1218,7 @@ describe("投げタン", () => {
       entry: [],
       saltoIds: ["b_front", "b_sidesalto"],
       connectId: "",
+      draws: noDraws(),
     });
     expect(analyzeSeries(s).units.some((u) => u.isThrowTumbling)).toBe(true);
   });
@@ -1210,7 +1268,7 @@ describe("候補と調整", () => {
   });
 
   it("表示名は種類だけ（中身はシリーズの内容で分かるので解説は付けない）", () => {
-    const base = { saltoCount: 2, entry: [], saltoIds: ["c_back15", "b_front"], connectId: "" };
+    const base = { saltoCount: 2, entry: [], saltoIds: ["c_back15", "b_front"], connectId: "", draws: noDraws() };
     expect(autoTumblingName({ ...base, pattern: pattern("chain") } as AutoTumblingSpec)).toBe(
       "自動生成のタンブリング",
     );
