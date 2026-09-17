@@ -42,6 +42,11 @@ export interface AutoThrowPattern {
    * 「手以外の投げ→キャッチ→視野外の投げ→シェネ→キャッチ」のように実施する。
    */
   leadPair?: boolean;
+  /**
+   * あとに投げ受けを1本足すか（連続投げの2回目）。**連続投げは1回目で難度を採ることが多い**ので、
+   * 徒手はこの形の主役（1回目）に付き、2回目は徒手なしの投げ受けになる。
+   */
+  trailPair?: boolean;
 }
 
 /**
@@ -81,7 +86,19 @@ export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
   // 先に最低限の投げ受けを1本置く形（投げ方を安く1種類増やす）
   { id: "cheneLeadPair", chene: { min: 3, max: 4 }, after: [], noViewPair: false, leadPair: true },
   { id: "cheneRollLeadPair", chene: { min: 1, max: 3 }, after: [times(FWD_ROLL, 1)], noViewPair: false, leadPair: true },
+  // あとに最低限の投げ受けを1本足す形（連続投げは1回目で難度を採ることが多い）
+  { id: "cheneTrailPair", chene: { min: 3, max: 4 }, after: [], noViewPair: false, trailPair: true },
+  { id: "cheneRollTrailPair", chene: { min: 1, max: 3 }, after: [times(FWD_ROLL, 1)], noViewPair: false, trailPair: true },
 ];
+
+/** 徒手なしの投げ受けの形（`trailPair` のあとの1本など、手具ごとの規則だけで受け方を引くのに使う） */
+export const MINIMAL_PATTERN: AutoThrowPattern =
+  AUTO_THROW_PATTERNS.find((p) => p.id === "minimalNone") ??
+  { id: "minimalNone", chene: { min: 0, max: 0 }, after: [], noViewPair: false };
+
+/** そのキャッチのあとに投げが続く形か（そこから投げに繋げない受け方を外すのに使う） */
+export const throwsAfterCatch = (pattern: AutoThrowPattern): boolean =>
+  !!pattern.noViewPair || !!pattern.trailPair;
 
 /** 自動生成で使う投げ方 */
 export interface AutoThrowStyle {
@@ -251,7 +268,7 @@ export function catchStyleWeight({
   // その他のキャッチは可能な限り使わない
   if (has(OTHER_TAG)) weight *= OTHER_CATCH_WEIGHT;
   // その他のキャッチから次の投げに続けるのは少ない（`noViewPair` は受けたあと投げる形）
-  if (pattern.noViewPair && has(OTHER_TAG)) weight *= OTHER_CATCH_BEFORE_THROW_WEIGHT;
+  if (throwsAfterCatch(pattern) && has(OTHER_TAG)) weight *= OTHER_CATCH_BEFORE_THROW_WEIGHT;
   // 縦3動作の形は手具で押さえつけて受けるのが主流
   if (pattern.verticalThree && !has(CATCH_USE_APPARATUS)) weight *= VERTICAL_THREE_OTHER_CATCH_WEIGHT;
   // クラブ・リングは、転がり・前転で終わってから手具で押さえつけて受けるのが定番
@@ -282,7 +299,7 @@ export function catchStylesForPattern(
   pattern: AutoThrowPattern,
 ): AutoCatchStyle[] {
   const styles = catchStylesForThrow(apparatus, twoThrow);
-  if (!pattern.noViewPair) return styles;
+  if (!throwsAfterCatch(pattern)) return styles;
   return styles.filter((c) => !catchHasTag(c, NO_VIEW_TAG) && !catchHasTag(c, NON_HAND_TAG));
 }
 
@@ -340,6 +357,10 @@ export interface AutoThrowSpec {
   catchStyle: AutoCatchStyle;
   /** 先に足す投げ受けの投げ方（`pattern.leadPair` のときだけ。受けは通常のキャッチ） */
   leadThrowStyle?: AutoThrowStyle;
+  /** あとに足す投げ受けの投げ方（`pattern.trailPair` のときだけ。徒手なし） */
+  trailThrowStyle?: AutoThrowStyle;
+  /** あとに足す投げ受けの受け方（徒手なしの投げ受けとして引く。演技の締めになり得る） */
+  trailCatchStyle?: AutoCatchStyle;
 }
 
 /** 自動生成の内容からシリーズを組み立てる */
@@ -379,6 +400,21 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
   if (pattern.noViewPair) {
     items.push({ kind: "throw", throwTypes: [NO_VIEW_TAG] });
     items.push({ kind: "catch", catchTypes: [NO_VIEW_TAG] });
+  }
+  // あとに最低限の投げ受けを1本（徒手なし・通常のキャッチ）
+  if (pattern.trailPair && spec.trailThrowStyle) {
+    const style = spec.trailThrowStyle;
+    items.push({
+      kind: "throw",
+      ...(style.reqTypes ? { reqTypes: [...style.reqTypes] } : {}),
+      ...(style.throwTypes ? { throwTypes: [...style.throwTypes] } : {}),
+    });
+    const close = spec.trailCatchStyle;
+    items.push({
+      kind: "catch",
+      ...(close?.catchTypes ? { catchTypes: [...close.catchTypes] } : {}),
+      ...(style.two ? { catchTwo: true } : {}),
+    });
   }
   return { executionDeduction: 0, items };
 }
@@ -478,6 +514,11 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     throwStyles.filter((t) => !t.two),
     rand,
   );
+  // あとに足す投げ受けの投げ方（連続投げの2回目）。手以外の投げは2回目には実施できない
+  const nextTrailThrow = cycler(
+    throwStyles.filter((t) => t.id !== NON_HAND_TAG),
+    rand,
+  );
   // シェネの回数は形ごとに配る（その形で取り得る回数がひととおり出るように）
   const nextCount = new Map<string, () => number>();
   return combos.slice(0, limit).map(({ pattern, throwStyle }) => {
@@ -495,6 +536,17 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       throwStyle,
       catchStyle: nextCatchFor(pattern, throwStyle, patternMotions(pattern, cheneCount)),
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
+      ...(pattern.trailPair
+        ? (() => {
+            const trailThrowStyle = nextTrailThrow();
+            // 受け方は「徒手なしの投げ受け」として引く（手具ごとの規則だけが効く）。
+            // クラブの押さえつけ・ロープの足に絡めた受けが出るので、演技の締めにもなる
+            return {
+              trailThrowStyle,
+              trailCatchStyle: nextCatchFor(MINIMAL_PATTERN, trailThrowStyle, 0),
+            };
+          })()
+        : {}),
     };
   });
 }
