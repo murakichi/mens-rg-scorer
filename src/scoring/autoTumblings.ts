@@ -214,9 +214,25 @@ export const layoutOnlyAfterConnect = (
 export const FRONT_SALTO_ID = "b_front";
 export const ROLL_AFTER_FORWARD_CHANCE = 0.9;
 export const ROLL_AFTER_FRONT_CHANCE = 0.5;
-export function rollAfterChance(id: string): number {
-  if (skillDef(id)?.category !== CATEGORY.FORWARD || !skillDef(id)?.isSalto) return 0;
+/**
+ * **前向きで終わる後方宙返り**（半ひねり系・ダイビング前宙）のあとは、前転・そのまま終了・前宙
+ * どれも普通に実施される（つなぎの後半に抱え込みを実施したときもこれ）。
+ */
+export const ROLL_AFTER_BACK_FORWARD_LANDING_CHANCE = 0.5;
+/**
+ * **切り返し**（後ろ向きで終わる宙返りから前方系を実施する並び）のあとは前転をしないことが多い。
+ */
+export const ROLL_AFTER_SWITCH_CHANCE = 0.2;
+export function rollAfterChance(id: string, prevId?: string): number {
+  const def = skillDef(id);
+  if (!def?.isSalto) return 0;
+  // 首から背中に着地する技（とび前転・きりもみ系）・側宙・後ろ向きで終わる技のあとは何もしない
   if (noRollAfter(id) || CHAIN_END_SKILLS.includes(id)) return 0;
+  // 前向きで終わる後方宙返り（`noRollAfter` を通っているので半ひねり系・ダイビング前宙だけ）
+  if (def.category === CATEGORY.BACKWARD) return ROLL_AFTER_BACK_FORWARD_LANDING_CHANCE;
+  if (def.category !== CATEGORY.FORWARD) return 0;
+  // 切り返し（後ろ向きで終わる宙返り→前方系）のあとは前転をしないことが多い
+  if (prevId && endsFacingBackward(prevId)) return ROLL_AFTER_SWITCH_CHANCE;
   return id === FRONT_SALTO_ID ? ROLL_AFTER_FRONT_CHANCE : ROLL_AFTER_FORWARD_CHANCE;
 }
 
@@ -703,9 +719,11 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
     items.push(next);
   });
-  // 前方系で終わったあとは、大抵そのまま前転をする（前宙だけは半々）
+  // 前方系で終わったあとは、大抵そのまま前転をする（前宙・前向きで終わる後方宙返りは半々、
+  // 切り返しのあとは少ない）。直前の技はつなぎ技を挟めば向きが変わるので、並びから取る
   const lastSalto = saltos[saltos.length - 1];
-  if (!pattern.throwCatch && (spec.rollDraw ?? 1) < rollAfterChance(lastSalto))
+  const beforeLast = prevSkillId(items, items.length - 1);
+  if (!pattern.throwCatch && (spec.rollDraw ?? 1) < rollAfterChance(lastSalto, beforeLast))
     items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
   // 投げ受けの着地は前転でつなぐ（側宙の後は前転を実施しないので、そのまま受ける）
   const rolled = !!pattern.rollFinish && !noRollAfter(saltos[saltos.length - 1]);
