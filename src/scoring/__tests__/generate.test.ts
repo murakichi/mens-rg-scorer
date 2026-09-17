@@ -26,6 +26,7 @@ import {
   extraThrowOperation,
   verticalThreeThrowCount,
   DIFFICULTY_PREFERENCE_WEIGHT,
+  TUMBLING_PREFERENCE_WEIGHT,
   VERTICAL_THREE_THROW_WEIGHT,
   shortfallPenalty,
   usableTemplates,
@@ -797,6 +798,36 @@ describe("難度点と加点の優先度", () => {
       expect(r.used.map((t) => t.name)).toEqual(["難度点で取る"]);
     });
   });
+
+  it("タンブリングの難度点は徒手より優先する（上級者のタンブリングはほぼE難度）", () => {
+    // タンブリング1点＝0.6、徒手1点＝0.3
+    expect(TUMBLING_PREFERENCE_WEIGHT).toBeGreaterThan(0);
+    expect(DIFFICULTY_PREFERENCE_WEIGHT + TUMBLING_PREFERENCE_WEIGHT).toBeGreaterThan(
+      DIFFICULTY_PREFERENCE_WEIGHT,
+    );
+    // Dスコアの上限を指定しない＝難度を狙いきる構成では、タンブリングはほぼE難度になる
+    let e = 0;
+    let all = 0;
+    for (let seed = 1; seed <= 5; seed++) {
+      const r = generateRoutine(pool(), {
+        apparatus: "stick",
+        autoTumblingSkills: [],
+        random: seeded(seed * 13 + 5),
+      });
+      if (!r) continue;
+      computeScore(r.series, "stick").analysis.forEach((a) =>
+        a.units.forEach((u) => {
+          if (u.type !== "tumbling" && !u.isThrowTumbling) return;
+          all += 1;
+          if (u.finalDiff === "E") e += 1;
+        }),
+      );
+    }
+    expect(all).toBeGreaterThan(0);
+    // 登録テンプレート自体が低難度なら残ることもあるので、ほぼE難度＝7割以上で見る
+    // （自動生成だけで組んだときは実測100%）
+    expect(e / all).toBeGreaterThanOrEqual(0.7);
+  }, 120_000);
 
   it("難度点の上乗せはDスコアの刻みより小さい（Dを下げてまで難度点は取らない）", () => {
     // 難度点0.1ぶんの上乗せ（0.03）＜ Dスコア0.1

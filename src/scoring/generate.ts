@@ -519,6 +519,13 @@ export const THROW_ORDER_WEIGHT = 0.005;
  */
 export const DIFFICULTY_PREFERENCE_WEIGHT = 0.3;
 
+/**
+ * **タンブリングの難度点**1点あたりの、さらなる上乗せ。上級者のタンブリングはほぼE難度なので、
+ * 同じDスコアなら「徒手や加点で稼いだ構成」より「タンブリングの難度で稼いだ構成」を選ぶ。
+ * `DIFFICULTY_PREFERENCE_WEIGHT` に足して効く（タンブリング1点＝0.6、徒手1点＝0.3）。
+ */
+export const TUMBLING_PREFERENCE_WEIGHT = 0.3;
+
 /** 演技中に何度実施しても不自然でない宙返り（前宙） */
 export const REPEATABLE_SALTOS = ["b_front"];
 
@@ -608,8 +615,9 @@ function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evalu
       -(penalty + overThrowTum + overTumbling + overLimited) * 100 -
       shortfall +
       r.dScore +
-      // 加点よりも高難度の実施を優先する
+      // 加点よりも高難度の実施を優先する（タンブリングの難度はさらに優先する）
       (r.tumblingScore + r.handScore) * DIFFICULTY_PREFERENCE_WEIGHT +
+      r.tumblingScore * TUMBLING_PREFERENCE_WEIGHT +
       r.aScore -
       variety -
       shape -
@@ -867,6 +875,29 @@ function swapIn(
 }
 
 /**
+ * タンブリングだけを入れ替えて難度を上げる最後の一手。**上級者のタンブリングはほぼE難度**だが、
+ * 貪欲法はタンブリングの枠（`DEFAULT_MAX_TUMBLINGS`）が埋まったあとに出てきた高難度の候補を
+ * 見られない（足すと本数超過で評価が下がる）。候補をタンブリングだけに絞って入れ替えるので、
+ * 見る組み合わせは少なく、生成時間もほとんど増えない。
+ */
+function upgradeTumblings(
+  best: { used: SeriesTemplate[]; ev: Evaluation },
+  pool: SeriesTemplate[],
+  opts: GenerateOptions,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  const junior = !!opts.junior;
+  const tumblings = pool.filter((t) => isTumblingSeries(t.series, junior));
+  if (tumblings.length === 0) return best;
+  const swapped = swapIn(best.used, best.ev, tumblings, opts, TUMBLING_UPGRADE_ROUNDS);
+  if (swapped.ev.value <= best.ev.value + 1e-9) return best;
+  const ordered = orderSeries(swapped.used, swapped.ev, opts);
+  return { used: ordered.used, ev: ordered.ev };
+}
+
+/** タンブリングの入れ替えを試す回数 */
+const TUMBLING_UPGRADE_ROUNDS = 2;
+
+/**
  * 貪欲法の1回ぶん。`start` のシリーズは必ず入れた状態から始める。
  *  ① ランダムな順に見て、評価が上がるものだけ足す（登録テンプレートを先に見る）
  *  ② 自動生成のシリーズは量（シェネの回数・宙返りの本数）を調整する
@@ -1032,6 +1063,11 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
       if (!unmet(best.ev)) break;
     }
   }
+
+  // ⑦ タンブリングを難度の高い候補に入れ替える。上級者のタンブリングはほぼE難度だが、
+  //    貪欲法は3本（`DEFAULT_MAX_TUMBLINGS`）埋まったあとに後から出てきた高難度の
+  //    候補を見られないので、最後にタンブリングだけを入れ替えて評価が上がるなら採る。
+  best = upgradeTumblings(best, pool, opts);
 
   return {
     series: seriesOf(best.used),
