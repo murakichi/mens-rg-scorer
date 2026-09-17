@@ -1655,3 +1655,111 @@ input[type="checkbox"] {
   outline: none;
   box-shadow: var(--ring);
 }
+
+/* =====================================================================
+   印刷（ブラウザの「PDFとして保存」も同じ）
+   画面の入力UIは出さず、PrintSheet だけを紙に出す。
+   `:has()` で「印刷用紙面がある画面のとき」に限定しているので、
+   まだ紙面を持たない団体モードは従来どおりの印刷結果になる（真っ白にしない）。
+   ===================================================================== */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  :root {
+    padding: 0;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+  .page:has(.print-sheet) > *:not(.print-sheet) {
+    display: none !important;
+  }
+  .print-sheet[hidden] {
+    display: block !important;
+  }
+  /* 紙では背景・影・ぼかしを落とす */
+  .print-sheet * {
+    background: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+.print-sheet {
+  font-size: 11pt;
+  line-height: 1.5;
+  color: #000;
+}
+.print-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1.5pt solid #000;
+  padding-bottom: 4pt;
+}
+.print-title {
+  font-size: 15pt;
+  margin: 0;
+}
+.print-meta {
+  font-size: 10pt;
+}
+.print-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8pt 0 4pt;
+}
+.print-total-main {
+  font-size: 13pt;
+}
+.print-total-main b {
+  font-size: 17pt;
+}
+.print-total-sub {
+  font-size: 11pt;
+}
+.print-section {
+  /* 見出しと中身が別ページに割れないようにする */
+  break-inside: avoid;
+  margin-top: 8pt;
+}
+.print-h {
+  font-size: 11pt;
+  margin: 0 0 3pt;
+  padding-bottom: 2pt;
+  border-bottom: 0.5pt solid #999;
+}
+.print-group {
+  break-inside: avoid;
+  margin-bottom: 4pt;
+}
+.print-group-head {
+  font-size: 10pt;
+  font-weight: 700;
+  margin-top: 3pt;
+}
+.print-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 1pt 0;
+}
+.print-row.is-excluded {
+  color: #666;
+  text-decoration: line-through;
+}
+.print-note,
+.print-mark {
+  font-size: 9pt;
+  margin: 0 4pt;
+}
+.print-missing {
+  margin-top: 3pt;
+  font-weight: 700;
+}
