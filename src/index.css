@@ -140,6 +140,51 @@ body {
   flex-wrap: wrap;
 }
 
+/* 改善提案（1手だけ変えた候補の一覧） */
+.suggest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.suggest-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--glass-soft);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xs);
+}
+.suggest-kind {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(109, 106, 240, 0.12);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.suggest-label {
+  flex: 1 1 260px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.suggest-delta {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 13px;
+  color: var(--teal);
+}
+.suggest-delta-sub {
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
 /* 自動保存したドラフトを復元したときの通知 */
 .draft-notice {
   display: flex;
