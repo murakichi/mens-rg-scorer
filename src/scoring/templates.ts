@@ -7,7 +7,7 @@
 
 import { APPARATUS, DIFF_VALUE, HAND_MOTIONS, MOTION_OPTIONS, VALUE_DIFF, ropeJumpDef, skillDef } from "./constants";
 import { computeScore } from "./score";
-import type { ApparatusKey, Difficulty, Item, Series } from "./types";
+import type { ApparatusKey, Difficulty, FutureLevel, Item, Series } from "./types";
 
 export const TEMPLATE_STORAGE_KEY = "mens-rg-scorer:templates:v1";
 
@@ -255,8 +255,13 @@ export interface TemplateMetrics {
 }
 
 /** テンプレート（シリーズ1つ／構成まるごと）の難度と点数を求める */
-export function templateMetrics(list: Series[], apparatus: TemplateApparatus, junior = false): TemplateMetrics {
-  const r = computeScore(list, scoringApparatus(apparatus), { junior });
+export function templateMetrics(
+  list: Series[],
+  apparatus: TemplateApparatus,
+  junior = false,
+  future: FutureLevel = null,
+): TemplateMetrics {
+  const r = computeScore(list, scoringApparatus(apparatus), { junior, future });
   let v = 0;
   r.analysis.forEach((a) => a.units.forEach((u) => (v = Math.max(v, DIFF_VALUE[u.finalDiff]))));
   return { diff: v > 0 ? VALUE_DIFF[v] : null, diffValue: v, dScore: r.dScore };

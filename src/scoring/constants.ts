@@ -8,6 +8,7 @@
 import type {
   ApparatusKey,
   Difficulty,
+  FutureLevel,
   HandMotion,
   Posture,
   Skill,
@@ -82,10 +83,45 @@ export function hasTwoThrow(apparatus: ApparatusKey): boolean {
   return REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === TWO_THROW_TAG);
 }
 
-export const DIFF_VALUE: Record<Difficulty, number> = { A: 1, B: 2, C: 3, D: 4, E: 5 };
-export const VALUE_DIFF: Record<number, Difficulty> = { 1: "A", 2: "B", 3: "C", 4: "D", 5: "E" };
+export const DIFF_VALUE: Record<Difficulty, number> = { A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7 };
+export const VALUE_DIFF: Record<number, Difficulty> = { 1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "F", 7: "G" };
+/** 現行規則の上限難度（E）。十年後モードでは `maxDiff` がこれを上回る。 */
 export const MAX_DIFF = 5;
-export const DIFF_SCORE: Record<Difficulty, number> = { A: 0.1, B: 0.2, C: 0.3, D: 0.5, E: 0.7 };
+export const DIFF_SCORE: Record<Difficulty, number> = {
+  A: 0.1,
+  B: 0.2,
+  C: 0.3,
+  D: 0.5,
+  E: 0.7,
+  // 十年後モードでのみ認定する難度（F・G）。E の 0.7 から 0.2 刻みで伸ばす。
+  F: 0.9,
+  G: 1.1,
+};
+
+// ---- 十年後モード（現行規則には無いF・G難度を認定する仮想ルール）----
+
+/** 上限難度の選択肢（プルダウン）。値は `FutureLevel`。 */
+export const FUTURE_LEVELS: { id: Exclude<FutureLevel, null>; name: string }[] = [
+  { id: "F", name: "F難度まで" },
+  { id: "G", name: "G難度まで" },
+];
+/** 十年後モードをONにしたときの既定の上限 */
+export const DEFAULT_FUTURE_LEVEL: Exclude<FutureLevel, null> = "F";
+
+/** 保存データ・共有URLから読んだ値を `FutureLevel` に正規化する（不正値・旧データは null）。 */
+export function normalizeFutureLevel(v: unknown): FutureLevel {
+  return FUTURE_LEVELS.some((l) => l.id === v) ? (v as FutureLevel) : null;
+}
+
+/** 適用する上限難度の値。モードOFF（null）は現行規則どおり E 止め。 */
+export function maxDiff(future: FutureLevel = null): number {
+  return future ? DIFF_VALUE[future] : MAX_DIFF;
+}
+
+/** 難度を適用中の上限で丸める（E超えは十年後モードのときだけ残る） */
+export function clampDifficulty(value: number, future: FutureLevel = null): Difficulty {
+  return VALUE_DIFF[Math.min(Math.max(value, DIFF_VALUE.A), maxDiff(future))];
+}
 
 export const SERIES_BONUS = 0.1;
 export const TECHNIQUE_BONUS = 0.1;
@@ -410,12 +446,24 @@ export const SKILL_LIST: Skill[] = [
   { id: "e_divedouble", name: "ダイビングダブル", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
   { id: "e_moonsault", name: "後方2回宙返り1回ひねり（ムーンサルト）", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
   { id: "e_rudolph", name: "後方2回宙返り2回ひねり（ルドルフ）", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
+  // ---- 十年後モードでのみ実施できる技（F・G難度）----
+  // ひねり系は §3.6.2 の刻み（半ひねり1段・1難度2段）をそのまま伸ばしたもの。
+  // 2回宙返り系は現行の表に無いので、ひねり1回ぶんをE→Fの1段として置いた。
+  { id: "f_backlay4twist", name: "後方伸身宙返り4回ひねり", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, future: true, twist: { base: "back", twist: 4, posture: "layout" } },
+  { id: "f_backlay45twist", name: "後方伸身宙返り4回半ひねり", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, future: true, twist: { base: "back", twist: 4.5, posture: "layout" } },
+  { id: "g_backlay5twist", name: "後方伸身宙返り5回ひねり", category: CATEGORY.BACKWARD, difficulty: "G", isSalto: true, future: true, twist: { base: "back", twist: 5, posture: "layout" } },
+  { id: "f_frontlay3", name: "伸身前宙3回ひねり", category: CATEGORY.FORWARD, difficulty: "F", isSalto: true, future: true, twist: { base: "front", twist: 3, posture: "layout" } },
+  { id: "g_frontlay4", name: "伸身前宙4回ひねり", category: CATEGORY.FORWARD, difficulty: "G", isSalto: true, future: true, twist: { base: "front", twist: 4, posture: "layout" } },
+  { id: "f_double3twist", name: "後方2回宙返り3回ひねり（トリプルフル）", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, isDoubleSalto: true, future: true },
+  { id: "g_tripleback", name: "後方3回宙返り", category: CATEGORY.BACKWARD, difficulty: "G", isSalto: true, isDoubleSalto: true, future: true },
 ];
 
 // ---- ひねり・姿勢で組み立てる宙返り（§3.6.2 の表を素直に表現する） ----
 
-/** ひねり回数の選択肢（0.5 が半ひねり） */
+/** ひねり回数の選択肢（0.5 が半ひねり）。現行規則の上限（E難度）まで。 */
 export const TWIST_OPTIONS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
+/** 十年後モードで増えるひねり回数（F・G難度の宙返り） */
+export const FUTURE_TWIST_OPTIONS = [4, 4.5, 5];
 /** 姿勢の選択肢 */
 export const POSTURE_OPTIONS: { id: Posture; name: string }[] = [
   { id: "tuck", name: "抱え込み" },
@@ -442,13 +490,49 @@ export const twistLabel = (twist: number): string => {
  * ひねり回数と姿勢から基礎難度を求める（§3.6.2）。
  * 後方系は姿勢によらずひねり回数だけで決まる（#7・#12〜#17）。
  * 前方系は伸身が1段階上（#7/#8/#11/#12〜#14）。
+ * 十年後モード（`future`）でなければ、F・Gになる組み合わせはE止めに丸める。
  */
-export function twistDifficulty({ base, twist, posture }: TwistParams): Difficulty {
-  const steps = [DIFF_VALUE.B, DIFF_VALUE.B, DIFF_VALUE.C, DIFF_VALUE.C, DIFF_VALUE.D, DIFF_VALUE.D, DIFF_VALUE.E];
+export function twistDifficulty(params: TwistParams, future: FutureLevel = null): Difficulty {
+  return clampDifficulty(twistDiffValue(params), future);
+}
+
+/**
+ * ひねり・姿勢の**上限で丸める前の**難度値。選択肢の絞り込み（`twistOptions`）で使う
+ * — 丸めた難度で比べると、上限を超える組み合わせも上限ちょうどに見えてしまう。
+ */
+export function twistDiffValue({ base, twist, posture }: TwistParams): number {
+  // 半ひねりごとに1段、1難度ぶんで2段（B:0〜0.5 / C:1〜1.5 / D:2〜2.5 / E:3〜3.5）。
+  // F・G はその刻みをそのまま伸ばしたもので、十年後モードでのみ認定する。
+  const steps = [
+    DIFF_VALUE.B,
+    DIFF_VALUE.B,
+    DIFF_VALUE.C,
+    DIFF_VALUE.C,
+    DIFF_VALUE.D,
+    DIFF_VALUE.D,
+    DIFF_VALUE.E,
+    DIFF_VALUE.E,
+    DIFF_VALUE.F,
+    DIFF_VALUE.F,
+    DIFF_VALUE.G,
+  ];
   const i = Math.min(Math.max(Math.round(twist * 2), 0), steps.length - 1);
   let v = steps[i];
   if (base === "front" && posture === "layout") v += 1;
-  return VALUE_DIFF[Math.min(v, MAX_DIFF)];
+  return v;
+}
+
+/**
+ * ひねり回数の選択肢。十年後モードでは上限難度に収まるひねりまで増やす
+ * （前方伸身は1段階上がるので、同じ上限でも選べるひねりが少ない）。
+ */
+export function twistOptions(future: FutureLevel = null, params?: Omit<TwistParams, "twist">): number[] {
+  if (!future) return TWIST_OPTIONS;
+  const all = [...TWIST_OPTIONS, ...FUTURE_TWIST_OPTIONS];
+  if (!params) return all;
+  // 上限を超える組み合わせは出さない（現行規則のひねり＝E以下は必ず残る）
+  const limit = DIFF_VALUE[future];
+  return all.filter((twist) => twistDiffValue({ ...params, twist }) <= limit);
 }
 
 /** 組み立てた宙返りの名前（例：後方伸身宙返り1回半ひねり／伸身前宙1回ひねり） */
@@ -494,19 +578,41 @@ export function skillDef(id: string): Skill | undefined {
   // SKILL_LIST に無いひねりの組み合わせは、その場で技として組み立てる
   const params = id.startsWith(TWIST_ID_PREFIX) ? parseTwistSkillId(id) : null;
   if (!params) return undefined;
+  // ここで返すのは技そのものの定義なので、難度は上限で丸めない（適用規則ごとの丸めは
+  // `skillDifficulty` の仕事）。F・G難度になる組み合わせは十年後モード専用として印を付ける。
+  const difficulty = twistDifficulty(params, "G");
   return {
     id,
     name: twistName(params),
     category: params.base === "back" ? CATEGORY.BACKWARD : CATEGORY.FORWARD,
-    difficulty: twistDifficulty(params),
+    difficulty,
     isSalto: true,
+    future: DIFF_VALUE[difficulty] > MAX_DIFF,
     twist: params,
   };
 }
 
-/** 適用規則で実施できる技か。ジュニアは2回宙返り系が禁止（§10 変更規則1）。 */
-export function skillAllowed(id: string, junior = false): boolean {
-  return !(junior && skillDef(id)?.isDoubleSalto);
+/**
+ * 適用規則で実施できる技か。
+ *  - ジュニアは2回宙返り系が禁止（§10 変更規則1）
+ *  - F・G難度の技（`future`）は十年後モードのときだけ。上限（F/G）を超える技も出さない
+ */
+export function skillAllowed(id: string, junior = false, future: FutureLevel = null): boolean {
+  const s = skillDef(id);
+  if (!s) return true;
+  if (junior && s.isDoubleSalto) return false;
+  if (s.future && (!future || DIFF_VALUE[s.difficulty] > DIFF_VALUE[future])) return false;
+  return true;
+}
+
+/**
+ * 十年後モードで新しく実施できるようになる技（上限難度に収まるものだけ）。
+ * まだ誰も実施していない技なので、ランダム生成では「テンプレートに出てくる技」の
+ * 制限を受けずに使ってよい（`autoTumblingSpecs`）。
+ */
+export function futureSkillIds(future: FutureLevel, junior = false): string[] {
+  if (!future) return [];
+  return SKILL_LIST.filter((s) => s.future && skillAllowed(s.id, junior, future)).map((s) => s.id);
 }
 
 /** ロンダートの技id（後方の宙返りに入るときに自動で補う） */
@@ -585,10 +691,10 @@ export function skillFlowAfter(prevSkillId: string | undefined): SkillFlow {
  * `flow` を渡すと、その位置で実施しない系統（後ろ向きで終わった後の前方系・側方系）を
  * 選択肢から外す。
  */
-export function skillOptions(junior = false, flow: SkillFlow = ANY_SKILL_FLOW): Skill[] {
+export function skillOptions(junior = false, flow: SkillFlow = ANY_SKILL_FLOW, future: FutureLevel = null): Skill[] {
   const allows = (category: string) =>
     category === CATEGORY.BACKWARD ? flow.backward : category === CATEGORY.SIDE ? flow.side : flow.forward;
-  return SKILL_LIST.filter((s) => skillAllowed(s.id, junior) && allows(s.category));
+  return SKILL_LIST.filter((s) => skillAllowed(s.id, junior, future) && allows(s.category));
 }
 
 /** タンブリング技のプルダウンをまとめる系統の表示順 */
@@ -598,8 +704,9 @@ export const SKILL_CATEGORY_ORDER: string[] = [CATEGORY.FORWARD, CATEGORY.SIDE, 
 export function skillOptionGroups(
   junior = false,
   flow: SkillFlow = ANY_SKILL_FLOW,
+  future: FutureLevel = null,
 ): { name: string; skills: Skill[] }[] {
-  const opts = skillOptions(junior, flow);
+  const opts = skillOptions(junior, flow, future);
   const groups = SKILL_CATEGORY_ORDER.map((name) => ({ name, skills: opts.filter((s) => s.category === name) }));
   // 表示順に無いカテゴリが増えても落とさない
   const rest = opts.filter((s) => !SKILL_CATEGORY_ORDER.includes(s.category));
@@ -692,8 +799,12 @@ export const JUNIOR_SKILL_DIFFICULTY: Record<string, Difficulty> = {
   b_backlayhalf: "C", // 後方伸身宙返り半ひねり
 };
 
-/** 適用規則に応じた転回系の難度。ジュニアは JUNIOR_SKILL_DIFFICULTY で上書きする。 */
-export function skillDifficulty(id: string, junior = false): Difficulty | undefined {
+/**
+ * 適用規則に応じた転回系の難度。
+ * ジュニアは JUNIOR_SKILL_DIFFICULTY で上書きし、F・G難度は十年後モードの上限で丸める
+ * （モードOFFのままF難度の技が残っている保存データを読んでも E までしか付かない）。
+ */
+export function skillDifficulty(id: string, junior = false, future: FutureLevel = null): Difficulty | undefined {
   if (junior) {
     const j = JUNIOR_SKILL_DIFFICULTY[id];
     if (j) return j;
@@ -701,7 +812,8 @@ export function skillDifficulty(id: string, junior = false): Difficulty | undefi
     const p = parseTwistSkillId(id);
     if (p && p.base === "back" && p.twist === 0.5) return "C";
   }
-  return skillDef(id)?.difficulty;
+  const d = skillDef(id)?.difficulty;
+  return d ? clampDifficulty(DIFF_VALUE[d], future) : undefined;
 }
 
 /** 適用規則に応じた投げ上げの最低回数 */

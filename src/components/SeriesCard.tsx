@@ -23,7 +23,7 @@ import {
   ROPE_JUMPS,
   POSTURE_OPTIONS,
   TWIST_BASES,
-  TWIST_OPTIONS,
+  twistOptions,
   TWIST_ID_PREFIX,
   buildTwistSkillId,
   parseTwistSkillId,
@@ -41,7 +41,7 @@ import {
   seriesTags,
 } from "../scoring/analysis";
 import type { SkillFlow } from "../scoring/constants";
-import type { ApparatusKey, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
+import type { ApparatusKey, FutureLevel, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
 import type { DiffRow, SeriesBreakdown } from "../scoring/score";
 import type { SeriesTemplateOption } from "./SeriesListEditor";
 
@@ -66,6 +66,8 @@ interface Props {
   apparatus: ApparatusKey;
   /** ジュニア適用規則で採点中か（技の難度表示に反映） */
   junior: boolean;
+  /** 十年後モードの上限難度（null＝OFF）。技の選択肢・難度表示・ひねりの選択肢に反映する。 */
+  future?: FutureLevel;
   analysis: SeriesAnalysis;
   /** analysis.units と同じ並びで、そのユニットが難度点に採用されたか */
   unitAdopted: boolean[];
@@ -125,6 +127,7 @@ function ItemEditor({
   item,
   apparatus,
   junior,
+  future,
   common,
   twistMode,
   onTwistModeChange,
@@ -137,6 +140,8 @@ function ItemEditor({
   item: Item;
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 十年後モードの上限難度（null＝OFF） */
+  future: FutureLevel;
   /** 共通テンプレートの編集か（手具固有の入力を出さない） */
   common?: boolean;
   /** このブロックをひねり・姿勢で指定するモードか */
@@ -228,7 +233,7 @@ function ItemEditor({
     const cur = params ?? fallbackTwist;
     const setTwist = (patch: Partial<TwistParams>) =>
       onUpdate({ skillId: buildTwistSkillId({ ...cur, ...patch }) });
-    const groups = skillOptionGroups(junior, flow);
+    const groups = skillOptionGroups(junior, flow, future);
     // 選択中の技が選択肢に無いとき（ジュニア禁止・その位置で実施しない系統・
     // 一覧に無いひねりの組み合わせ）は、消さずに選択値として残す
     const listed = groups.some((g) => g.skills.some((sk) => sk.id === item.skillId));
@@ -282,14 +287,14 @@ function ItemEditor({
               value={cur.twist}
               onChange={(e) => setTwist({ twist: Number(e.target.value) })}
             >
-              {TWIST_OPTIONS.map((t) => (
+              {twistOptions(future, { base: cur.base, posture: cur.posture }).map((t) => (
                 <option key={t} value={t}>
                   {twistLabel(t)}
                 </option>
               ))}
             </select>
             <span className="twist-name">
-              {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}）
+              {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior, future)}）
             </span>
           </div>
         ) : (
@@ -303,8 +308,13 @@ function ItemEditor({
               {/* 選択肢に無い技が入っている場合は、消さずに選択値として残す */}
               {item.skillId && !listed && (
                 <option value={item.skillId}>
-                  {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}
-                  {skillAllowed(item.skillId, junior) ? "" : "・ジュニア禁止"}）
+                  {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior, future)}
+                  {skillAllowed(item.skillId, junior, future)
+                    ? ""
+                    : skillDef(item.skillId)?.future
+                      ? "・十年後モード専用"
+                      : "・ジュニア禁止"}
+                  ）
                 </option>
               )}
               {/* 前方系・側方系・後方系に分けて表示 */}
@@ -312,7 +322,7 @@ function ItemEditor({
                 <optgroup key={g.name} label={g.name}>
                   {g.skills.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name}（{skillDifficulty(s.id, junior)}）
+                      {s.name}（{skillDifficulty(s.id, junior, future)}）
                     </option>
                   ))}
                 </optgroup>
@@ -475,6 +485,7 @@ export function SeriesCard({
   sIdx,
   apparatus,
   junior,
+  future = null,
   analysis: a,
   unitAdopted,
   breakdown: b,
@@ -633,6 +644,7 @@ export function SeriesCard({
               item={item}
               apparatus={apparatus}
               junior={junior}
+              future={future}
               common={common}
               twistMode={twistModeOf(iIdx, item)}
               onTwistModeChange={(on) => setTwistModeOf(iIdx, on)}

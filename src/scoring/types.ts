@@ -3,7 +3,17 @@
 // =====================================================================
 
 export type ApparatusKey = "stick" | "clubs" | "ring" | "rope";
-export type Difficulty = "A" | "B" | "C" | "D" | "E";
+/**
+ * 難度。F・G は現行規則には無く、十年後モード（`FutureLevel`）でだけ認定する。
+ * 現行規則で採点するあいだは `skillDifficulty` などが E に丸めるので表に出ない。
+ */
+export type Difficulty = "A" | "B" | "C" | "D" | "E" | "F" | "G";
+
+/**
+ * 十年後モードの上限難度。null がモードOFF（現行規則どおり E 止め）。
+ * "F" なら F難度まで、"G" なら G難度までを認定する。
+ */
+export type FutureLevel = "F" | "G" | null;
 
 /** 演技を構成する1アイテム。kind で判別する判別共用体。 */
 export type Item =
@@ -91,6 +101,11 @@ export interface Skill {
   isHandElement?: boolean;
   /** 2回宙返り系か（ジュニア適用規則では禁止のため選択肢に出さない） */
   isDoubleSalto?: boolean;
+  /**
+   * 十年後モードでだけ実施できる技（F・G難度）。現行規則の選択肢には出さない。
+   * 上限（`FutureLevel`）より高い難度の技も出さないので、F設定ではG難度の技は選べない。
+   */
+  future?: boolean;
   /** ひねり・姿勢から組み立てられる宙返りか（`TwistParams` と1対1） */
   twist?: TwistParams;
 }

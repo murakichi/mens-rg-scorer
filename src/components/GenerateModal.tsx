@@ -10,7 +10,7 @@ import {
   type GenerateResult,
 } from "../scoring/generate";
 import { apparatusName, describeSeries, type SeriesTemplate } from "../scoring/templates";
-import type { ApparatusKey } from "../scoring/types";
+import type { ApparatusKey, FutureLevel } from "../scoring/types";
 
 interface Props {
   open: boolean;
@@ -19,12 +19,14 @@ interface Props {
   /** 採点画面で選択中の手具（既定値） */
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 十年後モードの上限難度（null＝OFF）。F・G難度を前提にタンブリングを組む。 */
+  future?: FutureLevel;
   onClose: () => void;
   onApply: (apparatus: ApparatusKey, result: GenerateResult) => void;
 }
 
 /** テンプレートから演技構成をランダムに組み立てるダイアログ */
-export function GenerateModal({ open, templates, apparatus, junior, onClose, onApply }: Props) {
+export function GenerateModal({ open, templates, apparatus, junior, future = null, onClose, onApply }: Props) {
   const [target, setTarget] = useState<ApparatusKey | "">(apparatus);
   const [minScore, setMinScore] = useState("");
   const [maxScore, setMaxScore] = useState("");
@@ -44,6 +46,7 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
     const r = generateForApparatus(templates, {
       apparatus: target || null,
       junior,
+      future,
       autoThrows,
       autoTumblings,
       autoRatio: autoPercent / 100,

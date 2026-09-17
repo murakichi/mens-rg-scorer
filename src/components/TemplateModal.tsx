@@ -21,7 +21,7 @@ import type { Difficulty } from "../scoring/types";
 import { SeriesListEditor } from "./SeriesListEditor";
 import { SeriesTags } from "./SeriesCard";
 import { SERIES_TAGS, seriesTags, type SeriesTagId } from "../scoring/analysis";
-import type { ApparatusKey, Series } from "../scoring/types";
+import type { ApparatusKey, FutureLevel, Series } from "../scoring/types";
 
 interface Props {
   open: boolean;
@@ -29,6 +29,8 @@ interface Props {
   /** 採点画面で選択中の手具（新規保存時の既定値） */
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 十年後モードの上限難度（null＝OFF）。難度の絞り込みと編集画面に反映する。 */
+  future?: FutureLevel;
   /** 編集結果を書き戻す（保存は呼び出し側） */
   onChange: (store: TemplateStore) => void;
   onClose: () => void;
@@ -66,6 +68,7 @@ export function TemplateModal({
   store,
   apparatus,
   junior,
+  future = null,
   onChange,
   onClose,
   onSaveCurrentRoutine,
@@ -177,7 +180,7 @@ export function TemplateModal({
       if (!tagFilter.every((t) => tags.has(t))) return false;
     }
     if (diffMin || diffMax || scoreMin || scoreMax) {
-      const m = templateMetrics(list, ap, junior);
+      const m = templateMetrics(list, ap, junior, future);
       if (diffMin && m.diffValue < DIFF_VALUE[diffMin as Difficulty]) return false;
       if (diffMax && (m.diffValue === 0 || m.diffValue > DIFF_VALUE[diffMax as Difficulty])) return false;
       if (scoreMin && m.dScore < parseFloat(scoreMin) - 1e-9) return false;
@@ -249,7 +252,7 @@ export function TemplateModal({
                 {apparatusName(t.apparatus)}
                 {kind === "routine" && `・${list.length}シリーズ`}／{stamp(t.updatedAt)}
                 {(() => {
-                  const m = templateMetrics(list, t.apparatus, junior);
+                  const m = templateMetrics(list, t.apparatus, junior, future);
                   return (
                     <>
                       ／難度 {m.diff ?? "—"}・D {m.dScore.toFixed(1)}
@@ -317,6 +320,7 @@ export function TemplateModal({
         apparatus={scoringApparatus(selected.apparatus)}
         common={isCommonApparatus(selected.apparatus)}
         junior={junior}
+        future={future}
         allowAdd={sel!.kind === "routine"}
         showExec={false}
         onChange={(next) => patchSelected({ series: next })}

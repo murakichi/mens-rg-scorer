@@ -229,10 +229,13 @@ describe("ジュニア適用規則 — 6回目以降の投げは加点にも数�
 describe("ジュニア適用規則 — 2回宙返り系は禁止", () => {
   const doubles = ["d_doubleback", "e_doublelay", "e_divedouble", "e_moonsault", "e_rudolph"];
 
+  /** 十年後モード専用（F・G難度）の技を除いた一覧 */
+  const currentSkills = SKILL_LIST.filter((s) => !s.future);
+
   it("一般では選択肢に出る", () => {
     const ids = skillOptions().map((s) => s.id);
     doubles.forEach((id) => expect(ids).toContain(id));
-    expect(skillOptions()).toHaveLength(SKILL_LIST.length);
+    expect(skillOptions()).toHaveLength(currentSkills.length);
   });
 
   it("ジュニアでは選択肢から外れる", () => {
@@ -240,7 +243,7 @@ describe("ジュニア適用規則 — 2回宙返り系は禁止", () => {
     doubles.forEach((id) => expect(ids).not.toContain(id));
     expect(ids).toContain("b_front");
     expect(ids).toContain("d_back2twist"); // ひねり技は2回宙返りではないので残る
-    expect(skillOptions(true)).toHaveLength(SKILL_LIST.length - doubles.length);
+    expect(skillOptions(true)).toHaveLength(currentSkills.length - doubles.length);
   });
 
   it("skillAllowed が実施可否を返す", () => {

@@ -7,14 +7,16 @@
 // =====================================================================
 
 import { stripForApparatus } from "./analysis";
-import { APPARATUS, ART_DEDUCTION_ITEMS, clampArtDeduction } from "./constants";
+import { APPARATUS, ART_DEDUCTION_ITEMS, clampArtDeduction, normalizeFutureLevel } from "./constants";
 import { initialTeamState, normalizeTeamState, type TeamState } from "./team";
-import type { ApparatusKey, Item, Series } from "./types";
+import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
 export const DRAFT_KEY_INDIVIDUAL = "mens-rg-scorer:draft:individual:v1";
 export const DRAFT_KEY_TEAM = "mens-rg-scorer:draft:team:v1";
 /** 最後に使っていたモード（個人／団体）。どちらのドラフトを見せるかを決める。 */
 export const DRAFT_KEY_MODE = "mens-rg-scorer:draft:mode:v1";
+/** 十年後モードの解放状態（ジュニアモードの切り替え回数）。構成とは別に端末ごとに覚える。 */
+export const FUTURE_UNLOCK_KEY = "mens-rg-scorer:future-unlock:v1";
 
 export type ScorerMode = "individual" | "team";
 
@@ -23,6 +25,8 @@ export interface IndividualDraft {
   version: 1;
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 十年後モードの上限難度（null＝OFF） */
+  future: FutureLevel;
   series: Series[];
   executionDeduction: number;
   apparatusElements: string[];
@@ -77,6 +81,7 @@ export function normalizeIndividualDraft(data: unknown): IndividualDraft | null 
     version: 1,
     apparatus,
     junior: !!d.junior,
+    future: normalizeFutureLevel(d.future),
     series: raw.length > 0 ? stripForApparatus(raw, apparatus) : [],
     executionDeduction: Number(d.executionDeduction) || 0,
     apparatusElements: asStringArray(d.apparatusElements),
@@ -105,6 +110,7 @@ export function isBlankIndividualDraft(d: IndividualDraft): boolean {
     d.series.every((ser) => ser.items.length <= 1 && ser.items.every(isBlankItem) && !ser.executionDeduction) &&
     !d.executionDeduction &&
     !d.junior &&
+    !d.future &&
     d.apparatusElements.length === 0 &&
     d.violations.length === 0 &&
     Object.keys(d.artDeductions).length === 0
@@ -131,6 +137,7 @@ export function isBlankTeamState(t: TeamState): boolean {
         !ser.executionDeduction,
     ) &&
     !t.junior &&
+    !t.future &&
     !t.executionDeduction
   );
 }
@@ -194,6 +201,27 @@ export function saveTeamDraft(team: TeamState): boolean {
 
 /** 団体モードの初期状態（ドラフトが無いとき） */
 export const emptyTeamDraft = (): TeamState => initialTeamState();
+
+/** 十年後モードの切り替えを表示するまでに必要な、ジュニアモードの切り替え回数 */
+export const FUTURE_UNLOCK_TOGGLES = 10;
+
+/** 十年後モードの解放状態（端末ごと） */
+export interface FutureUnlockState {
+  /** ジュニアモードを切り替えた回数 */
+  toggles: number;
+  /** 十年後モードの切り替えを表示してよいか */
+  unlocked: boolean;
+}
+
+export function loadFutureUnlock(): FutureUnlockState {
+  const v = readKey(FUTURE_UNLOCK_KEY) as Partial<FutureUnlockState> | null;
+  const toggles = Math.max(0, Math.floor(Number(v?.toggles) || 0));
+  return { toggles, unlocked: !!v?.unlocked || toggles >= FUTURE_UNLOCK_TOGGLES };
+}
+
+export function saveFutureUnlock(state: FutureUnlockState): void {
+  writeKey(FUTURE_UNLOCK_KEY, state);
+}
 
 export function loadDraftMode(): ScorerMode | null {
   const v = readKey(DRAFT_KEY_MODE);
