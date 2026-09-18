@@ -36,6 +36,7 @@
 | 難度の数値対応（A=1〜E=5、F=6・G=7） | `DIFF_VALUE` / `VALUE_DIFF` | `constants.ts` |
 | 難度上限（現行規則） | `MAX_DIFF = 5` | `constants.ts` |
 | 適用中の難度上限（十年後モード） | `maxDiff(future)` / `clampDifficulty()` | `constants.ts` |
+| 位置で変わる難度（ダイビングの格上げ） | `skillDifficultyAt()` | `constants.ts` |
 | 系統タグ（前方/側方/後方/その他） | `CATEGORY` | `constants.ts` |
 | 手具定義 | `APPARATUS` | `constants.ts` |
 | 手具ごとの必須投げ | `REQUIRED_THROW_OPTIONS` | `constants.ts` |
@@ -116,6 +117,25 @@ UIのプルダウンは見出し（`optgroup`）で分類する。タンブリ�
 `direction` は §3.2(3) の前回し／後ろ回し跳び2回以上連続の要求要素判定にのみ使う。
 
 ---
+
+### 位置で難度が変わる特例（ダイビング）
+
+**ダイビング**（`DIVING_SKILL_ID` = `a_diving`、後方系）は頭から着地する技で、
+**この技の後に技は続かない**。単発では **A難度**だが、**宙返りの直後に連続で実施すると
+1段格上げして B難度**として認定する（`DIVING_UPGRADED_DIFFICULTY`）。
+間にA難度技（ロンダート・バク転）が入ったら「連続」ではないので格上げしない。
+
+難度が**位置で変わる**のはこの技だけなので、並びから引く関数を分けてある：
+
+| 用途 | 関数 |
+| --- | --- |
+| 位置に依存しない難度（表の値。ジュニア・十年後モードの読み替えを含む） | `skillDifficulty(id, junior, future)` |
+| 並びのなかでのその位置の難度（ダイビングの格上げを反映） | `skillDifficultyAt(skillIds, i, junior, future)` |
+
+連続の難度を出す `calcTumblingDifficulty`（個人）と `calcChunkDifficulty`（団体）は
+後者を位置ごとに引く。宙返りとしては**常に数える**（`isSalto: true`）ので、
+宙返り→宙返り→ダイビング は三宙になる。
+自動生成では組み立てない（`Skill.noAuto`。入力画面の選択肢には出す）。
 
 ## 4. 個人モードの加点定数
 
@@ -847,6 +867,8 @@ value = -(範囲外 + 本数超過) × 100        … 難度では覆せない
     そのまま前方系に続けて三宙にできる
     （実測：後方伸身の直後に技が続く366件のうち後方系は13件＝3.6%。
     例：ロンダート→後方伸身宙返り2回ひねり→後方宙返り1回半ひねり→前転）
+  - **ダイビングの後は何も続かない**（`CHAIN_END_SKILLS`）。頭から着地する技なので、
+    きりもみ・とび前転と同じ扱い。自動生成では組み立てない（`Skill.noAuto`）
   - **転宙の後は側宙だけ**（`ONLY_SIDE_SALTO_AFTER`）。ほかの宙返りを続けることも、
     つなぎ技を挟むことも、前転でつなぐこともない（前転は `NO_ROLL_AFTER_SKILLS` が落とす）。
     転宙はそこで終わるか側宙に続けるかのどちらかになる

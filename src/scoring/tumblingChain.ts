@@ -31,6 +31,7 @@
 import {
   CATEGORY,
   DIFF_VALUE,
+  DIVING_SKILL_ID,
   maxDiff,
   ROUNDOFF_SKILL_ID,
   isBackwardSalto,
@@ -202,6 +203,8 @@ export const CHAIN_END_SKILLS: string[] = [
   "b_kirimomi",
   "c_kirimomiten",
   SIDE_SALTO_ID,
+  // ダイビングは頭から着地するので、この後に技を続けることはできない
+  DIVING_SKILL_ID,
 ];
 
 export const endsChain = (id: string): boolean => CHAIN_END_SKILLS.includes(id);

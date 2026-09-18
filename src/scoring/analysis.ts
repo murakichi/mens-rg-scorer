@@ -17,6 +17,7 @@ import {
   requiredThrowName,
   skillDef,
   skillDifficulty,
+  skillDifficultyAt,
   ropeJumpDef,
   isBackwardSalto,
   isBackwardSkill,
@@ -87,7 +88,8 @@ export function calcTumblingDifficulty(
   future: FutureLevel = null,
 ): Difficulty | null {
   const diffs = skillIds
-    .map((id) => skillDifficulty(id, junior, future))
+    // 位置で難度が変わる特例（宙返りの直後のダイビングは格上げ）があるので位置つきで引く
+    .map((_id, i) => skillDifficultyAt(skillIds, i, junior, future))
     .filter((d): d is Difficulty => !!d && d !== "A");
   if (diffs.length === 0) return null;
   let v = DIFF_VALUE[diffs[0]];

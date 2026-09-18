@@ -24,7 +24,13 @@ import {
   type AutoTumblingPattern,
   type SaltoEdge,
 } from "../autoTumblings";
-import { DIFF_VALUE, ROUNDOFF_SKILL_ID, isBackwardSalto, skillDifficulty } from "../constants";
+import {
+  DIFF_VALUE,
+  DIVING_SKILL_ID,
+  ROUNDOFF_SKILL_ID,
+  isBackwardSalto,
+  skillDifficulty,
+} from "../constants";
 
 const pattern = (id: string): AutoTumblingPattern =>
   AUTO_TUMBLING_PATTERNS.find((p) => p.id === id) as AutoTumblingPattern;
@@ -156,6 +162,18 @@ describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
     // 連続は難度が下がるので、直前より難度の高い後方系は出さない
     // （後方伸身宙返り＝B の後に C難度の1回半ひねりは続けない）
     expect(find(tr.next("b_backlayout"), "c_back15")).toBeUndefined();
+  });
+
+  it("ダイビングは自動生成では組み立てない（頭から着地するので後にも続かない）", () => {
+    const tr = table("chain");
+    expect(tr.first.some((e) => e.id === DIVING_SKILL_ID)).toBe(false);
+    expect(tr.next("d_backlay2twist").some((e) => e.id === DIVING_SKILL_ID)).toBe(false);
+    expect(usableSkills({})([DIVING_SKILL_ID])).toEqual([]);
+    // 指定に入れても自動生成では使わない
+    expect(usableSkills({ skillIds: [DIVING_SKILL_ID] })([DIVING_SKILL_ID])).toEqual([]);
+    // 連続の終わりの技なので、後にも何も続かない
+    expect(tr.next(DIVING_SKILL_ID)).toEqual([]);
+    expect(tr.connects(DIVING_SKILL_ID)).toEqual([]);
   });
 
   it("転宙の後は側宙だけ（つなぎも前転も続けない）", () => {

@@ -108,6 +108,11 @@ export interface Skill {
   future?: boolean;
   /** 団体でしか実施しない技（個人モードの選択肢に出さない） */
   teamOnly?: boolean;
+  /**
+   * 自動生成では組み立てない技（入力画面には出す）。
+   * ダイビングのように、実施はされるがシステム側で提案する性質のものではない技に付ける。
+   */
+  noAuto?: boolean;
   /** ひねり・姿勢から組み立てられる宙返りか（`TwistParams` と1対1） */
   twist?: TwistParams;
 }

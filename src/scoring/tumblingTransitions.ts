@@ -110,6 +110,7 @@ export interface TumblingTransitions {
  *    出てくる）ときだけ使い、技の一覧からは組み立てない
  *  - 十年後モードのF・G難度は**まだ誰も実施していない技**なので、`skillIds` に出てこなくても
  *    使ってよい（2回宙返り系はこの例外に入れない）
+ *  - `noAuto` の技（ダイビング）は自動生成では組み立てない
  */
 export function usableSkills(
   ctx: Pick<TransitionContext, "junior" | "future" | "basicLevel" | "skillIds">,
@@ -123,6 +124,7 @@ export function usableSkills(
   return (ids) =>
     ids.filter(
       (id) =>
+        !skillDef(id)?.noAuto &&
         (!allowed || allowed.has(id)) &&
         (!basicLevel || difficultyValue(id, junior, future) <= BASIC_LEVEL_MAX_DIFF) &&
         (!skillDef(id)?.isDoubleSalto || !!allowed?.has(id)),

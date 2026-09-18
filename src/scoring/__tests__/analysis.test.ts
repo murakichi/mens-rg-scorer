@@ -17,7 +17,18 @@ import {
   catchTwoFlags,
   tumblingVariety,
 } from "../analysis";
-import { ropeJumpDef, MOTION_OPTIONS, SKILL_LIST, legacyMotionDef, motionOptionsFor } from "../constants";
+import {
+  ropeJumpDef,
+  DIVING_SKILL_ID,
+  DIVING_UPGRADED_DIFFICULTY,
+  MOTION_OPTIONS,
+  SKILL_LIST,
+  legacyMotionDef,
+  motionOptionsFor,
+  skillDifficulty,
+  skillDifficultyAt,
+  skillOptions,
+} from "../constants";
 import type { Series, Item } from "../types";
 
 // テストヘルパー：items から Series を組む
@@ -694,5 +705,43 @@ describe("その手具では入力できない内容", () => {
     ];
     const sk = stripForApparatus(skillThrow, "stick")[0].items[0];
     expect(sk.kind === "skill" && sk.throwTypes).toEqual([]);
+  });
+});
+
+describe("ダイビング（後方系・頭から着地）", () => {
+  it("単発はA難度、宙返りの直後に連続で実施すると1段格上げ", () => {
+    expect(skillDifficulty(DIVING_SKILL_ID)).toBe("A");
+    // 単発・先頭はA
+    expect(skillDifficultyAt([DIVING_SKILL_ID], 0)).toBe("A");
+    // A難度技（ロンダート・バク転）は宙返りではないので格上げしない
+    expect(skillDifficultyAt(["a_roundoff", DIVING_SKILL_ID], 1)).toBe("A");
+    expect(skillDifficultyAt(["a_flicflac", DIVING_SKILL_ID], 1)).toBe("A");
+    // 宙返りの直後なら格上げ
+    expect(skillDifficultyAt(["c_back15", DIVING_SKILL_ID], 1)).toBe(DIVING_UPGRADED_DIFFICULTY);
+    expect(skillDifficultyAt(["d_backlay2twist", DIVING_SKILL_ID], 1)).toBe(DIVING_UPGRADED_DIFFICULTY);
+    // ほかの技の難度は位置で変わらない
+    expect(skillDifficultyAt(["c_back15", "b_front"], 1)).toBe(skillDifficulty("b_front"));
+  });
+
+  it("格上げぶんが連続の難度に乗る", () => {
+    // ロンダート→ダイビング：ダイビングはA扱いのままなので難度は付かない
+    expect(calcTumblingDifficulty(["a_roundoff", DIVING_SKILL_ID], false)).toBeNull();
+    // ロンダート→後方1回半ひねり(C)→ダイビング(格上げB)：C + (B-1) = D
+    expect(calcTumblingDifficulty(["a_roundoff", "c_back15", DIVING_SKILL_ID], false)).toBe("D");
+    // 格上げが無ければC止まりであることの確認（比較対象）
+    expect(calcTumblingDifficulty(["a_roundoff", "c_back15"], false)).toBe("C");
+  });
+
+  it("常に宙返りとして数える（三宙に入る）", () => {
+    expect(SKILL_LIST.find((s) => s.id === DIVING_SKILL_ID)?.isSalto).toBe(true);
+    expect(maxSaltoChain(["a_roundoff", "c_back15", DIVING_SKILL_ID])).toBe(2);
+    expect(maxSaltoChain(["a_roundoff", "d_backlay2twist", "c_back15", DIVING_SKILL_ID])).toBe(3);
+  });
+
+  it("入力画面には出るが、自動生成では組み立てない", () => {
+    expect(skillOptions().some((s) => s.id === DIVING_SKILL_ID)).toBe(true);
+    expect(SKILL_LIST.find((s) => s.id === DIVING_SKILL_ID)?.noAuto).toBe(true);
+    // 徒手動作の選択肢には出ない（宙返り扱いなので）
+    expect(MOTION_OPTIONS.some((m) => m.id === DIVING_SKILL_ID)).toBe(false);
   });
 });
