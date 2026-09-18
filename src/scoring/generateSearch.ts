@@ -54,7 +54,14 @@ export function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () 
   // 割合が0＝自動生成を使わない（候補を作るだけ無駄なので作らない）
   if (autoSeriesMax(opts) === 0) return pool;
   if (opts.autoThrows !== false)
-    pool.push(...autoThrowTemplates(opts.apparatus, { random: rand, limit: opts.autoThrowLimit }));
+    pool.push(
+      ...autoThrowTemplates(opts.apparatus, {
+        random: rand,
+        limit: opts.autoThrowLimit,
+        // 十年後モードでは5〜6動作（F・G難度）の形も候補にする
+        future: opts.future ?? null,
+      }),
+    );
   if (opts.autoTumblings !== false)
     pool.push(
       ...autoTumblingTemplates(opts.apparatus, {

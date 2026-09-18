@@ -7,6 +7,7 @@ import {
   VALUE_DIFF,
   MAX_DIFF,
   clampDifficulty,
+  futureHandValue,
   HAND_MOTIONS,
   DEFAULT_HANDS_TYPE,
   HANDS_TYPE_OTHER,
@@ -97,16 +98,20 @@ export function calcTumblingDifficulty(
 }
 
 /**
- * 徒手難度。縦3動作は無条件E、それ以外は動作数を A 起点で加算。
- * 十年後モードでは動作を積んだぶんだけ上限（F・G）まで伸びる。
+ * 徒手難度。動作数を A 起点で加算し、**縦3動作は最低E**（§3.5.5.3）。
+ * 十年後モードでは、縦回転を重く数えた動作量（`futureHandValue`）でF・Gまで伸びる
+ * — 縦3動作の「最低E」も上書きではなく最低保証なので、縦3動作に動作を足せば難度は上がる。
  */
 export function calcHandDifficulty(
   motionCount: number,
   verticalThree: boolean,
   future: FutureLevel = null,
+  verticalCount = 0,
 ): Difficulty {
-  if (verticalThree) return "E";
-  return clampDifficulty(DIFF_VALUE.A + motionCount, future);
+  let value = DIFF_VALUE.A + motionCount;
+  if (verticalThree) value = Math.max(value, DIFF_VALUE.E);
+  if (future) value = Math.max(value, futureHandValue(motionCount, verticalCount));
+  return clampDifficulty(value, future);
 }
 
 /**
@@ -315,11 +320,16 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean, future: FutureLevel): Un
     if (tumFlags[i]) return;
     composition.set(id, (composition.get(id) ?? 0) + 1);
   });
+  // 徒手扱いの転回技（側転・きりもみ等）はすべて縦回転（`motionDef` と同じ扱い）
+  const verticalCount = buf.verticalCount + skillMotions;
   // 縦回転の徒手が3動作分そろえば縦3動作（E難度）
-  const verticalThree = buf.verticalThree || buf.verticalCount + skillMotions >= VERTICAL_THREE_COUNT;
+  const verticalThree = buf.verticalThree || verticalCount >= VERTICAL_THREE_COUNT;
 
   const tumblingDiff = hasTumbling ? calcTumblingDifficulty(tumblingSkillIds, isThrow, junior, future) : null;
-  const handDiff = isThrow || motionCount > 0 ? calcHandDifficulty(motionCount, verticalThree, future) : null;
+  const handDiff =
+    isThrow || motionCount > 0
+      ? calcHandDifficulty(motionCount, verticalThree, future, verticalCount)
+      : null;
 
   const signatures = unitSignatures(buf, tumblingSkillIds, composition, junior, future);
   const neverDuplicate = buf.hasOtherHands;
