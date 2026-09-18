@@ -31,6 +31,7 @@ import {
   CONNECT_RISE_WEIGHT,
   TEMPO_CONNECT_WEIGHT,
   THROW_AFTER_CONNECT_SALTOS,
+  frequencyDiffValue,
   THROW_AFTER_CONNECT_WEIGHT,
   throwInSaltoWeight,
   THROW_IN_SKILL_ROUNDOFF_WEIGHT,
@@ -136,7 +137,8 @@ export function usableSkills(
       (id) =>
         !skillDef(id)?.noAuto &&
         (!allowed || allowed.has(id)) &&
-        difficultyValue(id, junior, future) <= maxValue &&
+        // 表記より難しい技（転宙・きりもみ系）は1段上の難度として上限を見る
+        frequencyDiffValue(id, junior, future) <= maxValue &&
         (!skillDef(id)?.isDoubleSalto || !!allowed?.has(id)),
     );
 }

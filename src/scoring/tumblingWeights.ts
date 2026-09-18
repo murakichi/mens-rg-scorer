@@ -224,16 +224,25 @@ export function saltoWeights(
   });
   // テンポひねりの次はテンポ宙返り＞それ以外の宙返り（難度の重みより優先する）
   if (prevId === TEMPO_TWIST_SKILL_ID)
-    return { ...weights, [TEMPO_SKILL_ID]: AFTER_TEMPO_TWIST_WEIGHT };
-  if (!isBackLayoutSalto(prevId)) return weights;
+    return withHarderThanRated({ ...weights, [TEMPO_SKILL_ID]: AFTER_TEMPO_TWIST_WEIGHT });
+  if (!isBackLayoutSalto(prevId)) return withHarderThanRated(weights);
   // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）。
   // 後方系を続ける形（抱え込みの半ひねり系）はさらに少ない
-  return {
+  return withHarderThanRated({
     ...weights,
     ...Object.fromEntries(
       [...AFTER_BACK_LAYOUT_SALTOS, ...AFTER_BACK_LAYOUT_BACKWARD_SALTOS].map((x) => [x.id, x.weight]),
     ),
-  };
+  });
+}
+
+/** 表記より難しい技の重みに難度1段ぶんの倍率を掛ける（位置ごとの重みの後に効かせる） */
+function withHarderThanRated(weights: Record<string, number>): Record<string, number> {
+  const out = { ...weights };
+  HARDER_THAN_RATED.forEach((id) => {
+    out[id] = (out[id] ?? 1) * HARDER_THAN_RATED_WEIGHT;
+  });
+  return out;
 }
 
 /**
@@ -318,6 +327,42 @@ export const SALTO_DIFFICULTY_WEIGHT: Partial<Record<Difficulty, number>> = {
  * Eは普通の高難度（`SALTO_DIFFICULTY_WEIGHT`）に戻る。
  */
 export const TOP_SINGLE_WEIGHT = 0.05;
+
+/**
+ * **難度の表記より実際の難しさが一段上**の技。首や背中から着地する技・軸のずれる技は、
+ * 規則上の難度は低くても実施の難しさが頭ひとつ抜けている（転宙・きりもみ・きりもみ転回）。
+ * **難度点は規則どおりのまま**で、頻度の計算だけ1段上の難度として扱う：
+ *  - 単発の選ばれやすさ（`SALTO_DIFFICULTY_WEIGHT` / `TOP_SINGLE_WEIGHT`）
+ *  - 狙うDスコアごとの難度の上限（`SKILL_MAX_DIFF_STEPS`。C止まりの構成にきりもみ転回は出ない）
+ * 後方伸身宙返りの後だけは位置ごとの実測（`AFTER_BACK_LAYOUT_SALTOS`：前宙5＞きりもみ3＞
+ * きりもみ転回1）が重みを上書きするので、そこはこの補正の対象外。
+ */
+export const HARDER_THAN_RATED: string[] = [TENCHU_SKILL_ID, "b_kirimomi", "c_kirimomiten"];
+
+/** 頻度の計算で使う難度の値（表記より難しい技は1段上として数える） */
+export function frequencyDiffValue(
+  id: string,
+  junior = false,
+  future: FutureLevel = null,
+): number {
+  const d = skillDifficulty(id, junior, future);
+  const base = d ? DIFF_VALUE[d] : 0;
+  return HARDER_THAN_RATED.includes(id) ? base + 1 : base;
+}
+
+/**
+ * 表記より難しい技の選ばれやすさに掛ける倍率＝**難度1段ぶん**
+ * （`SALTO_DIFFICULTY_WEIGHT` の C→D の比と同じ 0.6）。
+ * 難度の表（`SALTO_DIFFICULTY_WEIGHT`）はD難度以上しか区別しないので、B→Cの技
+ * （転宙・きりもみ）は表の引き直しでは変わらない。位置ごとの重み
+ * （`AFTER_BACK_LAYOUT_SALTOS`：きりもみが実際に出てくるのはこの位置）にも効かせたいので、
+ * 難度を引き直すのではなく**倍率として最後に掛ける**。
+ */
+export const HARDER_THAN_RATED_WEIGHT = 0.6;
+
+/** その技が「表記より難しい」なら難度1段ぶんの倍率、そうでなければ1 */
+export const harderThanRatedWeight = (id: string): number =>
+  HARDER_THAN_RATED.includes(id) ? HARDER_THAN_RATED_WEIGHT : 1;
 
 /** 単発の技の難度ごとの選ばれやすさ（その時代の上限難度だけ `TOP_SINGLE_WEIGHT` に抑える） */
 export function saltoDifficultyWeight(d: Difficulty, future: FutureLevel = null): number {
