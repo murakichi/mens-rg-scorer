@@ -7,6 +7,7 @@ import {
   KIRIMOMI_THROW_SKILL_ID,
   RARE_CHAIN_END_SKILLS,
   ROLL_AFTER_FORWARD_CHANCE,
+  TEMPO_SKILLS,
   ROLL_AFTER_FRONT_CHANCE,
   ROLL_AFTER_SWITCH_CHANCE,
   ROUNDOFF_ENTRY_WEIGHT,
@@ -45,6 +46,13 @@ import {
   saltoWeights,
   SWITCH_SIDE_SALTO_WEIGHT,
   CONNECT_FINISH_HALF_WEIGHT,
+  BACK_TO_BACK_WEIGHT,
+  backToBackWeight,
+  BACK_LANDING_FORWARD_WEIGHT,
+  backLandingForwardWeight,
+  RARE_SALTO_PAIRS,
+  saltoPairWeight,
+  DIVE_FRONT_SKILL_ID,
   isBackHalfTwistSalto,
   SIDE_SALTO_ID,
   TENCHU_SKILL_ID,
@@ -264,6 +272,56 @@ describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
     const o1 = find(tr.next("b_front", "d_backlay2twist"), other);
     const o2 = find(tr.next("b_front"), other);
     if (o1 && o2) expect(o1.weight).toBeCloseTo(o2.weight);
+  });
+
+  it("テンポ以外の後ろ向きに降りる宙返りから後方系を続ける辺は重みが下がる", () => {
+    expect(BACK_TO_BACK_WEIGHT).toBeLessThan(1);
+    // 後方伸身2回ひねり（整数ひねり＝後ろ向きに降りる）の後
+    const tr = table("chain");
+    const afters = tr.next("d_backlay2twist");
+    const toBack = find(afters, "c_back15");
+    const toFwd = find(afters, "b_front");
+    expect(toBack && toFwd).toBeTruthy();
+    // 同じ位置に並ぶ前方系より選ばれにくい
+    expect(toBack!.weight).toBeLessThan(toFwd!.weight);
+
+    // 関数そのもの：テンポの後だけは下げない
+    expect(backToBackWeight("d_backlay2twist", "c_back15")).toBe(BACK_TO_BACK_WEIGHT);
+    TEMPO_SKILLS.forEach((id) => expect(backToBackWeight(id, "c_back15")).toBe(1));
+    // 前向きに降りる技の後・ロンダートの後は対象外（ロンダートは宙返りではない）
+    expect(backToBackWeight("b_front", "c_back15")).toBe(1);
+    expect(backToBackWeight(ROUNDOFF_SKILL_ID, "c_back15")).toBe(1);
+    // 続きが前方系なら下げない
+    expect(backToBackWeight("d_backlay2twist", "b_front")).toBe(1);
+  });
+
+  it("後ろ向きに降りる前方系（前宙半ひねり）は技そのものの重みが下がる", () => {
+    // その位置には後方系しか並ばないので、辺ではなく技の重みで下げる
+    expect(BACK_LANDING_FORWARD_WEIGHT).toBeLessThan(1);
+    expect(backLandingForwardWeight("b_fronthalf")).toBe(BACK_LANDING_FORWARD_WEIGHT);
+    // 前向きに降りる前方系・後方系は対象外
+    expect(backLandingForwardWeight("b_front")).toBe(1);
+    expect(backLandingForwardWeight("d_backlay2twist")).toBe(1);
+
+    const tr = table("chain");
+    const first = find(tr.first, "b_fronthalf");
+    const plain = find(tr.first, "b_front");
+    expect(first && plain).toBeTruthy();
+    expect(first!.weight).toBeLessThan(plain!.weight);
+  });
+
+  it("ダイビング前宙→前宙は、どの位置でも少し珍しい", () => {
+    expect(saltoPairWeight(DIVE_FRONT_SKILL_ID, "b_front")).toBeLessThan(1);
+    // 表に無い組み合わせは下げない
+    expect(saltoPairWeight(DIVE_FRONT_SKILL_ID, SIDE_SALTO_ID)).toBe(1);
+    expect(saltoPairWeight("b_front", "b_front")).toBe(1);
+    RARE_SALTO_PAIRS.forEach((x) => expect(x.weight).toBeLessThan(1));
+
+    const tr = table("chain");
+    const afters = tr.next(DIVE_FRONT_SKILL_ID);
+    const front = find(afters, "b_front");
+    const side = find(afters, SIDE_SALTO_ID);
+    if (front && side) expect(front.weight).toBeLessThan(side.weight);
   });
 
   it("つなぎのあとの宙返りにハーフ（後方の半ひねり）を使う辺は重みが下がる", () => {

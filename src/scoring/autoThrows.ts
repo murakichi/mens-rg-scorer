@@ -272,6 +272,26 @@ export const COMBINED_CATCH_WEIGHT = 0.1;
 export const NO_VIEW_USE_APPARATUS_WEIGHT: Partial<Record<ApparatusKey, number>> = { clubs: 0.3 };
 
 /**
+ * **クラブの二つ投げを手以外で受ける**のはほぼ不可能：2本とも空中にあるので、
+ * 受け止めるのに使える体の部位に手具を添えることができない。実施例が無いに等しいので、
+ * **要求するDスコア**（`demandScore`＝`minScore`）が `TWO_THROW_NON_HAND_FREE_SCORE` を
+ * 超えるまでは事実上生成しない重みにする（`HARD_THROW_FREE_SCORE` と同じ読み方）。
+ * 禁止ではなく重みなのは、点数がどうしても要るときの逃げ道を残すため。
+ * リングは輪なので腕・首で受けられる余地があり、この規則の対象外。
+ */
+export const TWO_THROW_NON_HAND_WEIGHT = 0.01;
+
+export const TWO_THROW_NON_HAND_FREE_SCORE = 5.0;
+
+export const twoThrowNonHandWeight = (
+  apparatus: ApparatusKey,
+  demandScore?: number | null,
+): number =>
+  apparatus === "clubs" && (demandScore ?? 0) <= TWO_THROW_NON_HAND_FREE_SCORE
+    ? TWO_THROW_NON_HAND_WEIGHT
+    : 1;
+
+/**
  * **前転3回（縦3動作）は珍しい寄りの技**。候補に混ぜるかどうかを1回の抽選で決める
  * （形ごとに引くと投げ方の数だけ生き残って、結局貪欲法が拾ってしまう）。
  *
@@ -323,6 +343,7 @@ export function catchStyleWeight({
   pattern,
   apparatus,
   motions,
+  demandScore,
 }: {
   throwStyle: AutoThrowStyle;
   catchStyle: AutoCatchStyle;
@@ -330,6 +351,8 @@ export function catchStyleWeight({
   apparatus: ApparatusKey;
   /** その投げ受けで実施する徒手動作の数（`patternMotions`） */
   motions: number;
+  /** 要求するDスコア（`minScore`）。クラブの二つ投げ×手以外の判定に使う */
+  demandScore?: number | null;
 }): number {
   const has = (tag: string) => catchHasTag(catchStyle, tag);
   const nonHandRule = NON_HAND_CATCH_RULE[apparatus];
@@ -351,6 +374,8 @@ export function catchStyleWeight({
     weight *= LEFT_HAND_NO_VIEW_CATCH_WEIGHT;
   // 手以外のキャッチの実施しやすさは手具で違う
   if (has(NON_HAND_TAG)) weight *= nonHandRule.weight;
+  // クラブの二つ投げを手以外で受けるのはほぼ不可能（点数がどうしても要るときだけ）
+  if (throwStyle.two && has(NON_HAND_TAG)) weight *= twoThrowNonHandWeight(apparatus, demandScore);
   // 2種類を同時に満たす受け方は単独より少ない（視野外＋手具を使ったキャッチはクラブでさらに低く）
   if ((catchStyle.catchTypes || []).length >= 2)
     weight *=
@@ -601,7 +626,14 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     const styles = catchStylesForPattern(apparatus, twoThrow, pattern);
     // 引きにくい受け方がある形・投げ方（縦3動作・左手投げの視野外・手以外）は重み付きで引く
     const weight = (c: AutoCatchStyle) =>
-      catchStyleWeight({ throwStyle, catchStyle: c, pattern, apparatus, motions });
+      catchStyleWeight({
+        throwStyle,
+        catchStyle: c,
+        pattern,
+        apparatus,
+        motions,
+        demandScore: opts.demandScore,
+      });
     if (styles.some((c) => weight(c) !== 1))
       // その他のキャッチは「珍しい受け方」ではなく**ルール上は同じ受け方に見えるが実態が違う
       // ものを別の種類として数えてもらう**ための入力なので、珍しさの変形からは外す

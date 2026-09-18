@@ -43,6 +43,9 @@ import {
   roundoffEntryWeight,
   forwardEntryWeight,
   SWITCH_SIDE_SALTO_WEIGHT,
+  backToBackWeight,
+  backLandingForwardWeight,
+  saltoPairWeight,
   CONNECT_FINISH_HALF_WEIGHT,
   isBackHalfTwistSalto,
   saltoWeights,
@@ -262,7 +265,9 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
       id,
       (firstWeights[id] ?? 1) *
         (roundoff !== 1 && isBackwardSalto(id) ? roundoff : 1) *
-        (forwardEntry !== 1 && isForwardSalto(id) ? forwardEntry : 1),
+        (forwardEntry !== 1 && isForwardSalto(id) ? forwardEntry : 1) *
+        // 1本目に置いても後方系の継続が確定する（後ろ向きに降りる技は最後に置けない）
+        backLandingForwardWeight(id),
     ),
   );
 
@@ -298,7 +303,13 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
         (w[id] ?? 1) *
           (pattern.throwInSkill ? throwInSaltoWeight(id) : 1) *
           // 切り返しからの側宙は少し珍しい寄り
-          (afterSwitch && id === SIDE_SALTO_ID ? SWITCH_SIDE_SALTO_WEIGHT : 1),
+          (afterSwitch && id === SIDE_SALTO_ID ? SWITCH_SIDE_SALTO_WEIGHT : 1) *
+          // テンポ以外の後ろ向きに降りる宙返りから後方系を続けるのは珍しい寄り
+          backToBackWeight(prevId, id) *
+          // その技を選ぶこと自体が上の形を確定させる技（前方系の半ひねり）
+          backLandingForwardWeight(id) *
+          // 直前の技との組み合わせで珍しくなる並び（ダイビング前宙→前宙）
+          saltoPairWeight(prevId, id),
       ),
     );
     nextCache.set(key, edges);
