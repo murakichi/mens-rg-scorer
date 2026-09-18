@@ -3,6 +3,7 @@ import { X, Shuffle } from "lucide-react";
 import { APPARATUS } from "../scoring/constants";
 import {
   DEFAULT_MAX_AUTO_THROWS,
+  DEFAULT_RARITY,
   DEFAULT_MAX_AUTO_TUMBLINGS,
   DEFAULT_MAX_SERIES,
   generateForApparatus,
@@ -10,6 +11,13 @@ import {
   type GenerateResult,
 } from "../scoring/generate";
 import { apparatusName, describeSeries, type SeriesTemplate } from "../scoring/templates";
+import {
+  changedSkillCount,
+  loadSkillWeights,
+  saveSkillWeights,
+  type SkillWeightStore,
+} from "../scoring/skillWeights";
+import SkillWeightModal from "./SkillWeightModal";
 import type { ApparatusKey, FutureLevel } from "../scoring/types";
 
 interface Props {
@@ -34,6 +42,15 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
   const [autoTumblings, setAutoTumblings] = useState(true);
   /** 自動生成にしてよい割合（%）。100%＝種類ごとの上限だけ */
   const [autoPercent, setAutoPercent] = useState(100);
+  /** 生成する形の珍しさ（0＝ありふれた形だけ／50＝実測どおり／100＝珍しい形を優先） */
+  const [rarity, setRarity] = useState(DEFAULT_RARITY);
+  /** 技ごとの出やすさ（端末に保存。既定から変えた技だけ入っている） */
+  const [skillWeights, setSkillWeights] = useState<SkillWeightStore>(() => loadSkillWeights());
+  const [weightOpen, setWeightOpen] = useState(false);
+  const changeWeights = (next: SkillWeightStore) => {
+    setSkillWeights(next);
+    saveSkillWeights(next);
+  };
   const [result, setResult] = useState<(GenerateResult & { apparatus: ApparatusKey }) | null>(null);
   const [note, setNote] = useState("");
   if (!open) return null;
@@ -50,6 +67,8 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
       autoThrows,
       autoTumblings,
       autoRatio: autoPercent / 100,
+      rarity,
+      skillWeights,
       minScore: minScore ? parseFloat(minScore) : null,
       maxScore: maxScore ? parseFloat(maxScore) : null,
     });
@@ -62,6 +81,15 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
   };
 
   return (
+    <>
+      <SkillWeightModal
+        open={weightOpen}
+        store={skillWeights}
+        junior={junior}
+        future={future}
+        onChange={changeWeights}
+        onClose={() => setWeightOpen(false)}
+      />
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
@@ -112,6 +140,32 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
               自動生成の割合 {autoPercent}%
               {autoPercent === 0 ? "（テンプレートだけで組む）" : `（最大${autoMax}本）`}
             </span>
+          </div>
+          <div className="gen-ratio">
+            <input
+              className="gen-ratio-range"
+              type="range"
+              min={0}
+              max={100}
+              step={25}
+              value={rarity}
+              onChange={(e) => setRarity(parseInt(e.target.value, 10))}
+              aria-label="形の珍しさ"
+            />
+            <span className="gen-ratio-value">
+              形の珍しさ {rarity}
+              {rarity === DEFAULT_RARITY
+                ? "（実際の演技での多さどおり）"
+                : rarity < DEFAULT_RARITY
+                  ? "（よく実施される形に寄せる）"
+                  : "（珍しい形を優先する）"}
+            </span>
+          </div>
+          <div className="weight-head">
+            <button className="io-btn" onClick={() => setWeightOpen(true)}>
+              技ごとの出やすさ
+              {changedSkillCount(skillWeights) > 0 ? `（${changedSkillCount(skillWeights)}件変更）` : ""}
+            </button>
           </div>
           <p className="hint">
             テンプレートを先に使い、足りないところをシステム側で組んだシリーズで補います（点数が上がらなければ使われません）。
@@ -201,5 +255,6 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
         </div>
       </div>
     </div>
+    </>
   );
 }

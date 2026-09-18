@@ -18,7 +18,7 @@
 // 評価が上がるものだけが構成に入る。
 // =====================================================================
 
-import { cycler, pickWeighted, shuffled } from "./pick";
+import { cycler, pickWeighted, rarityChance, rarityExponent, shuffled } from "./pick";
 import {
   APPARATUS_USE,
   DIFF_VALUE,
@@ -244,7 +244,14 @@ export const rollFinishShape = (pattern: AutoThrowPattern): boolean => {
 /** その形で手具を使ったキャッチ以外を引く重み（クラブ・リングのみ） */
 export const ROLL_FINISH_OTHER_CATCH_WEIGHT = 0.2;
 
-/** その他の受け・投げの技術タグ */
+/**
+ * その他の受け・投げの技術タグ。
+ * **これは「珍しい投げ方・受け方」ではない**：規則の分類では同じ受け方に見えるが実態は
+ * まったく違う、というものを**別の種類として数えてもらう**ための入力で、
+ * 多様な投げ受け（必須要素）の種類数を埋める役割を持つ。
+ * だから自動生成では「ほかの種類で足りないときだけ使う」＝可能な限り使わない扱いにし、
+ * **珍しさのつまみ（`rarity`）の変形からも外す**（珍しさを上げてこれが増えても意味がない）。
+ */
 export const OTHER_TAG = "other";
 /** その他のキャッチから次の投げに続ける確率は低い */
 export const OTHER_CATCH_BEFORE_THROW_WEIGHT = 0.2;
@@ -533,6 +540,11 @@ export interface AutoThrowOptions {
    * 要求値が上がるほど出やすくする（`unseenShapeChance`）。
    */
   demandScore?: number | null;
+  /**
+   * **珍しさ**（0〜100、既定50）。受け方・シェネの手の重みと、実施例の無い投げ方の
+   * 確率にまとめて掛かる（`rarityExponent` / `rarityChance`）。
+   */
+  rarity?: number;
 }
 
 /**
@@ -543,8 +555,11 @@ export interface AutoThrowOptions {
 export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions = {}): AutoThrowSpec[] {
   const rand = opts.random ?? Math.random;
   const throwStyles = autoThrowStyles(apparatus);
+  /** 珍しさ：抽選の重みに掛ける指数と、0〜1の確率に掛ける変換 */
+  const exp = rarityExponent(opts.rarity);
+  const chance = (p: number) => rarityChance(p, opts.rarity);
   // 実施例の無い投げ方（左手投げ＋視野外）は、要求するDスコアが上がるほど残す
-  const rareChance = unseenShapeChance("leftHandNoViewThrow", opts.demandScore);
+  const rareChance = chance(unseenShapeChance("leftHandNoViewThrow", opts.demandScore));
   const combos = shuffled(
     AUTO_THROW_PATTERNS.filter((pattern) => throwPatternAllowed(pattern, opts.future ?? null))
       .flatMap((pattern) =>
@@ -566,7 +581,10 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     // 引きにくい受け方がある形・投げ方（縦3動作・左手投げの視野外・手以外）は重み付きで引く
     const weight = (c: AutoCatchStyle) =>
       catchStyleWeight({ throwStyle, catchStyle: c, pattern, apparatus, motions });
-    if (styles.some((c) => weight(c) !== 1)) return pickWeighted(styles, rand, weight);
+    if (styles.some((c) => weight(c) !== 1))
+      // その他のキャッチは「珍しい受け方」ではなく**ルール上は同じ受け方に見えるが実態が違う
+      // ものを別の種類として数えてもらう**ための入力なので、珍しさの変形からは外す
+      return pickWeighted(styles, rand, weight, (c) => (catchHasTag(c, OTHER_TAG) ? 1 : exp));
     // それ以外は被らないように配る
     const key = `${pattern.noViewPair ? "noViewPair" : "-"}:${twoThrow}`;
     let next = catchCyclers.get(key);
@@ -579,7 +597,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   // シェネの手は重み付きで引く（手なし ＞ 片手＝両手 ＞ その他 ＞ 回旋）。
   // 回旋は2動作までがメインなので、回数が多い形では引きにくくする
   const nextHands = (cheneCount: number): AutoHands =>
-    pickWeighted(autoHandsVariants(), rand, (h) => handsWeight(h) * cheneCountWeight(h, cheneCount));
+    pickWeighted(autoHandsVariants(), rand, (h) => handsWeight(h) * cheneCountWeight(h, cheneCount), exp);
   // 先に足す投げ受けの投げ方。二つ投げは2つ同時キャッチで受ける形になるので使わない
   const nextLeadThrow = cycler(
     throwStyles.filter((t) => !t.two && !t.rare),

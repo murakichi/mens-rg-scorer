@@ -241,6 +241,21 @@ export const FINISH_CATCH_WEIGHT = 0.05;
  */
 export const OTHER_STYLE_WEIGHT = 0.15;
 
+/**
+ * **演技の最初の投げ／最初のキャッチがその他**のときの重み。
+ * その他は「ほかの受け方と違う」ことを示す入力なので、比べる相手（通常の投げ受け）より
+ * 先には置けない。実質置かせないために、現実志向の重み（0.1〜0.9）より上にする
+ * （必須要素の `REQUIRED_ELEMENT_WEIGHT`＝10 より下なので、要求は犠牲にしない）。
+ */
+export const OTHER_FIRST_WEIGHT = 1;
+
+/**
+ * 余った「その他」のタグを外す繰り返しの回数（`trimSpareOtherStyles`）。
+ * タグを1つ外すとその投げは**通常の投げ**になって種類が1つ増えるので、
+ * 残っていたその他がまた余りに変わる。投げ・受けそれぞれ数本なので数回で足りる。
+ */
+export const OTHER_TRIM_PASSES = 4;
+
 // **実施例の無い形**（現実的だが競技での実施例が無い形）の重みは、ここではなく
 // `unseenShapes.ts` に形ごとに宣言する（`UNSEEN_SHAPES` の `earns` ＋ `extra`）。
 // 候補を出す確率（`unseenChance`）だけでは頻度を抑えられない：どれも技術加点（0.1）を稼ぐので、

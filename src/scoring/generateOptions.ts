@@ -10,6 +10,7 @@
 
 import type { ApparatusKey, FutureLevel, Series } from "./types";
 import type { SeriesTemplate } from "./templates";
+import type { SkillWeightStore } from "./skillWeights";
 
 export interface GenerateOptions {
   apparatus: ApparatusKey;
@@ -32,6 +33,20 @@ export interface GenerateOptions {
    * 0 なら自動生成を使わず、登録テンプレートだけで組む。
    */
   autoRatio?: number;
+  /**
+   * 生成するシリーズの**珍しさ**（0〜100。既定 `DEFAULT_RARITY`＝50）。
+   * 候補づくりの抽選（重み・0〜1の確率）にまとめて掛かる：
+   * 0＝最も遷移しやすい形だけ、50＝実測どおりの頻度、100＝珍しい形を優先。
+   * 評価（点数）は変えないので、**点数が動く形は珍しさを上げても増えにくい**
+   * （どの宙返りか・どの受け方かのような点数に中立な選択にそのまま効く）。
+   */
+  rarity?: number;
+  /**
+   * ユーザーが設定した**技ごとの倍率**（`skillWeights.ts`。既定から変えた技だけ）。
+   * 実測の重みの上に掛かるだけなので、既定値は書き換わらない（リセット＝これを渡さない）。
+   * 0 にした技は自動生成に出てこない。
+   */
+  skillWeights?: SkillWeightStore;
   /**
    * 必須要素を必ず満たすか。未指定なら狙うDスコアで決まる
    * （上限なし、または `REQUIRE_ALL_ELEMENTS_MIN_SCORE` 以上で満たしにいく）。

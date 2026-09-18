@@ -35,8 +35,14 @@ import {
   skillDifficulty,
 } from "../constants";
 import {
+  AFTER_BACK_LAYOUT_SALTOS,
   AFTER_FORWARD_KIRIMOMI,
+  HARDER_THAN_RATED,
+  HARDER_THAN_RATED_WEIGHT,
+  frequencyDiffValue,
+  harderThanRatedWeight,
   maxSkillDiffValue,
+  saltoWeights,
   SIDE_SALTO_ID,
   TENCHU_SKILL_ID,
   THROW_AFTER_CONNECT_SALTOS,
@@ -343,5 +349,45 @@ describe("狙うDスコアごとの技の難度の上限", () => {
     ids(table("chain", { targetScore: 3.5 }).first).forEach((id) =>
       expect(value(id)).toBeLessThanOrEqual(DIFF_VALUE.D),
     );
+  });
+});
+
+describe("表記より難しい技（転宙・きりもみ・きりもみ転回）", () => {
+  it("頻度は難度1段上として扱う（難度点は規則どおり）", () => {
+    // 対象は3つ。難度そのものは変えていない
+    expect(HARDER_THAN_RATED).toEqual(
+      expect.arrayContaining([TENCHU_SKILL_ID, "b_kirimomi", "c_kirimomiten"]),
+    );
+    expect(skillDifficulty("b_tenchu")).toBe("B");
+    expect(skillDifficulty("c_kirimomiten")).toBe("C");
+    // 頻度の計算では1段上
+    expect(frequencyDiffValue("b_tenchu")).toBe(DIFF_VALUE.C);
+    expect(frequencyDiffValue("b_kirimomi")).toBe(DIFF_VALUE.C);
+    expect(frequencyDiffValue("c_kirimomiten")).toBe(DIFF_VALUE.D);
+    // 対象外の技は変わらない
+    expect(frequencyDiffValue("b_front")).toBe(DIFF_VALUE.B);
+    expect(harderThanRatedWeight("b_front")).toBe(1);
+    expect(harderThanRatedWeight("b_kirimomi")).toBe(HARDER_THAN_RATED_WEIGHT);
+  });
+
+  it("重みは位置ごとの重みのあとにも掛かる（きりもみが実際に出る位置）", () => {
+    // 後方伸身宙返りの後は `AFTER_BACK_LAYOUT_SALTOS` が重みを上書きする位置
+    const w = saltoWeights("b_backlayout");
+    const listed = (id: string) => AFTER_BACK_LAYOUT_SALTOS.find((x) => x.id === id)!.weight;
+    expect(w["b_front"]).toBe(listed("b_front"));
+    expect(w["b_kirimomi"]).toBeCloseTo(listed("b_kirimomi") * HARDER_THAN_RATED_WEIGHT, 6);
+    expect(w["c_kirimomiten"]).toBeCloseTo(listed("c_kirimomiten") * HARDER_THAN_RATED_WEIGHT, 6);
+    // 前宙より少ない関係は保たれる
+    expect(w["b_kirimomi"]).toBeLessThan(w["b_front"]);
+    expect(w["c_kirimomiten"]).toBeLessThan(w["b_kirimomi"]);
+  });
+
+  it("難度の上限も1段上で見る（C止まりの構成にきりもみ転回は出ない）", () => {
+    const low = table("chain", { targetScore: 2.5 });
+    expect(ids(low.next("b_front"))).not.toContain("c_kirimomiten");
+    // 転宙・きりもみはC扱いなので、C止まりでも実施できる
+    expect(ids(low.next("b_front"))).toContain(TENCHU_SKILL_ID);
+    // 3点台（D止まり）なら出る
+    expect(ids(table("chain", { targetScore: 3.5 }).next("b_front"))).toContain("c_kirimomiten");
   });
 });

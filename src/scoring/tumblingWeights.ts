@@ -35,6 +35,7 @@ import {
 } from "./tumblingChain";
 import type { AutoTumblingPattern } from "./tumblingPatterns";
 import type { ApparatusKey, Difficulty, FutureLevel } from "./types";
+import type { SkillWeightStore } from "./skillWeights";
 
 /**
  * 投げタンのキャッチのあとに**連続投げ**を続ける確率。現実にあり得る形で、
@@ -216,24 +217,49 @@ export function saltoWeights(
   junior = false,
   apparatus?: ApparatusKey,
   future: FutureLevel = null,
+  userWeights?: SkillWeightStore,
 ): Record<string, number> {
-  const weights = baseSkillWeights(junior, apparatus, future);
+  const weights = baseSkillWeights(junior, apparatus, future, userWeights);
   // 難度が上がる例外（後方半ひねり→前方1回ひねり など）は機会が少ない
   (DIFFICULTY_RISE_AFTER[prevId] ?? []).forEach((id) => {
     weights[id] = (weights[id] ?? 1) * DIFFICULTY_RISE_WEIGHT;
   });
   // テンポひねりの次はテンポ宙返り＞それ以外の宙返り（難度の重みより優先する）
   if (prevId === TEMPO_TWIST_SKILL_ID)
-    return { ...weights, [TEMPO_SKILL_ID]: AFTER_TEMPO_TWIST_WEIGHT };
-  if (!isBackLayoutSalto(prevId)) return weights;
+    return withHarderThanRated({ ...weights, [TEMPO_SKILL_ID]: AFTER_TEMPO_TWIST_WEIGHT }, userWeights, [
+      TEMPO_SKILL_ID,
+    ]);
+  if (!isBackLayoutSalto(prevId)) return withHarderThanRated(weights);
   // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）。
   // 後方系を続ける形（抱え込みの半ひねり系）はさらに少ない
-  return {
-    ...weights,
-    ...Object.fromEntries(
-      [...AFTER_BACK_LAYOUT_SALTOS, ...AFTER_BACK_LAYOUT_BACKWARD_SALTOS].map((x) => [x.id, x.weight]),
-    ),
-  };
+  const listed = [...AFTER_BACK_LAYOUT_SALTOS, ...AFTER_BACK_LAYOUT_BACKWARD_SALTOS];
+  return withHarderThanRated(
+    { ...weights, ...Object.fromEntries(listed.map((x) => [x.id, x.weight])) },
+    userWeights,
+    listed.map((x) => x.id),
+  );
+}
+
+/**
+ * 位置ごとの重み（`AFTER_BACK_LAYOUT_SALTOS` など）を上書きしたあとに掛け直すもの。
+ *  - 表記より難しい技の難度1段ぶんの倍率（`HARDER_THAN_RATED_WEIGHT`）
+ *  - ユーザーが設定した技ごとの倍率（上書きで消えないように、ここでも掛ける）
+ */
+function withHarderThanRated(
+  weights: Record<string, number>,
+  userWeights?: SkillWeightStore,
+  overridden: string[] = [],
+): Record<string, number> {
+  const out = { ...weights };
+  HARDER_THAN_RATED.forEach((id) => {
+    out[id] = (out[id] ?? 1) * HARDER_THAN_RATED_WEIGHT;
+  });
+  if (userWeights)
+    overridden.forEach((id) => {
+      const w = userWeights[id];
+      if (w !== undefined) out[id] = (out[id] ?? 1) * w;
+    });
+  return out;
 }
 
 /**
@@ -319,6 +345,42 @@ export const SALTO_DIFFICULTY_WEIGHT: Partial<Record<Difficulty, number>> = {
  */
 export const TOP_SINGLE_WEIGHT = 0.05;
 
+/**
+ * **難度の表記より実際の難しさが一段上**の技。首や背中から着地する技・軸のずれる技は、
+ * 規則上の難度は低くても実施の難しさが頭ひとつ抜けている（転宙・きりもみ・きりもみ転回）。
+ * **難度点は規則どおりのまま**で、頻度の計算だけ1段上の難度として扱う：
+ *  - 単発の選ばれやすさ（`SALTO_DIFFICULTY_WEIGHT` / `TOP_SINGLE_WEIGHT`）
+ *  - 狙うDスコアごとの難度の上限（`SKILL_MAX_DIFF_STEPS`。C止まりの構成にきりもみ転回は出ない）
+ * 後方伸身宙返りの後だけは位置ごとの実測（`AFTER_BACK_LAYOUT_SALTOS`：前宙5＞きりもみ3＞
+ * きりもみ転回1）が重みを上書きするので、そこはこの補正の対象外。
+ */
+export const HARDER_THAN_RATED: string[] = [TENCHU_SKILL_ID, "b_kirimomi", "c_kirimomiten"];
+
+/** 頻度の計算で使う難度の値（表記より難しい技は1段上として数える） */
+export function frequencyDiffValue(
+  id: string,
+  junior = false,
+  future: FutureLevel = null,
+): number {
+  const d = skillDifficulty(id, junior, future);
+  const base = d ? DIFF_VALUE[d] : 0;
+  return HARDER_THAN_RATED.includes(id) ? base + 1 : base;
+}
+
+/**
+ * 表記より難しい技の選ばれやすさに掛ける倍率＝**難度1段ぶん**
+ * （`SALTO_DIFFICULTY_WEIGHT` の C→D の比と同じ 0.6）。
+ * 難度の表（`SALTO_DIFFICULTY_WEIGHT`）はD難度以上しか区別しないので、B→Cの技
+ * （転宙・きりもみ）は表の引き直しでは変わらない。位置ごとの重み
+ * （`AFTER_BACK_LAYOUT_SALTOS`：きりもみが実際に出てくるのはこの位置）にも効かせたいので、
+ * 難度を引き直すのではなく**倍率として最後に掛ける**。
+ */
+export const HARDER_THAN_RATED_WEIGHT = 0.6;
+
+/** その技が「表記より難しい」なら難度1段ぶんの倍率、そうでなければ1 */
+export const harderThanRatedWeight = (id: string): number =>
+  HARDER_THAN_RATED.includes(id) ? HARDER_THAN_RATED_WEIGHT : 1;
+
 /** 単発の技の難度ごとの選ばれやすさ（その時代の上限難度だけ `TOP_SINGLE_WEIGHT` に抑える） */
 export function saltoDifficultyWeight(d: Difficulty, future: FutureLevel = null): number {
   const base = SALTO_DIFFICULTY_WEIGHT[d];
@@ -375,6 +437,7 @@ export function baseSkillWeights(
   junior: boolean,
   apparatus?: ApparatusKey,
   future: FutureLevel = null,
+  userWeights?: SkillWeightStore,
 ): Record<string, number> {
   const weights = limitedWeights();
   const factor = apparatusHighDifficultyWeight(apparatus);
@@ -387,6 +450,11 @@ export function baseSkillWeights(
   Object.entries(SKILL_PICK_WEIGHT).forEach(([id, w]) => {
     weights[id] = (weights[id] ?? 1) * w;
   });
+  // ユーザーが設定した技ごとの倍率（既定1。オプション画面で変えた分だけ入っている）
+  if (userWeights)
+    Object.entries(userWeights).forEach(([id, w]) => {
+      weights[id] = (weights[id] ?? 1) * w;
+    });
   return weights;
 }
 
@@ -399,10 +467,15 @@ export function connectFinishWeights(
   junior = false,
   apparatus?: ApparatusKey,
   future: FutureLevel = null,
+  userWeights?: SkillWeightStore,
 ): Record<string, number> {
-  const weights = baseSkillWeights(junior, apparatus, future);
+  const weights = baseSkillWeights(junior, apparatus, future, userWeights);
   if (basicLevel) return weights;
-  return { ...weights, ...Object.fromEntries(CONNECT_FINISH_RARE.map((id) => [id, RARE_PICK_WEIGHT])) };
+  return withHarderThanRated(
+    { ...weights, ...Object.fromEntries(CONNECT_FINISH_RARE.map((id) => [id, RARE_PICK_WEIGHT])) },
+    userWeights,
+    CONNECT_FINISH_RARE,
+  );
 }
 
 /**

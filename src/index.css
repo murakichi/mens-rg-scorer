@@ -1677,3 +1677,45 @@ input[type="checkbox"] {
   outline: none;
   box-shadow: var(--ring);
 }
+
+/* 技ごとの出やすさ（`SkillWeightModal`） */
+.weight-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.weight-head .tpl-search-input {
+  flex: 1 1 auto;
+}
+/* 1行 */
+.weight-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.weight-name {
+  flex: 0 0 13rem;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.weight-row .gen-ratio-range {
+  flex: 1 1 auto;
+  min-width: 80px;
+}
+.weight-value {
+  flex: 0 0 3rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-mute);
+}
+.weight-value.is-changed {
+  color: var(--accent);
+  font-weight: 600;
+}
+@media (max-width: 720px) {
+  .weight-name {
+    flex-basis: 8rem;
+  }
+}
