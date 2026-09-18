@@ -13,7 +13,8 @@ import {
   SIDE_SALTO_ID,
   TENCHU_SKILL_ID,
   THROW_FINISH_SALTOS,
-  THROW_IN_SIDE_SALTO_WEIGHT,
+  THROW_IN_SALTO_WEIGHT,
+  throwInSaltoWeight,
   THROW_IN_SKILL_ROUNDOFF_WEIGHT,
   buildTransitions,
   canEndWith,
@@ -103,12 +104,20 @@ describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
     ids(tr.next("b_front")).forEach((id) => expect(THROW_FINISH_SALTOS).toContain(id));
   });
 
-  it("側宙で投げる形は稀（辺の重みが下がる）", () => {
+  it("側宙・きりもみ転回で投げる形は稀（辺の重みが下がる）", () => {
     const inSkill = table("chainThrowInSkill");
     const plain = table("chain");
-    const a = find(inSkill.next("c_back15"), SIDE_SALTO_ID);
-    const b = find(plain.next("c_back15"), SIDE_SALTO_ID);
-    expect(a && b && a.weight).toBeCloseTo((b?.weight ?? 0) * THROW_IN_SIDE_SALTO_WEIGHT, 6);
+    // 実施中に投げるのが稀な技はどれも同じだけ下がる（下げ忘れると、側宙を下げたぶん
+    // その技が繰り上がってしまう）
+    Object.keys(THROW_IN_SALTO_WEIGHT).forEach((id) => {
+      const a = find(inSkill.next("b_front"), id) ?? find(inSkill.next("c_back15"), id);
+      const b = find(plain.next("b_front"), id) ?? find(plain.next("c_back15"), id);
+      expect(a).toBeDefined();
+      expect(a!.weight).toBeCloseTo((b?.weight ?? 0) * throwInSaltoWeight(id), 6);
+      expect(throwInSaltoWeight(id)).toBeLessThan(1);
+    });
+    // 表に無い技は下がらない
+    expect(throwInSaltoWeight("b_front")).toBe(1);
   });
 
   it("辺に「終われるか」が載っている（抽選が要るものは印が付く）", () => {

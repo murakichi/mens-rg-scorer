@@ -25,6 +25,7 @@ import {
   CHAIN_END_SKILLS,
   DIFFICULTY_RISE_AFTER,
   TEMPO_SKILL_ID,
+  SIDE_SALTO_ID,
   TEMPO_TWIST_SKILL_ID,
   TENCHU_SKILL_ID,
   endsFacingBackward,
@@ -166,6 +167,19 @@ export function roundoffEntryWeight(targetScore?: number | null, connect = false
  * 無いので稀。連続の最後で投げる形（`throwInSkill`）で側宙を引く確率を下げる。
  */
 export const THROW_IN_SIDE_SALTO_WEIGHT = 0.1;
+
+/**
+ * **その技の実施中に投げるのが稀**な宙返りの重み（連続の最後で投げる形だけに効く）。
+ * きりもみ転回は側宙と同じ扱い：首から背中にかけて着地する技なので、その最中に投げた例は無い。
+ * ここを下げないと、側宙を下げたぶんきりもみ転回が繰り上がってしまう
+ * （実測：`chainThrowInSkill` の最後が きりもみ転回21% ＞ 側宙8% になっていた）。
+ */
+export const THROW_IN_SALTO_WEIGHT: Record<string, number> = {
+  [SIDE_SALTO_ID]: THROW_IN_SIDE_SALTO_WEIGHT,
+  c_kirimomiten: THROW_IN_SIDE_SALTO_WEIGHT,
+};
+
+export const throwInSaltoWeight = (id: string): number => THROW_IN_SALTO_WEIGHT[id] ?? 1;
 
 /**
  * つなぎ技のあとの宙返りで投げる形（`connectThrowInSkill`）で、その宙返りに選ばれやすい技。
