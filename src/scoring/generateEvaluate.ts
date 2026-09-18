@@ -17,6 +17,7 @@
 
 import { motionDef, motionTimes } from "./analysis";
 import { OTHER_TAG } from "./autoThrows";
+import { VARIETY_REQUIRED } from "./constants";
 import {
   LIMITED_SKILLS,
   LIMITED_SKILL_MAX,
@@ -47,6 +48,7 @@ import {
   HARD_THROW_WEIGHT,
   HIGH_DIFFICULTY_WEIGHT,
   LIMITED_SKILL_WEIGHT,
+  OTHER_FIRST_WEIGHT,
   OTHER_STYLE_WEIGHT,
   REPEATABLE_SALTOS,
   REQUIRED_ELEMENT_WEIGHT,
@@ -173,15 +175,110 @@ export function missesFinishCatch(series: Series[], apparatus: ApparatusKey): bo
 /** その他の投げ・その他のキャッチの回数 */
 
 export function otherStyleCount(series: Series[]): number {
-  let count = 0;
+  const u = otherStyleUsage(series);
+  return u.throwCount + u.catchCount;
+}
+
+/**
+ * **その他の投げ・その他のキャッチの使われ方**を数える。
+ * その他は「珍しい投げ方・受け方」ではなく、**規則の分類では同じに見えるが実態は違うものを
+ * 別の種類として数えてもらう**ための入力で、多様な投げ受け（`VARIETY_REQUIRED`＝3種類）の
+ * 種類数を埋めるのが役割。だから生成では次の3つを分けて見る：
+ *  - `needed`：その他を外すと種類数が足りなくなる分＝**役割を果たしている**ので嫌わない
+ *  - `spare`：それを超えた分＝飾りなので `OTHER_STYLE_WEIGHT` で嫌う
+ *  - `leading`：**演技の最初の投げ／最初のキャッチがその他**の数。
+ *    「ほかの受け方と違う」ことを示す入力なので、比べる相手（通常の投げ受け）より先には置けない
+ */
+export function otherStyleUsage(
+  series: Series[],
+  kinds?: {
+    throwKindCount: number;
+    catchKindCount: number;
+    throwOtherCount: number;
+    catchOtherCount: number;
+  },
+): { throwCount: number; catchCount: number; spare: number; leading: number } {
+  let throwCount = 0;
+  let catchCount = 0;
+  let leading = 0;
+  let seenThrow = false;
+  let seenCatch = false;
   series.forEach((ser) =>
     ser.items.forEach((item) => {
-      if (item.kind === "throw" || (item.kind === "skill" && item.isThrow))
-        count += (item.throwTypes || []).filter((t) => t === OTHER_TAG).length;
-      else if (item.kind === "catch") count += (item.catchTypes || []).filter((t) => t === OTHER_TAG).length;
+      if (item.kind === "throw" || (item.kind === "skill" && item.isThrow)) {
+        const other = (item.throwTypes || []).includes(OTHER_TAG);
+        if (other) {
+          throwCount += 1;
+          // 最初の投げがその他（比べる相手がまだ無い）
+          if (!seenThrow) leading += 1;
+        }
+        seenThrow = true;
+      } else if (item.kind === "catch") {
+        const other = (item.catchTypes || []).includes(OTHER_TAG);
+        if (other) {
+          catchCount += 1;
+          if (!seenCatch) leading += 1;
+        }
+        seenCatch = true;
+      }
     }),
   );
-  return count;
+  /**
+   * その他を外したときの種類数から、種類を埋めるのに必要な本数を出す。
+   * 数える対象は採点側と揃える（`ScoreResult.throwOtherCount`。重複シリーズや
+   * ジュニアの上限超過の扱いが違うと、必要な本数を過小に見積もってしまう）。
+   */
+  const needed = (scored: number, kindCount: number) =>
+    Math.min(scored, Math.max(0, VARIETY_REQUIRED - (kindCount - scored)));
+  const spare = kinds
+    ? kinds.throwOtherCount -
+      needed(kinds.throwOtherCount, kinds.throwKindCount) +
+      (kinds.catchOtherCount - needed(kinds.catchOtherCount, kinds.catchKindCount))
+    : 0;
+  return { throwCount, catchCount, spare, leading };
+}
+
+/**
+ * **種類を埋めていないその他のタグを外した**シリーズを返す（何も外さないなら同じ配列）。
+ * その他は「規則の分類では同じに見えるが実態は違うものを別の種類として数えてもらう」ための
+ * 入力なので、多様な投げ受け（`VARIETY_REQUIRED`）の種類数に効いていないその他は意味がない。
+ * 生成の途中で外すので、外したぶん点数が下がるなら探索が別のシリーズで埋め直せる。
+ */
+export function trimSpareOtherStyles(series: Series[], kinds: {
+  throwKindCount: number;
+  catchKindCount: number;
+  throwOtherCount: number;
+  catchOtherCount: number;
+}): Series[] {
+  /** その他を外してよい本数（種類を埋めている分は残す） */
+  const spareOf = (other: number, kindCount: number) =>
+    Math.max(0, other - Math.max(0, VARIETY_REQUIRED - (kindCount - other)));
+  let throwSpare = spareOf(kinds.throwOtherCount, kinds.throwKindCount);
+  let catchSpare = spareOf(kinds.catchOtherCount, kinds.catchKindCount);
+  if (throwSpare === 0 && catchSpare === 0) return series;
+  // 後ろから外す（演技の最初の投げ受けは `OTHER_FIRST_WEIGHT` で既に避けているが、
+  // 残すなら先に出てきたもの＝比べる相手がある側を残したい）
+  const out = series.map((ser) => ({ ...ser, items: [...ser.items] }));
+  for (let i = out.length - 1; i >= 0; i--) {
+    const items = out[i].items;
+    for (let j = items.length - 1; j >= 0; j--) {
+      const item = items[j];
+      if (throwSpare > 0 && (item.kind === "throw" || (item.kind === "skill" && item.isThrow))) {
+        const types = item.throwTypes || [];
+        if (types.includes(OTHER_TAG)) {
+          items[j] = { ...item, throwTypes: types.filter((t) => t !== OTHER_TAG) };
+          throwSpare -= 1;
+        }
+      } else if (catchSpare > 0 && item.kind === "catch") {
+        const types = item.catchTypes || [];
+        if (types.includes(OTHER_TAG)) {
+          items[j] = { ...item, catchTypes: types.filter((t) => t !== OTHER_TAG) };
+          catchSpare -= 1;
+        }
+      }
+    }
+  }
+  return out;
 }
 
 export function verticalThreeThrowCount(
@@ -322,7 +419,10 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
   const verticalThree =
     verticalThreeThrowCount(series, !!opts.junior, opts.future ?? null) * VERTICAL_THREE_THROW_WEIGHT;
   // その他の投げ・その他のキャッチは可能な限り使わない
-  const otherStyle = otherStyleCount(series) * OTHER_STYLE_WEIGHT;
+  // その他の投げ受けは「種類を埋める」のが役割なので、足りない種類を埋めている分は嫌わない。
+  // 余った分は飾りなので嫌い、演技の最初の投げ／キャッチに置くことは実質させない
+  const otherUse = otherStyleUsage(series, r);
+  const otherStyle = otherUse.spare * OTHER_STYLE_WEIGHT + otherUse.leading * OTHER_FIRST_WEIGHT;
   // 実施例の無い形（`unseenShapes.ts` に宣言）。稼ぐ点数をそのまま打ち消すので、
   // 出現率は候補を出す確率（要求Dスコアのカーブ）だけで決まる
   const rareStyle = unseenPenalty(series);

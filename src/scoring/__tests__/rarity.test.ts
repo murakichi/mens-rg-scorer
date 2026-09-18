@@ -10,7 +10,16 @@ import {
 } from "../pick";
 import { autoTumblingTemplates } from "../autoTumblings";
 import { autoThrowSpecs } from "../autoThrows";
-import type { ApparatusKey } from "../types";
+import { computeScore } from "../score";
+import {
+  OTHER_FIRST_WEIGHT,
+  OTHER_STYLE_WEIGHT,
+  REQUIRED_ELEMENT_WEIGHT,
+  otherStyleUsage,
+  trimSpareOtherStyles,
+  generateRoutine,
+} from "../generate";
+import type { ApparatusKey, Item, Series } from "../types";
 
 const seeded = (seed: number) => () => {
   seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -98,18 +107,124 @@ describe("珍しさ（rarity）のつまみ", () => {
     expect(common).toBeLessThan(normal);
     expect(normal).toBeLessThan(rare);
 
-    /** その他のキャッチ（重み0.1）を含む投げ候補の割合 */
-    const otherCatchShare = (rarity: number) => {
+    /** 手以外のキャッチ（手具ごとに重みが下がる受け方）を含む投げ候補の割合 */
+    const nonHandShare = (rarity: number) => {
       let n = 0;
       let hit = 0;
       for (const app of APPS)
         for (let seed = 0; seed < 12; seed++)
           for (const sp of autoThrowSpecs(app, { random: seeded(seed), rarity })) {
             n += 1;
-            if ((sp.catchStyle.catchTypes || []).includes("other")) hit += 1;
+            if ((sp.catchStyle.catchTypes || []).includes("nonhand")) hit += 1;
           }
       return hit / n;
     };
-    expect(otherCatchShare(100)).toBeGreaterThan(otherCatchShare(0));
+    expect(nonHandShare(100)).toBeGreaterThan(nonHandShare(0));
   });
+});
+
+describe("その他の投げ受け（種類を埋めるための入力）", () => {
+  const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
+  const otherThrow: Item = { kind: "throw", throwTypes: ["other"] };
+  const plainThrow: Item = { kind: "throw" };
+  const otherCatch: Item = { kind: "catch", catchTypes: ["other"] };
+  const plainCatch: Item = { kind: "catch" };
+
+  it("珍しさの変形から外れている（珍しさを上げても候補で増えない）", () => {
+    const share = (rarity: number) => {
+      let n = 0;
+      let other = 0;
+      for (const app of APPS)
+        for (let seed = 0; seed < 12; seed++)
+          for (const sp of autoThrowSpecs(app, { random: seeded(seed), rarity })) {
+            n += 1;
+            if ((sp.catchStyle.catchTypes || []).includes("other")) other += 1;
+          }
+      return other / n;
+    };
+    // 珍しい受け方ではないので、珍しさ100で増えたりしない
+    expect(share(100)).toBeLessThan(share(DEFAULT_RARITY));
+  });
+
+  it("最初の投げ・最初のキャッチがその他なら `leading` に数える", () => {
+    // 1本目がその他の投げ／その他のキャッチ
+    expect(otherStyleUsage([S(otherThrow, plainCatch)]).leading).toBe(1);
+    expect(otherStyleUsage([S(plainThrow, otherCatch)]).leading).toBe(1);
+    expect(otherStyleUsage([S(otherThrow, otherCatch)]).leading).toBe(2);
+    // 通常の投げ受けのあとならよい（比べる相手がある）
+    expect(otherStyleUsage([S(plainThrow, plainCatch), S(otherThrow, otherCatch)]).leading).toBe(0);
+    // シリーズをまたいでも「最初」は演技の最初
+    expect(otherStyleUsage([S(plainThrow, otherCatch), S(otherThrow, plainCatch)]).leading).toBe(1);
+  });
+
+  it("種類を埋めている分は嫌わない（余った分だけ `spare`）", () => {
+    const series = [S(plainThrow, plainCatch), S(otherThrow, otherCatch)];
+    // 種類が足りない構成：その他が種類を埋めているので余りは0
+    expect(otherStyleUsage(series, {
+      throwKindCount: 2,
+      catchKindCount: 2,
+      throwOtherCount: 1,
+      catchOtherCount: 1,
+    }).spare).toBe(0);
+    // 種類が足りている構成：その他は飾りなので余りに数える
+    expect(otherStyleUsage(series, {
+      throwKindCount: 4,
+      catchKindCount: 4,
+      throwOtherCount: 1,
+      catchOtherCount: 1,
+    }).spare).toBe(2);
+  });
+
+  it("評価では『最初がその他』を実質させない重みにしてある", () => {
+    // 現実志向の重み（0.1〜0.9）より上、必須要素（10）より下
+    expect(OTHER_FIRST_WEIGHT).toBeGreaterThan(OTHER_STYLE_WEIGHT);
+    expect(OTHER_FIRST_WEIGHT).toBeGreaterThan(0.9);
+    expect(OTHER_FIRST_WEIGHT).toBeLessThan(REQUIRED_ELEMENT_WEIGHT);
+  });
+});
+
+describe("種類を埋めていないその他のタグは外す", () => {
+  const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
+  const otherThrow: Item = { kind: "throw", throwTypes: ["other"] };
+  const otherCatch: Item = { kind: "catch", catchTypes: ["other"] };
+
+  it("種類が足りているときだけ外す（足りていなければ残す）", () => {
+    const series = [S({ kind: "throw" }, { kind: "catch" }), S(otherThrow, otherCatch)];
+    // 種類が足りている＝その他は飾りなので外す
+    const trimmed = trimSpareOtherStyles(series, {
+      throwKindCount: 4,
+      catchKindCount: 4,
+      throwOtherCount: 1,
+      catchOtherCount: 1,
+    });
+    expect(trimmed).not.toBe(series);
+    const tags = trimmed.flatMap((s) =>
+      s.items.flatMap((it) =>
+        it.kind === "throw" ? it.throwTypes || [] : it.kind === "catch" ? it.catchTypes || [] : [],
+      ),
+    );
+    expect(tags).not.toContain("other");
+    // 種類が足りていない＝役割を果たしているので触らない（同じ配列がそのまま返る）
+    expect(
+      trimSpareOtherStyles(series, {
+        throwKindCount: 2,
+        catchKindCount: 2,
+        throwOtherCount: 1,
+        catchOtherCount: 1,
+      }),
+    ).toBe(series);
+  });
+
+  it("生成結果には飾りのその他も『最初がその他』も残らない", () => {
+    for (const app of APPS)
+      for (let seed = 1; seed <= 8; seed++)
+        for (const rarity of [0, DEFAULT_RARITY, 100]) {
+          const r = generateRoutine([], { apparatus: app, random: seeded(seed), rarity });
+          if (!r) continue;
+          const sc = computeScore(r.series, app, {});
+          const u = otherStyleUsage(r.series, sc);
+          expect(u.leading).toBe(0);
+          expect(u.spare).toBe(0);
+        }
+  }, 120_000);
 });

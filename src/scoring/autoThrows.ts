@@ -244,7 +244,14 @@ export const rollFinishShape = (pattern: AutoThrowPattern): boolean => {
 /** その形で手具を使ったキャッチ以外を引く重み（クラブ・リングのみ） */
 export const ROLL_FINISH_OTHER_CATCH_WEIGHT = 0.2;
 
-/** その他の受け・投げの技術タグ */
+/**
+ * その他の受け・投げの技術タグ。
+ * **これは「珍しい投げ方・受け方」ではない**：規則の分類では同じ受け方に見えるが実態は
+ * まったく違う、というものを**別の種類として数えてもらう**ための入力で、
+ * 多様な投げ受け（必須要素）の種類数を埋める役割を持つ。
+ * だから自動生成では「ほかの種類で足りないときだけ使う」＝可能な限り使わない扱いにし、
+ * **珍しさのつまみ（`rarity`）の変形からも外す**（珍しさを上げてこれが増えても意味がない）。
+ */
 export const OTHER_TAG = "other";
 /** その他のキャッチから次の投げに続ける確率は低い */
 export const OTHER_CATCH_BEFORE_THROW_WEIGHT = 0.2;
@@ -574,7 +581,10 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     // 引きにくい受け方がある形・投げ方（縦3動作・左手投げの視野外・手以外）は重み付きで引く
     const weight = (c: AutoCatchStyle) =>
       catchStyleWeight({ throwStyle, catchStyle: c, pattern, apparatus, motions });
-    if (styles.some((c) => weight(c) !== 1)) return pickWeighted(styles, rand, weight, exp);
+    if (styles.some((c) => weight(c) !== 1))
+      // その他のキャッチは「珍しい受け方」ではなく**ルール上は同じ受け方に見えるが実態が違う
+      // ものを別の種類として数えてもらう**ための入力なので、珍しさの変形からは外す
+      return pickWeighted(styles, rand, weight, (c) => (catchHasTag(c, OTHER_TAG) ? 1 : exp));
     // それ以外は被らないように配る
     const key = `${pattern.noViewPair ? "noViewPair" : "-"}:${twoThrow}`;
     let next = catchCyclers.get(key);

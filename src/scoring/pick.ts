@@ -31,14 +31,20 @@ export function cycler<T>(list: T[], rand: () => number): () => T {
 /**
  * 重み付きで1つ選ぶ（重みは1が既定。重み0は選ばれない）。
  * `exponent` は珍しさのつまみ（`rarityExponent`）。1＝重みそのまま。
+ * **選択肢ごとに変えたいときは関数**を渡す（その重みが「実施の多さ」ではない選択肢は
+ * 1のままにして、珍しさの変形から外す）。
  */
 export function pickWeighted<T>(
   list: T[],
   rand: () => number,
   weightOf: (x: T) => number,
-  exponent = 1,
+  exponent: number | ((x: T) => number) = 1,
 ): T {
-  const w = exponent === 1 ? weightOf : (x: T) => rarityWeight(weightOf(x), exponent);
+  const expOf = typeof exponent === "function" ? exponent : () => exponent;
+  const w = (x: T) => {
+    const e = expOf(x);
+    return e === 1 ? weightOf(x) : rarityWeight(weightOf(x), e);
+  };
   let left = rand() * list.reduce((n, x) => n + w(x), 0);
   for (const x of list) {
     left -= w(x);

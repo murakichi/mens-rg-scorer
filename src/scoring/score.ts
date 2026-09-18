@@ -155,6 +155,9 @@ export interface ScoreResult {
   saltoChainDeduction: number;
   throwKindCount: number;
   catchKindCount: number;
+  /** その他の投げ・その他のキャッチの回数（種類数に足されている分。重複シリーズでも数える） */
+  throwOtherCount: number;
+  catchOtherCount: number;
   varietyDeduction: number;
   /** 必須要素チェックのうち投げタン・つなぎ技・タンブリング本数の欠如（各 −0.30） */
   missingElementDeduction: number;
@@ -760,6 +763,8 @@ export function computeScore(
     saltoChainDeduction,
     throwKindCount,
     catchKindCount,
+    throwOtherCount,
+    catchOtherCount,
     varietyDeduction,
     missingElementDeduction,
     aDeduction,
