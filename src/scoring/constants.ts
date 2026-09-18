@@ -438,6 +438,7 @@ export const SKILL_LIST: Skill[] = [
   { id: "d_frontlay1", name: "伸身前宙1回ひねり", category: CATEGORY.FORWARD, difficulty: "D", isSalto: true, twist: { base: "front", twist: 1, posture: "layout" } },
   { id: "e_frontlay2", name: "伸身前宙2回ひねり", category: CATEGORY.FORWARD, difficulty: "E", isSalto: true, twist: { base: "front", twist: 2, posture: "layout" } },
   { id: "d_back2twist", name: "後方宙返り2回ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, twist: { base: "back", twist: 2, posture: "tuck" } },
+  { id: "d_backlay2twist", name: "後方伸身宙返り2回ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, twist: { base: "back", twist: 2, posture: "layout" } },
   { id: "d_backlay25", name: "後方伸身宙返り2回半ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, twist: { base: "back", twist: 2.5, posture: "layout" } },
   { id: "e_backlay3twist", name: "後方伸身宙返り3回ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, twist: { base: "back", twist: 3, posture: "layout" } },
   { id: "e_backlay35twist", name: "後方伸身宙返り3回半ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, twist: { base: "back", twist: 3.5, posture: "layout" } },

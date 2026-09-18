@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   AUTO_TUMBLING_PATTERNS,
+  AFTER_BACK_LAYOUT_BACKWARD_SALTOS,
   AFTER_BACK_LAYOUT_SALTOS,
   CHAIN_END_SKILLS,
   KIRIMOMI_THROW_SKILL_ID,
@@ -10,6 +11,7 @@ import {
   ROLL_AFTER_SWITCH_CHANCE,
   ROUNDOFF_ENTRY_WEIGHT,
   SIDE_SALTO_ID,
+  TENCHU_SKILL_ID,
   THROW_FINISH_SALTOS,
   THROW_IN_SIDE_SALTO_WEIGHT,
   THROW_IN_SKILL_ROUNDOFF_WEIGHT,
@@ -41,8 +43,10 @@ const value = (id: string) => {
 describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
   it("表を引くだけで、その技に何が続けられるか分かる", () => {
     const tr = table("chain");
-    // 後方伸身宙返りの後は 前宙・きりもみ・きりもみ転回 だけ
-    expect(ids(tr.next("b_backlayout")).sort()).toEqual(AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id).sort());
+    // 後方伸身宙返りの後は 前宙・きりもみ・きりもみ転回（＋難度が上がらない後方系）
+    expect(ids(tr.next("b_backlayout"))).toEqual(
+      expect.arrayContaining(AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id)),
+    );
     // 首から背中に着地する技・側宙の後には何も続かない
     CHAIN_END_SKILLS.forEach((id) => expect(tr.next(id)).toEqual([]));
     // テンポ以外の後方系（後ろ向きに降りる）の後も続かない
@@ -138,6 +142,32 @@ describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
     );
     // 側宙・きりもみ系のあとは前転をしない
     expect(find(tr.next("b_backlayout"), "b_kirimomi")?.rollChance).toBe(0);
+  });
+
+  it("後方伸身宙返りの後は前方系が主流だが、後方系を続ける形も残る（頻度は低い）", () => {
+    const tr = table("chain");
+    // 後方伸身2回ひねり→抱え込みの1回半ひねり を実施する選手がいる
+    const back = find(tr.next("d_backlay2twist"), "c_back15");
+    expect(back).toBeDefined();
+    // 主流の前方系より十分選ばれにくい
+    const front = find(tr.next("d_backlay2twist"), "b_front");
+    expect(back && front && back.weight).toBeLessThan((front?.weight ?? 0) / 5);
+    AFTER_BACK_LAYOUT_BACKWARD_SALTOS.forEach((x) => expect(x.weight).toBeLessThan(1));
+    // 連続は難度が下がるので、直前より難度の高い後方系は出さない
+    // （後方伸身宙返り＝B の後に C難度の1回半ひねりは続けない）
+    expect(find(tr.next("b_backlayout"), "c_back15")).toBeUndefined();
+  });
+
+  it("転宙の後は側宙だけ（つなぎも前転も続けない）", () => {
+    const tr = table("chain");
+    // 続けられる宙返りは側宙だけ
+    expect(ids(tr.next(TENCHU_SKILL_ID))).toEqual([SIDE_SALTO_ID]);
+    // つなぎ技も挟まない
+    expect(tr.connects(TENCHU_SKILL_ID)).toEqual([]);
+    // 転宙でそのまま終われる
+    expect(canEndWith(TENCHU_SKILL_ID)).toBe(true);
+    // 転宙のあとに前転は付けない（`NO_ROLL_AFTER_SKILLS`）
+    expect(find(tr.next("b_backhalf"), TENCHU_SKILL_ID)?.rollChance).toBe(0);
   });
 
   it("つなぎ技は前向きに降りた後だけ（テンポの後はバク転）", () => {

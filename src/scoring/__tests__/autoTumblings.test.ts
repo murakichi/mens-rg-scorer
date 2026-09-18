@@ -279,8 +279,18 @@ describe("宙返りの連続の組み方", () => {
   it("後方伸身宙返りの後は 前宙・きりもみ・きりもみ転回（ひねっても同じ）", () => {
     ["b_backlayout", "b_backlayhalf", "c_backlay1full", "d_backlay25", "e_backlay35twist"].forEach((id) => {
       expect(isBackLayoutSalto(id)).toBe(true);
-      expect(nextSaltoOptions(id)).toEqual(AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id));
+      expect(nextSaltoOptions(id)).toEqual(
+        expect.arrayContaining(AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id)),
+      );
     });
+    // 前向きに降りる半ひねり系の後は前方系だけ（後方系に入るならロンダートが要る＝つなぎ）
+    ["b_backlayhalf", "c_backlay15", "d_backlay25"].forEach((id) =>
+      expect(nextSaltoOptions(id)).toEqual(AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id)),
+    );
+    // 後ろ向きに降りる後方伸身の後だけ、難度が上がらない範囲で後方系も続けられる
+    expect(nextSaltoOptions("d_backlay2twist")).toContain("c_back15");
+    expect(nextSaltoOptions("b_backlayout")).toContain("b_backhalf");
+    expect(nextSaltoOptions("b_backlayout")).not.toContain("c_back15");
     // 側宙はその前宙に続けて実施する
     expect(nextSaltoOptions("b_front")).toContain("b_sidesalto");
     // 伸身以外の後方宙返りは連続しない

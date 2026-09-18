@@ -20,11 +20,13 @@ import {
   skillOptions,
 } from "./constants";
 import {
+  AFTER_BACK_LAYOUT_BACKWARD_SALTOS,
   AFTER_BACK_LAYOUT_SALTOS,
   CHAIN_END_SKILLS,
   DIFFICULTY_RISE_AFTER,
   TEMPO_SKILL_ID,
   TEMPO_TWIST_SKILL_ID,
+  TENCHU_SKILL_ID,
   endsFacingBackward,
   isBackLayoutSalto,
   noRollAfter,
@@ -186,8 +188,14 @@ export function saltoWeights(
   if (prevId === TEMPO_TWIST_SKILL_ID)
     return { ...weights, [TEMPO_SKILL_ID]: AFTER_TEMPO_TWIST_WEIGHT };
   if (!isBackLayoutSalto(prevId)) return weights;
-  // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）
-  return { ...weights, ...Object.fromEntries(AFTER_BACK_LAYOUT_SALTOS.map((x) => [x.id, x.weight])) };
+  // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）。
+  // 後方系を続ける形（抱え込みの半ひねり系）はさらに少ない
+  return {
+    ...weights,
+    ...Object.fromEntries(
+      [...AFTER_BACK_LAYOUT_SALTOS, ...AFTER_BACK_LAYOUT_BACKWARD_SALTOS].map((x) => [x.id, x.weight]),
+    ),
+  };
 }
 
 /**
@@ -213,7 +221,7 @@ export const CONNECT_RISE_WEIGHT = 0.3;
  * 実施が少ない技。選ばれにくくし、**演技内で1回まで**にする（`LIMITED_SKILL_MAX`）。
  * ハンドスプリング・転宙は、実施されることはあっても繰り返し使う技ではない。
  */
-export const LIMITED_SKILLS: string[] = ["a_handspring", "b_tenchu"];
+export const LIMITED_SKILLS: string[] = ["a_handspring", TENCHU_SKILL_ID];
 
 /** 実施が少ない技を演技内で実施してよい回数 */
 export const LIMITED_SKILL_MAX = 1;
