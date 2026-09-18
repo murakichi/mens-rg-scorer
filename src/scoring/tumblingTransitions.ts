@@ -16,11 +16,13 @@ import { futureSkillIds, isBackwardSalto, skillDef } from "./constants";
 import {
   KIRIMOMI_THROW_SKILL_ID,
   RARE_CHAIN_END_SKILLS,
+  SIDE_SALTO_ID,
   TEMPO_SKILLS,
   THROW_FINISH_SALTOS,
   canEndChain,
   connectOptionsAfter,
   difficultyValue,
+  endsFacingBackward,
   firstSaltoOptions,
   isBackToForwardThrow,
   isForwardSalto,
@@ -39,6 +41,10 @@ import {
   connectFinishWeights,
   rollAfterChance,
   roundoffEntryWeight,
+  forwardEntryWeight,
+  SWITCH_SIDE_SALTO_WEIGHT,
+  CONNECT_FINISH_HALF_WEIGHT,
+  isBackHalfTwistSalto,
   saltoWeights,
   withJuniorBoost,
 } from "./tumblingWeights";
@@ -107,7 +113,8 @@ export interface TumblingTransitions {
   /** 連続の1本目に実施できる宙返り */
   first: SaltoEdge[];
   /** その宙返りに続けて実施できる宙返り */
-  next(prevId: string): SaltoEdge[];
+  /** `beforePrevId`＝その前の技（つなぎ技を挟んだ場合はつなぎ技）。切り返しの判定に使う */
+  next(prevId: string, beforePrevId?: string): SaltoEdge[];
   /** その宙返りのあとに挟めるつなぎ技 */
   connects(prevId: string): ConnectEdge[];
   /** つなぎ技のあとに実施できる宙返り（つなぎの前の技より難度が上がると選ばれにくい） */
@@ -245,11 +252,17 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
     .filter((id) => !pattern.throwCatch || pattern.throwInSkill || isForwardSalto(id))
     // つなぎの形は、つなぎ技を挟める技（前向きに降りる技・テンポ）だけを1本目にする
     .filter((id) => !pattern.connect || usable(connectOptionsAfter(id, junior, future)).length > 0);
+  // 前方系から入る通常のタンブリングはDスコア0〜1点台の初心者の形。
+  // つなぎの形（前宙→ロンダート→後方系）は中級者も実施するので下げ始めるのが遅い。
+  // 投げタンは手具の滞空時間の都合で前方系しか実施できないので対象外
+  const forwardEntry = pattern.throwCatch ? 1 : forwardEntryWeight(target, !!pattern.connect);
   const first = firstIds.map((id) =>
     edge(
       undefined,
       id,
-      (firstWeights[id] ?? 1) * (roundoff !== 1 && isBackwardSalto(id) ? roundoff : 1),
+      (firstWeights[id] ?? 1) *
+        (roundoff !== 1 && isBackwardSalto(id) ? roundoff : 1) *
+        (forwardEntry !== 1 && isForwardSalto(id) ? forwardEntry : 1),
     ),
   );
 
@@ -260,24 +273,35 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
       (id) => !pattern.throwCatch || pattern.throwInSkill || THROW_FINISH_SALTOS.includes(id),
     );
   const nextCache = new Map<string, SaltoEdge[]>();
-  const next = (prevId: string): SaltoEdge[] => {
-    const hit = nextCache.get(prevId);
+  /**
+   * `beforePrevId` は**その前の技**（つなぎ技を挟んだ場合はつなぎ技）。
+   * 切り返し（後ろ向きで終わる宙返り→前方系）からの側宙を下げるのに使う
+   */
+  const next = (prevId: string, beforePrevId?: string): SaltoEdge[] => {
+    const key = `${prevId}<${beforePrevId ?? ""}`;
+    const hit = nextCache.get(key);
     if (hit) return hit;
     const w = withJuniorBoost(
       saltoWeights(prevId, junior, apparatus, future, ctx.skillWeights),
       junior,
       target,
     );
+    // 切り返し＝後ろ向きで終わる宙返りのあとに前方系を実施した並び
+    const afterSwitch =
+      !!beforePrevId && endsFacingBackward(beforePrevId) && isForwardSalto(prevId);
     const edges = continuations(prevId).map((id) =>
       edge(
         prevId,
         id,
         // その技の実施中に投げるのが稀な宙返り（側宙・きりもみ転回）は、
         // 連続の最後の宙返りで投げる形だけ下げる
-        (w[id] ?? 1) * (pattern.throwInSkill ? throwInSaltoWeight(id) : 1),
+        (w[id] ?? 1) *
+          (pattern.throwInSkill ? throwInSaltoWeight(id) : 1) *
+          // 切り返しからの側宙は少し珍しい寄り
+          (afterSwitch && id === SIDE_SALTO_ID ? SWITCH_SIDE_SALTO_WEIGHT : 1),
       ),
     );
-    nextCache.set(prevId, edges);
+    nextCache.set(key, edges);
     return edges;
   };
 
@@ -314,6 +338,8 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
         id,
         (finishWeights[id] ?? 1) *
           (difficultyValue(id, junior, future) > beforeValue ? CONNECT_RISE_WEIGHT : 1) *
+          // ハーフ（後方の半ひねり）はつなぎの**前**の宙返りで使うことのほうが多い
+          (!basicLevel && isBackHalfTwistSalto(id) ? CONNECT_FINISH_HALF_WEIGHT : 1) *
           // つなぎのあとの宙返りで投げる形は、大抵ダイビング前宙か前宙で実施する
           (pattern.throwInSkill && THROW_AFTER_CONNECT_SALTOS.includes(id)
             ? THROW_AFTER_CONNECT_WEIGHT

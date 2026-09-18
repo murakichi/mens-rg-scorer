@@ -32,6 +32,9 @@ import {
   ROLL_FINISH_OTHER_CATCH_WEIGHT,
   throwStylesForPattern,
   VERTICAL_THREE_OTHER_CATCH_WEIGHT,
+  VERTICAL_THREE_CHANCE,
+  VERTICAL_THREE_FREE_SCORE,
+  verticalThreeChance,
   cheneCountRange,
   isAutoThrowTemplate,
   withCheneCount,
@@ -753,7 +756,8 @@ describe("ランダム生成への組み込み", () => {
     // クラブは手具で押さえつけて受けられるので、受け方の中でそれが最も多くなる
     const count = new Map<string, number>();
     for (let seed = 0; seed < 20; seed++)
-      autoThrowSpecs("clubs", { random: seeded(seed) })
+      // 前転3回は珍しい寄りの技で候補に入らない回があるので、必要になる要求Dスコアで引く
+      autoThrowSpecs("clubs", { random: seeded(seed), demandScore: VERTICAL_THREE_FREE_SCORE })
         .filter((sp) => sp.pattern.verticalThree)
         .forEach((sp) => count.set(sp.catchStyle.id, (count.get(sp.catchStyle.id) ?? 0) + 1));
     const useapp = count.get(CATCH_USE_APPARATUS) ?? 0;
@@ -761,6 +765,28 @@ describe("ランダム生成への組み込み", () => {
     [...count.entries()]
       .filter(([id]) => id !== CATCH_USE_APPARATUS)
       .forEach(([, n]) => expect(useapp).toBeGreaterThan(n));
+  });
+
+  it("前転3回（縦3動作）は珍しい寄りの技（要求Dスコアが高いときだけ下げない）", () => {
+    expect(VERTICAL_THREE_CHANCE).toBeLessThan(1);
+    // 要求するDスコアが上がると下げない（徒手だけでE難度に届く唯一の形）
+    expect(verticalThreeChance(null)).toBe(VERTICAL_THREE_CHANCE);
+    expect(verticalThreeChance(VERTICAL_THREE_FREE_SCORE - 0.5)).toBe(VERTICAL_THREE_CHANCE);
+    expect(verticalThreeChance(VERTICAL_THREE_FREE_SCORE)).toBe(1);
+
+    const has = (over: Parameters<typeof autoThrowSpecs>[1]) => {
+      let n = 0;
+      for (let seed = 0; seed < 30; seed++)
+        if (autoThrowSpecs("stick", { ...over, random: seeded(seed) }).some((sp) => sp.pattern.verticalThree))
+          n += 1;
+      return n;
+    };
+    // 要求が無いときは候補に入る回のほうが少なく、要求が高いときは必ず入る
+    const low = has({});
+    expect(low).toBeLessThan(30);
+    expect(has({ demandScore: VERTICAL_THREE_FREE_SCORE })).toBe(30);
+    // 珍しさを下げるとさらに減る（形の抽選なので、つまみが効く）
+    expect(has({ rarity: 0 })).toBeLessThanOrEqual(low);
   });
 
   it("左手投げを視野外で受ける候補はかなり少ない", () => {

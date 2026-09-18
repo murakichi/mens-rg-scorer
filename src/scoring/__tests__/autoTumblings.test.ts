@@ -57,6 +57,13 @@ import {
   THROW_IN_SKILL_ROUNDOFF_WEIGHT,
   ROUNDOFF_ENTRY_CONNECT_MAX_SCORE,
   roundoffEntryWeight,
+  FORWARD_ENTRY_FREE_SCORE,
+  FORWARD_ENTRY_CONNECT_FREE_SCORE,
+  FORWARD_ENTRY_WEIGHT,
+  forwardEntryWeight,
+  SWITCH_SIDE_SALTO_WEIGHT,
+  CONNECT_FINISH_HALF_WEIGHT,
+  isBackHalfTwistSalto,
   ROLL_FINISH_PRESS_CATCH_CHANCE,
   TEMPO_CONNECT_WEIGHT,
   PAIR_AFTER_THROW_FIRST_CHANCE,
@@ -1022,19 +1029,35 @@ describe("つなぎ技", () => {
     expect(roundoffEntryWeight(ROUNDOFF_ENTRY_CONNECT_MAX_SCORE, true)).toBe(
       roundoffEntryWeight(ROUNDOFF_ENTRY_CONNECT_MAX_SCORE),
     );
-    // 候補の1本目が後方系（＝ロンダート入り）になる割合は、低いDスコアのほうが高い
-    const backwardShare = (targetScore: number | null) => {
-      let backward = 0;
+  }, 60_000);
+
+  it("前方系から入る通常のタンブリングはDスコアが上がるほど減る（つなぎの形は中級者も実施する）", () => {
+    // 初心者の形なので、低いDスコアでは下げない
+    expect(forwardEntryWeight(1.5)).toBe(1);
+    expect(forwardEntryWeight(FORWARD_ENTRY_FREE_SCORE)).toBe(1);
+    // それ以上と、上限なし（＝難度を狙いきる構成）では下げる
+    expect(forwardEntryWeight(3.0)).toBe(FORWARD_ENTRY_WEIGHT);
+    expect(forwardEntryWeight(null)).toBe(FORWARD_ENTRY_WEIGHT);
+    expect(FORWARD_ENTRY_WEIGHT).toBeLessThan(1);
+    // つなぎの形（前宙→ロンダート→後方系）は中級者も実施するので、下げ始めるのが遅い
+    expect(forwardEntryWeight(3.0, true)).toBe(1);
+    expect(FORWARD_ENTRY_CONNECT_FREE_SCORE).toBeGreaterThan(FORWARD_ENTRY_FREE_SCORE);
+    expect(forwardEntryWeight(FORWARD_ENTRY_CONNECT_FREE_SCORE + 0.5, true)).toBe(
+      FORWARD_ENTRY_WEIGHT,
+    );
+    // 候補の1本目が前方系になる割合は、高いDスコアのほうが低い
+    const forwardShare = (targetScore: number | null) => {
+      let forward = 0;
       let all = 0;
       for (let seed = 1; seed <= 20; seed++)
         autoTumblingSpecs({ targetScore, random: seeded(seed) }).forEach((sp) => {
           if (sp.pattern.throwCatch) return;
           all += 1;
-          if (skillDef(sp.saltoIds[0])?.category === CATEGORY.BACKWARD) backward += 1;
+          if (skillDef(sp.saltoIds[0])?.category === CATEGORY.FORWARD) forward += 1;
         });
-      return backward / all;
+      return forward / all;
     };
-    expect(backwardShare(1.5)).toBeGreaterThan(backwardShare(4.0));
+    expect(forwardShare(4.0)).toBeLessThan(forwardShare(1.5));
   }, 60_000);
 
   it("つなぎ技は2本目の宙返りの後にも入る（前向きで終わる後方系→前宙→つなぎ→宙返り）", () => {
