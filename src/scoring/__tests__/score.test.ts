@@ -1073,3 +1073,26 @@ describe("その手具では入力できない内容は採点しない", () => {
     expect(computeScore(jump, "rope").dScore).toBeGreaterThan(0);
   });
 });
+
+describe("技の最中の二つ投げ（必須投げ）", () => {
+  it("クラブの必須投げ（2つ同時投げ）を満たす", () => {
+    const ser = {
+      executionDeduction: 0,
+      items: [
+        { kind: "skill", skillId: "a_roundoff", hasApparatus: true, isThrow: false },
+        { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: true, reqTypes: ["twothrow"] },
+        { kind: "motion", motionId: "fwd_roll", count: 1 },
+        { kind: "catch", catchTwo: true },
+      ],
+    } as Series;
+    const passed = (list: Series[]) =>
+      computeScore(list, "clubs").apparatusElementChecks.find((c) => c.label.includes("2つ同時投げ"))
+        ?.passed;
+    expect(passed([ser])).toBe(true);
+    // 二つ投げを外すと満たさない
+    const plain = structuredClone(ser);
+    (plain.items[1] as { reqTypes?: string[] }).reqTypes = [];
+    (plain.items[3] as { catchTwo?: boolean }).catchTwo = false;
+    expect(passed([plain])).toBe(false);
+  });
+});

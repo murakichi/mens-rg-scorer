@@ -227,6 +227,8 @@ function ItemEditor({
     );
   }
   if (item.kind === "skill") {
+    // 技の最中の投げでも二つ投げは実施できる（手具を使った投げとは排他）
+    const skillTwoThrow = (item.reqTypes || []).includes(TWO_THROW_TAG);
     const params = parseTwistSkillId(item.skillId);
     // 後ろ向きで終わった後は後方系しか出さない（初期値もそれに合わせる）
     const fallbackTwist = flow.forward ? DEFAULT_TWIST_FORWARD : DEFAULT_TWIST;
@@ -343,24 +345,54 @@ function ItemEditor({
             type="checkbox"
             checked={item.isThrow || false}
             onChange={(e) =>
-              onUpdate(e.target.checked ? { isThrow: true } : { isThrow: false, throwTypes: [] })
+              onUpdate(
+                e.target.checked
+                  ? { isThrow: true }
+                  : { isThrow: false, throwTypes: [], reqTypes: [] },
+              )
             }
           />
           この技の最中に投げ
         </label>
         {item.isThrow &&
           [...SKILL_THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map(
-            (opt) => (
-              <label key={opt.id} className="check">
-                <input
-                  type="checkbox"
-                  checked={(item.throwTypes || []).includes(opt.id)}
-                  onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
-                />
-                {opt.name}
-              </label>
-            ),
+            (opt) => {
+              const on = (item.throwTypes || []).includes(opt.id);
+              // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
+              const blocked = opt.id === USE_APPARATUS_TAG && !on && skillTwoThrow;
+              return (
+                <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={blocked}
+                    onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
+                  />
+                  {opt.name}
+                </label>
+              );
+            },
           )}
+        {/* 技の最中の投げでも二つ投げ（両方を投げる）は実施できる */}
+        {item.isThrow &&
+          !common &&
+          REQUIRED_THROW_OPTIONS[apparatus]
+            .filter((opt) => opt.id === TWO_THROW_TAG)
+            .map((opt) => {
+              const on = (item.reqTypes || []).includes(opt.id);
+              const blocked = !on && (item.throwTypes || []).includes(USE_APPARATUS_TAG);
+              return (
+                <label key={opt.id} className={blocked ? "check-req is-disabled" : "check-req"}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={blocked}
+                    onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
+                  />
+                  {opt.name}
+                </label>
+              );
+            })}
       </>
     );
   }

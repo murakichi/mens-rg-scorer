@@ -48,6 +48,11 @@ export interface SkillItem {
   isThrow?: boolean;
   /** 技の最中の投げの技術タグ（noview / nonhand / useapp）。isThrow 時のみ有効。 */
   throwTypes?: string[];
+  /**
+   * 技の最中の投げの必須投げ（`twothrow` ＝ 二つ投げ）。`isThrow` 時のみ有効。
+   * 投げアイテムの `reqTypes` と同じ扱いで、手元/空中の手具数にも必須要素の判定にも効く。
+   */
+  reqTypes?: string[];
 }
 
 export interface MotionItem {

@@ -15,6 +15,7 @@ import {
   stripForApparatus,
   handsEmptyFlags,
   catchTwoFlags,
+  checkApparatusFlow,
   tumblingVariety,
 } from "../analysis";
 import {
@@ -743,5 +744,54 @@ describe("ダイビング（後方系・頭から着地）", () => {
     expect(SKILL_LIST.find((s) => s.id === DIVING_SKILL_ID)?.noAuto).toBe(true);
     // 徒手動作の選択肢には出ない（宙返り扱いなので）
     expect(MOTION_OPTIONS.some((m) => m.id === DIVING_SKILL_ID)).toBe(false);
+  });
+});
+
+describe("技の最中の投げの二つ投げ", () => {
+  const twoThrowSeries = () =>
+    S(
+      { kind: "skill", skillId: "a_roundoff", hasApparatus: true, isThrow: false },
+      { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: true, reqTypes: ["twothrow"] },
+      { kind: "motion", motionId: "fwd_roll", count: 1 },
+      { kind: "catch", catchTwo: true },
+    );
+
+  it("二つ投げなら手具が2つとも空中に出る", () => {
+    const items = twoThrowSeries().items;
+    // 前転の位置で手元が空（＝手具操作を付けられない）
+    expect(handsEmptyFlags(items, "clubs")).toEqual([false, false, true, false]);
+    // 2つとも空中なので2つ同時キャッチを入力できる
+    expect(catchTwoFlags(items, "clubs")).toEqual([false, false, false, true]);
+    // 二つ投げでなければ片方は手元に残る
+    const one = S(
+      { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: true },
+      { kind: "catch" },
+    ).items;
+    expect(handsEmptyFlags(one, "clubs")).toEqual([false, false]);
+    expect(catchTwoFlags(one, "clubs")).toEqual([false, false]);
+  });
+
+  it("手具の流れの警告が出ない（2つ投げて2つ受ける）", () => {
+    expect(checkApparatusFlow(twoThrowSeries(), "clubs")).toEqual([]);
+  });
+
+  it("その手具で入力できなければ落ちる", () => {
+    const list = [twoThrowSeries()];
+    expect(apparatusBlockers(list, "clubs")).toEqual([]);
+    expect(apparatusBlockers(list, "stick")).toContain("二つ投げ");
+    const stripped = stripForApparatus(list, "stick")[0].items[1];
+    expect(stripped.kind === "skill" && stripped.reqTypes).toEqual([]);
+    // クラブのままなら落とさない（同じ配列をそのまま返す）
+    expect(stripForApparatus(list, "clubs")).toBe(list);
+  });
+
+  it("二つ投げの有無で別のシリーズとして扱う", () => {
+    const plain = S(
+      { kind: "skill", skillId: "a_roundoff", hasApparatus: true, isThrow: false },
+      { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: true },
+      { kind: "motion", motionId: "fwd_roll", count: 1 },
+      { kind: "catch" },
+    );
+    expect(seriesSignature(twoThrowSeries())).not.toBe(seriesSignature(plain));
   });
 });
