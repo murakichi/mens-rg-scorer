@@ -118,6 +118,35 @@ export function maxDiff(future: FutureLevel = null): number {
   return future ? DIFF_VALUE[future] : MAX_DIFF;
 }
 
+/**
+ * 十年後モードの徒手系難度の数え方。**縦回転は手具の滞空時間を食う**ので横より重く数え、
+ * 重み付きの動作量が `FUTURE_HAND_STEPS` の値に届いたらF・Gを認定する。
+ * 現行規則の「縦3動作＝E」（4動作相当）と同じ考え方を上に伸ばしたもので、
+ *   シェネ×5＝5.0（F）／シェネ×4＋前転＝5.5（G）／前転×4＝6.0（G）／6動作＝6.0以上（G）
+ * となる。E以下は従来どおり動作数だけで決めるので、現行規則の採点は変わらない。
+ */
+export const HAND_MOTION_WEIGHT = { vertical: 1.5, horizontal: 1 } as const;
+export const FUTURE_HAND_STEPS: { value: number; diff: Difficulty }[] = [
+  { value: 5.5, diff: "G" },
+  { value: 5, diff: "F" },
+];
+
+/** 重み付きの動作量（縦回転を重く数えた動作数） */
+export function handMotionValue(motionCount: number, verticalCount: number): number {
+  const vertical = Math.min(Math.max(verticalCount, 0), motionCount);
+  return vertical * HAND_MOTION_WEIGHT.vertical + (motionCount - vertical) * HAND_MOTION_WEIGHT.horizontal;
+}
+
+/**
+ * 十年後モードで認定する徒手系難度の値（F・Gに届かなければ0）。
+ * 呼び出し側が動作数から決まる値と `Math.max` を取る（下げることはしない）。
+ */
+export function futureHandValue(motionCount: number, verticalCount: number): number {
+  const weighted = handMotionValue(motionCount, verticalCount);
+  const step = FUTURE_HAND_STEPS.find((x) => weighted + 1e-9 >= x.value);
+  return step ? DIFF_VALUE[step.diff] : 0;
+}
+
 /** 難度を適用中の上限で丸める（E超えは十年後モードのときだけ残る） */
 export function clampDifficulty(value: number, future: FutureLevel = null): Difficulty {
   return VALUE_DIFF[Math.min(Math.max(value, DIFF_VALUE.A), maxDiff(future))];
@@ -397,7 +426,7 @@ export const HAND_MOTIONS: HandMotion[] = [
   { id: "m2", name: "2動作", motions: 2, legacy: true },
   { id: "m3", name: "3動作", motions: 3, legacy: true },
   { id: "m4", name: "4動作", motions: 4, legacy: true },
-  { id: "mv3", name: "縦3動作", motions: 3, verticalThree: true, legacy: true },
+  { id: "mv3", name: "縦3動作", motions: 3, verticalThree: true, vertical: true, legacy: true },
   // 縦回転の徒手としてのみ判定する技（タンブリング技には出さない）
   { id: "td_rise", name: "タッチダウンライズ", motions: 1, vertical: true },
   { id: "fwd_roll", name: "前転", motions: 1, vertical: true },

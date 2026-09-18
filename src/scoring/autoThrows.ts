@@ -19,9 +19,9 @@
 // =====================================================================
 
 import { cycler, pickWeighted, shuffled } from "./pick";
-import { APPARATUS_USE, HANDS_TYPES, REQUIRED_THROW_OPTIONS } from "./constants";
+import { APPARATUS_USE, DIFF_VALUE, HANDS_TYPES, REQUIRED_THROW_OPTIONS } from "./constants";
 import { newTemplateId, type SeriesTemplate } from "./templates";
-import type { ApparatusKey, Item, Series } from "./types";
+import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
 /** 自動生成した投げシリーズの形 */
 export interface AutoThrowPattern {
@@ -48,7 +48,16 @@ export interface AutoThrowPattern {
    * 徒手はこの形の主役（1回目）に付き、2回目は徒手なしの投げ受けになる。
    */
   trailPair?: boolean;
+  /**
+   * 十年後モード専用の形（その上限難度に届いていないと候補にしない）。
+   * 現行規則では徒手はE止まり（4動作）なので、5〜6動作の形はここで区別する。
+   */
+  future?: Exclude<FutureLevel, null>;
 }
+
+/** その上限難度でこの形を使ってよいか（`future` の付いていない形はいつでも使える） */
+export const throwPatternAllowed = (pattern: AutoThrowPattern, future: FutureLevel = null): boolean =>
+  !pattern.future || (!!future && DIFF_VALUE[future] >= DIFF_VALUE[pattern.future]);
 
 /**
  * 連続投げの1回目（`leadPair` の先に置く投げ受け）で実施するシェネの回数。
@@ -90,6 +99,20 @@ export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
   // あとに最低限の投げ受けを1本足す形（連続投げは1回目で難度を採ることが多い）
   { id: "cheneTrailPair", chene: { min: 3, max: 4 }, after: [], noViewPair: false, trailPair: true },
   { id: "cheneRollTrailPair", chene: { min: 1, max: 3 }, after: [times(FWD_ROLL, 1)], noViewPair: false, trailPair: true },
+  // ---- 十年後モードでだけ実施する、5〜6動作の形（`HAND_MOTION_WEIGHT` の数え方）----
+  // シェネ×5＝5.0（F）／シェネ×4→前転＝5.5（G）／前転×4＝6.0（G）／シェネ×6＝6.0（G）
+  { id: "cheneFive", chene: { min: 5, max: 5 }, after: [], noViewPair: false, future: "F" },
+  { id: "cheneSix", chene: { min: 6, max: 6 }, after: [], noViewPair: false, future: "G" },
+  { id: "cheneFourRoll", chene: { min: 4, max: 4 }, after: [times(FWD_ROLL, 1)], noViewPair: false, future: "G" },
+  // 前転4回。縦3動作と同じく、受けはもう一方の手具で押さえつけるのが主流
+  {
+    id: "rollsFour",
+    chene: { min: 0, max: 0 },
+    after: [times(FWD_ROLL, 4)],
+    noViewPair: false,
+    verticalThree: true,
+    future: "G",
+  },
 ];
 
 /** 徒手なしの投げ受けの形（`trailPair` のあとの1本など、手具ごとの規則だけで受け方を引くのに使う） */
@@ -444,6 +467,8 @@ export function cheneCountRange(pattern: AutoThrowPattern): number[] {
 export interface AutoThrowOptions {
   /** 乱数（テスト用に差し替え可能） */
   random?: () => number;
+  /** 十年後モードの上限難度（"F" / "G"）。5〜6動作の形はこれに届いたときだけ使う。 */
+  future?: FutureLevel;
   /** 作る候補の数の上限（既定＝形 × 投げ方 の全組み合わせ） */
   limit?: number;
 }
@@ -457,8 +482,8 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   const rand = opts.random ?? Math.random;
   const throwStyles = autoThrowStyles(apparatus);
   const combos = shuffled(
-    AUTO_THROW_PATTERNS.flatMap((pattern) =>
-      throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
+    AUTO_THROW_PATTERNS.filter((pattern) => throwPatternAllowed(pattern, opts.future ?? null)).flatMap(
+      (pattern) => throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
     ),
     rand,
   );

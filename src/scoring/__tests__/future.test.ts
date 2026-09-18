@@ -8,8 +8,10 @@ import {
   MAX_DIFF,
   SKILL_LIST,
   TWIST_OPTIONS,
+  HAND_MOTION_WEIGHT,
   buildTwistSkillId,
   clampDifficulty,
+  handMotionValue,
   futureSkillIds,
   maxDiff,
   normalizeFutureLevel,
@@ -27,13 +29,14 @@ import { computeScore } from "../score";
 import { computeTeamScore, initialTeamState, normalizeTeamState } from "../team";
 import { generateRoutine } from "../generate";
 import { autoTumblingSpecs } from "../autoTumblings";
+import { AUTO_THROW_PATTERNS, autoThrowTemplates, throwPatternAllowed } from "../autoThrows";
 import {
   FUTURE_UNLOCK_TOGGLES,
   loadFutureUnlock,
   normalizeIndividualDraft,
   saveFutureUnlock,
 } from "../draft";
-import type { Item, Series, TwistParams } from "../types";
+import type { FutureLevel, Item, Series, TwistParams } from "../types";
 
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 const skill = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: false, isThrow: false });
@@ -209,13 +212,61 @@ describe("十年後モード — 難度計算", () => {
     expect(calcTumblingDifficulty([...chain, "b_front"], false, false, "F")).toBe("F");
   });
 
-  it("徒手系難度も上限まで伸びる（縦3動作は従来どおりE）", () => {
+  /** 動作数・縦回転の数から徒手系難度を引く（縦3動作以上は現行規則どおり最低E） */
+  const hand = (motions: number, vertical: number, future: FutureLevel) =>
+    calcHandDifficulty(motions, vertical >= 3, future, vertical);
+
+  it("徒手系難度は縦回転を重く数えてF・Gまで伸びる（横1.0・縦1.5）", () => {
+    expect(HAND_MOTION_WEIGHT).toEqual({ vertical: 1.5, horizontal: 1 });
+    // 5.0以上でF、5.5以上でG
+    expect(handMotionValue(5, 0)).toBe(5);
+    expect(handMotionValue(5, 1)).toBe(5.5);
+    expect(handMotionValue(4, 4)).toBe(6);
+    expect(handMotionValue(3, 3)).toBe(4.5); // 縦3動作はEのまま（5.0に届かない）
+
+    // F：5動作（縦を含まない）／縦2＋横2
+    expect(hand(5, 0, "G")).toBe("F");
+    expect(hand(4, 2, "G")).toBe("F");
+    // G：6動作／5動作で縦横混在／縦4動作／縦3＋横1
+    expect(hand(6, 0, "G")).toBe("G");
+    expect(hand(5, 1, "G")).toBe("G");
+    expect(hand(4, 4, "G")).toBe("G");
+    expect(hand(4, 3, "G")).toBe("G");
+    // E止まり：4動作（縦1まで）・縦3動作
+    expect(hand(4, 0, "G")).toBe("E");
+    expect(hand(4, 1, "G")).toBe("E");
+    expect(hand(3, 3, "G")).toBe("E");
+    // 上限Fでは F 止め
+    expect(hand(6, 0, "F")).toBe("F");
+    expect(hand(4, 4, "F")).toBe("F");
+  });
+
+  it("縦3動作の「E」は上書きではなく最低保証（動作を足せば難度は上がる）", () => {
+    // 縦3動作＋シェネ3回＝6動作。以前はEで止まり、ただの6動作より低くなっていた
+    expect(hand(6, 3, "G")).toBe("G");
+    expect(hand(6, 3, null)).toBe("E");
+    // 現行規則では従来どおり（縦3動作＝E、動作を足してもE止め）
+    expect(hand(3, 3, null)).toBe("E");
+    expect(hand(4, 3, null)).toBe("E");
     expect(calcHandDifficulty(4, false)).toBe("E");
     expect(calcHandDifficulty(5, false)).toBe("E");
-    expect(calcHandDifficulty(5, false, "G")).toBe("F");
-    expect(calcHandDifficulty(6, false, "G")).toBe("G");
-    expect(calcHandDifficulty(6, false, "F")).toBe("F");
-    expect(calcHandDifficulty(6, true, "G")).toBe("E");
+    expect(calcHandDifficulty(2, true)).toBe("E"); // 旧データの「縦3動作」（動作数2でも最低E）
+  });
+
+  it("シリーズの入力からも同じ難度になる（縦＝前転・横＝シェネ）", () => {
+    const motion = (motionId: string, count: number): Item => ({ kind: "motion", motionId, count });
+    const series = (...items: Item[]): Series[] => [S({ kind: "throw" }, ...items, { kind: "catch" })];
+    // シェネ×4→前転＝5動作の縦横混在＝G
+    const mixed = series(motion("chene", 4), motion("fwd_roll", 1));
+    expect(computeScore(mixed, "stick", { future: "G" }).handScore).toBeCloseTo(DIFF_SCORE.G, 5);
+    expect(computeScore(mixed, "stick", { future: "F" }).handScore).toBeCloseTo(DIFF_SCORE.F, 5);
+    expect(computeScore(mixed, "stick").handScore).toBeCloseTo(DIFF_SCORE.E, 5);
+    // シェネ×5＝5動作すべて横＝F
+    const flat = series(motion("chene", 5));
+    expect(computeScore(flat, "stick", { future: "G" }).handScore).toBeCloseTo(DIFF_SCORE.F, 5);
+    // 前転×4＝縦4動作＝G
+    const rolls = series(motion("fwd_roll", 4));
+    expect(computeScore(rolls, "stick", { future: "G" }).handScore).toBeCloseTo(DIFF_SCORE.G, 5);
   });
 
   it("F難度の宙返り1本は難度点0.9（モードOFFなら0.7のまま）", () => {
@@ -261,12 +312,13 @@ describe("十年後モード — 難度計算", () => {
   });
 });
 
+/** 決まった順に進む疑似乱数（テストを安定させる） */
+const seeded = (seed: number) => () => {
+  seed = (seed * 1103515245 + 12345) % 2147483648;
+  return seed / 2147483648;
+};
+
 describe("十年後モード — ランダム生成", () => {
-  /** 決まった順に進む疑似乱数（テストを安定させる） */
-  const seeded = (seed: number) => () => {
-    seed = (seed * 1103515245 + 12345) % 2147483648;
-    return seed / 2147483648;
-  };
 
   it("候補のタンブリングにF・G難度の技が入る（モードOFFでは入らない）", () => {
     const usedIds = (future: Parameters<typeof autoTumblingSpecs>[0]["future"]) =>
@@ -278,6 +330,31 @@ describe("十年後モード — ランダム生成", () => {
     // 上限Fの候補にG難度の技は出てこない
     const f = usedIds("F");
     expect(f.every((id) => skillDifficulty(id, false, "G") !== "G")).toBe(true);
+  });
+
+  it("投げシリーズの5〜6動作の形は上限に応じて出る（モードOFFでは4動作まで）", () => {
+    const motions = (future: FutureLevel) =>
+      autoThrowTemplates("stick", { random: seeded(3), future })
+        .flatMap((t) => analyzeSeries(t.series, false, future).units)
+        .filter((u) => u.type === "throw" && !u.isThrowTumbling)
+        .map((u) => u.finalDiff);
+    // 現行規則の形は徒手4動作まで＝E止め
+    expect(motions(null).some((d) => d === "F" || d === "G")).toBe(false);
+    // 上限FではFの形（シェネ×5）だけ、上限GではGの形も出る
+    expect(motions("F")).toContain("F");
+    expect(motions("F").some((d) => d === "G")).toBe(false);
+    expect(motions("G")).toContain("G");
+    // 形の定義も上限で出し分ける
+    const futureShapes = AUTO_THROW_PATTERNS.filter((p) => p.future);
+    expect(futureShapes.map((p) => p.id)).toEqual(["cheneFive", "cheneSix", "cheneFourRoll", "rollsFour"]);
+    futureShapes.forEach((p) => {
+      expect(throwPatternAllowed(p, null)).toBe(false);
+      expect(throwPatternAllowed(p, "G")).toBe(true);
+      expect(throwPatternAllowed(p, "F")).toBe(p.future === "F");
+    });
+    AUTO_THROW_PATTERNS.filter((p) => !p.future).forEach((p) => {
+      expect(throwPatternAllowed(p, null)).toBe(true);
+    });
   });
 
   it("モードOFFでは、テンプレートにF難度の技が入っていても自動生成は使わない", () => {
