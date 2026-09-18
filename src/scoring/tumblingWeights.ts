@@ -179,7 +179,23 @@ export const THROW_IN_SALTO_WEIGHT: Record<string, number> = {
   c_kirimomiten: THROW_IN_SIDE_SALTO_WEIGHT,
 };
 
-export const throwInSaltoWeight = (id: string): number => THROW_IN_SALTO_WEIGHT[id] ?? 1;
+/**
+ * **ひねりのある前方系の宙返りの最中に投げる**のはかなり難しい。実施例が無いとまでは
+ * 言えないので上の 0.1 より上に置く。日本トップの実例は**ひねりの無い前宙**で投げる形
+ * （ロンダート→後方伸身2回半ひねり→前宙(投げ)→前転→キャッチ）。
+ * 技を1つずつ並べるのではなく**ひねりの有無で判定する**のは、1つ下げると隣が繰り上がる
+ * （前方宙返り1回ひねりを下げると伸身前宙1回ひねりが出てくる）のを防ぐため。
+ */
+export const THROW_IN_TWIST_SALTO_WEIGHT = 0.3;
+
+/** その技の実施中に投げる形の重み（1＝下げない） */
+export const throwInSaltoWeight = (id: string): number => {
+  const fixed = THROW_IN_SALTO_WEIGHT[id];
+  if (fixed != null) return fixed;
+  const twist = skillDef(id)?.twist;
+  if (twist?.base === "front" && twist.twist > 0) return THROW_IN_TWIST_SALTO_WEIGHT;
+  return 1;
+};
 
 /**
  * つなぎ技のあとの宙返りで投げる形（`connectThrowInSkill`）で、その宙返りに選ばれやすい技。

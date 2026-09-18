@@ -14,6 +14,8 @@ import {
   TENCHU_SKILL_ID,
   THROW_FINISH_SALTOS,
   THROW_IN_SALTO_WEIGHT,
+  THROW_IN_SIDE_SALTO_WEIGHT,
+  THROW_IN_TWIST_SALTO_WEIGHT,
   throwInSaltoWeight,
   THROW_IN_SKILL_ROUNDOFF_WEIGHT,
   buildTransitions,
@@ -116,8 +118,20 @@ describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
       expect(a!.weight).toBeCloseTo((b?.weight ?? 0) * throwInSaltoWeight(id), 6);
       expect(throwInSaltoWeight(id)).toBeLessThan(1);
     });
-    // 表に無い技は下がらない
+    // ひねりのある前方系も下げる（1つ下げると隣が繰り上がるので、ひねりの有無で判定する）
+    ["c_front1full", "d_frontlay1", "e_frontlay2"].forEach((id) =>
+      expect(throwInSaltoWeight(id)).toBe(THROW_IN_TWIST_SALTO_WEIGHT),
+    );
+    // 実施例のある「ひねりの無い前宙で投げる」形は下げない
     expect(throwInSaltoWeight("b_front")).toBe(1);
+    expect(throwInSaltoWeight("b_divefront")).toBe(1);
+    // 実施例が無い技（側宙・きりもみ転回）のほうが低い
+    expect(THROW_IN_SIDE_SALTO_WEIGHT).toBeLessThan(THROW_IN_TWIST_SALTO_WEIGHT);
+    // 遷移表の辺にも効く
+    const a = find(table("chainThrowInSkill").next("b_backhalf"), "c_front1full");
+    const b = find(table("chain").next("b_backhalf"), "c_front1full");
+    expect(a).toBeDefined();
+    expect(a!.weight).toBeCloseTo((b?.weight ?? 0) * THROW_IN_TWIST_SALTO_WEIGHT, 6);
   });
 
   it("辺に「終われるか」が載っている（抽選が要るものは印が付く）", () => {
