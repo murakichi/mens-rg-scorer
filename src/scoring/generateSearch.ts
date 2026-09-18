@@ -62,6 +62,8 @@ export function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () 
         demandScore: opts.minScore,
         // 十年後モードでは5〜6動作（F・G難度）の形も候補にする
         future: opts.future ?? null,
+        // 生成する形の珍しさ（0〜100。既定50＝実測どおり）
+        rarity: opts.rarity,
       }),
     );
   if (opts.autoTumblings !== false)
@@ -79,6 +81,8 @@ export function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () 
         skillIds: opts.autoTumblingSkills ?? usedSkillIds(own.map((t) => t.series)),
         random: rand,
         limit: opts.autoTumblingLimit,
+        // 生成する形の珍しさ（0〜100。既定50＝実測どおり）
+        rarity: opts.rarity,
       }),
     );
   return pool;

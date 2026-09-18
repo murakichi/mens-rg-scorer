@@ -3,6 +3,7 @@ import { X, Shuffle } from "lucide-react";
 import { APPARATUS } from "../scoring/constants";
 import {
   DEFAULT_MAX_AUTO_THROWS,
+  DEFAULT_RARITY,
   DEFAULT_MAX_AUTO_TUMBLINGS,
   DEFAULT_MAX_SERIES,
   generateForApparatus,
@@ -34,6 +35,8 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
   const [autoTumblings, setAutoTumblings] = useState(true);
   /** 自動生成にしてよい割合（%）。100%＝種類ごとの上限だけ */
   const [autoPercent, setAutoPercent] = useState(100);
+  /** 生成する形の珍しさ（0＝ありふれた形だけ／50＝実測どおり／100＝珍しい形を優先） */
+  const [rarity, setRarity] = useState(DEFAULT_RARITY);
   const [result, setResult] = useState<(GenerateResult & { apparatus: ApparatusKey }) | null>(null);
   const [note, setNote] = useState("");
   if (!open) return null;
@@ -50,6 +53,7 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
       autoThrows,
       autoTumblings,
       autoRatio: autoPercent / 100,
+      rarity,
       minScore: minScore ? parseFloat(minScore) : null,
       maxScore: maxScore ? parseFloat(maxScore) : null,
     });
@@ -111,6 +115,26 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
             <span className="gen-ratio-value">
               自動生成の割合 {autoPercent}%
               {autoPercent === 0 ? "（テンプレートだけで組む）" : `（最大${autoMax}本）`}
+            </span>
+          </div>
+          <div className="gen-ratio">
+            <input
+              className="gen-ratio-range"
+              type="range"
+              min={0}
+              max={100}
+              step={25}
+              value={rarity}
+              onChange={(e) => setRarity(parseInt(e.target.value, 10))}
+              aria-label="形の珍しさ"
+            />
+            <span className="gen-ratio-value">
+              形の珍しさ {rarity}
+              {rarity === DEFAULT_RARITY
+                ? "（実際の演技での多さどおり）"
+                : rarity < DEFAULT_RARITY
+                  ? "（よく実施される形に寄せる）"
+                  : "（珍しい形を優先する）"}
             </span>
           </div>
           <p className="hint">

@@ -31,7 +31,7 @@ import {
   canThrowAfterCatch,
   type AutoThrowStyle,
 } from "./autoThrows";
-import { cycler, pickDifferent, shuffled } from "./pick";
+import { cycler, pickDifferent, rarityChance, rarityExponent, shuffled } from "./pick";
 import { unseenShapeChance } from "./unseenShapes";
 import {
   AUTO_TUMBLING_PATTERNS,
@@ -267,17 +267,24 @@ export const autoTumblingName = (spec: AutoTumblingSpec): string =>
  * 連続の終わり方に関わる抽選（候補ごとに1回だけ引く）。
  * Dスコアの低い選手（`basicLevel`）は、稀とされる終わり方をどれも普通に実施する。
  */
-function drawChainEnd(rand: () => number, basicLevel: boolean, targetScore?: number | null) {
+function drawChainEnd(
+  rand: () => number,
+  basicLevel: boolean,
+  targetScore?: number | null,
+  rarity?: number,
+) {
+  /** 珍しさを掛けた確率（既定50なら素の確率） */
+  const chance = (p: number) => rarityChance(p, rarity);
   // 後ろ向きで終わる後方宙返りで終わるかは、狙うDスコアで決まる確率で抽選する
-  const backwardEnd = rand() < backwardEndChance(targetScore);
+  const backwardEnd = rand() < chance(backwardEndChance(targetScore));
   // 後方宙返り半ひねりで終わるのは稀（大抵そのあとに前宙か側宙を実施する）
-  const rareEnd = basicLevel || rand() < RARE_CHAIN_END_CHANCE;
+  const rareEnd = basicLevel || rand() < chance(RARE_CHAIN_END_CHANCE);
   // つなぎのあとに伸身を1本だけ実施して終わる形は、上級者ではあまり実施しない
-  const layoutAfterConnect = basicLevel || rand() < LAYOUT_AFTER_CONNECT_CHANCE;
+  const layoutAfterConnect = basicLevel || rand() < chance(LAYOUT_AFTER_CONNECT_CHANCE);
   // 最後の前方系のあとに前転を付けるかの抽選（本数を変えても同じ判断を使う）
   const roll = rand();
   // 後ろ向きで終わる宙返り→前方系の位置で投げるのは、きりもみの視野外投げだけ低確率で残す
-  const backToForwardThrow = rand() < BACK_TO_FORWARD_THROW_CHANCE;
+  const backToForwardThrow = rand() < chance(BACK_TO_FORWARD_THROW_CHANCE);
   return { backwardEnd, rareEnd, layoutAfterConnect, roll, backToForwardThrow };
 }
 
@@ -316,6 +323,9 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
   const junior = !!opts.junior;
   const basicLevel = !!opts.basicLevel;
   const apparatus = opts.apparatus;
+  /** 珍しさ：抽選の重みに掛ける指数と、0〜1の確率に掛ける変換 */
+  const exp = rarityExponent(opts.rarity);
+  const chance = (p: number) => rarityChance(p, opts.rarity);
   const ctxBase = {
     junior,
     future: opts.future ?? null,
@@ -348,7 +358,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     const firstWeights = edgeWeights(tr.first);
     const firstsUsed: string[] = [];
     const nextFirst = () => {
-      const id = pickDifferent(firstIds, firstsUsed, rand, firstWeights);
+      const id = pickDifferent(firstIds, firstsUsed, rand, firstWeights, exp);
       if (id) firstsUsed.push(id);
       return id;
     };
@@ -362,7 +372,10 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       // つなぎの後の宙返りで投げる形は、投げるのが最後の宙返り＝つなぎの直後になるように挟む
       const connectAt = pattern.throwInSkill
         ? count - 1
-        : pattern.connect && pattern.saltos.max >= 3 && count >= 3 && rand() < CONNECT_AT_SECOND_CHANCE
+        : pattern.connect &&
+            pattern.saltos.max >= 3 &&
+            count >= 3 &&
+            rand() < chance(CONNECT_AT_SECOND_CHANCE)
           ? 2
           : DEFAULT_CONNECT_AT;
       // 目標の本数まで続く1本目が引けるまで何回か引き直す（後ろ向きに降りる技は連続しない）
@@ -374,7 +387,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         /** 遷移表を1つ進める（同じ技の繰り返しは避ける） */
         const step = (prev: string) => {
           const edges = tr.next(prev);
-          return pickDifferent(edgeIds(edges), ids, rand, edgeWeights(edges));
+          return pickDifferent(edgeIds(edges), ids, rand, edgeWeights(edges), exp);
         };
         // つなぎ技の前に置く宙返り（2本目の後に挟む形では、ここでもう1本積む）
         while (pattern.connect && ids.length < connectAt) {
@@ -386,10 +399,10 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         if (pattern.connect) {
           const beforeConnect = ids[ids.length - 1];
           const connects = tr.connects(beforeConnect);
-          cid = pickDifferent(edgeIds(connects), [], rand, edgeWeights(connects)) ?? "";
+          cid = pickDifferent(edgeIds(connects), [], rand, edgeWeights(connects), exp) ?? "";
           if (!cid) continue;
           const afters = tr.afterConnect(cid, beforeConnect);
-          const after = pickDifferent(edgeIds(afters), ids, rand, edgeWeights(afters));
+          const after = pickDifferent(edgeIds(afters), ids, rand, edgeWeights(afters), exp);
           if (!after) continue;
           ids.push(after);
         }
@@ -407,7 +420,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       if (saltoIds.length < pattern.saltos.min) continue;
       // 続かなかったぶんは本数を減らす
       let saltoCount = Math.max(pattern.saltos.min, Math.min(count, saltoIds.length));
-      const ends = drawChainEnd(rand, basicLevel, opts.targetScore);
+      const ends = drawChainEnd(rand, basicLevel, opts.targetScore, opts.rarity);
       const endsOk = (n: number) => chainEndsOk(pattern, saltoIds, n, connectAt, ends, connectId);
       // 終われる本数を探す：まず伸ばして（前宙・側宙に続ける）、だめなら縮める
       let end = saltoCount;
@@ -420,11 +433,12 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       saltoCount = end;
       // 投げタンのキャッチのあとに連続投げを続けるか（投げてから跳ぶ形のほうが多い）
       const secondThrow =
-        pattern.throwCatch && apparatus && rand() < pairAfterChance(pattern)
+        pattern.throwCatch && apparatus && rand() < chance(pairAfterChance(pattern))
           ? nextSecondThrow(apparatus)
           : undefined;
       // クラブ・リングは投げタンの投げを二つ投げにすることがある（投げてから跳ぶ形だけ）
-      const twoThrow = canTwoThrowTumbling(apparatus, pattern) && rand() < TWO_THROW_IN_TUMBLING_CHANCE;
+      const twoThrow =
+        canTwoThrowTumbling(apparatus, pattern) && rand() < chance(TWO_THROW_IN_TUMBLING_CHANCE);
       // 実施例の無い投げ受け（左手投げ・背面キャッチ）は要求値が上がるほど出やすい。
       // どちらも「投げてから跳ぶ」通常の投げタンだけ
       const plainThrowTum = !!pattern.throwCatch && !pattern.throwInSkill;
@@ -433,8 +447,9 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         !!apparatus &&
         hasLeftHandThrow(apparatus) &&
         !twoThrow &&
-        rand() < unseenShapeChance("throwTumLeftHandThrow", opts.demandScore);
-      const backCatch = plainThrowTum && rand() < unseenShapeChance("throwTumBackCatch", opts.demandScore);
+        rand() < chance(unseenShapeChance("throwTumLeftHandThrow", opts.demandScore));
+      const backCatch =
+        plainThrowTum && rand() < chance(unseenShapeChance("throwTumBackCatch", opts.demandScore));
       specs.push({
         pattern,
         saltoCount,
@@ -444,7 +459,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         ...(connectAt !== DEFAULT_CONNECT_AT ? { connectAt } : {}),
         draws: {
           ...ends,
-          pressCatch: rand() < ROLL_FINISH_PRESS_CATCH_CHANCE,
+          pressCatch: rand() < chance(ROLL_FINISH_PRESS_CATCH_CHANCE),
           twoThrow,
           leftHandThrow,
           backCatch,
@@ -477,7 +492,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     // 使用済み扱いにしておき、重みだけで引く
     const rare = keys.filter((k) => list[Number(k)].some((id) => LIMITED_SKILLS.includes(id)));
     const used = entryUsed.get(category) ?? [];
-    const key = pickDifferent(keys, [...used, ...rare], rand, weights) ?? keys[0];
+    const key = pickDifferent(keys, [...used, ...rare], rand, weights, exp) ?? keys[0];
     used.push(key);
     entryUsed.set(category, used);
     spec.entry = list[Number(key)];
@@ -519,6 +534,12 @@ export interface AutoTumblingOptions {
    * 未指定・空なら技の一覧すべてを使う。
    */
   skillIds?: string[];
+  /**
+   * **珍しさ**（0〜100、既定50）。抽選の重みと0〜1の確率にまとめて掛かる
+   * （`rarityExponent` / `rarityChance`）。0＝最も遷移しやすい形だけ、
+   * 50＝実測どおり、100＝珍しい形を優先。
+   */
+  rarity?: number;
   /** 乱数（テスト用に差し替え可能） */
   random?: () => number;
   /** 作る候補の数の上限（既定＝形 × 宙返りの組み合わせ） */
