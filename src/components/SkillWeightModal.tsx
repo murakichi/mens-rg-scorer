@@ -44,7 +44,7 @@ export default function SkillWeightModal({ open, store, junior, future, onChange
   })).filter((g) => g.list.length > 0);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay is-nested" onClick={onClose}>
       <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <span>技ごとの出やすさ</span>
