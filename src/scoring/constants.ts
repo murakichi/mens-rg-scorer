@@ -68,6 +68,9 @@ export const TWO_THROW_TAG = "twothrow";
 /** 左手投げ（利き手でない手で投げる）の必須投げのid */
 export const LEFT_HAND_THROW_TAG = "lefthand";
 
+/** 視野外の投げ・キャッチの技術タグ */
+export const NO_VIEW_TAG = "noview";
+
 export const REQUIRED_THROW_OPTIONS: Record<ApparatusKey, { id: string; name: string }[]> = {
   stick: [{ id: LEFT_HAND_THROW_TAG, name: "左手投げ" }],
   clubs: [{ id: TWO_THROW_TAG, name: "二つ投げ" }],

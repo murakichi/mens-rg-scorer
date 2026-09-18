@@ -27,10 +27,10 @@ import { calcTumblingDifficulty, needsRoundoffBefore, prevSkillId, stripForAppar
 import {
   CATCH_USE_APPARATUS,
   NO_VIEW_TAG,
-  rareThrowTumblingChance,
   type AutoThrowStyle,
 } from "./autoThrows";
 import { cycler, pickDifferent, shuffled } from "./pick";
+import { unseenShapeChance } from "./unseenShapes";
 import {
   AUTO_TUMBLING_PATTERNS,
   DEFAULT_CONNECT_AT,
@@ -101,12 +101,12 @@ export interface TumblingDraws {
   twoThrow: boolean;
   /**
    * 投げタンの投げを**左手投げ**にするか（スティックで、投げてから跳ぶ形だけ）。
-   * 実施例が無い形なので `rareThrowTumblingChance` の低い確率で引く。
+   * 実施例が無い形なので `unseenShapes.ts` の `throwTumLeftHandThrow` の低い確率で引く。
    */
   leftHandThrow: boolean;
   /**
    * 投げタンの受けを**背面キャッチ（視野外のキャッチ）**にするか（投げてから跳ぶ形だけ）。
-   * こちらも実施例が無い形なので `rareThrowTumblingChance` で引く。
+   * こちらも実施例が無い形なので `unseenShapes.ts` の `throwTumBackCatch` で引く。
    */
   backCatch: boolean;
   /** 投げタンのキャッチのあとに続ける投げ受けの投げ方（未指定なら続けない） */
@@ -411,11 +411,14 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       const twoThrow = canTwoThrowTumbling(apparatus, pattern) && rand() < TWO_THROW_IN_TUMBLING_CHANCE;
       // 実施例の無い投げ受け（左手投げ・背面キャッチ）は要求値が上がるほど出やすい。
       // どちらも「投げてから跳ぶ」通常の投げタンだけ
-      const rareChance = rareThrowTumblingChance(opts.demandScore);
       const plainThrowTum = !!pattern.throwCatch && !pattern.throwInSkill;
       const leftHandThrow =
-        plainThrowTum && !!apparatus && hasLeftHandThrow(apparatus) && !twoThrow && rand() < rareChance;
-      const backCatch = plainThrowTum && rand() < rareChance;
+        plainThrowTum &&
+        !!apparatus &&
+        hasLeftHandThrow(apparatus) &&
+        !twoThrow &&
+        rand() < unseenShapeChance("throwTumLeftHandThrow", opts.demandScore);
+      const backCatch = plainThrowTum && rand() < unseenShapeChance("throwTumBackCatch", opts.demandScore);
       specs.push({
         pattern,
         saltoCount,
@@ -491,7 +494,7 @@ export interface AutoTumblingOptions {
   targetScore?: number | null;
   /**
    * **要求するDスコアの下限**（`minScore`）。実施例の無い投げ受け（背面キャッチ・左手投げ）は
-   * 要求値が上がるほど出やすくする（`rareThrowTumblingChance`）。
+   * 要求値が上がるほど出やすくする（`unseenShapeChance`）。
    */
   demandScore?: number | null;
   /**

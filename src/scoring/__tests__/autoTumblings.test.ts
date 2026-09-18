@@ -100,6 +100,7 @@ import {
 import { BASIC_LEVEL_MAX_SCORE, DEFAULT_MAX_AUTO_TUMBLINGS, generateRoutine } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
+import { unseenShape } from "../unseenShapes";
 import type { Item, Series } from "../types";
 
 /** 決まった順に進む疑似乱数（テストを安定させる） */
@@ -1472,9 +1473,11 @@ describe("通常の投げタンの背面キャッチ・左手投げ（実施例�
     return { n, back: back / n, left: left / n };
   };
 
-  it("要求値が低いうちは低く、4.5から上がる", () => {
-    const low = plain("stick", 4.5);
-    const high = plain("stick", 5.5);
+  it("要求値が低いうちは低く、宣言した要求値から上がる", () => {
+    // 閾値は `unseenShapes.ts` の宣言から読む（表を直せばテストも追従する）
+    const from = unseenShape("throwTumBackCatch").chance.riseFrom;
+    const low = plain("stick", from);
+    const high = plain("stick", from + 1.0);
     expect(low.n).toBeGreaterThan(0);
     // 低いうちは1割未満
     expect(low.back).toBeLessThan(0.1);

@@ -36,10 +36,6 @@ import {
   isAutoThrowTemplate,
   withCheneCount,
   CATCH_USE_APPARATUS,
-  RARE_THROW_TUMBLING_BASE_CHANCE,
-  RARE_THROW_TUMBLING_MAX_CHANCE,
-  RARE_THROW_TUMBLING_RISE_SCORE,
-  rareThrowTumblingChance,
   type AutoThrowSpec,
 } from "../autoThrows";
 import { analyzeSeries, checkApparatusFlow } from "../analysis";
@@ -47,6 +43,8 @@ import { DEFAULT_MAX_AUTO_THROWS, generateRoutine } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
 import type { ApparatusKey, Item, Series } from "../types";
+import { TECHNIQUE_BONUS } from "../constants";
+import { UNSEEN_SHAPES, unseenPenalty, unseenShapeChance } from "../unseenShapes";
 
 const APPARATUS_KEYS: ApparatusKey[] = ["stick", "clubs", "ring", "rope"];
 
@@ -773,20 +771,49 @@ describe("ランダム生成への組み込み", () => {
 });
 
 describe("実施例の無い投げ受け（要求値が上がるほど出やすい）", () => {
-  it("要求値4.5までは低く、そこから上がって上限で止まる", () => {
-    expect(rareThrowTumblingChance(null)).toBeCloseTo(RARE_THROW_TUMBLING_BASE_CHANCE, 6);
-    expect(rareThrowTumblingChance(2.0)).toBeCloseTo(RARE_THROW_TUMBLING_BASE_CHANCE, 6);
-    expect(rareThrowTumblingChance(RARE_THROW_TUMBLING_RISE_SCORE)).toBeCloseTo(
-      RARE_THROW_TUMBLING_BASE_CHANCE,
-      6,
-    );
-    // そこから上がる
-    expect(rareThrowTumblingChance(5.0)).toBeGreaterThan(rareThrowTumblingChance(4.5));
-    expect(rareThrowTumblingChance(5.5)).toBeGreaterThan(rareThrowTumblingChance(5.0));
-    // 上限で止まる
-    expect(rareThrowTumblingChance(99)).toBeCloseTo(RARE_THROW_TUMBLING_MAX_CHANCE, 6);
-    // 低いうちは「低め」（1割未満）
-    expect(rareThrowTumblingChance(4.5)).toBeLessThan(0.1);
+  it("要求値のカーブは、宣言どおりに上がって上限で止まる", () => {
+    for (const shape of UNSEEN_SHAPES) {
+      const c = shape.chance;
+      const at = (d: number | null) => unseenShapeChance(shape.id, d);
+      // 上がり始めるまでは一定
+      expect(at(null)).toBeCloseTo(c.base, 6);
+      expect(at(2.0)).toBeCloseTo(c.base, 6);
+      expect(at(c.riseFrom)).toBeCloseTo(c.base, 6);
+      // そこから上がる
+      expect(at(c.riseFrom + 0.5)).toBeGreaterThan(at(c.riseFrom));
+      expect(at(c.riseFrom + 1.0)).toBeGreaterThan(at(c.riseFrom + 0.5));
+      // 上限で止まる
+      expect(at(99)).toBeCloseTo(c.max, 6);
+      // 低いうちは「低め」（1割未満）
+      expect(at(c.riseFrom)).toBeLessThan(0.1);
+    }
+  });
+
+  it("評価は、その形が稼ぐ点数をそのまま打ち消す", () => {
+    for (const shape of UNSEEN_SHAPES) {
+      // 技術加点で稼ぐ形は、その1タグぶんを打ち消す（＝点数的に中立にする）
+      expect([0, TECHNIQUE_BONUS]).toContain(shape.earns);
+      // 中立化のうえで嫌うぶんは、現実志向の重みの段（0.1〜0.9）に収める
+      expect(shape.extra).toBeGreaterThanOrEqual(0);
+      expect(shape.earns + shape.extra).toBeGreaterThan(0);
+      expect(shape.earns + shape.extra).toBeLessThanOrEqual(0.9);
+    }
+  });
+
+  it("数え方は形ごとに重ならない（左手＋視野外は1つの形として数える）", () => {
+    const ser: Series = {
+      executionDeduction: 0,
+      items: [
+        { kind: "throw", reqTypes: [LEFT_HAND_TAG], throwTypes: [NO_VIEW_TAG] },
+        { kind: "skill", skillId: "b_front", hasApparatus: false, isThrow: false },
+        { kind: "catch" },
+      ],
+    };
+    const count = (id: (typeof UNSEEN_SHAPES)[number]["id"]) =>
+      UNSEEN_SHAPES.find((x) => x.id === id)!.count([ser]);
+    expect(count("leftHandNoViewThrow")).toBe(1);
+    expect(count("throwTumLeftHandThrow")).toBe(0);
+    expect(unseenPenalty([ser])).toBeCloseTo(TECHNIQUE_BONUS, 6);
   });
 
   it("左手の視野外投げはスティックだけの稀な投げ方", () => {

@@ -16,7 +16,7 @@
 // =====================================================================
 
 import { motionDef, motionTimes } from "./analysis";
-import { NO_VIEW_TAG, OTHER_TAG } from "./autoThrows";
+import { OTHER_TAG } from "./autoThrows";
 import {
   LIMITED_SKILLS,
   LIMITED_SKILL_MAX,
@@ -29,7 +29,6 @@ import {
 import {
   APPARATUS_REQUIRED_ELEMENTS,
   DIFF_VALUE,
-  LEFT_HAND_THROW_TAG,
   USE_APPARATUS_TAG,
   skillDef,
 } from "./constants";
@@ -49,7 +48,6 @@ import {
   HIGH_DIFFICULTY_WEIGHT,
   LIMITED_SKILL_WEIGHT,
   OTHER_STYLE_WEIGHT,
-  RARE_STYLE_WEIGHT,
   REPEATABLE_SALTOS,
   REQUIRED_ELEMENT_WEIGHT,
   SALTO_VARIETY_WEIGHT,
@@ -66,6 +64,7 @@ import { computeScore, type ScoreResult } from "./score";
 import type { GenerateOptions } from "./generateOptions";
 import type { SeriesTemplate } from "./templates";
 import type { ApparatusKey, FutureLevel, Series } from "./types";
+import { unseenPenalty } from "./unseenShapes";
 
 /** 演技全体での、実施が少ない技の回数（技idごと） */
 export function limitedSkillCounts(series: Series[]): Map<string, number> {
@@ -172,32 +171,6 @@ export function missesFinishCatch(series: Series[], apparatus: ApparatusKey): bo
 }
 
 /** その他の投げ・その他のキャッチの回数 */
-/**
- * **実施例の無い投げ受け**の数。
- *  - 左手投げと視野外の投げを同時に実施する投げ
- *  - 投げタン（転回系を含むシリーズ）の背面キャッチ（視野外のキャッチ）
- *  - 投げタンの左手投げ
- * どれも物理的には実施できるが競技での例が無い（`RARE_STYLE_WEIGHT`）。
- */
-export function rareStyleCount(series: Series[]): number {
-  let count = 0;
-  series.forEach((ser) => {
-    const hasSkill = ser.items.some((it) => it.kind === "skill" && it.skillId);
-    ser.items.forEach((item) => {
-      if (item.kind === "throw") {
-        const req = item.reqTypes || [];
-        const types = item.throwTypes || [];
-        // 左手投げ＋視野外の投げ
-        if (req.includes(LEFT_HAND_THROW_TAG) && types.includes(NO_VIEW_TAG)) count += 1;
-        // 投げタンの左手投げ
-        else if (hasSkill && req.includes(LEFT_HAND_THROW_TAG)) count += 1;
-      }
-      // 投げタンの背面キャッチ
-      if (hasSkill && item.kind === "catch" && (item.catchTypes || []).includes(NO_VIEW_TAG)) count += 1;
-    });
-  });
-  return count;
-}
 
 export function otherStyleCount(series: Series[]): number {
   let count = 0;
@@ -350,9 +323,9 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
     verticalThreeThrowCount(series, !!opts.junior, opts.future ?? null) * VERTICAL_THREE_THROW_WEIGHT;
   // その他の投げ・その他のキャッチは可能な限り使わない
   const otherStyle = otherStyleCount(series) * OTHER_STYLE_WEIGHT;
-  // 実施例の無い投げ受け（左手の視野外投げ・投げタンの背面キャッチ／左手投げ）は、
-  // 要求するDスコアが上がるまで嫌う
-  const rareStyle = rareStyleCount(series) * RARE_STYLE_WEIGHT;
+  // 実施例の無い形（`unseenShapes.ts` に宣言）。稼ぐ点数をそのまま打ち消すので、
+  // 出現率は候補を出す確率（要求Dスコアのカーブ）だけで決まる
+  const rareStyle = unseenPenalty(series);
   // クラブは押さえてキャッチ、ロープは足に絡めたキャッチで演技を締める
   const finishCatch = missesFinishCatch(series, opts.apparatus) ? FINISH_CATCH_WEIGHT : 0;
   // 手以外・手具を使った投げのあとに徒手を多く実施する形は、要求値が5.0を超えるまで嫌う

@@ -23,10 +23,15 @@ import {
   APPARATUS_USE,
   DIFF_VALUE,
   HANDS_TYPES,
+  NO_VIEW_TAG,
   REQUIRED_THROW_OPTIONS,
   hasLeftHandThrow,
 } from "./constants";
+
+/** 視野外の投げ・キャッチの技術タグ（`constants.ts` が持ち主。ここからも参照できるよう再輸出する） */
+export { NO_VIEW_TAG };
 import { newTemplateId, type SeriesTemplate } from "./templates";
+import { unseenShapeChance } from "./unseenShapes";
 import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
 /** 自動生成した投げシリーズの形 */
@@ -142,7 +147,7 @@ export interface AutoThrowStyle {
   two?: boolean;
   /**
    * 実施例の無い投げ方（左手投げ＋視野外）。物理的には実施できるので候補には残すが、
-   * **要求するDスコアが上がるまで出さない**（`rareThrowTumblingChance`）。
+   * **要求するDスコアが上がるまで出さない**（`unseenShapes.ts` の `leftHandNoViewThrow`）。
    * 連続投げの1回目・2回目（`leadPair` / `trailPair`）には使わない。
    */
   rare?: boolean;
@@ -225,8 +230,6 @@ export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean):
   return twoThrow ? styles.filter((c) => !catchHasTag(c, CATCH_USE_APPARATUS)) : styles;
 }
 
-/** 視野外の受け・投げの技術タグ */
-export const NO_VIEW_TAG = "noview";
 /** 手以外の受け・投げの技術タグ */
 export const NON_HAND_TAG = "nonhand";
 /**
@@ -270,28 +273,6 @@ export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
 /** 左手投げの必須投げのid */
 export const LEFT_HAND_TAG = "lefthand";
 
-/**
- * **実施例の無い投げ受け**を出す確率。投げ（`AutoThrowStyle.rare` ＝ 左手投げ＋視野外）と
- * 投げタン（背面キャッチ・左手投げ）で共通に使う。
- * どれも物理的には実施できるが競技での例が無いので、頻度は低くしておき、
- * **要求するDスコア（`minScore`）が上がるほど上げる**：高いDを求められた構成では、
- * 点数のために実施例の無い形にも手を出す（`HARD_THROW_FREE_SCORE` の「要求値を超えるまで
- * 抑える」の逆向き）。
- *  - 要求値が `RARE_THROW_TUMBLING_RISE_SCORE`（4.5）以下なら `RARE_THROW_TUMBLING_BASE_CHANCE`
- *  - そこから1点ごとに `RARE_THROW_TUMBLING_RISE_PER_POINT` 増え、
- *    `RARE_THROW_TUMBLING_MAX_CHANCE` で止まる
- */
-export const RARE_THROW_TUMBLING_BASE_CHANCE = 0.03;
-export const RARE_THROW_TUMBLING_RISE_SCORE = 4.5;
-export const RARE_THROW_TUMBLING_RISE_PER_POINT = 0.3;
-export const RARE_THROW_TUMBLING_MAX_CHANCE = 0.4;
-export function rareThrowTumblingChance(minScore?: number | null): number {
-  const over = Math.max(0, (minScore ?? 0) - RARE_THROW_TUMBLING_RISE_SCORE);
-  return Math.min(
-    RARE_THROW_TUMBLING_MAX_CHANCE,
-    RARE_THROW_TUMBLING_BASE_CHANCE + over * RARE_THROW_TUMBLING_RISE_PER_POINT,
-  );
-}
 /** 左手投げを**視野外で受ける**確率はかなり低い */
 export const LEFT_HAND_NO_VIEW_CATCH_WEIGHT = 0.1;
 
@@ -518,7 +499,7 @@ export interface AutoThrowOptions {
   limit?: number;
   /**
    * **要求するDスコアの下限**（`minScore`）。実施例の無い投げ方（`AutoThrowStyle.rare`）は
-   * 要求値が上がるほど出やすくする（`rareThrowTumblingChance`）。
+   * 要求値が上がるほど出やすくする（`unseenShapeChance`）。
    */
   demandScore?: number | null;
 }
@@ -532,7 +513,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   const rand = opts.random ?? Math.random;
   const throwStyles = autoThrowStyles(apparatus);
   // 実施例の無い投げ方（左手投げ＋視野外）は、要求するDスコアが上がるほど残す
-  const rareChance = rareThrowTumblingChance(opts.demandScore);
+  const rareChance = unseenShapeChance("leftHandNoViewThrow", opts.demandScore);
   const combos = shuffled(
     AUTO_THROW_PATTERNS.filter((pattern) => throwPatternAllowed(pattern, opts.future ?? null))
       .flatMap((pattern) =>
