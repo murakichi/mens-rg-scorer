@@ -33,6 +33,7 @@ import {
 } from "./autoThrows";
 import { cycler, pickDifferent, rarityChance, rarityExponent, shuffled } from "./pick";
 import { unseenShapeChance } from "./unseenShapes";
+import { userSkillWeight, type SkillWeightStore } from "./skillWeights";
 import {
   AUTO_TUMBLING_PATTERNS,
   DEFAULT_CONNECT_AT,
@@ -333,6 +334,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     apparatus,
     targetScore: opts.targetScore,
     skillIds: opts.skillIds,
+    skillWeights: opts.skillWeights,
   };
 
   const specs: AutoTumblingSpec[] = [];
@@ -476,7 +478,12 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
   const entryUsed = new Map<string, string[]>();
   const entryWeight = (entry: string[]) =>
     entry.reduce(
-      (w, id) => w * (SKILL_PICK_WEIGHT[id] ?? 1) * (LIMITED_SKILLS.includes(id) ? RARE_PICK_WEIGHT : 1),
+      (w, id) =>
+        w *
+        (SKILL_PICK_WEIGHT[id] ?? 1) *
+        (LIMITED_SKILLS.includes(id) ? RARE_PICK_WEIGHT : 1) *
+        // 入りの技（ロンダート・ハンドスプリング）にもユーザーの倍率を掛ける
+        userSkillWeight(opts.skillWeights, id),
       1,
     );
   specs.forEach((spec) => {
@@ -540,6 +547,11 @@ export interface AutoTumblingOptions {
    * 50＝実測どおり、100＝珍しい形を優先。
    */
   rarity?: number;
+  /**
+   * ユーザーが設定した技ごとの倍率（`skillWeights.ts`）。実測の重みの上に掛かる。
+   * 0 にした技は候補に出てこない。
+   */
+  skillWeights?: SkillWeightStore;
   /** 乱数（テスト用に差し替え可能） */
   random?: () => number;
   /** 作る候補の数の上限（既定＝形 × 宙返りの組み合わせ） */

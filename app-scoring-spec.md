@@ -721,6 +721,24 @@ value = -(範囲外 + 本数超過) × 100        … 難度では覆せない
 実測（テンプレート3件・12構成ずつ）：0%→自動0本（3シリーズ・D0.80）／25%→2本（D2.51）／
 50%→4本（D3.32）／75%・100%→5〜6本（D4.04。ここでは種類ごとの上限が先に効く）。
 
+#### 技ごとの出やすさ（ユーザー設定。`skillWeights.ts`）
+
+実測の重み（`SKILL_PICK_WEIGHT` など）は**書き換えない**。その上に載せる**倍率だけ**を
+端末（`localStorage`。キーは `mens-rg-scorer:skill-weights:v1`）に持つ。
+既定（1）から変えた技だけを保存するので：
+
+- **すべて既定に戻す**＝保存した分を捨てるだけ（`resetSkillWeights`）
+- **1技だけ戻す**＝そのidを捨てるだけ（`resetSkillWeight`。1に戻す操作でも消える）
+- 壊れた保存データ（知らないid・数値でない・範囲外）は読み込み時に捨てる／丸める
+  （`normalizeSkillWeights`。0〜3、0.1刻み）
+
+`GenerateOptions.skillWeights` → `autoTumblingSpecs` → `TransitionContext` と渡り、
+`baseSkillWeights` で掛かる。**位置ごとの重みを上書きする場所**
+（`AFTER_BACK_LAYOUT_SALTOS` / `CONNECT_FINISH_RARE` / テンポの行）でも掛け直すので、
+そこだけ設定が消えることはない。入りの技の抽選（`entryWeight`）にも効く。
+**0 にした技は候補から外れる**（`usableSkills`）。画面は `SkillWeightModal`
+（`GenerateModal` の「技ごとの出やすさ」から開く）。**採点には一切影響しない**。
+
 #### 生成する形の珍しさ（`rarity`。ユーザーが選ぶ）
 
 遷移表の辺が持つ重みは「どれくらい実施されるか」そのものなので、**重みを指数で変形**すれば

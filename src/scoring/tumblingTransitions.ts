@@ -48,6 +48,7 @@ import {
   type AutoTumblingPattern,
 } from "./tumblingPatterns";
 import type { ApparatusKey, FutureLevel } from "./types";
+import { userSkillWeight, type SkillWeightStore } from "./skillWeights";
 
 /** その位置で投げてよいか（連続の最後の宙返りで投げる形だけ関係する） */
 export type ThrowRule =
@@ -94,6 +95,11 @@ export interface TransitionContext {
   targetScore?: number | null;
   /** 使ってよい転回技のid（未指定・空なら一覧すべて） */
   skillIds?: string[] | null;
+  /**
+   * ユーザーが設定した技ごとの倍率（`skillWeights.ts`。既定から変えた技だけ入っている）。
+   * 実測の重みの上に掛かるので、位置ごとの重みを上書きする場所でも掛け直す。
+   */
+  skillWeights?: SkillWeightStore;
 }
 
 /** 導出した遷移表 */
@@ -119,7 +125,10 @@ export interface TumblingTransitions {
  *  - `noAuto` の技（ダイビング）は自動生成では組み立てない
  */
 export function usableSkills(
-  ctx: Pick<TransitionContext, "junior" | "future" | "basicLevel" | "skillIds" | "targetScore">,
+  ctx: Pick<
+    TransitionContext,
+    "junior" | "future" | "basicLevel" | "skillIds" | "targetScore" | "skillWeights"
+  >,
 ): (ids: string[]) => string[] {
   const junior = !!ctx.junior;
   const future = ctx.future ?? null;
@@ -136,6 +145,8 @@ export function usableSkills(
     ids.filter(
       (id) =>
         !skillDef(id)?.noAuto &&
+        // ユーザーが倍率0にした技は候補に出さない
+        userSkillWeight(ctx.skillWeights, id) > 0 &&
         (!allowed || allowed.has(id)) &&
         // 表記より難しい技（転宙・きりもみ系）は1段上の難度として上限を見る
         frequencyDiffValue(id, junior, future) <= maxValue &&
@@ -205,7 +216,11 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
   const target = ctx.targetScore;
   const usable = usableSkills(ctx);
 
-  const base = withJuniorBoost(baseSkillWeights(junior, apparatus, future), junior, target);
+  const base = withJuniorBoost(
+    baseSkillWeights(junior, apparatus, future, ctx.skillWeights),
+    junior,
+    target,
+  );
 
   // ---- 連続の1本目 ----
   let firstWeights = base;
@@ -248,7 +263,11 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
   const next = (prevId: string): SaltoEdge[] => {
     const hit = nextCache.get(prevId);
     if (hit) return hit;
-    const w = withJuniorBoost(saltoWeights(prevId, junior, apparatus, future), junior, target);
+    const w = withJuniorBoost(
+      saltoWeights(prevId, junior, apparatus, future, ctx.skillWeights),
+      junior,
+      target,
+    );
     const edges = continuations(prevId).map((id) =>
       edge(
         prevId,
@@ -278,7 +297,7 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
 
   // ---- つなぎ技のあとの宙返り ----
   const finishWeights = withJuniorBoost(
-    connectFinishWeights(junior || basicLevel, junior, apparatus, future),
+    connectFinishWeights(junior || basicLevel, junior, apparatus, future, ctx.skillWeights),
     junior,
     target,
   );

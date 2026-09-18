@@ -10,6 +10,7 @@
 
 import type { ApparatusKey, FutureLevel, Series } from "./types";
 import type { SeriesTemplate } from "./templates";
+import type { SkillWeightStore } from "./skillWeights";
 
 export interface GenerateOptions {
   apparatus: ApparatusKey;
@@ -40,6 +41,12 @@ export interface GenerateOptions {
    * （どの宙返りか・どの受け方かのような点数に中立な選択にそのまま効く）。
    */
   rarity?: number;
+  /**
+   * ユーザーが設定した**技ごとの倍率**（`skillWeights.ts`。既定から変えた技だけ）。
+   * 実測の重みの上に掛かるだけなので、既定値は書き換わらない（リセット＝これを渡さない）。
+   * 0 にした技は自動生成に出てこない。
+   */
+  skillWeights?: SkillWeightStore;
   /**
    * 必須要素を必ず満たすか。未指定なら狙うDスコアで決まる
    * （上限なし、または `REQUIRE_ALL_ELEMENTS_MIN_SCORE` 以上で満たしにいく）。

@@ -83,6 +83,8 @@ export function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () 
         limit: opts.autoTumblingLimit,
         // 生成する形の珍しさ（0〜100。既定50＝実測どおり）
         rarity: opts.rarity,
+        // ユーザーが設定した技ごとの倍率
+        skillWeights: opts.skillWeights,
       }),
     );
   return pool;
