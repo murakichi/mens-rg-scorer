@@ -31,6 +31,7 @@
 import {
   CATEGORY,
   DIFF_VALUE,
+  DIVING_SKILL_ID,
   maxDiff,
   ROUNDOFF_SKILL_ID,
   isBackwardSalto,
@@ -60,13 +61,26 @@ export const endsFacingBackward = (id: string): boolean => !!skillDef(id)?.isSal
 /** 側宙。連続の最後にしか実施されず、その後に前転もしない */
 export const SIDE_SALTO_ID = "b_sidesalto";
 
+/** 転宙 */
+export const TENCHU_SKILL_ID = "b_tenchu";
+
+/**
+ * その技のあとに実施できるのが**側宙だけ**の技。
+ * 転宙は、そのまま終わるか側宙に続けるかのどちらかしか実施されない：
+ * ほかの宙返りを続けることも、つなぎ技を挟むことも、前転でつなぐこともない
+ * （前転は `NO_ROLL_AFTER_SKILLS` が落とす）。
+ */
+export const ONLY_SIDE_SALTO_AFTER: string[] = [TENCHU_SKILL_ID];
+export const onlySideSaltoAfter = (id: string): boolean => ONLY_SIDE_SALTO_AFTER.includes(id);
+
 /**
  * この技のあとに前転でつながない技。物理的に破綻はしていなくても実際には無い並び。
  *  - 側宙の後の前転
+ *  - 転宙の後の前転（転宙はそのまま終わるか側宙に続けるかだけ）
  *  - 後ろ向きで終わる後方宙返りの後の前転
  * 投げ受けはそのままキャッチする。
  */
-export const NO_ROLL_AFTER_SKILLS: string[] = [SIDE_SALTO_ID];
+export const NO_ROLL_AFTER_SKILLS: string[] = [SIDE_SALTO_ID, TENCHU_SKILL_ID];
 
 export const noRollAfter = (id: string): boolean =>
   NO_ROLL_AFTER_SKILLS.includes(id) || endsFacingBackward(id);
@@ -119,7 +133,7 @@ export const throwInSkillTypes = (prevId: string | undefined, skillId: string): 
   isBackToForwardThrow(prevId, skillId) ? [NO_VIEW_TAG] : undefined;
 
 /** 投げ受けで前方系の宙返りに続けて実施する技（側宙、たまに転宙） */
-export const THROW_FINISH_SALTOS: string[] = [SIDE_SALTO_ID, "b_tenchu"];
+export const THROW_FINISH_SALTOS: string[] = [SIDE_SALTO_ID, TENCHU_SKILL_ID];
 
 /**
  * 後方伸身宙返り（ひねりの有無を問わない）の後に実施する主流の技。
@@ -133,6 +147,20 @@ export const AFTER_BACK_LAYOUT_SALTOS: { id: string; weight: number }[] = [
   { id: "b_front", weight: 5 },
   { id: "b_kirimomi", weight: 3 },
   { id: "c_kirimomiten", weight: 1 },
+];
+
+/**
+ * 後方伸身宙返りの後に**後方系で**続けられる技。
+ * 主流は上の前方系だが、後方伸身2回ひねり→抱え込みの1回半ひねり のように
+ * 後方系を続ける選手もいる。数は少ないので重みは低くし、連続の原則どおり
+ * **難度は直前以下**に限る。続けられるのは**後ろ向きに降りる後方伸身（整数ひねり）の後だけ**で、
+ * 半ひねり系（前向きに降りる）から後方系に入るにはロンダートが要る＝つなぎの形になる
+ * （`nextSaltoOptions`）。抱え込みの半ひねり系は前向きに降りるので、
+ * そのまま前方系に続けて三宙にできる。
+ */
+export const AFTER_BACK_LAYOUT_BACKWARD_SALTOS: { id: string; weight: number }[] = [
+  { id: "c_back15", weight: 0.5 },
+  { id: "b_backhalf", weight: 0.5 },
 ];
 
 /**
@@ -175,6 +203,8 @@ export const CHAIN_END_SKILLS: string[] = [
   "b_kirimomi",
   "c_kirimomiten",
   SIDE_SALTO_ID,
+  // ダイビングは頭から着地するので、この後に技を続けることはできない
+  DIVING_SKILL_ID,
 ];
 
 export const endsChain = (id: string): boolean => CHAIN_END_SKILLS.includes(id);
@@ -231,9 +261,23 @@ export function nextSaltoOptions(prevId: string, junior = false, future: FutureL
   // 首から背中にかけて着地する技（とび前転・きりもみ）の後には続けられない
   if (endsChain(prevId)) return [];
   const offered = new Set(skillOptions(junior, skillFlowAfter(prevId), future).map((s) => s.id));
-  // 後方伸身宙返り（ひねりを含む）の後は 前宙・きりもみ・きりもみ転回
-  if (isBackLayoutSalto(prevId))
-    return AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id).filter((id) => offered.has(id));
+  // 転宙の後は側宙だけ（それ以外は続けない）
+  if (onlySideSaltoAfter(prevId)) return [SIDE_SALTO_ID].filter((id) => offered.has(id));
+  // 後方伸身宙返り（ひねりを含む）の後は 前宙・きりもみ・きりもみ転回。
+  // 抱え込みの半ひねり系で後方系を続ける選手もいるので、難度が上がらない範囲で残す
+  if (isBackLayoutSalto(prevId)) {
+    const ceiling = difficultyValue(prevId, junior, future);
+    return [
+      ...AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id),
+      // 後方系をそのまま続けられるのは**後ろ向きに降りる**後方伸身（整数ひねり）の後だけ。
+      // 前向きに降りる半ひねり系から後方系に入るにはロンダートが要り、それはつなぎの形になる
+      ...(leadsBackward(prevId)
+        ? AFTER_BACK_LAYOUT_BACKWARD_SALTOS.map((x) => x.id).filter(
+            (id) => difficultyValue(id, junior, future) <= ceiling,
+          )
+        : []),
+    ].filter((id) => offered.has(id));
+  }
   const backward = leadsBackward(prevId);
   // 後方系を続けて実施することは少ない（テンポは例外）。
   // 前方の半ひねりのように**前方系から後ろ向きに降りた**後に後方系へ入るのは普通に実施する
@@ -256,6 +300,8 @@ export function nextSaltoOptions(prevId: string, junior = false, future: FutureL
  */
 export function connectOptionsAfter(prevId: string, junior = false, future: FutureLevel = null): string[] {
   if (endsChain(prevId)) return [];
+  // 転宙の後は側宙に続けるか終わるかだけで、つなぎ技は挟まない
+  if (onlySideSaltoAfter(prevId)) return [];
   const offered = new Set(skillOptions(junior, skillFlowAfter(prevId), future).map((s) => s.id));
   if (isTempoSalto(prevId)) return ["a_flicflac"].filter((id) => offered.has(id));
   if (leadsBackward(prevId)) return [];

@@ -31,6 +31,7 @@ import {
   TEAM_SAMEDIFF_BONUS,
   skillDef,
   skillDifficulty,
+  skillDifficultyAt,
   juniorComboAt,
   clampSeriesExecution,
   teamHandDifficulty,
@@ -232,7 +233,8 @@ function calcChunkDifficulty(
   future: FutureLevel = null,
 ): Difficulty | null {
   const plain = skillIds
-    .map((id) => skillDifficulty(id, junior, future))
+    // 宙返りの直後のダイビングは格上げ（位置で難度が変わる特例）
+    .map((_id, i) => skillDifficultyAt(skillIds, i, junior, future))
     .filter((d): d is Difficulty => !!d);
   let v = chainValue(plain, future);
   if (junior) {

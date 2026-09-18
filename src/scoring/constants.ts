@@ -442,6 +442,7 @@ export const SKILL_LIST: Skill[] = [
   { id: "a_cartwheel", name: "側転", category: CATEGORY.SIDE, difficulty: "A", isSalto: false, isHandElement: true },
   { id: "a_roundoff", name: "ロンダート", category: CATEGORY.SIDE, difficulty: "A", isSalto: false, isConnectA: true },
   { id: "a_flicflac", name: "バク転", category: CATEGORY.BACKWARD, difficulty: "A", isSalto: false, isConnectA: true },
+  { id: "a_diving", name: "ダイビング", category: CATEGORY.BACKWARD, difficulty: "A", isSalto: true, noAuto: true },
   { id: "a_handspring", name: "ハンドスプリング", category: CATEGORY.FORWARD, difficulty: "A", isSalto: false, isConnectA: true },
   { id: "a_frontroll", name: "とび前転", category: CATEGORY.FORWARD, difficulty: "A", isSalto: false, isConnectA: true },
   { id: "b_sidesalto", name: "側宙", category: CATEGORY.SIDE, difficulty: "B", isSalto: true },
@@ -467,6 +468,7 @@ export const SKILL_LIST: Skill[] = [
   { id: "d_frontlay1", name: "伸身前宙1回ひねり", category: CATEGORY.FORWARD, difficulty: "D", isSalto: true, twist: { base: "front", twist: 1, posture: "layout" } },
   { id: "e_frontlay2", name: "伸身前宙2回ひねり", category: CATEGORY.FORWARD, difficulty: "E", isSalto: true, twist: { base: "front", twist: 2, posture: "layout" } },
   { id: "d_back2twist", name: "後方宙返り2回ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, twist: { base: "back", twist: 2, posture: "tuck" } },
+  { id: "d_backlay2twist", name: "後方伸身宙返り2回ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, twist: { base: "back", twist: 2, posture: "layout" } },
   { id: "d_backlay25", name: "後方伸身宙返り2回半ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, twist: { base: "back", twist: 2.5, posture: "layout" } },
   { id: "e_backlay3twist", name: "後方伸身宙返り3回ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, twist: { base: "back", twist: 3, posture: "layout" } },
   { id: "e_backlay35twist", name: "後方伸身宙返り3回半ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, twist: { base: "back", twist: 3.5, posture: "layout" } },
@@ -876,6 +878,34 @@ export function skillDifficulty(id: string, junior = false, future: FutureLevel 
   }
   const d = (future && FUTURE_SKILL_DIFFICULTY[id]) || skillDef(id)?.difficulty;
   return d ? clampDifficulty(DIFF_VALUE[d], future) : undefined;
+}
+
+/**
+ * ダイビング。後方系で**頭から着地する**ので、この技の後に技は続かない
+ * （`CHAIN_END_SKILLS`）。単発ではA難度だが、**宙返りの直後に連続で実施すると1段格上げ**する
+ * のが特例（`DIVING_UPGRADED_DIFFICULTY`）。宙返りとしては常に数える（`isSalto: true`）ので、
+ * 宙返り→ダイビング は連続2本ぶんになる。
+ * 実施はされるがシステム側で提案する性質の技ではないので、自動生成では組み立てない（`noAuto`）。
+ */
+export const DIVING_SKILL_ID = "a_diving";
+export const DIVING_UPGRADED_DIFFICULTY: Difficulty = "B";
+
+/**
+ * 並びのなかでの**その位置の**技の難度。連続の位置で難度が変わる特例（ダイビングの格上げ）を
+ * 反映する。位置に依存しない難度は `skillDifficulty`。
+ * `skillIds` は連続の並び（A難度を含む、実施した順）。
+ */
+export function skillDifficultyAt(
+  skillIds: string[],
+  i: number,
+  junior = false,
+  future: FutureLevel = null,
+): Difficulty | undefined {
+  const id = skillIds[i];
+  // 宙返りの直後のダイビングは格上げ（間にA難度技が入ったら「連続」ではない）
+  if (id === DIVING_SKILL_ID && i > 0 && skillDef(skillIds[i - 1])?.isSalto)
+    return clampDifficulty(DIFF_VALUE[DIVING_UPGRADED_DIFFICULTY], future);
+  return skillDifficulty(id, junior, future);
 }
 
 /**
