@@ -134,8 +134,13 @@ export const KIRIMOMI_THROW_SKILL_ID = "b_kirimomi";
 export const throwInSkillTypes = (prevId: string | undefined, skillId: string): string[] | undefined =>
   isBackToForwardThrow(prevId, skillId) ? [NO_VIEW_TAG] : undefined;
 
-/** 投げ受けで前方系の宙返りに続けて実施する技（側宙、たまに転宙） */
-export const THROW_FINISH_SALTOS: string[] = [SIDE_SALTO_ID, TENCHU_SKILL_ID];
+/**
+ * 投げ受け（投げてから跳ぶ形）で前方系の宙返りに続けて実施する技。
+ * 側宙が主で、転宙・きりもみ転回もある（実施の多さは 側宙 ＞ きりもみ転回 ＞ 転宙。
+ * 重みは `SKILL_PICK_WEIGHT` / `LIMITED_SKILLS` がそのまま効くので、ここでは並べるだけ）。
+ * きりもみは入れない（首から背中にかけて着地するので、そのまま受けに繋げられない）。
+ */
+export const THROW_FINISH_SALTOS: string[] = [SIDE_SALTO_ID, TENCHU_SKILL_ID, "c_kirimomiten"];
 
 /**
  * 後方伸身宙返り（ひねりの有無を問わない）の後に実施する主流の技。
@@ -237,6 +242,18 @@ export const difficultyValue = (id: string, junior: boolean, future: FutureLevel
   return d ? DIFF_VALUE[d] : 0;
 };
 
+/**
+ * 前方系の宙返りのあとに実施するきりもみ系。前宙→きりもみ転回 は実施される
+ * （投げ→前宙→きりもみ転回→キャッチ）。きりもみ系は宙返りの連続の中でだけ宙返りになるので
+ * `saltoList` には入っておらず、**難度の上限（連続は難度が下がる）も掛けない**
+ * ——きりもみ転回のC難度は「連続が1段上がった」という意味ではないため。
+ * 選ばれやすさは `SKILL_PICK_WEIGHT`（きりもみ転回 0.3）がそのまま効くので、
+ * 側宙（1）より低く、転宙（`LIMITED_SKILLS` の 0.2）より高い。
+ * きりもみは入れない：首から背中にかけて着地するので、そのまま受けには繋げられない
+ * （後方伸身のあとだけは連続の技として実施するので `AFTER_BACK_LAYOUT_SALTOS` にある）。
+ */
+export const AFTER_FORWARD_KIRIMOMI: string[] = ["c_kirimomiten"];
+
 /** 連続に使う宙返り（きりもみ系は宙返りの連続の中でだけ宙返りになるので使わない） */
 function saltoList(
   junior: boolean,
@@ -288,10 +305,16 @@ export function nextSaltoOptions(prevId: string, junior = false, future: FutureL
   const ceiling = isTempoSalto(prevId) ? maxDiff(future) : difficultyValue(prevId, junior, future);
   // 難度が上がってよい例外（後方宙返り半ひねり→前方宙返り1回ひねり など）
   const rise = DIFFICULTY_RISE_AFTER[prevId] ?? [];
-  return saltoList(junior, prevId, future)
+  const list = saltoList(junior, prevId, future)
     .filter((s) => (backward ? isBackwardSalto(s.id) : !isBackwardSalto(s.id)))
     .filter((s) => difficultyValue(s.id, junior, future) <= ceiling || rise.includes(s.id))
     .map((s) => s.id);
+  // きりもみ系は `saltoList` に入っていない（宙返りの連続の中でだけ宙返りになる）ので、
+  // 前方系のあとに実施するものだけここで足す
+  const kirimomi = backward
+    ? []
+    : AFTER_FORWARD_KIRIMOMI.filter((id) => offered.has(id) && !list.includes(id));
+  return [...list, ...kirimomi];
 }
 
 /**

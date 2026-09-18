@@ -102,7 +102,7 @@ import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
 import { unseenShape } from "../unseenShapes";
 import { canOperateApparatus } from "../constants";
-import { THROW_AFTER_CONNECT_SALTOS } from "../autoTumblings";
+import { AFTER_FORWARD_KIRIMOMI, THROW_AFTER_CONNECT_SALTOS } from "../autoTumblings";
 import type { Item, Series } from "../types";
 
 /** 決まった順に進む疑似乱数（テストを安定させる） */
@@ -266,7 +266,10 @@ describe("宙返りの連続の組み方", () => {
 
   it("難度はだんだん下がる（テンポだけ例外）", () => {
     ["b_front", "c_back15", "d_backlay25", "b_sidesalto"].forEach((prev) =>
-      nextSaltoOptions(prev).forEach((id) => expect(diff(id)).toBeLessThanOrEqual(diff(prev))),
+      nextSaltoOptions(prev)
+        // きりもみ系は連続の中でだけ宙返りになる技なので、難度の上下は問わない
+        .filter((id) => !AFTER_FORWARD_KIRIMOMI.includes(id))
+        .forEach((id) => expect(diff(id)).toBeLessThanOrEqual(diff(prev))),
     );
     // テンポの後は難度が上がってよい
     expect(isTempoSalto("b_tempo")).toBe(true);
@@ -326,7 +329,7 @@ describe("宙返りの連続の組み方", () => {
     let entry = 0;
     let connect = 0;
     let all = 0;
-    for (let seed = 1; seed <= 10; seed++)
+    for (let seed = 1; seed <= 40; seed++)
       autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
         all += 1;
         if (sp.entry.includes("a_handspring")) entry += 1;
@@ -334,9 +337,11 @@ describe("宙返りの連続の組み方", () => {
       });
     expect(all).toBeGreaterThan(0);
     // 「ひと回りするまで同じものを使わない」抽選に入れると必ず1本は出てしまうので、
-    // 実施が少ない技の入りは重みだけで引く
+    // 実施が少ない技の入りは重みだけで引く（実測 1.0%）
     expect(entry).toBeLessThan(all * 0.02);
-    expect(connect).toBeLessThan(all * 0.03);
+    // つなぎ技としては実測2.9%。前方系の連続はきりもみ転回で終われるようになったぶん
+    // （`AFTER_FORWARD_KIRIMOMI`）、ハンドスプリングのつなぎも残りやすくなっている
+    expect(connect).toBeLessThan(all * 0.05);
   }, 60_000);
 
   it("同じ難度の技の中では実施の多い技が選ばれやすい", () => {
@@ -485,6 +490,8 @@ describe("宙返りの連続の組み方", () => {
         // 後方宙返り半ひねり→前方宙返り1回ひねりも難度が上がる例外
         if (isTempoSalto(prev) || isBackLayoutSalto(prev)) return;
         if ((DIFFICULTY_RISE_AFTER[prev] ?? []).includes(id)) return;
+        // きりもみ系は連続の中でだけ宙返りになる技なので、難度の上下は問わない
+        if (AFTER_FORWARD_KIRIMOMI.includes(id)) return;
         expect(diff(id)).toBeLessThanOrEqual(diff(prev));
       });
     });
@@ -1196,6 +1203,30 @@ describe("つなぎ技", () => {
     expect(a.units[0].isThrowTumbling).toBe(true);
     const ids = series.items.flatMap((it) => (it.kind === "skill" && it.skillId ? [it.skillId] : []));
     expect(maxSaltoChain(ids)).toBe(3);
+  });
+
+  it("投げてから跳ぶ投げタンの2本目にきりもみ転回が来る（投げ→前宙→きりもみ転回→キャッチ）", () => {
+    const finishes = new Map<string, number>();
+    let found: Series | null = null;
+    for (const app of ["stick", "clubs", "ring", "rope"] as const)
+      for (let seed = 0; seed < 20; seed++)
+        for (const t of autoTumblingTemplates(app, { random: seeded(seed) })) {
+          if (t.spec.pattern.id !== "throwSalto") continue;
+          const last = t.spec.saltoIds[t.spec.saltoCount - 1];
+          finishes.set(last, (finishes.get(last) ?? 0) + 1);
+          if (last === "c_kirimomiten") {
+            expect(checkApparatusFlow(t.series, app)).toEqual([]);
+            expect(tumblingFlowErrors(t.series)).toEqual([]);
+            if (!found && t.spec.saltoIds[0] === "b_front") found = t.series;
+          }
+        }
+    // 前宙→きりもみ転回 の形が実際に作られる
+    expect(found).not.toBeNull();
+    expect(names(found!)).toEqual(["throw", "前宙", "きりもみ転回", "catch"]);
+    expect(analyzeSeries(found!).units[0].isThrowTumbling).toBe(true);
+    // 側宙より少なく、きりもみは来ない
+    expect(finishes.get("c_kirimomiten")!).toBeLessThan(finishes.get("b_sidesalto")!);
+    expect(finishes.get("b_kirimomi")).toBeUndefined();
   });
 
   it("つなぎの後の宙返りで投げる形が作られる（投げるのは大抵ダイビング前宙か前宙）", () => {

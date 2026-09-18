@@ -31,7 +31,14 @@ import {
   isBackwardSalto,
   skillDifficulty,
 } from "../constants";
-import { THROW_AFTER_CONNECT_SALTOS, THROW_AFTER_CONNECT_WEIGHT } from "../autoTumblings";
+import {
+  AFTER_FORWARD_KIRIMOMI,
+  SIDE_SALTO_ID,
+  TENCHU_SKILL_ID,
+  THROW_AFTER_CONNECT_SALTOS,
+  THROW_AFTER_CONNECT_WEIGHT,
+  THROW_FINISH_SALTOS,
+} from "../autoTumblings";
 
 const pattern = (id: string): AutoTumblingPattern =>
   AUTO_TUMBLING_PATTERNS.find((p) => p.id === id) as AutoTumblingPattern;
@@ -66,6 +73,8 @@ describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
       tr.next(prev).forEach((e) => {
         // 後方宙返り半ひねり→前方宙返り1回ひねり だけが上がってよい例外
         if (prev === "b_backhalf" && e.id === "c_front1full") return;
+        // きりもみ系は連続の中でだけ宙返りになる技なので、難度の上下は問わない
+        if (AFTER_FORWARD_KIRIMOMI.includes(e.id)) return;
         expect(value(e.id)).toBeLessThanOrEqual(value(prev));
       });
     });
@@ -253,5 +262,27 @@ describe("つなぎの後の宙返りで投げる形（`connectThrowInSkill`）"
     // 対象外の技は変わらない
     const other = ids(after(plain)).find((id) => !THROW_AFTER_CONNECT_SALTOS.includes(id))!;
     expect(find(after(throwing), other)!.weight).toBeCloseTo(find(after(plain), other)!.weight, 6);
+  });
+});
+
+describe("前方系のあとのきりもみ転回", () => {
+  it("前宙のあとに出て、側宙より選ばれにくい（きりもみは出ない）", () => {
+    const tr = table("chain");
+    const after = tr.next("b_front");
+    expect(ids(after)).toContain("c_kirimomiten");
+    // きりもみは首から背中にかけて着地するので、ここには出さない
+    expect(ids(after)).not.toContain("b_kirimomi");
+    // 難度は上がる（前宙B→きりもみ転回C）が、きりもみ系は連続の中でだけ宙返りになるので許す
+    expect(value("c_kirimomiten")).toBeGreaterThan(value("b_front"));
+    // 側宙 ＞ きりもみ転回 ＞ 転宙
+    expect(find(after, "c_kirimomiten")!.weight).toBeLessThan(find(after, SIDE_SALTO_ID)!.weight);
+    expect(find(after, "c_kirimomiten")!.weight).toBeGreaterThan(find(after, TENCHU_SKILL_ID)!.weight);
+  });
+
+  it("投げてから跳ぶ投げタンの2本目にも出る", () => {
+    // 投げ受けの2本目は `THROW_FINISH_SALTOS` に絞られる
+    expect(THROW_FINISH_SALTOS).toContain("c_kirimomiten");
+    const after = table("throwSalto").next("b_front");
+    expect(ids(after).sort()).toEqual([SIDE_SALTO_ID, TENCHU_SKILL_ID, "c_kirimomiten"].sort());
   });
 });
