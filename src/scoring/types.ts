@@ -48,6 +48,11 @@ export interface SkillItem {
   isThrow?: boolean;
   /** 技の最中の投げの技術タグ（noview / nonhand / useapp）。isThrow 時のみ有効。 */
   throwTypes?: string[];
+  /**
+   * 技の最中の投げの必須投げ（`twothrow` ＝ 二つ投げ）。`isThrow` 時のみ有効。
+   * 投げアイテムの `reqTypes` と同じ扱いで、手元/空中の手具数にも必須要素の判定にも効く。
+   */
+  reqTypes?: string[];
 }
 
 export interface MotionItem {
@@ -113,6 +118,13 @@ export interface Skill {
    * ダイビングのように、実施はされるがシステム側で提案する性質のものではない技に付ける。
    */
   noAuto?: boolean;
+  /**
+   * 実施中に**手具操作ができない**技（きりもみ・きりもみ転回）。
+   * 首から背中にかけて着地するので、手具を操作しながらは実施できない。
+   * 入力画面では手具操作のチェックを出さず、採点でも手具操作として数えない
+   * （`canOperateApparatus`）。技の最中の投げ（手を離すだけ）は実施できる。
+   */
+  noApparatusOp?: boolean;
   /** ひねり・姿勢から組み立てられる宙返りか（`TwistParams` と1対1） */
   twist?: TwistParams;
 }

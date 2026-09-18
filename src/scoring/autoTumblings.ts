@@ -15,10 +15,24 @@
 // 組み立てたシリーズは `tumblingFlowErrors` で入力画面の制約を検算できる。
 // =====================================================================
 
-import { ROUNDOFF_SKILL_ID, TWO_THROW_TAG, skillDef, skillDifficulty } from "./constants";
+import {
+  LEFT_HAND_THROW_TAG,
+  ROUNDOFF_SKILL_ID,
+  TWO_THROW_TAG,
+  hasLeftHandThrow,
+  skillDef,
+  skillDifficulty,
+  canOperateApparatus,
+} from "./constants";
 import { calcTumblingDifficulty, needsRoundoffBefore, prevSkillId, stripForApparatus } from "./analysis";
-import { CATCH_USE_APPARATUS, type AutoThrowStyle } from "./autoThrows";
+import {
+  CATCH_USE_APPARATUS,
+  NO_VIEW_TAG,
+  canThrowAfterCatch,
+  type AutoThrowStyle,
+} from "./autoThrows";
 import { cycler, pickDifferent, shuffled } from "./pick";
+import { unseenShapeChance } from "./unseenShapes";
 import {
   AUTO_TUMBLING_PATTERNS,
   DEFAULT_CONNECT_AT,
@@ -87,6 +101,16 @@ export interface TumblingDraws {
   pressCatch: boolean;
   /** 投げタンの投げを二つ投げにするか（クラブ・リングで、投げてから跳ぶ形だけ） */
   twoThrow: boolean;
+  /**
+   * 投げタンの投げを**左手投げ**にするか（スティックで、投げてから跳ぶ形だけ）。
+   * 実施例が無い形なので `unseenShapes.ts` の `throwTumLeftHandThrow` の低い確率で引く。
+   */
+  leftHandThrow: boolean;
+  /**
+   * 投げタンの受けを**背面キャッチ（視野外のキャッチ）**にするか（投げてから跳ぶ形だけ）。
+   * こちらも実施例が無い形なので `unseenShapes.ts` の `throwTumBackCatch` で引く。
+   */
+  backCatch: boolean;
   /** 投げタンのキャッチのあとに続ける投げ受けの投げ方（未指定なら続けない） */
   secondThrow?: AutoThrowStyle;
 }
@@ -113,7 +137,8 @@ type SkillItem = Extract<Item, { kind: "skill" }>;
 const skillItem = (skillId: string, isThrow = false): SkillItem => ({
   kind: "skill",
   skillId,
-  hasApparatus: true,
+  // 手具操作はこのあと `applyApparatusOps` が付け直す（きりもみ系には付かない）
+  hasApparatus: canOperateApparatus(skillId),
   isThrow,
 });
 
@@ -134,10 +159,13 @@ function applyApparatusOps(items: Item[], pattern: AutoTumblingPattern, junior: 
     if (it.kind === "skill") it.hasApparatus = false;
   });
   const isA = (id: string) => skillDifficulty(id, junior) === "A";
-  const saltoIdx = skills.filter(({ it }) => it.kind === "skill" && !isA(it.skillId));
+  // きりもみ系は実施中に手具を操作できないので、操作を付ける位置の候補から外す
+  const saltoIdx = skills.filter(
+    ({ it }) => it.kind === "skill" && !isA(it.skillId) && canOperateApparatus(it.skillId),
+  );
   if (saltoIdx.length === 0) return;
   const setOp = (item: Item | undefined) => {
-    if (item?.kind === "skill") item.hasApparatus = true;
+    if (item?.kind === "skill" && canOperateApparatus(item.skillId)) item.hasApparatus = true;
   };
   const ids = saltoIdx.map(({ it }) => (it.kind === "skill" ? it.skillId : ""));
   const isE = calcTumblingDifficulty(ids, !!pattern.throwCatch, junior) === "E";
@@ -162,8 +190,15 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   const { pattern, draws } = spec;
   const items: Item[] = [];
   // 技の最中に投げる形では、先頭に投げを置かず最後の宙返りに投げを付ける
-  if (pattern.throwCatch && !pattern.throwInSkill)
-    items.push({ kind: "throw", ...(draws.twoThrow ? { reqTypes: [TWO_THROW_TAG] } : {}) });
+  if (pattern.throwCatch && !pattern.throwInSkill) {
+    // 必須投げ（二つ投げ／左手投げ）はどちらか一方だけ（手具が違うので同時には起きない）
+    const reqTypes = draws.twoThrow
+      ? [TWO_THROW_TAG]
+      : draws.leftHandThrow
+        ? [LEFT_HAND_THROW_TAG]
+        : [];
+    items.push({ kind: "throw", ...(reqTypes.length > 0 ? { reqTypes } : {}) });
+  }
   spec.entry.forEach((id) => items.push(skillItem(id)));
   const saltos = spec.saltoIds.slice(0, spec.saltoCount);
   saltos.forEach((id, i) => {
@@ -174,7 +209,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     const next = skillItem(id, throwsHere);
     // 後ろ向きで終わる宙返りのあとに前方系で投げるのは、きりもみの視野外投げだけ
     if (throwsHere) {
-      const types = throwInSkillTypes(saltos[i - 1], id);
+      // 直前の技は並びから取る（つなぎ技が間に入るとそこで向きが変わる）
+      const types = throwInSkillTypes(prevSkillId(items, items.length), id);
       if (types) next.throwTypes = [...types];
     }
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
@@ -189,17 +225,26 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   // 投げ受けの着地は前転でつなぐ（側宙の後は前転を実施しないので、そのまま受ける）
   const rolled = !!pattern.rollFinish && !noRollAfter(saltos[saltos.length - 1]);
   if (rolled) items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
-  // 転がり・前転のあとは手具を使ったキャッチ（押さえつけ）で受けるのが定番
-  if (pattern.throwCatch)
+  // 転がり・前転のあとは手具を使ったキャッチ（押さえつけ）で受けるのが定番。
+  // 背面キャッチ（視野外）を引いたときはそちらで受ける（押さえつけとは同時に実施しない）
+  if (pattern.throwCatch) {
+    const press = rolled && draws.pressCatch && !draws.twoThrow && !draws.secondThrow;
+    // 背面キャッチ（視野外）は、続く投げが**視野外でなければ**実施できる
+    // （視野外で受けて視野外に投げることだけができない＝`canThrowAfterCatch`）。
+    // 2つ同時キャッチを視野外で受けることはしない
+    const back =
+      draws.backCatch &&
+      !draws.twoThrow &&
+      (!draws.secondThrow || canThrowAfterCatch({ id: NO_VIEW_TAG, name: "", catchTypes: [NO_VIEW_TAG] }, draws.secondThrow));
+    const catchTypes = back ? [NO_VIEW_TAG] : press ? [CATCH_USE_APPARATUS] : [];
     items.push({
       kind: "catch",
       // 二つ投げは2つとも空中にあるので、押さえつけては受けられない（2つ同時キャッチで受ける）。
       // 連続投げを続ける形でも押さえつけない（押さえた状態からは投げられない）
-      ...(rolled && draws.pressCatch && !draws.twoThrow && !draws.secondThrow
-        ? { catchTypes: [CATCH_USE_APPARATUS] }
-        : {}),
+      ...(catchTypes.length > 0 ? { catchTypes } : {}),
       ...(draws.twoThrow ? { catchTwo: true } : {}),
     });
+  }
   // 投げタンのキャッチのあとに連続投げを続ける形
   if (pattern.throwCatch && draws.secondThrow) {
     const style = draws.secondThrow;
@@ -246,14 +291,18 @@ export function chainEndsOk(
   n: number,
   connectAt: number,
   draws: Pick<TumblingDraws, "backwardEnd" | "rareEnd" | "layoutAfterConnect" | "backToForwardThrow">,
+  connectId = "",
 ): boolean {
   const last = saltoIds[n - 1];
+  // 投げる位置の直前の技。つなぎ技が間に入るとそこで向きが変わるので、つなぎを見る
+  const beforeLast =
+    pattern.connect && connectId && connectAt === n - 1 ? connectId : saltoIds[n - 2];
   return (
     // つなぎの後の宙返りは必ず残す（つなぎで終わる形は作らない）
     (!pattern.connect || n > connectAt) &&
     canEndWith(last, draws) &&
     (draws.layoutAfterConnect || !layoutOnlyAfterConnect(pattern, saltoIds, n, connectAt)) &&
-    (!pattern.throwInSkill || canThrowAt(saltoIds[n - 2], last, draws))
+    (!pattern.throwInSkill || canThrowAt(beforeLast, last, draws))
   );
 }
 
@@ -310,8 +359,10 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       // つなぎ技を挟む位置：1本目の後（既定）か、2本目の後
       // （「前向きで終わる後方系→前宙→つなぎ→宙返り」はよくあるシリーズ）。
       // 2本目の後に挟むには宙返りが3本必要なので、その本数を取れる形だけ
-      const connectAt =
-        pattern.connect && pattern.saltos.max >= 3 && count >= 3 && rand() < CONNECT_AT_SECOND_CHANCE
+      // つなぎの後の宙返りで投げる形は、投げるのが最後の宙返り＝つなぎの直後になるように挟む
+      const connectAt = pattern.throwInSkill
+        ? count - 1
+        : pattern.connect && pattern.saltos.max >= 3 && count >= 3 && rand() < CONNECT_AT_SECOND_CHANCE
           ? 2
           : DEFAULT_CONNECT_AT;
       // 目標の本数まで続く1本目が引けるまで何回か引き直す（後ろ向きに降りる技は連続しない）
@@ -357,7 +408,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       // 続かなかったぶんは本数を減らす
       let saltoCount = Math.max(pattern.saltos.min, Math.min(count, saltoIds.length));
       const ends = drawChainEnd(rand, basicLevel, opts.targetScore);
-      const endsOk = (n: number) => chainEndsOk(pattern, saltoIds, n, connectAt, ends);
+      const endsOk = (n: number) => chainEndsOk(pattern, saltoIds, n, connectAt, ends, connectId);
       // 終われる本数を探す：まず伸ばして（前宙・側宙に続ける）、だめなら縮める
       let end = saltoCount;
       while (end < saltoIds.length && !endsOk(end)) end += 1;
@@ -374,6 +425,16 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           : undefined;
       // クラブ・リングは投げタンの投げを二つ投げにすることがある（投げてから跳ぶ形だけ）
       const twoThrow = canTwoThrowTumbling(apparatus, pattern) && rand() < TWO_THROW_IN_TUMBLING_CHANCE;
+      // 実施例の無い投げ受け（左手投げ・背面キャッチ）は要求値が上がるほど出やすい。
+      // どちらも「投げてから跳ぶ」通常の投げタンだけ
+      const plainThrowTum = !!pattern.throwCatch && !pattern.throwInSkill;
+      const leftHandThrow =
+        plainThrowTum &&
+        !!apparatus &&
+        hasLeftHandThrow(apparatus) &&
+        !twoThrow &&
+        rand() < unseenShapeChance("throwTumLeftHandThrow", opts.demandScore);
+      const backCatch = plainThrowTum && rand() < unseenShapeChance("throwTumBackCatch", opts.demandScore);
       specs.push({
         pattern,
         saltoCount,
@@ -385,6 +446,8 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           ...ends,
           pressCatch: rand() < ROLL_FINISH_PRESS_CATCH_CHANCE,
           twoThrow,
+          leftHandThrow,
+          backCatch,
           ...(secondThrow ? { secondThrow } : {}),
         },
       });
@@ -445,6 +508,11 @@ export interface AutoTumblingOptions {
    * （`backwardEndChance`）。未指定＝上限なしは難度を狙いきる構成として扱う。
    */
   targetScore?: number | null;
+  /**
+   * **要求するDスコアの下限**（`minScore`）。実施例の無い投げ受け（背面キャッチ・左手投げ）は
+   * 要求値が上がるほど出やすくする（`unseenShapeChance`）。
+   */
+  demandScore?: number | null;
   /**
    * 使ってよい転回技のid。登録テンプレートに出てくる技を渡すと、その選手が
    * 実際に実施している技だけで組み立てる（技そのものではなく**組み合わせ**を自動化する）。
@@ -521,6 +589,7 @@ export function withSaltoCount(t: AutoTumblingTemplate, saltoCount: number): Aut
   if (saltoCount > t.spec.saltoIds.length) return null;
   // 連続の終わり方・投げる位置は、候補を作ったときの抽選に従う
   const connectAt = t.spec.connectAt ?? DEFAULT_CONNECT_AT;
-  if (!chainEndsOk(t.spec.pattern, t.spec.saltoIds, saltoCount, connectAt, t.spec.draws)) return null;
+  if (!chainEndsOk(t.spec.pattern, t.spec.saltoIds, saltoCount, connectAt, t.spec.draws, t.spec.connectId))
+    return null;
   return autoTemplate(t.apparatus, { ...t.spec, saltoCount }, t.id);
 }

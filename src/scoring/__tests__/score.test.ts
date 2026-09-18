@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { computeScore } from "../score";
-import { ART_DEDUCTION_ITEMS } from "../constants";
+import {
+  ART_DEDUCTION_ITEMS,
+  NO_APP_ALL_DEDUCTION,
+  NO_APP_SALTO_DEDUCTION,
+  canOperateApparatus,
+} from "../constants";
 import type { Series, Item } from "../types";
 
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
@@ -1071,5 +1076,75 @@ describe("その手具では入力できない内容は採点しない", () => {
     const jump = [S({ kind: "ropeJump", jumpId: "3fc", isMoving6m: false })];
     expect(computeScore(jump, "stick").dScore).toBe(0);
     expect(computeScore(jump, "rope").dScore).toBeGreaterThan(0);
+  });
+});
+
+describe("技の最中の二つ投げ（必須投げ）", () => {
+  it("クラブの必須投げ（2つ同時投げ）を満たす", () => {
+    const ser = {
+      executionDeduction: 0,
+      items: [
+        { kind: "skill", skillId: "a_roundoff", hasApparatus: true, isThrow: false },
+        { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: true, reqTypes: ["twothrow"] },
+        { kind: "motion", motionId: "fwd_roll", count: 1 },
+        { kind: "catch", catchTwo: true },
+      ],
+    } as Series;
+    const passed = (list: Series[]) =>
+      computeScore(list, "clubs").apparatusElementChecks.find((c) => c.label.includes("2つ同時投げ"))
+        ?.passed;
+    expect(passed([ser])).toBe(true);
+    // 二つ投げを外すと満たさない
+    const plain = structuredClone(ser);
+    (plain.items[1] as { reqTypes?: string[] }).reqTypes = [];
+    (plain.items[3] as { catchTwo?: boolean }).catchTwo = false;
+    expect(passed([plain])).toBe(false);
+  });
+});
+
+describe("きりもみ系は手具操作ができない", () => {
+  const skill = (skillId: string, hasApparatus: boolean): Item => ({
+    kind: "skill",
+    skillId,
+    hasApparatus,
+    isThrow: false,
+  });
+
+  it("定義で判定できる（きりもみ・きりもみ転回だけ）", () => {
+    expect(canOperateApparatus("b_kirimomi")).toBe(false);
+    expect(canOperateApparatus("c_kirimomiten")).toBe(false);
+    expect(canOperateApparatus("b_front")).toBe(true);
+    expect(canOperateApparatus("a_roundoff")).toBe(true);
+  });
+
+  it("入力に残っていても手具操作として数えない（宙返り系すべてに操作なしの減点が出る）", () => {
+    // 連続の中のきりもみは宙返りとして数える。操作はロンダート（A難度）ときりもみだけ
+    // → 宙返り系のどれにも操作が無い扱いになる
+    const onlyKirimomi = computeScore(
+      [S(skill("a_roundoff", true), skill("c_back15", false), skill("b_kirimomi", true))],
+      "stick",
+    );
+    expect(onlyKirimomi.noApparatusDeduction).toBeCloseTo(NO_APP_SALTO_DEDUCTION, 5);
+    // きりもみにしか付いていなければ、シリーズ全体に操作なしの扱い
+    const nothingElse = computeScore([S(skill("c_back15", false), skill("b_kirimomi", true))], "stick");
+    expect(nothingElse.noApparatusDeduction).toBeCloseTo(NO_APP_ALL_DEDUCTION, 5);
+    // ほかの宙返りに操作が付いていれば減点されない
+    const withOther = computeScore([S(skill("c_back15", true), skill("b_kirimomi", true))], "stick");
+    expect(withOther.noApparatusDeduction).toBe(0);
+  });
+
+  it("手具操作加点（操作2回以上）にも数えない", () => {
+    // E難度の連続。前宙・きりもみの2本に操作を付けても、きりもみは数えないので1回どまり
+    const kiri = computeScore(
+      [S(skill("c_back15", true), skill("b_front", false), skill("b_kirimomi", true))],
+      "stick",
+    );
+    expect(kiri.apparatusOpBonus).toBe(0);
+    // きりもみの代わりに前宙に付ければ2回になり、加点が付く
+    const ok = computeScore(
+      [S(skill("c_back15", true), skill("b_front", true), skill("b_kirimomi", false))],
+      "stick",
+    );
+    expect(ok.apparatusOpBonus).toBeGreaterThan(0);
   });
 });

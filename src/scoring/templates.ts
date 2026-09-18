@@ -34,14 +34,15 @@ export function commonBlockers(list: Series[]): string[] {
   const reasons = new Set<string>();
   list.forEach((ser) =>
     ser.items.forEach((item) => {
-      if (item.kind === "throw") {
+      // 必須投げは投げアイテムにも技の最中の投げにも付く
+      if (item.kind === "throw" || item.kind === "skill")
         (item.reqTypes || []).forEach((t) => {
           if (t === "lefthand") reasons.add("左手投げ");
           else if (t === "twothrow") reasons.add("二つ投げ");
           else reasons.add(t);
         });
-        if ((item.throwTypes || []).includes("useapp")) reasons.add("手具を使った投げ");
-      }
+      if (item.kind === "throw" && (item.throwTypes || []).includes("useapp"))
+        reasons.add("手具を使った投げ");
       if (item.kind === "skill" && (item.throwTypes || []).includes("useapp")) reasons.add("手具を使った投げ");
       if (item.kind === "catch") {
         if ((item.catchTypes || []).includes("useapp")) reasons.add("手具を使ったキャッチ");

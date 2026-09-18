@@ -65,8 +65,14 @@ export const APPARATUS_COUNT: Record<ApparatusKey, number> = {
 /** 二つ投げ（両方の手具を同時に投げる）の必須投げのid */
 export const TWO_THROW_TAG = "twothrow";
 
+/** 左手投げ（利き手でない手で投げる）の必須投げのid */
+export const LEFT_HAND_THROW_TAG = "lefthand";
+
+/** 視野外の投げ・キャッチの技術タグ */
+export const NO_VIEW_TAG = "noview";
+
 export const REQUIRED_THROW_OPTIONS: Record<ApparatusKey, { id: string; name: string }[]> = {
-  stick: [{ id: "lefthand", name: "左手投げ" }],
+  stick: [{ id: LEFT_HAND_THROW_TAG, name: "左手投げ" }],
   clubs: [{ id: TWO_THROW_TAG, name: "二つ投げ" }],
   ring: [{ id: TWO_THROW_TAG, name: "二つ投げ" }],
   rope: [],
@@ -81,6 +87,11 @@ export const requiredThrowName = (id: string): string =>
 /** 二つ投げが必須投げの手具（リング・クラブ）か。二つ投げ関連の表示条件に使う。 */
 export function hasTwoThrow(apparatus: ApparatusKey): boolean {
   return REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === TWO_THROW_TAG);
+}
+
+/** 左手投げが必須投げの手具（スティック）か */
+export function hasLeftHandThrow(apparatus: ApparatusKey): boolean {
+  return REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === LEFT_HAND_THROW_TAG);
 }
 
 export const DIFF_VALUE: Record<Difficulty, number> = { A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7 };
@@ -456,9 +467,25 @@ export const SKILL_LIST: Skill[] = [
   { id: "b_front", name: "前宙", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true, twist: { base: "front", twist: 0, posture: "tuck" } },
   { id: "b_fronthalf", name: "前宙半ひねり", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true, twist: { base: "front", twist: 0.5, posture: "tuck" } },
   { id: "b_tenchu", name: "転宙", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true },
-  { id: "b_kirimomi", name: "きりもみ", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true, saltoOnlyInChain: true },
+  {
+    id: "b_kirimomi",
+    name: "きりもみ",
+    category: CATEGORY.FORWARD,
+    difficulty: "B",
+    isSalto: true,
+    saltoOnlyInChain: true,
+    noApparatusOp: true,
+  },
   { id: "c_front1full", name: "前方宙返り1回ひねり", category: CATEGORY.FORWARD, difficulty: "C", isSalto: true, twist: { base: "front", twist: 1, posture: "tuck" } },
-  { id: "c_kirimomiten", name: "きりもみ転回", category: CATEGORY.FORWARD, difficulty: "C", isSalto: true, saltoOnlyInChain: true },
+  {
+    id: "c_kirimomiten",
+    name: "きりもみ転回",
+    category: CATEGORY.FORWARD,
+    difficulty: "C",
+    isSalto: true,
+    saltoOnlyInChain: true,
+    noApparatusOp: true,
+  },
   { id: "c_back15", name: "後方宙返り1回半ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true, twist: { base: "back", twist: 1.5, posture: "tuck" } },
   { id: "c_backlay15", name: "後方伸身宙返り1回半ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true, twist: { base: "back", twist: 1.5, posture: "layout" } },
   { id: "c_back1full", name: "後方宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true, twist: { base: "back", twist: 1, posture: "tuck" } },
@@ -603,6 +630,12 @@ export function parseTwistSkillId(id: string): TwistParams | null {
   }
   return SKILL_LIST.find((x) => x.id === id)?.twist ?? null;
 }
+
+/**
+ * その技の最中に**手具操作ができるか**。きりもみ・きりもみ転回は首から背中にかけて
+ * 着地するので操作できない（`Skill.noApparatusOp`）。手を離すだけの「技の最中の投げ」は別。
+ */
+export const canOperateApparatus = (skillId: string): boolean => !skillDef(skillId)?.noApparatusOp;
 
 export function skillDef(id: string): Skill | undefined {
   const found = SKILL_LIST.find((x) => x.id === id);

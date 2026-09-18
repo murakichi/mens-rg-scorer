@@ -41,6 +41,7 @@ import {
   skillDef,
   ART_DEDUCTION_ITEMS,
   clampArtDeduction,
+  canOperateApparatus,
 } from "./constants";
 import {
   analyzeSeries,
@@ -373,11 +374,14 @@ export function computeScore(
 
     let appOp = 0;
     if (!isDup) {
-      const ops = ser.items.filter((item) => item.kind === "skill" && item.hasApparatus).length;
+      const ops = ser.items.filter(
+        (item) => item.kind === "skill" && item.hasApparatus && canOperateApparatus(item.skillId),
+      ).length;
       // 「投げ**または**2回以上の操作」（§3.5.5.5(3)）。手具を保持した技の最中に投げた場合は
       // 操作1回でも条件を満たす（手具が1つの種目では投げた後は保持できないので、この形になる）
       const heldThrow = ser.items.some(
-        (item) => item.kind === "skill" && item.hasApparatus && item.isThrow,
+        (item) =>
+          item.kind === "skill" && item.hasApparatus && item.isThrow && canOperateApparatus(item.skillId),
       );
       if (ops >= 2 || heldThrow) {
         const maxD = a.units.reduce(
@@ -404,7 +408,7 @@ export function computeScore(
         added = false;
       };
       ser.items.forEach((item, j) => {
-        if (item.kind === "throw") {
+        if (item.kind === "throw" || (item.kind === "skill" && item.isThrow)) {
           fin();
           // 上限超過（ジュニアの6回目以降）の二つ投げは加点に数えない
           if (!itemOver[i][j] && (item.reqTypes || []).includes("twothrow")) inTwo = true;
@@ -420,9 +424,12 @@ export function computeScore(
 
     let noApp = 0;
     if (!isDup && a.throwCount === 0) {
-      const skills = ser.items.filter(
-        (item): item is Extract<typeof item, { kind: "skill" }> => item.kind === "skill" && !!item.skillId,
-      );
+      const skills = ser.items
+        .filter(
+          (item): item is Extract<typeof item, { kind: "skill" }> => item.kind === "skill" && !!item.skillId,
+        )
+        // きりもみ系は実施中に手具を操作できないので、入力に残っていても操作として数えない
+        .map((item) => ({ ...item, hasApparatus: !!item.hasApparatus && canOperateApparatus(item.skillId) }));
       const hasT = a.units.some((u) => u.type === "tumbling");
       if (hasT && skills.length > 0) {
         const anyApp = skills.some((s) => s.hasApparatus);
@@ -558,7 +565,8 @@ export function computeScore(
   series.forEach((ser, i) =>
     ser.items.forEach((item, j) => {
       if (itemOver[i][j]) return;
-      if (item.kind === "throw") (item.reqTypes || []).forEach((t) => performedThrowTypes.add(t));
+      if (item.kind === "throw" || (item.kind === "skill" && item.isThrow))
+        (item.reqTypes || []).forEach((t) => performedThrowTypes.add(t));
     }),
   );
   const required: RequiredCheck[] = [
@@ -648,14 +656,15 @@ export function computeScore(
     ser.items.some((item) => {
       if (item.kind === "throw")
         return !(item.reqTypes || []).includes("lefthand") && !(item.throwTypes || []).includes("nonhand");
-      if (item.kind === "skill" && item.isThrow) return !(item.throwTypes || []).includes("nonhand");
+      if (item.kind === "skill" && item.isThrow)
+        return !(item.reqTypes || []).includes("lefthand") && !(item.throwTypes || []).includes("nonhand");
       return false;
     }),
   );
   // 転回系の投げ受け＝投げタン。1本以上あれば実施とみなす。
   const autoPassed: Record<RequiredElementAuto, boolean> = {
     rightThrow: hasRightThrow,
-    // 左手投げ・二つ同時投げは投げアイテムの必須投げチェックから判定する
+    // 左手投げ・二つ同時投げは必須投げのチェックから判定する（技の最中の投げも数える）
     leftThrow: performedThrowTypes.has("lefthand"),
     twoThrow: performedThrowTypes.has("twothrow"),
     throwTumbling: hasThrowTumbling,

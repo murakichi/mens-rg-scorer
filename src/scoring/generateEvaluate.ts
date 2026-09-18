@@ -64,6 +64,7 @@ import { computeScore, type ScoreResult } from "./score";
 import type { GenerateOptions } from "./generateOptions";
 import type { SeriesTemplate } from "./templates";
 import type { ApparatusKey, FutureLevel, Series } from "./types";
+import { unseenPenalty } from "./unseenShapes";
 
 /** 演技全体での、実施が少ない技の回数（技idごと） */
 export function limitedSkillCounts(series: Series[]): Map<string, number> {
@@ -170,6 +171,7 @@ export function missesFinishCatch(series: Series[], apparatus: ApparatusKey): bo
 }
 
 /** その他の投げ・その他のキャッチの回数 */
+
 export function otherStyleCount(series: Series[]): number {
   let count = 0;
   series.forEach((ser) =>
@@ -321,6 +323,9 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
     verticalThreeThrowCount(series, !!opts.junior, opts.future ?? null) * VERTICAL_THREE_THROW_WEIGHT;
   // その他の投げ・その他のキャッチは可能な限り使わない
   const otherStyle = otherStyleCount(series) * OTHER_STYLE_WEIGHT;
+  // 実施例の無い形（`unseenShapes.ts` に宣言）。稼ぐ点数をそのまま打ち消すので、
+  // 出現率は候補を出す確率（要求Dスコアのカーブ）だけで決まる
+  const rareStyle = unseenPenalty(series);
   // クラブは押さえてキャッチ、ロープは足に絡めたキャッチで演技を締める
   const finishCatch = missesFinishCatch(series, opts.apparatus) ? FINISH_CATCH_WEIGHT : 0;
   // 手以外・手具を使った投げのあとに徒手を多く実施する形は、要求値が5.0を超えるまで嫌う
@@ -348,6 +353,7 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
       extraOperation -
       verticalThree -
       otherStyle -
+      rareStyle -
       finishCatch -
       hardThrow -
       auto -

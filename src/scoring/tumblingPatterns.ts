@@ -38,6 +38,16 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
   { id: "throwRoll", saltos: { min: 1, max: 1 }, connect: false, throwCatch: true, rollFinish: true },
   // 投げタン：投げ→前方系→側宙（転宙）→キャッチ
   { id: "throwSalto", saltos: { min: 2, max: 2 }, connect: false, throwCatch: true, rollFinish: false },
+  // 投げタン：つなぎ技を挟んで、**つなぎの後の宙返り**の最中に投げて前転→キャッチ。
+  // 投げるのは大抵ダイビング前宙か前宙（`THROW_AFTER_CONNECT_SALTOS`）
+  {
+    id: "connectThrowInSkill",
+    saltos: { min: 2, max: 3 },
+    connect: true,
+    throwCatch: true,
+    throwInSkill: true,
+    rollFinish: true,
+  },
   // 投げタン：連続の最後の宙返りの最中に投げて、前転→キャッチ（三宙と投げタンを1本で両立）
   {
     id: "chainThrowInSkill",
@@ -49,11 +59,6 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
   },
 ];
 
-/**
- * 投げタンのキャッチのあとに**連続投げ**を続ける確率。現実にあり得る形で、
- * 投げてから宙返りを実施する形（`throwRoll`・`throwSalto`）のほうが、
- * 宙返りの最中に投げる形（`throwInSkill`）より多い。
-
 /** その手具・その形で投げタンの投げを二つ投げにできるか */
 export const canTwoThrowTumbling = (
   apparatus: ApparatusKey | undefined,
@@ -63,9 +68,11 @@ export const canTwoThrowTumbling = (
 /**
  * 連続投げの2回目に使える投げ方。手以外の投げは2回目には実施できない。
  * スティックの左手投げ・クラブとリングの二つ投げもここに入る（手元に戻っているので実施できる）。
+ * 実施例の無い投げ方（`AutoThrowStyle.rare`）は、ここでは配らない：ラウンドロビンで配るので
+ * 要求Dスコアによらず必ず一定の割合で出てしまう（`unseenShapes.ts` の抽選が効かない）。
  */
 export function secondThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
-  return autoThrowStyles(apparatus).filter((t) => t.id !== NON_HAND_TAG);
+  return autoThrowStyles(apparatus).filter((t) => t.id !== NON_HAND_TAG && !t.rare);
 }
 
 /**

@@ -19,8 +19,19 @@
 // =====================================================================
 
 import { cycler, pickWeighted, shuffled } from "./pick";
-import { APPARATUS_USE, DIFF_VALUE, HANDS_TYPES, REQUIRED_THROW_OPTIONS } from "./constants";
+import {
+  APPARATUS_USE,
+  DIFF_VALUE,
+  HANDS_TYPES,
+  NO_VIEW_TAG,
+  REQUIRED_THROW_OPTIONS,
+  hasLeftHandThrow,
+} from "./constants";
+
+/** 視野外の投げ・キャッチの技術タグ（`constants.ts` が持ち主。ここからも参照できるよう再輸出する） */
+export { NO_VIEW_TAG };
 import { newTemplateId, type SeriesTemplate } from "./templates";
+import { unseenShapeChance } from "./unseenShapes";
 import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
 /** 自動生成した投げシリーズの形 */
@@ -134,6 +145,12 @@ export interface AutoThrowStyle {
   throwTypes?: string[];
   /** 手具を2つ投げるか（キャッチも2つ同時になる） */
   two?: boolean;
+  /**
+   * 実施例の無い投げ方（左手投げ＋視野外）。物理的には実施できるので候補には残すが、
+   * **要求するDスコアが上がるまで出さない**（`unseenShapes.ts` の `leftHandNoViewThrow`）。
+   * 連続投げの1回目・2回目（`leadPair` / `trailPair`）には使わない。
+   */
+  rare?: boolean;
 }
 
 /** 自動生成で使う受け方 */
@@ -158,6 +175,16 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
     { id: "other", name: "その他の投げ", throwTypes: ["other"] },
   ];
   if (APPARATUS_USE[apparatus]) styles.push({ id: "useapp", name: "手具を使った投げ", throwTypes: ["useapp"] });
+  // 左手投げを視野外（背面）で投げる形。物理的には実施できるが競技での例が無いので
+  // `rare` を立てて、要求するDスコアが上がるまで出さない
+  if (hasLeftHandThrow(apparatus))
+    styles.push({
+      id: `${LEFT_HAND_TAG}+${NO_VIEW_TAG}`,
+      name: "左手の視野外投げ",
+      reqTypes: [LEFT_HAND_TAG],
+      throwTypes: [NO_VIEW_TAG],
+      rare: true,
+    });
   return styles;
 }
 
@@ -203,8 +230,6 @@ export function catchStylesForThrow(apparatus: ApparatusKey, twoThrow: boolean):
   return twoThrow ? styles.filter((c) => !catchHasTag(c, CATCH_USE_APPARATUS)) : styles;
 }
 
-/** 視野外の受け・投げの技術タグ */
-export const NO_VIEW_TAG = "noview";
 /** 手以外の受け・投げの技術タグ */
 export const NON_HAND_TAG = "nonhand";
 /**
@@ -247,6 +272,7 @@ export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
 
 /** 左手投げの必須投げのid */
 export const LEFT_HAND_TAG = "lefthand";
+
 /** 左手投げを**視野外で受ける**確率はかなり低い */
 export const LEFT_HAND_NO_VIEW_CATCH_WEIGHT = 0.1;
 
@@ -312,16 +338,30 @@ export function catchStyleWeight({
 }
 
 /**
- * その受け方からは**次の投げに繋げられない**（連続投げの1回目には使えない）技術タグ。
- *  - 視野外のキャッチ → 視野外の投げ（物理的に実施できない）
- *  - 手以外のキャッチ → 連続投げ（足や体で受けた手具はすぐには投げられない）
- *  - 手具を使ったキャッチ（押さえつけ）→ 連続投げ（押さえた状態からは投げられない）
+ * その受け方からは**どんな投げにも繋げられない**技術タグ。
+ *  - 手以外のキャッチ → 足や体で受けた手具はすぐには投げられない
+ *  - 手具を使ったキャッチ（押さえつけ）→ 押さえた状態からは投げられない
  */
-export const NO_THROW_AFTER_CATCH_TAGS: string[] = [NO_VIEW_TAG, NON_HAND_TAG, CATCH_USE_APPARATUS];
+export const NO_THROW_AFTER_CATCH_TAGS: string[] = [NON_HAND_TAG, CATCH_USE_APPARATUS];
 
-/** その受け方のあとに投げを続けられるか */
-export const canThrowAfterCatch = (catchStyle: AutoCatchStyle): boolean =>
-  !NO_THROW_AFTER_CATCH_TAGS.some((tag) => catchHasTag(catchStyle, tag));
+/**
+ * **同じ技術では繋げられない**組み合わせ：視野外で受けてそのまま視野外に投げることはできない。
+ * 視野外で受けてから**普通に見て投げる**のは実施例がある
+ * （視野外投げ→1シェネ→視野外キャッチ→二つ投げ→そのままキャッチ）。
+ */
+export const NO_SAME_TAG_AFTER_CATCH_TAGS: string[] = [NO_VIEW_TAG];
+
+/**
+ * その受け方のあとに投げを続けられるか。
+ * 次の投げ方が決まっていないうちは**無条件のものだけ**を外し（`NO_THROW_AFTER_CATCH_TAGS`）、
+ * 同じ技術どうしの組み合わせ（視野外→視野外）は投げ方を引くときに外す。
+ */
+export const canThrowAfterCatch = (catchStyle: AutoCatchStyle, nextThrow?: AutoThrowStyle): boolean => {
+  if (NO_THROW_AFTER_CATCH_TAGS.some((tag) => catchHasTag(catchStyle, tag))) return false;
+  if (!nextThrow) return true;
+  const types = nextThrow.throwTypes || [];
+  return !NO_SAME_TAG_AFTER_CATCH_TAGS.some((tag) => catchHasTag(catchStyle, tag) && types.includes(tag));
+};
 
 /**
  * その形で使える受け方。**次の投げに続ける受け**（`noViewPair`・`trailPair` の直前の受け）では、
@@ -334,8 +374,21 @@ export function catchStylesForPattern(
 ): AutoCatchStyle[] {
   const styles = catchStylesForThrow(apparatus, twoThrow);
   if (!throwsAfterCatch(pattern)) return styles;
-  return styles.filter(canThrowAfterCatch);
+  // `noViewPair` は続けて**視野外に投げる**形なので、視野外のキャッチも外れる。
+  // `trailPair` は2回目の投げ方をあとで引くので、ここでは無条件のものだけ外し、
+  // 視野外どうしの組み合わせは投げ方を引くとき（`trailThrowStylesAfter`）に外す
+  const noViewThrow: AutoThrowStyle = { id: NO_VIEW_TAG, name: "視野外の投げ", throwTypes: [NO_VIEW_TAG] };
+  return styles.filter((c) => (pattern.noViewPair ? canThrowAfterCatch(c, noViewThrow) : canThrowAfterCatch(c)));
 }
+
+/**
+ * `trailPair` の2回目に使える投げ方。手以外の投げは2回目には実施できず、
+ * 直前の受けが視野外なら視野外の投げも外す（視野外→視野外は実施できない）。
+ */
+export const trailThrowStylesAfter = (
+  styles: AutoThrowStyle[],
+  mainCatch: AutoCatchStyle,
+): AutoThrowStyle[] => styles.filter((t) => t.id !== NON_HAND_TAG && canThrowAfterCatch(mainCatch, t));
 
 /**
  * その形で使える投げ方。先に投げ受けを1本置く形（`leadPair`）の本体の投げは
@@ -346,7 +399,11 @@ export function throwStylesForPattern(
   pattern: AutoThrowPattern,
 ): AutoThrowStyle[] {
   const styles = autoThrowStyles(apparatus);
-  return pattern.leadPair ? styles.filter((t) => t.id !== NON_HAND_TAG) : styles;
+  // `leadPair` の本体は連続投げの**2回目**。手以外の投げは2回目には実施できず、
+  // 二つ投げも「2回目 かつ 徒手を多く実施する（＝高難度）」形は実施されない
+  // （実施例があるのは 視野外投げ→1シェネ→視野外キャッチ→**二つ投げ→そのままキャッチ**の
+  //  ように、2回目の二つ投げをすぐ受ける形＝`trailPair` のほう）
+  return pattern.leadPair ? styles.filter((t) => t.id !== NON_HAND_TAG && !t.two) : styles;
 }
 
 /** シェネの手の使い方（null＝手なし。手ありは HANDS_TYPES の種類ごとに別の技） */
@@ -471,6 +528,11 @@ export interface AutoThrowOptions {
   future?: FutureLevel;
   /** 作る候補の数の上限（既定＝形 × 投げ方 の全組み合わせ） */
   limit?: number;
+  /**
+   * **要求するDスコアの下限**（`minScore`）。実施例の無い投げ方（`AutoThrowStyle.rare`）は
+   * 要求値が上がるほど出やすくする（`unseenShapeChance`）。
+   */
+  demandScore?: number | null;
 }
 
 /**
@@ -481,10 +543,14 @@ export interface AutoThrowOptions {
 export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions = {}): AutoThrowSpec[] {
   const rand = opts.random ?? Math.random;
   const throwStyles = autoThrowStyles(apparatus);
+  // 実施例の無い投げ方（左手投げ＋視野外）は、要求するDスコアが上がるほど残す
+  const rareChance = unseenShapeChance("leftHandNoViewThrow", opts.demandScore);
   const combos = shuffled(
-    AUTO_THROW_PATTERNS.filter((pattern) => throwPatternAllowed(pattern, opts.future ?? null)).flatMap(
-      (pattern) => throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
-    ),
+    AUTO_THROW_PATTERNS.filter((pattern) => throwPatternAllowed(pattern, opts.future ?? null))
+      .flatMap((pattern) =>
+        throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
+      )
+      .filter(({ throwStyle }) => !throwStyle.rare || rand() < rareChance),
     rand,
   );
   const limit = Math.max(0, opts.limit ?? combos.length);
@@ -516,14 +582,25 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     pickWeighted(autoHandsVariants(), rand, (h) => handsWeight(h) * cheneCountWeight(h, cheneCount));
   // 先に足す投げ受けの投げ方。二つ投げは2つ同時キャッチで受ける形になるので使わない
   const nextLeadThrow = cycler(
-    throwStyles.filter((t) => !t.two),
+    throwStyles.filter((t) => !t.two && !t.rare),
     rand,
   );
-  // あとに足す投げ受けの投げ方（連続投げの2回目）。手以外の投げは2回目には実施できない
-  const nextTrailThrow = cycler(
-    throwStyles.filter((t) => t.id !== NON_HAND_TAG),
-    rand,
-  );
+  // あとに足す投げ受けの投げ方（連続投げの2回目）。使える投げ方が直前の受け方で変わるので
+  // （視野外で受けたら視野外には投げられない）、使える組み合わせごとに配る
+  const trailCyclers = new Map<string, () => AutoThrowStyle>();
+  const nextTrailThrow = (mainCatch: AutoCatchStyle): AutoThrowStyle => {
+    const usable = trailThrowStylesAfter(
+      throwStyles.filter((t) => !t.rare),
+      mainCatch,
+    );
+    const key = usable.map((t) => t.id).join("|");
+    let next = trailCyclers.get(key);
+    if (!next) {
+      next = cycler(usable, rand);
+      trailCyclers.set(key, next);
+    }
+    return next();
+  };
   // シェネの回数は形ごとに配る（その形で取り得る回数がひととおり出るように）
   const nextCount = new Map<string, () => number>();
   return combos.slice(0, limit).map(({ pattern, throwStyle }) => {
@@ -533,17 +610,18 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       nextCount.set(pattern.id, counts);
     }
     const cheneCount = counts();
+    const catchStyle = nextCatchFor(pattern, throwStyle, patternMotions(pattern, cheneCount));
     return {
       pattern,
       cheneCount,
       // シェネが無い形では手の種類は使わない
       hands: cheneCount > 0 ? nextHands(cheneCount) : null,
       throwStyle,
-      catchStyle: nextCatchFor(pattern, throwStyle, patternMotions(pattern, cheneCount)),
+      catchStyle,
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
       ...(pattern.trailPair
         ? (() => {
-            const trailThrowStyle = nextTrailThrow();
+            const trailThrowStyle = nextTrailThrow(catchStyle);
             // 受け方は「徒手なしの投げ受け」として引く（手具ごとの規則だけが効く）。
             // クラブの押さえつけ・ロープの足に絡めた受けが出るので、演技の締めにもなる
             return {

@@ -14,6 +14,7 @@ import {
   skillBlockedReason,
   skillOptionGroups,
   skillDifficulty,
+  canOperateApparatus,
   hasTwoThrow,
   motionOptionsFor,
   motionOptionGroupsFor,
@@ -40,6 +41,7 @@ import {
   SERIES_TAGS,
   seriesTags,
 } from "../scoring/analysis";
+import { tumblingChainEndErrors } from "../scoring/tumblingChain";
 import type { SkillFlow } from "../scoring/constants";
 import type { ApparatusKey, FutureLevel, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
 import type { DiffRow, SeriesBreakdown } from "../scoring/score";
@@ -227,6 +229,8 @@ function ItemEditor({
     );
   }
   if (item.kind === "skill") {
+    // 技の最中の投げでも二つ投げは実施できる（手具を使った投げとは排他）
+    const skillTwoThrow = (item.reqTypes || []).includes(TWO_THROW_TAG);
     const params = parseTwistSkillId(item.skillId);
     // 後ろ向きで終わった後は後方系しか出さない（初期値もそれに合わせる）
     const fallbackTwist = flow.forward ? DEFAULT_TWIST_FORWARD : DEFAULT_TWIST;
@@ -327,8 +331,9 @@ function ItemEditor({
             </select>
           </div>
         )}
-        {/* 投げている間は手元に手具が無いので操作できない */}
-        {!handsEmpty && (
+        {/* 投げている間は手元に手具が無いので操作できない。
+            きりもみ系は首から背中にかけて着地するので、実施中に操作できない */}
+        {!handsEmpty && canOperateApparatus(item.skillId) && (
           <label className="check">
             <input
               type="checkbox"
@@ -343,24 +348,54 @@ function ItemEditor({
             type="checkbox"
             checked={item.isThrow || false}
             onChange={(e) =>
-              onUpdate(e.target.checked ? { isThrow: true } : { isThrow: false, throwTypes: [] })
+              onUpdate(
+                e.target.checked
+                  ? { isThrow: true }
+                  : { isThrow: false, throwTypes: [], reqTypes: [] },
+              )
             }
           />
           この技の最中に投げ
         </label>
         {item.isThrow &&
           [...SKILL_THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map(
-            (opt) => (
-              <label key={opt.id} className="check">
-                <input
-                  type="checkbox"
-                  checked={(item.throwTypes || []).includes(opt.id)}
-                  onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
-                />
-                {opt.name}
-              </label>
-            ),
+            (opt) => {
+              const on = (item.throwTypes || []).includes(opt.id);
+              // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
+              const blocked = opt.id === USE_APPARATUS_TAG && !on && skillTwoThrow;
+              return (
+                <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={blocked}
+                    onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
+                  />
+                  {opt.name}
+                </label>
+              );
+            },
           )}
+        {/* 技の最中の投げでも二つ投げ（両方を投げる）は実施できる */}
+        {item.isThrow &&
+          !common &&
+          REQUIRED_THROW_OPTIONS[apparatus]
+            .filter((opt) => opt.id === TWO_THROW_TAG)
+            .map((opt) => {
+              const on = (item.reqTypes || []).includes(opt.id);
+              const blocked = !on && (item.throwTypes || []).includes(USE_APPARATUS_TAG);
+              return (
+                <label key={opt.id} className={blocked ? "check-req is-disabled" : "check-req"}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={blocked}
+                    onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
+                  />
+                  {opt.name}
+                </label>
+              );
+            })}
       </>
     );
   }
@@ -502,7 +537,9 @@ export function SeriesCard({
   onRemoveSeries,
 }: Props) {
   const seriesQualifies = a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus);
-  const flowErrors = checkApparatusFlow(ser, apparatus);
+  // 手具の流れ（投げてから受けるまで）と、連続を終える技の後に何か続いていないか。
+  // どちらも警告だけで採点には影響しない
+  const flowErrors = [...checkApparatusFlow(ser, apparatus), ...tumblingChainEndErrors(ser)];
   // 投げてからキャッチするまでは手元に手具が無いので、その間の技に手具操作は付けられない
   const handsEmpty = handsEmptyFlags(ser.items, apparatus);
   // 2つ同時キャッチは「2つとも空中にある（＝二つ投げの間）」ときだけ入力できる

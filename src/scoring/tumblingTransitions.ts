@@ -16,7 +16,6 @@ import { futureSkillIds, isBackwardSalto, skillDef } from "./constants";
 import {
   KIRIMOMI_THROW_SKILL_ID,
   RARE_CHAIN_END_SKILLS,
-  SIDE_SALTO_ID,
   TEMPO_SKILLS,
   THROW_FINISH_SALTOS,
   canEndChain,
@@ -31,7 +30,9 @@ import {
 import {
   CONNECT_RISE_WEIGHT,
   TEMPO_CONNECT_WEIGHT,
-  THROW_IN_SIDE_SALTO_WEIGHT,
+  THROW_AFTER_CONNECT_SALTOS,
+  THROW_AFTER_CONNECT_WEIGHT,
+  throwInSaltoWeight,
   THROW_IN_SKILL_ROUNDOFF_WEIGHT,
   baseSkillWeights,
   connectFinishWeights,
@@ -241,9 +242,9 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
       edge(
         prevId,
         id,
-        // 側宙の実施中に投げる構成は稀（連続の最後の宙返りで投げる形だけ側宙を下げる）
-        (w[id] ?? 1) *
-          (pattern.throwInSkill && id === SIDE_SALTO_ID ? THROW_IN_SIDE_SALTO_WEIGHT : 1),
+        // その技の実施中に投げるのが稀な宙返り（側宙・きりもみ転回）は、
+        // 連続の最後の宙返りで投げる形だけ下げる
+        (w[id] ?? 1) * (pattern.throwInSkill ? throwInSaltoWeight(id) : 1),
       ),
     );
     nextCache.set(prevId, edges);
@@ -282,7 +283,11 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
         connectId,
         id,
         (finishWeights[id] ?? 1) *
-          (difficultyValue(id, junior, future) > beforeValue ? CONNECT_RISE_WEIGHT : 1),
+          (difficultyValue(id, junior, future) > beforeValue ? CONNECT_RISE_WEIGHT : 1) *
+          // つなぎのあとの宙返りで投げる形は、大抵ダイビング前宙か前宙で実施する
+          (pattern.throwInSkill && THROW_AFTER_CONNECT_SALTOS.includes(id)
+            ? THROW_AFTER_CONNECT_WEIGHT
+            : 1),
       ),
     );
     afterCache.set(key, edges);

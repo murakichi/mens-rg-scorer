@@ -78,12 +78,14 @@ export const onlySideSaltoAfter = (id: string): boolean => ONLY_SIDE_SALTO_AFTER
  *  - 側宙の後の前転
  *  - 転宙の後の前転（転宙はそのまま終わるか側宙に続けるかだけ）
  *  - 後ろ向きで終わる後方宙返りの後の前転
+ *  - 連続を終える技（`CHAIN_END_SKILLS`）の後の前転：とび前転・きりもみは首から背中にかけて、
+ *    ダイビングは頭から着地するので、前転でつなぐことはできない
  * 投げ受けはそのままキャッチする。
  */
 export const NO_ROLL_AFTER_SKILLS: string[] = [SIDE_SALTO_ID, TENCHU_SKILL_ID];
 
 export const noRollAfter = (id: string): boolean =>
-  NO_ROLL_AFTER_SKILLS.includes(id) || endsFacingBackward(id);
+  NO_ROLL_AFTER_SKILLS.includes(id) || endsFacingBackward(id) || endsChain(id);
 
 /**
  * シリーズの最後に実施することが**稀**な技。上級者は後方宙返り半ひねりで終わらず、
@@ -132,8 +134,13 @@ export const KIRIMOMI_THROW_SKILL_ID = "b_kirimomi";
 export const throwInSkillTypes = (prevId: string | undefined, skillId: string): string[] | undefined =>
   isBackToForwardThrow(prevId, skillId) ? [NO_VIEW_TAG] : undefined;
 
-/** 投げ受けで前方系の宙返りに続けて実施する技（側宙、たまに転宙） */
-export const THROW_FINISH_SALTOS: string[] = [SIDE_SALTO_ID, TENCHU_SKILL_ID];
+/**
+ * 投げ受け（投げてから跳ぶ形）で前方系の宙返りに続けて実施する技。
+ * 側宙が主で、転宙・きりもみ転回もある（実施の多さは 側宙 ＞ きりもみ転回 ＞ 転宙。
+ * 重みは `SKILL_PICK_WEIGHT` / `LIMITED_SKILLS` がそのまま効くので、ここでは並べるだけ）。
+ * きりもみは入れない（首から背中にかけて着地するので、そのまま受けに繋げられない）。
+ */
+export const THROW_FINISH_SALTOS: string[] = [SIDE_SALTO_ID, TENCHU_SKILL_ID, "c_kirimomiten"];
 
 /**
  * 後方伸身宙返り（ひねりの有無を問わない）の後に実施する主流の技。
@@ -235,6 +242,18 @@ export const difficultyValue = (id: string, junior: boolean, future: FutureLevel
   return d ? DIFF_VALUE[d] : 0;
 };
 
+/**
+ * 前方系の宙返りのあとに実施するきりもみ系。前宙→きりもみ転回 は実施される
+ * （投げ→前宙→きりもみ転回→キャッチ）。きりもみ系は宙返りの連続の中でだけ宙返りになるので
+ * `saltoList` には入っておらず、**難度の上限（連続は難度が下がる）も掛けない**
+ * ——きりもみ転回のC難度は「連続が1段上がった」という意味ではないため。
+ * 選ばれやすさは `SKILL_PICK_WEIGHT`（きりもみ転回 0.3）がそのまま効くので、
+ * 側宙（1）より低く、転宙（`LIMITED_SKILLS` の 0.2）より高い。
+ * きりもみは入れない：首から背中にかけて着地するので、そのまま受けには繋げられない
+ * （後方伸身のあとだけは連続の技として実施するので `AFTER_BACK_LAYOUT_SALTOS` にある）。
+ */
+export const AFTER_FORWARD_KIRIMOMI: string[] = ["c_kirimomiten"];
+
 /** 連続に使う宙返り（きりもみ系は宙返りの連続の中でだけ宙返りになるので使わない） */
 function saltoList(
   junior: boolean,
@@ -286,10 +305,16 @@ export function nextSaltoOptions(prevId: string, junior = false, future: FutureL
   const ceiling = isTempoSalto(prevId) ? maxDiff(future) : difficultyValue(prevId, junior, future);
   // 難度が上がってよい例外（後方宙返り半ひねり→前方宙返り1回ひねり など）
   const rise = DIFFICULTY_RISE_AFTER[prevId] ?? [];
-  return saltoList(junior, prevId, future)
+  const list = saltoList(junior, prevId, future)
     .filter((s) => (backward ? isBackwardSalto(s.id) : !isBackwardSalto(s.id)))
     .filter((s) => difficultyValue(s.id, junior, future) <= ceiling || rise.includes(s.id))
     .map((s) => s.id);
+  // きりもみ系は `saltoList` に入っていない（宙返りの連続の中でだけ宙返りになる）ので、
+  // 前方系のあとに実施するものだけここで足す
+  const kirimomi = backward
+    ? []
+    : AFTER_FORWARD_KIRIMOMI.filter((id) => offered.has(id) && !list.includes(id));
+  return [...list, ...kirimomi];
 }
 
 /**
@@ -321,14 +346,35 @@ export function saltoOptionsAfterConnect(
 }
 
 /**
+ * **連続を終える技の後に技・徒手動作が続いている**並びを挙げる。
+ * とび前転・きりもみは首から背中にかけて、ダイビングは頭から着地し、側宙は連続の最後にしか
+ * 実施しない（`CHAIN_END_SKILLS`）ので、その後に技も前転も続けられない
+ * （投げ受けのキャッチは続けられるので、キャッチは対象外）。
+ * 自動生成は作らないが、手入力・インポート・古い保存データでは起こりうるので、
+ * 入力画面でも警告として出す（`SeriesCard`。採点には影響しない）。
+ */
+export function tumblingChainEndErrors(series: Series): string[] {
+  const errors: string[] = [];
+  series.items.forEach((item, i) => {
+    if (item.kind !== "skill" || !item.skillId || !endsChain(item.skillId)) return;
+    const next = series.items[i + 1];
+    if (next?.kind !== "skill" && next?.kind !== "motion") return;
+    const name = skillDef(item.skillId)?.name ?? item.skillId;
+    errors.push(`${i + 1}番目の${name}：この技の後に技・徒手動作は続けられない`);
+  });
+  return errors;
+}
+
+/**
  * 入力画面の制約に反する並びを挙げる（空なら入力画面でもそのまま入力できる）。
  * 判定は入力画面のプルダウンと同じ関数で行う（系統の絞り込みが変わっても追随する）。
  *  - その位置の選択肢に出る技か（`skillOptions(junior, skillFlowAfter(prev))`。
  *    ロンダート・バク転の直後は後方系だけ、ジュニアは2回宙返り系なし）
  *  - 後方系はロンダートを補わずに実施できる位置にあること（`needsRoundoffBefore`）
+ *  - 連続を終える技の後に何も続けていないこと（`tumblingChainEndErrors`）
  */
 export function tumblingFlowErrors(series: Series, junior = false, future: FutureLevel = null): string[] {
-  const errors: string[] = [];
+  const errors: string[] = [...tumblingChainEndErrors(series)];
   series.items.forEach((item, i) => {
     if (item.kind !== "skill" || !item.skillId) return;
     const name = skillDef(item.skillId)?.name ?? item.skillId;

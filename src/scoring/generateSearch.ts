@@ -58,6 +58,8 @@ export function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () 
       ...autoThrowTemplates(opts.apparatus, {
         random: rand,
         limit: opts.autoThrowLimit,
+        // 実施例の無い投げ方（左手投げ＋視野外）は要求値が上がるほど出やすくする
+        demandScore: opts.minScore,
         // 十年後モードでは5〜6動作（F・G難度）の形も候補にする
         future: opts.future ?? null,
       }),
@@ -72,6 +74,8 @@ export function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () 
         basicLevel: opts.maxScore != null && opts.maxScore < BASIC_LEVEL_MAX_SCORE,
         // 後ろ向きで終わる後方宙返りで終わる確率は狙うDスコアで決まる
         targetScore: opts.maxScore,
+        // 実施例の無い投げ受け（背面キャッチ・左手投げ）は要求値が上がるほど出やすくする
+        demandScore: opts.minScore,
         skillIds: opts.autoTumblingSkills ?? usedSkillIds(own.map((t) => t.series)),
         random: rand,
         limit: opts.autoTumblingLimit,

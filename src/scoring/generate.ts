@@ -55,6 +55,8 @@ export * from "./generateOptions";
 export * from "./generateWeights";
 export * from "./generateEvaluate";
 export * from "./generateSearch";
+// 実施例の無い形の宣言（候補づくりと評価が共有する）
+export * from "./unseenShapes";
 
 /**
  * ランダムな貪欲法を何度も試して、いちばん評価の高い構成を返す。

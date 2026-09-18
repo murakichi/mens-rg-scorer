@@ -25,6 +25,7 @@ import {
   CHAIN_END_SKILLS,
   DIFFICULTY_RISE_AFTER,
   TEMPO_SKILL_ID,
+  SIDE_SALTO_ID,
   TEMPO_TWIST_SKILL_ID,
   TENCHU_SKILL_ID,
   endsFacingBackward,
@@ -166,6 +167,42 @@ export function roundoffEntryWeight(targetScore?: number | null, connect = false
  * 無いので稀。連続の最後で投げる形（`throwInSkill`）で側宙を引く確率を下げる。
  */
 export const THROW_IN_SIDE_SALTO_WEIGHT = 0.1;
+
+/**
+ * **その技の実施中に投げるのが稀**な宙返りの重み（連続の最後で投げる形だけに効く）。
+ * きりもみ転回は側宙と同じ扱い：首から背中にかけて着地する技なので、その最中に投げた例は無い。
+ * ここを下げないと、側宙を下げたぶんきりもみ転回が繰り上がってしまう
+ * （実測：`chainThrowInSkill` の最後が きりもみ転回21% ＞ 側宙8% になっていた）。
+ */
+export const THROW_IN_SALTO_WEIGHT: Record<string, number> = {
+  [SIDE_SALTO_ID]: THROW_IN_SIDE_SALTO_WEIGHT,
+  c_kirimomiten: THROW_IN_SIDE_SALTO_WEIGHT,
+};
+
+/**
+ * **ひねりのある前方系の宙返りの最中に投げる**のはかなり難しい。実施例が無いとまでは
+ * 言えないので上の 0.1 より上に置く。日本トップの実例は**ひねりの無い前宙**で投げる形
+ * （ロンダート→後方伸身2回半ひねり→前宙(投げ)→前転→キャッチ）。
+ * 技を1つずつ並べるのではなく**ひねりの有無で判定する**のは、1つ下げると隣が繰り上がる
+ * （前方宙返り1回ひねりを下げると伸身前宙1回ひねりが出てくる）のを防ぐため。
+ */
+export const THROW_IN_TWIST_SALTO_WEIGHT = 0.3;
+
+/** その技の実施中に投げる形の重み（1＝下げない） */
+export const throwInSaltoWeight = (id: string): number => {
+  const fixed = THROW_IN_SALTO_WEIGHT[id];
+  if (fixed != null) return fixed;
+  const twist = skillDef(id)?.twist;
+  if (twist?.base === "front" && twist.twist > 0) return THROW_IN_TWIST_SALTO_WEIGHT;
+  return 1;
+};
+
+/**
+ * つなぎ技のあとの宙返りで投げる形（`connectThrowInSkill`）で、その宙返りに選ばれやすい技。
+ * 実施されるのは**大抵ダイビング前宙か前宙**なので、つなぎのあとの抽選でこの2つを強く引く。
+ */
+export const THROW_AFTER_CONNECT_SALTOS: string[] = ["b_divefront", "b_front"];
+export const THROW_AFTER_CONNECT_WEIGHT = 5;
 
 /** その形を残す確率 */
 export const BACK_TO_FORWARD_THROW_CHANCE = 0.15;

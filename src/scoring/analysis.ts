@@ -28,6 +28,7 @@ import {
   artDeductionItem,
   TUM_VARIETY_ITEM_ID,
   TUM_VARIETY_DEDUCTION_STEP,
+  canOperateApparatus,
 } from "./constants";
 import type {
   ApparatusKey,
@@ -496,7 +497,12 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
     } else if (item.kind === "skill") {
       if (!item.skillId) return;
       if (!buf) buf = newBuf();
-      buf.skills.push({ skillId: item.skillId, hasApparatus: !!item.hasApparatus, isThrow: !!item.isThrow });
+      buf.skills.push({
+        skillId: item.skillId,
+        // きりもみ系は手具操作ができないので、入力に残っていても操作として数えない
+        hasApparatus: !!item.hasApparatus && canOperateApparatus(item.skillId),
+        isThrow: !!item.isThrow,
+      });
     } else if (item.kind === "motion") {
       if (!buf) buf = newBuf();
       const m = motionDef(item.motionId, junior, future);
@@ -573,6 +579,16 @@ const canUseReqType = (apparatus: ApparatusKey, id: string): boolean =>
 const canUseRopeJump = (apparatus: ApparatusKey): boolean => apparatus === "rope";
 
 /**
+ * その投げで手元から離れる手具の数。二つ投げなら2つ、それ以外は1つ。
+ * 投げアイテムでも技の最中の投げでも同じ（`SkillItem.reqTypes` も見る）。
+ */
+export const thrownCount = (item: Item): number =>
+  (item.kind === "throw" || (item.kind === "skill" && item.isThrow)) &&
+  (item.reqTypes || []).includes(TWO_THROW_TAG)
+    ? 2
+    : 1;
+
+/**
  * 各アイテムを実施する時点で**手元に手具が無い**か（投げてからキャッチするまで）。
  * 手具が1つの種目では投げている間ずっと手元が空になるので、その間の技に手具操作は
  * 付けられない（クラブ・リングでも二つ投げの間は同じ）。
@@ -583,7 +599,7 @@ export function handsEmptyFlags(items: Item[], apparatus: ApparatusKey): boolean
   let inHand = total;
   return items.map((item) => {
     if (item.kind === "throw") {
-      inHand = Math.max(0, inHand - ((item.reqTypes || []).includes(TWO_THROW_TAG) ? 2 : 1));
+      inHand = Math.max(0, inHand - thrownCount(item));
       return false;
     }
     if (item.kind === "catch") {
@@ -591,7 +607,7 @@ export function handsEmptyFlags(items: Item[], apparatus: ApparatusKey): boolean
       return false;
     }
     const empty = inHand === 0;
-    if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - 1);
+    if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - thrownCount(item));
     return empty;
   });
 }
@@ -606,7 +622,7 @@ export function catchTwoFlags(items: Item[], apparatus: ApparatusKey): boolean[]
   let inHand = total;
   return items.map((item) => {
     if (item.kind === "throw") {
-      inHand = Math.max(0, inHand - ((item.reqTypes || []).includes(TWO_THROW_TAG) ? 2 : 1));
+      inHand = Math.max(0, inHand - thrownCount(item));
       return false;
     }
     if (item.kind === "catch") {
@@ -614,7 +630,7 @@ export function catchTwoFlags(items: Item[], apparatus: ApparatusKey): boolean[]
       inHand = Math.min(total, inHand + (item.catchTwo ? 2 : 1));
       return allowed;
     }
-    if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - 1);
+    if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - thrownCount(item));
     return false;
   });
 }
@@ -645,8 +661,14 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
             reasons.add(requiredThrowName(id));
         });
       }
-      if (item.kind === "skill" && !tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
-        reasons.add(APPARATUS_INPUT_NAMES.useapp);
+      if (item.kind === "skill") {
+        if (!tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
+          reasons.add(APPARATUS_INPUT_NAMES.useapp);
+        // 技の最中の投げの必須投げ（二つ投げ）も、その手具で入力できなければ落とす
+        (item.reqTypes || []).forEach((id) => {
+          if (!canUseReqType(apparatus, id)) reasons.add(requiredThrowName(id));
+        });
+      }
       if (item.kind === "catch") {
         if (!tags && (item.catchTypes || []).includes(USE_APPARATUS_TAG))
           reasons.add(APPARATUS_INPUT_NAMES.useapp);
@@ -667,6 +689,7 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
   if (apparatusBlockers(list, apparatus).length === 0) return list;
   const tags = canUseApparatusTag(apparatus);
   const withoutTag = (ids?: string[]) => (ids || []).filter((id) => tags || id !== USE_APPARATUS_TAG);
+  const withoutReq = (ids?: string[]) => (ids || []).filter((id) => canUseReqType(apparatus, id));
   return list.map((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);
     const emptyOf = new Map(ser.items.map((item, i) => [item, empty[i]]));
@@ -677,15 +700,24 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
         .map((item) => {
           // 投げている間は手具操作ができない
           if (item.kind === "skill" && item.hasApparatus && emptyOf.get(item))
-            return { ...item, hasApparatus: false, throwTypes: withoutTag(item.throwTypes) };
+            return {
+              ...item,
+              hasApparatus: false,
+              throwTypes: withoutTag(item.throwTypes),
+              reqTypes: withoutReq(item.reqTypes),
+            };
           if (item.kind === "throw")
             return {
               ...item,
               throwTypes: withoutTag(item.throwTypes),
-              reqTypes: (item.reqTypes || []).filter((id) => canUseReqType(apparatus, id)),
+              reqTypes: withoutReq(item.reqTypes),
             };
-          if (item.kind === "skill" && item.throwTypes)
-            return { ...item, throwTypes: withoutTag(item.throwTypes) };
+          if (item.kind === "skill" && (item.throwTypes || item.reqTypes))
+            return {
+              ...item,
+              throwTypes: withoutTag(item.throwTypes),
+              reqTypes: withoutReq(item.reqTypes),
+            };
           if (item.kind === "catch")
             return {
               ...item,
@@ -706,16 +738,17 @@ export function checkApparatusFlow(series: Series, apparatusKey: keyof typeof AP
   const errors: string[] = [];
   series.items.forEach((item, idx) => {
     if (item.kind === "throw") {
-      const num = (item.reqTypes || []).includes("twothrow") ? 2 : 1;
+      const num = thrownCount(item);
       if (inHand < num) errors.push(`${idx + 1}番目の投げ：手元の手具が足りません`);
       const t = Math.min(num, inHand);
       inHand -= t;
       inAir += t;
     } else if (item.kind === "skill" && item.isThrow) {
-      if (inHand < 1) errors.push(`${idx + 1}番目の技の最中の投げ：手元の手具が足りません`);
+      const num = thrownCount(item);
+      if (inHand < num) errors.push(`${idx + 1}番目の技の最中の投げ：手元の手具が足りません`);
       else {
-        inHand -= 1;
-        inAir += 1;
+        inHand -= num;
+        inAir += num;
       }
     } else if (item.kind === "catch") {
       const num = item.catchTwo ? 2 : 1;
@@ -771,7 +804,13 @@ export function seriesSignature(series: Series): string {
         return { k: "throw", req: [...(item.reqTypes || [])].sort(), types: [...(item.throwTypes || [])].sort() };
       if (item.kind === "catch")
         return { k: "catch", types: [...(item.catchTypes || [])].sort(), two: !!item.catchTwo };
-      if (item.kind === "skill") return { k: "skill", id: item.skillId, thr: !!item.isThrow };
+      if (item.kind === "skill")
+        return {
+          k: "skill",
+          id: item.skillId,
+          thr: !!item.isThrow,
+          req: [...(item.reqTypes || [])].sort(),
+        };
       if (item.kind === "motion")
         return {
           k: "motion",

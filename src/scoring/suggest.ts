@@ -18,6 +18,7 @@ import {
   skillDef,
   skillFlowAfter,
   skillOptions,
+  canOperateApparatus,
 } from "./constants";
 import { computeScore, type ComputeOptions } from "./score";
 import { SALTO_DIFFICULTY_WEIGHT, SKILL_PICK_WEIGHT } from "./autoTumblings";
@@ -180,7 +181,9 @@ function apparatusOps(list: Series[]): Candidate[] {
   const out: Candidate[] = [];
   list.forEach((ser, sIdx) => {
     ser.items.forEach((item, iIdx) => {
+      // きりもみ系は実施中に手具を操作できないので提案しない
       if (item.kind !== "skill" || !item.skillId || item.hasApparatus) return;
+      if (!canOperateApparatus(item.skillId)) return;
       const items = ser.items.map((x, k) => (k === iIdx ? { ...x, hasApparatus: true } : x));
       out.push({
         kind: "apparatusOp",
