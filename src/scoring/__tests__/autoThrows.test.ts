@@ -36,6 +36,10 @@ import {
   isAutoThrowTemplate,
   withCheneCount,
   CATCH_USE_APPARATUS,
+  RARE_THROW_TUMBLING_BASE_CHANCE,
+  RARE_THROW_TUMBLING_MAX_CHANCE,
+  RARE_THROW_TUMBLING_RISE_SCORE,
+  rareThrowTumblingChance,
   type AutoThrowSpec,
 } from "../autoThrows";
 import { analyzeSeries, checkApparatusFlow } from "../analysis";
@@ -172,10 +176,19 @@ describe("投げ方・受け方の網羅", () => {
     expect(autoCatchStyles("rope").map((c) => c.id)).not.toContain("useapp");
   });
 
-  it("候補にはその手具の投げ方がひととおり出る", () => {
+  it("候補にはその手具の投げ方がひととおり出る（実施例の無い投げ方は要求値次第）", () => {
     APPARATUS_KEYS.forEach((app) => {
       const used = new Set(autoThrowSpecs(app, { random: seeded(13) }).map((s) => s.throwStyle.id));
-      autoThrowStyles(app).forEach((t) => expect(used).toContain(t.id));
+      autoThrowStyles(app)
+        .filter((t) => !t.rare)
+        .forEach((t) => expect(used).toContain(t.id));
+      // 実施例の無い投げ方は、高いDスコアを要求されたときに出る
+      const high = new Set(
+        autoThrowSpecs(app, { random: seeded(13), demandScore: 6.0 }).map((s) => s.throwStyle.id),
+      );
+      autoThrowStyles(app)
+        .filter((t) => t.rare)
+        .forEach((t) => expect(high).toContain(t.id));
     });
   });
 
@@ -756,5 +769,54 @@ describe("ランダム生成への組み込み", () => {
   it("autoThrows: false なら使わない", () => {
     const r = generateRoutine(tumblingOnly(), { apparatus: "stick", autoThrows: false, random: seeded(7) })!;
     expect(r.used.some(isAutoThrowTemplate)).toBe(false);
+  });
+});
+
+describe("実施例の無い投げ受け（要求値が上がるほど出やすい）", () => {
+  it("要求値4.5までは低く、そこから上がって上限で止まる", () => {
+    expect(rareThrowTumblingChance(null)).toBeCloseTo(RARE_THROW_TUMBLING_BASE_CHANCE, 6);
+    expect(rareThrowTumblingChance(2.0)).toBeCloseTo(RARE_THROW_TUMBLING_BASE_CHANCE, 6);
+    expect(rareThrowTumblingChance(RARE_THROW_TUMBLING_RISE_SCORE)).toBeCloseTo(
+      RARE_THROW_TUMBLING_BASE_CHANCE,
+      6,
+    );
+    // そこから上がる
+    expect(rareThrowTumblingChance(5.0)).toBeGreaterThan(rareThrowTumblingChance(4.5));
+    expect(rareThrowTumblingChance(5.5)).toBeGreaterThan(rareThrowTumblingChance(5.0));
+    // 上限で止まる
+    expect(rareThrowTumblingChance(99)).toBeCloseTo(RARE_THROW_TUMBLING_MAX_CHANCE, 6);
+    // 低いうちは「低め」（1割未満）
+    expect(rareThrowTumblingChance(4.5)).toBeLessThan(0.1);
+  });
+
+  it("左手の視野外投げはスティックだけの稀な投げ方", () => {
+    const rare = (a: ApparatusKey) => autoThrowStyles(a).filter((t) => t.rare);
+    expect(rare("stick")).toHaveLength(1);
+    expect(rare("stick")[0].reqTypes).toEqual([LEFT_HAND_TAG]);
+    expect(rare("stick")[0].throwTypes).toEqual([NO_VIEW_TAG]);
+    // 左手投げが必須投げでない手具には出ない
+    expect(rare("clubs")).toEqual([]);
+    expect(rare("ring")).toEqual([]);
+    expect(rare("rope")).toEqual([]);
+  });
+
+  it("要求値が上がるほど候補に出る（連続投げの1回目・2回目には使わない）", () => {
+    const share = (demand: number | null) => {
+      let n = 0;
+      let rare = 0;
+      for (let seed = 0; seed < 40; seed++)
+        for (const spec of autoThrowSpecs("stick", { random: seeded(seed), demandScore: demand })) {
+          n += 1;
+          if (spec.throwStyle.rare) rare += 1;
+          // 連続投げの前後の投げ方には使わない
+          expect(spec.leadThrowStyle?.rare).toBeFalsy();
+          expect(spec.trailThrowStyle?.rare).toBeFalsy();
+        }
+      return rare / n;
+    };
+    const low = share(4.5);
+    const high = share(5.5);
+    expect(low).toBeLessThan(0.02);
+    expect(high).toBeGreaterThan(low * 3);
   });
 });

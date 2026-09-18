@@ -1453,3 +1453,64 @@ describe("同じ難度に到達する組み方の優先度", () => {
     expect(readTumblingShape(S({ kind: "throw" }, { kind: "catch" }))).toBeNull();
   });
 });
+
+describe("通常の投げタンの背面キャッチ・左手投げ（実施例の無い形）", () => {
+  const plain = (app: "stick" | "clubs", demand: number | null) => {
+    let n = 0;
+    let back = 0;
+    let left = 0;
+    for (let seed = 0; seed < 40; seed++)
+      for (const t of autoTumblingTemplates(app, { random: seeded(seed), demandScore: demand })) {
+        if (!t.spec.pattern.throwCatch || t.spec.pattern.throwInSkill) continue;
+        n += 1;
+        const items = t.series.items;
+        const c = items.find((x) => x.kind === "catch");
+        const th = items.find((x) => x.kind === "throw");
+        if (c?.kind === "catch" && (c.catchTypes || []).includes("noview")) back += 1;
+        if (th?.kind === "throw" && (th.reqTypes || []).includes("lefthand")) left += 1;
+      }
+    return { n, back: back / n, left: left / n };
+  };
+
+  it("要求値が低いうちは低く、4.5から上がる", () => {
+    const low = plain("stick", 4.5);
+    const high = plain("stick", 5.5);
+    expect(low.n).toBeGreaterThan(0);
+    // 低いうちは1割未満
+    expect(low.back).toBeLessThan(0.1);
+    expect(low.left).toBeLessThan(0.1);
+    // 要求値が上がると増える
+    expect(high.back).toBeGreaterThan(low.back * 3);
+    expect(high.left).toBeGreaterThan(low.left * 3);
+  });
+
+  it("左手投げはスティックだけ（クラブは二つ投げ）", () => {
+    expect(plain("clubs", 5.5).left).toBe(0);
+  });
+
+  it("技の最中に投げる形には付けない（通常の投げタンだけ）", () => {
+    for (let seed = 0; seed < 40; seed++)
+      for (const t of autoTumblingTemplates("stick", { random: seeded(seed), demandScore: 6.0 })) {
+        if (!t.spec.pattern.throwInSkill) continue;
+        expect(t.spec.draws.backCatch).toBe(false);
+        expect(t.spec.draws.leftHandThrow).toBe(false);
+      }
+  });
+
+  it("背面キャッチは連続投げが続く形・二つ投げでは実施しない", () => {
+    for (const app of ["stick", "clubs", "ring", "rope"] as const)
+      for (let seed = 0; seed < 40; seed++)
+        for (const t of autoTumblingTemplates(app, { random: seeded(seed), demandScore: 6.0 })) {
+          const items = t.series.items;
+          items.forEach((item, i) => {
+            if (item.kind !== "catch" || !(item.catchTypes || []).includes("noview")) return;
+            // 視野外で受けてそのまま投げることはできない
+            expect(items.slice(i + 1).some((x) => x.kind === "throw")).toBe(false);
+            // 2つ同時キャッチを視野外で受けることもしない
+            expect(item.catchTwo).toBeFalsy();
+          });
+          // 手具の流れが破綻しない
+          expect(checkApparatusFlow(t.series, app)).toEqual([]);
+        }
+  });
+});

@@ -19,7 +19,13 @@
 // =====================================================================
 
 import { cycler, pickWeighted, shuffled } from "./pick";
-import { APPARATUS_USE, DIFF_VALUE, HANDS_TYPES, REQUIRED_THROW_OPTIONS } from "./constants";
+import {
+  APPARATUS_USE,
+  DIFF_VALUE,
+  HANDS_TYPES,
+  REQUIRED_THROW_OPTIONS,
+  hasLeftHandThrow,
+} from "./constants";
 import { newTemplateId, type SeriesTemplate } from "./templates";
 import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
@@ -134,6 +140,12 @@ export interface AutoThrowStyle {
   throwTypes?: string[];
   /** 手具を2つ投げるか（キャッチも2つ同時になる） */
   two?: boolean;
+  /**
+   * 実施例の無い投げ方（左手投げ＋視野外）。物理的には実施できるので候補には残すが、
+   * **要求するDスコアが上がるまで出さない**（`rareThrowTumblingChance`）。
+   * 連続投げの1回目・2回目（`leadPair` / `trailPair`）には使わない。
+   */
+  rare?: boolean;
 }
 
 /** 自動生成で使う受け方 */
@@ -158,6 +170,16 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
     { id: "other", name: "その他の投げ", throwTypes: ["other"] },
   ];
   if (APPARATUS_USE[apparatus]) styles.push({ id: "useapp", name: "手具を使った投げ", throwTypes: ["useapp"] });
+  // 左手投げを視野外（背面）で投げる形。物理的には実施できるが競技での例が無いので
+  // `rare` を立てて、要求するDスコアが上がるまで出さない
+  if (hasLeftHandThrow(apparatus))
+    styles.push({
+      id: `${LEFT_HAND_TAG}+${NO_VIEW_TAG}`,
+      name: "左手の視野外投げ",
+      reqTypes: [LEFT_HAND_TAG],
+      throwTypes: [NO_VIEW_TAG],
+      rare: true,
+    });
   return styles;
 }
 
@@ -247,6 +269,29 @@ export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
 
 /** 左手投げの必須投げのid */
 export const LEFT_HAND_TAG = "lefthand";
+
+/**
+ * **実施例の無い投げ受け**を出す確率。投げ（`AutoThrowStyle.rare` ＝ 左手投げ＋視野外）と
+ * 投げタン（背面キャッチ・左手投げ）で共通に使う。
+ * どれも物理的には実施できるが競技での例が無いので、頻度は低くしておき、
+ * **要求するDスコア（`minScore`）が上がるほど上げる**：高いDを求められた構成では、
+ * 点数のために実施例の無い形にも手を出す（`HARD_THROW_FREE_SCORE` の「要求値を超えるまで
+ * 抑える」の逆向き）。
+ *  - 要求値が `RARE_THROW_TUMBLING_RISE_SCORE`（4.5）以下なら `RARE_THROW_TUMBLING_BASE_CHANCE`
+ *  - そこから1点ごとに `RARE_THROW_TUMBLING_RISE_PER_POINT` 増え、
+ *    `RARE_THROW_TUMBLING_MAX_CHANCE` で止まる
+ */
+export const RARE_THROW_TUMBLING_BASE_CHANCE = 0.03;
+export const RARE_THROW_TUMBLING_RISE_SCORE = 4.5;
+export const RARE_THROW_TUMBLING_RISE_PER_POINT = 0.3;
+export const RARE_THROW_TUMBLING_MAX_CHANCE = 0.4;
+export function rareThrowTumblingChance(minScore?: number | null): number {
+  const over = Math.max(0, (minScore ?? 0) - RARE_THROW_TUMBLING_RISE_SCORE);
+  return Math.min(
+    RARE_THROW_TUMBLING_MAX_CHANCE,
+    RARE_THROW_TUMBLING_BASE_CHANCE + over * RARE_THROW_TUMBLING_RISE_PER_POINT,
+  );
+}
 /** 左手投げを**視野外で受ける**確率はかなり低い */
 export const LEFT_HAND_NO_VIEW_CATCH_WEIGHT = 0.1;
 
@@ -471,6 +516,11 @@ export interface AutoThrowOptions {
   future?: FutureLevel;
   /** 作る候補の数の上限（既定＝形 × 投げ方 の全組み合わせ） */
   limit?: number;
+  /**
+   * **要求するDスコアの下限**（`minScore`）。実施例の無い投げ方（`AutoThrowStyle.rare`）は
+   * 要求値が上がるほど出やすくする（`rareThrowTumblingChance`）。
+   */
+  demandScore?: number | null;
 }
 
 /**
@@ -481,10 +531,14 @@ export interface AutoThrowOptions {
 export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions = {}): AutoThrowSpec[] {
   const rand = opts.random ?? Math.random;
   const throwStyles = autoThrowStyles(apparatus);
+  // 実施例の無い投げ方（左手投げ＋視野外）は、要求するDスコアが上がるほど残す
+  const rareChance = rareThrowTumblingChance(opts.demandScore);
   const combos = shuffled(
-    AUTO_THROW_PATTERNS.filter((pattern) => throwPatternAllowed(pattern, opts.future ?? null)).flatMap(
-      (pattern) => throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
-    ),
+    AUTO_THROW_PATTERNS.filter((pattern) => throwPatternAllowed(pattern, opts.future ?? null))
+      .flatMap((pattern) =>
+        throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
+      )
+      .filter(({ throwStyle }) => !throwStyle.rare || rand() < rareChance),
     rand,
   );
   const limit = Math.max(0, opts.limit ?? combos.length);
@@ -516,12 +570,12 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     pickWeighted(autoHandsVariants(), rand, (h) => handsWeight(h) * cheneCountWeight(h, cheneCount));
   // 先に足す投げ受けの投げ方。二つ投げは2つ同時キャッチで受ける形になるので使わない
   const nextLeadThrow = cycler(
-    throwStyles.filter((t) => !t.two),
+    throwStyles.filter((t) => !t.two && !t.rare),
     rand,
   );
   // あとに足す投げ受けの投げ方（連続投げの2回目）。手以外の投げは2回目には実施できない
   const nextTrailThrow = cycler(
-    throwStyles.filter((t) => t.id !== NON_HAND_TAG),
+    throwStyles.filter((t) => t.id !== NON_HAND_TAG && !t.rare),
     rand,
   );
   // シェネの回数は形ごとに配る（その形で取り得る回数がひととおり出るように）

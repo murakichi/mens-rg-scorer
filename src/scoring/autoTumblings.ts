@@ -15,9 +15,21 @@
 // 組み立てたシリーズは `tumblingFlowErrors` で入力画面の制約を検算できる。
 // =====================================================================
 
-import { ROUNDOFF_SKILL_ID, TWO_THROW_TAG, skillDef, skillDifficulty } from "./constants";
+import {
+  LEFT_HAND_THROW_TAG,
+  ROUNDOFF_SKILL_ID,
+  TWO_THROW_TAG,
+  hasLeftHandThrow,
+  skillDef,
+  skillDifficulty,
+} from "./constants";
 import { calcTumblingDifficulty, needsRoundoffBefore, prevSkillId, stripForApparatus } from "./analysis";
-import { CATCH_USE_APPARATUS, type AutoThrowStyle } from "./autoThrows";
+import {
+  CATCH_USE_APPARATUS,
+  NO_VIEW_TAG,
+  rareThrowTumblingChance,
+  type AutoThrowStyle,
+} from "./autoThrows";
 import { cycler, pickDifferent, shuffled } from "./pick";
 import {
   AUTO_TUMBLING_PATTERNS,
@@ -87,6 +99,16 @@ export interface TumblingDraws {
   pressCatch: boolean;
   /** 投げタンの投げを二つ投げにするか（クラブ・リングで、投げてから跳ぶ形だけ） */
   twoThrow: boolean;
+  /**
+   * 投げタンの投げを**左手投げ**にするか（スティックで、投げてから跳ぶ形だけ）。
+   * 実施例が無い形なので `rareThrowTumblingChance` の低い確率で引く。
+   */
+  leftHandThrow: boolean;
+  /**
+   * 投げタンの受けを**背面キャッチ（視野外のキャッチ）**にするか（投げてから跳ぶ形だけ）。
+   * こちらも実施例が無い形なので `rareThrowTumblingChance` で引く。
+   */
+  backCatch: boolean;
   /** 投げタンのキャッチのあとに続ける投げ受けの投げ方（未指定なら続けない） */
   secondThrow?: AutoThrowStyle;
 }
@@ -162,8 +184,15 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   const { pattern, draws } = spec;
   const items: Item[] = [];
   // 技の最中に投げる形では、先頭に投げを置かず最後の宙返りに投げを付ける
-  if (pattern.throwCatch && !pattern.throwInSkill)
-    items.push({ kind: "throw", ...(draws.twoThrow ? { reqTypes: [TWO_THROW_TAG] } : {}) });
+  if (pattern.throwCatch && !pattern.throwInSkill) {
+    // 必須投げ（二つ投げ／左手投げ）はどちらか一方だけ（手具が違うので同時には起きない）
+    const reqTypes = draws.twoThrow
+      ? [TWO_THROW_TAG]
+      : draws.leftHandThrow
+        ? [LEFT_HAND_THROW_TAG]
+        : [];
+    items.push({ kind: "throw", ...(reqTypes.length > 0 ? { reqTypes } : {}) });
+  }
   spec.entry.forEach((id) => items.push(skillItem(id)));
   const saltos = spec.saltoIds.slice(0, spec.saltoCount);
   saltos.forEach((id, i) => {
@@ -189,17 +218,23 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   // 投げ受けの着地は前転でつなぐ（側宙の後は前転を実施しないので、そのまま受ける）
   const rolled = !!pattern.rollFinish && !noRollAfter(saltos[saltos.length - 1]);
   if (rolled) items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
-  // 転がり・前転のあとは手具を使ったキャッチ（押さえつけ）で受けるのが定番
-  if (pattern.throwCatch)
+  // 転がり・前転のあとは手具を使ったキャッチ（押さえつけ）で受けるのが定番。
+  // 背面キャッチ（視野外）を引いたときはそちらで受ける（押さえつけとは同時に実施しない）
+  if (pattern.throwCatch) {
+    const press = rolled && draws.pressCatch && !draws.twoThrow && !draws.secondThrow;
+    // 背面キャッチ（視野外）も、連続投げが続く形では実施できない
+    // （視野外で受けてそのまま投げられない＝`NO_THROW_AFTER_CATCH_TAGS`）。
+    // 2つ同時キャッチを視野外で受けることもしない
+    const back = draws.backCatch && !draws.twoThrow && !draws.secondThrow;
+    const catchTypes = back ? [NO_VIEW_TAG] : press ? [CATCH_USE_APPARATUS] : [];
     items.push({
       kind: "catch",
       // 二つ投げは2つとも空中にあるので、押さえつけては受けられない（2つ同時キャッチで受ける）。
       // 連続投げを続ける形でも押さえつけない（押さえた状態からは投げられない）
-      ...(rolled && draws.pressCatch && !draws.twoThrow && !draws.secondThrow
-        ? { catchTypes: [CATCH_USE_APPARATUS] }
-        : {}),
+      ...(catchTypes.length > 0 ? { catchTypes } : {}),
       ...(draws.twoThrow ? { catchTwo: true } : {}),
     });
+  }
   // 投げタンのキャッチのあとに連続投げを続ける形
   if (pattern.throwCatch && draws.secondThrow) {
     const style = draws.secondThrow;
@@ -374,6 +409,13 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           : undefined;
       // クラブ・リングは投げタンの投げを二つ投げにすることがある（投げてから跳ぶ形だけ）
       const twoThrow = canTwoThrowTumbling(apparatus, pattern) && rand() < TWO_THROW_IN_TUMBLING_CHANCE;
+      // 実施例の無い投げ受け（左手投げ・背面キャッチ）は要求値が上がるほど出やすい。
+      // どちらも「投げてから跳ぶ」通常の投げタンだけ
+      const rareChance = rareThrowTumblingChance(opts.demandScore);
+      const plainThrowTum = !!pattern.throwCatch && !pattern.throwInSkill;
+      const leftHandThrow =
+        plainThrowTum && !!apparatus && hasLeftHandThrow(apparatus) && !twoThrow && rand() < rareChance;
+      const backCatch = plainThrowTum && rand() < rareChance;
       specs.push({
         pattern,
         saltoCount,
@@ -385,6 +427,8 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           ...ends,
           pressCatch: rand() < ROLL_FINISH_PRESS_CATCH_CHANCE,
           twoThrow,
+          leftHandThrow,
+          backCatch,
           ...(secondThrow ? { secondThrow } : {}),
         },
       });
@@ -445,6 +489,11 @@ export interface AutoTumblingOptions {
    * （`backwardEndChance`）。未指定＝上限なしは難度を狙いきる構成として扱う。
    */
   targetScore?: number | null;
+  /**
+   * **要求するDスコアの下限**（`minScore`）。実施例の無い投げ受け（背面キャッチ・左手投げ）は
+   * 要求値が上がるほど出やすくする（`rareThrowTumblingChance`）。
+   */
+  demandScore?: number | null;
   /**
    * 使ってよい転回技のid。登録テンプレートに出てくる技を渡すと、その選手が
    * 実際に実施している技だけで組み立てる（技そのものではなく**組み合わせ**を自動化する）。
