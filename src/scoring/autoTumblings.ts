@@ -22,6 +22,7 @@ import {
   hasLeftHandThrow,
   skillDef,
   skillDifficulty,
+  canOperateApparatus,
 } from "./constants";
 import { calcTumblingDifficulty, needsRoundoffBefore, prevSkillId, stripForApparatus } from "./analysis";
 import {
@@ -136,7 +137,8 @@ type SkillItem = Extract<Item, { kind: "skill" }>;
 const skillItem = (skillId: string, isThrow = false): SkillItem => ({
   kind: "skill",
   skillId,
-  hasApparatus: true,
+  // 手具操作はこのあと `applyApparatusOps` が付け直す（きりもみ系には付かない）
+  hasApparatus: canOperateApparatus(skillId),
   isThrow,
 });
 
@@ -157,10 +159,13 @@ function applyApparatusOps(items: Item[], pattern: AutoTumblingPattern, junior: 
     if (it.kind === "skill") it.hasApparatus = false;
   });
   const isA = (id: string) => skillDifficulty(id, junior) === "A";
-  const saltoIdx = skills.filter(({ it }) => it.kind === "skill" && !isA(it.skillId));
+  // きりもみ系は実施中に手具を操作できないので、操作を付ける位置の候補から外す
+  const saltoIdx = skills.filter(
+    ({ it }) => it.kind === "skill" && !isA(it.skillId) && canOperateApparatus(it.skillId),
+  );
   if (saltoIdx.length === 0) return;
   const setOp = (item: Item | undefined) => {
-    if (item?.kind === "skill") item.hasApparatus = true;
+    if (item?.kind === "skill" && canOperateApparatus(item.skillId)) item.hasApparatus = true;
   };
   const ids = saltoIdx.map(({ it }) => (it.kind === "skill" ? it.skillId : ""));
   const isE = calcTumblingDifficulty(ids, !!pattern.throwCatch, junior) === "E";

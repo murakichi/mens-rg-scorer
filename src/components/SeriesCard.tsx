@@ -14,6 +14,7 @@ import {
   skillBlockedReason,
   skillOptionGroups,
   skillDifficulty,
+  canOperateApparatus,
   hasTwoThrow,
   motionOptionsFor,
   motionOptionGroupsFor,
@@ -329,8 +330,9 @@ function ItemEditor({
             </select>
           </div>
         )}
-        {/* 投げている間は手元に手具が無いので操作できない */}
-        {!handsEmpty && (
+        {/* 投げている間は手元に手具が無いので操作できない。
+            きりもみ系は首から背中にかけて着地するので、実施中に操作できない */}
+        {!handsEmpty && canOperateApparatus(item.skillId) && (
           <label className="check">
             <input
               type="checkbox"

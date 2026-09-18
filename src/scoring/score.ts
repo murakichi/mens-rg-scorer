@@ -41,6 +41,7 @@ import {
   skillDef,
   ART_DEDUCTION_ITEMS,
   clampArtDeduction,
+  canOperateApparatus,
 } from "./constants";
 import {
   analyzeSeries,
@@ -373,11 +374,14 @@ export function computeScore(
 
     let appOp = 0;
     if (!isDup) {
-      const ops = ser.items.filter((item) => item.kind === "skill" && item.hasApparatus).length;
+      const ops = ser.items.filter(
+        (item) => item.kind === "skill" && item.hasApparatus && canOperateApparatus(item.skillId),
+      ).length;
       // 「投げ**または**2回以上の操作」（§3.5.5.5(3)）。手具を保持した技の最中に投げた場合は
       // 操作1回でも条件を満たす（手具が1つの種目では投げた後は保持できないので、この形になる）
       const heldThrow = ser.items.some(
-        (item) => item.kind === "skill" && item.hasApparatus && item.isThrow,
+        (item) =>
+          item.kind === "skill" && item.hasApparatus && item.isThrow && canOperateApparatus(item.skillId),
       );
       if (ops >= 2 || heldThrow) {
         const maxD = a.units.reduce(
@@ -420,9 +424,12 @@ export function computeScore(
 
     let noApp = 0;
     if (!isDup && a.throwCount === 0) {
-      const skills = ser.items.filter(
-        (item): item is Extract<typeof item, { kind: "skill" }> => item.kind === "skill" && !!item.skillId,
-      );
+      const skills = ser.items
+        .filter(
+          (item): item is Extract<typeof item, { kind: "skill" }> => item.kind === "skill" && !!item.skillId,
+        )
+        // きりもみ系は実施中に手具を操作できないので、入力に残っていても操作として数えない
+        .map((item) => ({ ...item, hasApparatus: !!item.hasApparatus && canOperateApparatus(item.skillId) }));
       const hasT = a.units.some((u) => u.type === "tumbling");
       if (hasT && skills.length > 0) {
         const anyApp = skills.some((s) => s.hasApparatus);

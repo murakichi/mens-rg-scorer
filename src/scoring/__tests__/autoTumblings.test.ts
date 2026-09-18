@@ -101,6 +101,7 @@ import { BASIC_LEVEL_MAX_SCORE, DEFAULT_MAX_AUTO_TUMBLINGS, generateRoutine } fr
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
 import { unseenShape } from "../unseenShapes";
+import { canOperateApparatus } from "../constants";
 import type { Item, Series } from "../types";
 
 /** 決まった順に進む疑似乱数（テストを安定させる） */
@@ -663,6 +664,33 @@ describe("つなぎ技", () => {
     const basic = endsWith({ basicLevel: true });
     expect(basic.rare).toBeGreaterThanOrEqual(0);
   }, 60_000);
+
+  it("きりもみ系には手具操作を付けない", () => {
+    for (const app of ["stick", "clubs", "ring", "rope"] as const)
+      for (let seed = 0; seed < 30; seed++)
+        for (const t of autoTumblingTemplates(app, { random: seeded(seed) }))
+          t.series.items.forEach((it) => {
+            if (it.kind === "skill" && !canOperateApparatus(it.skillId)) expect(it.hasApparatus).toBe(false);
+          });
+  });
+
+  it("首・背中から着地する技（きりもみ・とび前転・ダイビング）の後に前転は実施しない", () => {
+    // 連続を終える技はどれも前転でつなげない（`endsChain` と同じ集合）
+    CHAIN_END_SKILLS.forEach((id) => expect(noRollAfter(id)).toBe(true));
+    // 投げタンの締めの前転（`rollFinish`）でも付かない
+    const series = buildAutoTumblingSeries({
+      pattern: pattern("chainThrowInSkill"),
+      saltoCount: 2,
+      entry: [],
+      saltoIds: ["c_back15", "b_kirimomi"],
+      connectId: "",
+      draws: noDraws(),
+    });
+    const names = series.items.map((it) =>
+      it.kind === "motion" ? it.motionId : it.kind === "skill" ? it.skillId : it.kind,
+    );
+    expect(names).toEqual(["a_roundoff", "c_back15", "b_kirimomi", "catch"]);
+  });
 
   it("側宙・後ろ向きで終わる後方宙返りの後に前転は実施しない", () => {
     expect(noRollAfter("b_sidesalto")).toBe(true);

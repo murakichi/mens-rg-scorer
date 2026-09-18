@@ -300,18 +300,24 @@ describe("あとに投げ受けを1本足す形（連続投げの1回目で難�
     });
   });
 
-  it("2回目の投げには手以外を使わず、受け方はそのキャッチから投げに繋げるものだけ", () => {
-    // そのキャッチのあとに投げが続く形として扱う（視野外・手以外のキャッチを外す）
+  it("2回目の投げには手以外を使わず、受け方も投げに繋げるものだけ", () => {
     trail().forEach((pattern) => {
       expect(throwsAfterCatch(pattern)).toBe(true);
       const ids = catchStylesForPattern("ring", false, pattern).map((c) => c.id);
-      expect(ids).not.toContain(NO_VIEW_TAG);
+      // 無条件に投げに繋げない受け方（手以外・押さえつけ）は外れる
       expect(ids).not.toContain(NON_HAND_TAG);
+      expect(ids).not.toContain(CATCH_USE_APPARATUS);
+      // 視野外の受けは残る（視野外に投げなければ続けられる。組み合わせは投げ方の側で外す）
+      expect(ids).toContain(NO_VIEW_TAG);
     });
-    // 実際に配られる2回目の投げ方に手以外は出ない
+    // 実際に配られる2回目の投げ方に手以外は出ず、視野外で受けた回は視野外に投げない
     const specs = autoThrowSpecs("rope", { random: seeded(5) }).filter((sp) => sp.pattern.trailPair);
     expect(specs.length).toBeGreaterThan(0);
-    specs.forEach((sp) => expect(sp.trailThrowStyle?.id).not.toBe(NON_HAND_TAG));
+    specs.forEach((sp) => {
+      expect(sp.trailThrowStyle?.id).not.toBe(NON_HAND_TAG);
+      if ((sp.catchStyle.catchTypes || []).includes(NO_VIEW_TAG))
+        expect(sp.trailThrowStyle?.throwTypes || []).not.toContain(NO_VIEW_TAG);
+    });
   });
 
   it("最後の投げ受けは手具ごとの締めの受け方にもなる（クラブの押さえつけ・ロープの足）", () => {

@@ -28,6 +28,7 @@ import {
   artDeductionItem,
   TUM_VARIETY_ITEM_ID,
   TUM_VARIETY_DEDUCTION_STEP,
+  canOperateApparatus,
 } from "./constants";
 import type {
   ApparatusKey,
@@ -496,7 +497,12 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
     } else if (item.kind === "skill") {
       if (!item.skillId) return;
       if (!buf) buf = newBuf();
-      buf.skills.push({ skillId: item.skillId, hasApparatus: !!item.hasApparatus, isThrow: !!item.isThrow });
+      buf.skills.push({
+        skillId: item.skillId,
+        // きりもみ系は手具操作ができないので、入力に残っていても操作として数えない
+        hasApparatus: !!item.hasApparatus && canOperateApparatus(item.skillId),
+        isThrow: !!item.isThrow,
+      });
     } else if (item.kind === "motion") {
       if (!buf) buf = newBuf();
       const m = motionDef(item.motionId, junior, future);

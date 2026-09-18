@@ -78,12 +78,14 @@ export const onlySideSaltoAfter = (id: string): boolean => ONLY_SIDE_SALTO_AFTER
  *  - 側宙の後の前転
  *  - 転宙の後の前転（転宙はそのまま終わるか側宙に続けるかだけ）
  *  - 後ろ向きで終わる後方宙返りの後の前転
+ *  - 連続を終える技（`CHAIN_END_SKILLS`）の後の前転：とび前転・きりもみは首から背中にかけて、
+ *    ダイビングは頭から着地するので、前転でつなぐことはできない
  * 投げ受けはそのままキャッチする。
  */
 export const NO_ROLL_AFTER_SKILLS: string[] = [SIDE_SALTO_ID, TENCHU_SKILL_ID];
 
 export const noRollAfter = (id: string): boolean =>
-  NO_ROLL_AFTER_SKILLS.includes(id) || endsFacingBackward(id);
+  NO_ROLL_AFTER_SKILLS.includes(id) || endsFacingBackward(id) || endsChain(id);
 
 /**
  * シリーズの最後に実施することが**稀**な技。上級者は後方宙返り半ひねりで終わらず、
