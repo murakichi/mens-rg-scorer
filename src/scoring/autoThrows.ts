@@ -272,6 +272,21 @@ export const COMBINED_CATCH_WEIGHT = 0.1;
 export const NO_VIEW_USE_APPARATUS_WEIGHT: Partial<Record<ApparatusKey, number>> = { clubs: 0.3 };
 
 /**
+ * **前転3回（縦3動作）は珍しい寄りの技**。候補に混ぜるかどうかを1回の抽選で決める
+ * （形ごとに引くと投げ方の数だけ生き残って、結局貪欲法が拾ってしまう）。
+ *
+ * ただし縦3動作は徒手だけでE難度に届く唯一の形なので、**要求するDスコア**
+ * （`demandScore`＝`minScore`）が `VERTICAL_THREE_FREE_SCORE` 以上のときは下げない
+ * （`HARD_THROW_FREE_SCORE` と同じ考え方）。珍しさのつまみも通す。
+ */
+export const VERTICAL_THREE_CHANCE = 0.25;
+
+export const VERTICAL_THREE_FREE_SCORE = 4.5;
+
+export const verticalThreeChance = (demandScore?: number | null): number =>
+  (demandScore ?? 0) >= VERTICAL_THREE_FREE_SCORE ? 1 : VERTICAL_THREE_CHANCE;
+
+/**
  * 縦3動作（前転3回）の形で、**手具を使ったキャッチ以外**の受け方を引く重み。
  * 前転3回から受けるのは手具で押さえつけるのが主流。
  */
@@ -560,8 +575,14 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   const chance = (p: number) => rarityChance(p, opts.rarity);
   // 実施例の無い投げ方（左手投げ＋視野外）は、要求するDスコアが上がるほど残す
   const rareChance = chance(unseenShapeChance("leftHandNoViewThrow", opts.demandScore));
+  // 前転3回（縦3動作）は珍しい寄りの技。候補に入れるかどうかは1回だけ引く
+  const keepVerticalThree = rand() < chance(verticalThreeChance(opts.demandScore));
   const combos = shuffled(
-    AUTO_THROW_PATTERNS.filter((pattern) => throwPatternAllowed(pattern, opts.future ?? null))
+    AUTO_THROW_PATTERNS.filter(
+      (pattern) =>
+        throwPatternAllowed(pattern, opts.future ?? null) &&
+        (!pattern.verticalThree || keepVerticalThree),
+    )
       .flatMap((pattern) =>
         throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
       )

@@ -82,14 +82,6 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
 
   return (
     <>
-      <SkillWeightModal
-        open={weightOpen}
-        store={skillWeights}
-        junior={junior}
-        future={future}
-        onChange={changeWeights}
-        onClose={() => setWeightOpen(false)}
-      />
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
@@ -255,6 +247,14 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
         </div>
       </div>
     </div>
+      <SkillWeightModal
+        open={weightOpen}
+        store={skillWeights}
+        junior={junior}
+        future={future}
+        onChange={changeWeights}
+        onClose={() => setWeightOpen(false)}
+      />
     </>
   );
 }

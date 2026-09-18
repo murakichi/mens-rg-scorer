@@ -143,8 +143,10 @@ export const THROW_IN_SKILL_ROUNDOFF_WEIGHT = 3;
 
 /**
  * ロンダートから入る（＝後方系の宙返りから始める）ことを優先する重み。投げタンに限らず
- * 通常のタンブリングもロンダート入りがいちばん多いが、狙うDスコアが上がるほど前方系・側方系から
- * 直接入る形が増えるので、目標Dスコアで減衰させる（1点ごとに `ROUNDOFF_ENTRY_DECAY` 倍、1未満にはしない）。
+ * 通常のタンブリングもロンダート入りがいちばん多い。**上乗せの優先**は目標Dスコアで減衰させる
+ * （1点ごとに `ROUNDOFF_ENTRY_DECAY` 倍、1未満にはしない）：低いDスコアでは組み方の幅が狭く、
+ * ロンダート→宙返り1本がほぼ唯一の形になるため。
+ * 高いDスコアで前方系入りが増えないようにするのはこの減衰ではなく `forwardEntryWeight` の役割。
  * 低いDスコアでつなぎ技を満たす形（ロンダート→宙返り→つなぎ→宙返り）はとくに多いので、
  * `ROUNDOFF_ENTRY_CONNECT_MAX_SCORE` 未満のつなぎの形ではさらに優先する。
  * 上限を指定しない＝難度を狙いきる構成では優先しない。
@@ -163,6 +165,49 @@ export function roundoffEntryWeight(targetScore?: number | null, connect = false
   const base = ROUNDOFF_ENTRY_WEIGHT * (lowConnect ? ROUNDOFF_ENTRY_CONNECT_BOOST : 1);
   return Math.max(1, base * ROUNDOFF_ENTRY_DECAY ** Math.max(0, targetScore));
 }
+
+/**
+ * **前方系から入る通常のタンブリング**（ロンダートを使わず、助走から前方系の宙返り、または
+ * ハンドスプリングから入る形）は、Dスコア0〜1点台の初心者でしか見かけない。
+ * 目標Dスコアが `FORWARD_ENTRY_FREE_SCORE` を超えたら下げる。
+ *
+ * ただし**つなぎの形**（前宙→ロンダート→後方系）は中級者が普通に実施するので、
+ * `FORWARD_ENTRY_CONNECT_FREE_SCORE` までは下げない。禁止はしない（重みだけ）。
+ * 投げタン（`pattern.throwCatch`）は対象外：投げてから跳ぶ形は手具の滞空時間の都合で
+ * 前方系しか実施できず、ここで下げる意味がない。
+ */
+export const FORWARD_ENTRY_FREE_SCORE = 2.0;
+
+export const FORWARD_ENTRY_CONNECT_FREE_SCORE = 3.5;
+
+export const FORWARD_ENTRY_WEIGHT = 0.2;
+
+export function forwardEntryWeight(targetScore?: number | null, connect = false): number {
+  const free = connect ? FORWARD_ENTRY_CONNECT_FREE_SCORE : FORWARD_ENTRY_FREE_SCORE;
+  // 上限を指定しない＝難度を狙いきる構成なので、初心者の形は下げる
+  if (targetScore != null && targetScore <= free) return 1;
+  return FORWARD_ENTRY_WEIGHT;
+}
+
+/**
+ * **切り返し**（後ろ向きで終わる宙返り→前方系）**からの側宙**は少し珍しい寄りの並び。
+ * 禁止はせず、その位置の側宙だけ下げる（`ROLL_AFTER_SWITCH_CHANCE` と同じ「切り返し」の定義）。
+ */
+export const SWITCH_SIDE_SALTO_WEIGHT = 0.3;
+
+/**
+ * つなぎ技のあとの宙返りに**後方のハーフ（半ひねり）**を使うことは、つなぎの**前**の
+ * 宙返りで使うことに比べて少ない。禁止はしない。
+ * 技を並べず `twist` で判定するのは、1つ下げると隣が繰り上がるのを防ぐため
+ * （`THROW_IN_TWIST_SALTO_WEIGHT` と同じ理由）。
+ */
+export const CONNECT_FINISH_HALF_WEIGHT = 0.3;
+
+/** 後方の半ひねり（ハーフ）か */
+export const isBackHalfTwistSalto = (id: string): boolean => {
+  const twist = skillDef(id)?.twist;
+  return !!twist && twist.base === "back" && twist.twist === 0.5;
+};
 
 /**
  * 側宙の実施中に投げる構成の重み。クラブでの練習動画はあるが、実戦で使われた記録は

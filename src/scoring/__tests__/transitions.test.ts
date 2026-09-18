@@ -43,6 +43,9 @@ import {
   harderThanRatedWeight,
   maxSkillDiffValue,
   saltoWeights,
+  SWITCH_SIDE_SALTO_WEIGHT,
+  CONNECT_FINISH_HALF_WEIGHT,
+  isBackHalfTwistSalto,
   SIDE_SALTO_ID,
   TENCHU_SKILL_ID,
   THROW_AFTER_CONNECT_SALTOS,
@@ -245,6 +248,44 @@ describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
     const rise = find(afterB, id);
     const flat = find(afterC, id);
     expect(rise && flat && rise.weight).toBeLessThan(flat?.weight ?? 0);
+  });
+
+  it("切り返しからの側宙は少し珍しい寄り（その位置の辺だけ重みが下がる）", () => {
+    const tr = table("chain");
+    // 切り返し＝後ろ向きで終わる宙返り（後方伸身2回ひねり＝整数ひねり）→ 前方系（前宙）
+    const afterSwitch = find(tr.next("b_front", "d_backlay2twist"), SIDE_SALTO_ID);
+    // 同じ前宙でも、その前が無い／前向きで終わる技なら下げない
+    const plain = find(tr.next("b_front"), SIDE_SALTO_ID);
+    expect(afterSwitch && plain).toBeTruthy();
+    expect(afterSwitch!.weight).toBeCloseTo(plain!.weight * SWITCH_SIDE_SALTO_WEIGHT);
+    expect(SWITCH_SIDE_SALTO_WEIGHT).toBeLessThan(1);
+    // 側宙以外はその位置でも下がらない
+    const other = "b_kirimomi";
+    const o1 = find(tr.next("b_front", "d_backlay2twist"), other);
+    const o2 = find(tr.next("b_front"), other);
+    if (o1 && o2) expect(o1.weight).toBeCloseTo(o2.weight);
+  });
+
+  it("つなぎのあとの宙返りにハーフ（後方の半ひねり）を使う辺は重みが下がる", () => {
+    expect(isBackHalfTwistSalto("b_backhalf")).toBe(true);
+    expect(isBackHalfTwistSalto("b_backlayhalf")).toBe(true);
+    // 1回半ひねりは「ハーフ」ではない（下げる対象は半ひねりだけ）
+    expect(isBackHalfTwistSalto("c_back15")).toBe(false);
+    expect(isBackHalfTwistSalto("b_front")).toBe(false);
+
+    const tr = table("connect");
+    const afters = tr.afterConnect(ROUNDOFF_SKILL_ID, "b_front");
+    const half = find(afters, "b_backhalf");
+    // 同じ難度・同じ位置に置ける普通の後方系（後方伸身宙返り）と比べる
+    const plain = find(afters, "b_backlayout");
+    expect(half && plain).toBeTruthy();
+    expect(half!.weight).toBeLessThan(plain!.weight);
+    expect(CONNECT_FINISH_HALF_WEIGHT).toBeLessThan(1);
+    // 基本的な構成（ジュニア・低いDスコア）では下げない
+    const basic = table("connect", { basicLevel: true });
+    const basicAfters = basic.afterConnect(ROUNDOFF_SKILL_ID, "b_front");
+    const basicHalf = find(basicAfters, "b_backhalf");
+    if (basicHalf && half) expect(basicHalf.weight).toBeGreaterThan(half.weight);
   });
 
   it("基本的な構成（低いDスコア）ではD難度以上が表に出ない", () => {

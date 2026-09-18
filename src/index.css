@@ -843,6 +843,10 @@ input[type="checkbox"] {
   padding: 20px;
   animation: fade-in 0.18s ease;
 }
+/* モーダルの中から開くモーダル（生成モーダル → 技ごとの出やすさ）は前に出す */
+.modal-overlay.is-nested {
+  z-index: 1100;
+}
 .modal {
   background: var(--glass-strong);
   border: 1px solid var(--glass-border);

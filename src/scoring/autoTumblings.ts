@@ -385,17 +385,23 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         const first = nextFirst();
         if (!first) break;
         const ids = [first];
+        // つなぎ技も含めた実際の並び。遷移表に「その前の技」を渡すのに使う
+        // （切り返しの判定。つなぎ技を挟むとそこで向きが変わる）
+        const flow = [first];
         let cid = "";
         /** 遷移表を1つ進める（同じ技の繰り返しは避ける） */
-        const step = (prev: string) => {
-          const edges = tr.next(prev);
-          return pickDifferent(edgeIds(edges), ids, rand, edgeWeights(edges), exp);
+        const step = () => {
+          const edges = tr.next(flow[flow.length - 1], flow[flow.length - 2]);
+          const id = pickDifferent(edgeIds(edges), ids, rand, edgeWeights(edges), exp);
+          if (id) {
+            ids.push(id);
+            flow.push(id);
+          }
+          return id;
         };
         // つなぎ技の前に置く宙返り（2本目の後に挟む形では、ここでもう1本積む）
         while (pattern.connect && ids.length < connectAt) {
-          const next = step(ids[ids.length - 1]);
-          if (!next) break;
-          ids.push(next);
+          if (!step()) break;
         }
         if (pattern.connect && ids.length < connectAt) continue;
         if (pattern.connect) {
@@ -407,12 +413,11 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           const after = pickDifferent(edgeIds(afters), ids, rand, edgeWeights(afters), exp);
           if (!after) continue;
           ids.push(after);
+          flow.push(cid, after);
         }
         // 残りは遷移表のとおりに続ける
         while (ids.length < pattern.saltos.max) {
-          const next = step(ids[ids.length - 1]);
-          if (!next) break;
-          ids.push(next);
+          if (!step()) break;
         }
         if (ids.length > saltoIds.length) {
           saltoIds = ids;
