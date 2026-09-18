@@ -38,6 +38,16 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
   { id: "throwRoll", saltos: { min: 1, max: 1 }, connect: false, throwCatch: true, rollFinish: true },
   // 投げタン：投げ→前方系→側宙（転宙）→キャッチ
   { id: "throwSalto", saltos: { min: 2, max: 2 }, connect: false, throwCatch: true, rollFinish: false },
+  // 投げタン：つなぎ技を挟んで、**つなぎの後の宙返り**の最中に投げて前転→キャッチ。
+  // 投げるのは大抵ダイビング前宙か前宙（`THROW_AFTER_CONNECT_SALTOS`）
+  {
+    id: "connectThrowInSkill",
+    saltos: { min: 2, max: 3 },
+    connect: true,
+    throwCatch: true,
+    throwInSkill: true,
+    rollFinish: true,
+  },
   // 投げタン：連続の最後の宙返りの最中に投げて、前転→キャッチ（三宙と投げタンを1本で両立）
   {
     id: "chainThrowInSkill",

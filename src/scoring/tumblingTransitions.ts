@@ -31,6 +31,8 @@ import {
 import {
   CONNECT_RISE_WEIGHT,
   TEMPO_CONNECT_WEIGHT,
+  THROW_AFTER_CONNECT_SALTOS,
+  THROW_AFTER_CONNECT_WEIGHT,
   THROW_IN_SIDE_SALTO_WEIGHT,
   THROW_IN_SKILL_ROUNDOFF_WEIGHT,
   baseSkillWeights,
@@ -282,7 +284,11 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
         connectId,
         id,
         (finishWeights[id] ?? 1) *
-          (difficultyValue(id, junior, future) > beforeValue ? CONNECT_RISE_WEIGHT : 1),
+          (difficultyValue(id, junior, future) > beforeValue ? CONNECT_RISE_WEIGHT : 1) *
+          // つなぎのあとの宙返りで投げる形は、大抵ダイビング前宙か前宙で実施する
+          (pattern.throwInSkill && THROW_AFTER_CONNECT_SALTOS.includes(id)
+            ? THROW_AFTER_CONNECT_WEIGHT
+            : 1),
       ),
     );
     afterCache.set(key, edges);

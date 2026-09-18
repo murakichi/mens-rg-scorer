@@ -167,6 +167,13 @@ export function roundoffEntryWeight(targetScore?: number | null, connect = false
  */
 export const THROW_IN_SIDE_SALTO_WEIGHT = 0.1;
 
+/**
+ * つなぎ技のあとの宙返りで投げる形（`connectThrowInSkill`）で、その宙返りに選ばれやすい技。
+ * 実施されるのは**大抵ダイビング前宙か前宙**なので、つなぎのあとの抽選でこの2つを強く引く。
+ */
+export const THROW_AFTER_CONNECT_SALTOS: string[] = ["b_divefront", "b_front"];
+export const THROW_AFTER_CONNECT_WEIGHT = 5;
+
 /** その形を残す確率 */
 export const BACK_TO_FORWARD_THROW_CHANCE = 0.15;
 

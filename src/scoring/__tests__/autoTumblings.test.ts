@@ -102,6 +102,7 @@ import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
 import { unseenShape } from "../unseenShapes";
 import { canOperateApparatus } from "../constants";
+import { THROW_AFTER_CONNECT_SALTOS } from "../autoTumblings";
 import type { Item, Series } from "../types";
 
 /** 決まった順に進む疑似乱数（テストを安定させる） */
@@ -1186,7 +1187,8 @@ describe("つなぎ技", () => {
     let spec: ReturnType<typeof autoTumblingSpecs>[number] | undefined;
     for (let seed = 0; seed < 20 && !spec; seed++)
       spec = autoTumblingSpecs({ random: seeded(seed) }).find(
-        (sp) => sp.pattern.throwInSkill && sp.saltoCount === 3,
+        // つなぎを挟む形は連続が切れるので、つなぎ無しの形だけを見る
+        (sp) => sp.pattern.throwInSkill && !sp.pattern.connect && sp.saltoCount === 3,
       );
     expect(spec).toBeDefined();
     const series = buildAutoTumblingSeries(spec!);
@@ -1196,8 +1198,41 @@ describe("つなぎ技", () => {
     expect(maxSaltoChain(ids)).toBe(3);
   });
 
+  it("つなぎの後の宙返りで投げる形が作られる（投げるのは大抵ダイビング前宙か前宙）", () => {
+    const specs: ReturnType<typeof autoTumblingSpecs> = [];
+    for (let seed = 0; seed < 30; seed++)
+      specs.push(
+        ...autoTumblingSpecs({ random: seeded(seed) }).filter(
+          (sp) => sp.pattern.id === "connectThrowInSkill",
+        ),
+      );
+    expect(specs.length).toBeGreaterThan(0);
+    let target = 0;
+    specs.forEach((sp) => {
+      const series = buildAutoTumblingSeries(sp);
+      const items = series.items;
+      // 投げるのは最後の宙返り。つなぎ技はその前に入る
+      const throwAt = items.findIndex((it) => it.kind === "skill" && it.isThrow);
+      expect(throwAt).toBeGreaterThan(0);
+      const thrower = items[throwAt];
+      expect(thrower.kind === "skill" && thrower.skillId).toBeTruthy();
+      if (thrower.kind === "skill" && THROW_AFTER_CONNECT_SALTOS.includes(thrower.skillId)) target += 1;
+      // 投げタンであり、つなぎ技も入っている
+      expect(analyzeSeries(series).units[0].isThrowTumbling).toBe(true);
+      expect(hasConnect(skillsOf(series))).toBe(true);
+      // 入力としても手具の流れとしても破綻していない
+      expect(tumblingFlowErrors(series)).toEqual([]);
+      expect(checkApparatusFlow(series, "stick")).toEqual([]);
+    });
+    // ダイビング前宙・前宙が大半（実測75%）
+    expect(target / specs.length).toBeGreaterThan(0.6);
+  });
+
   it("つなぎの形は宙返りの間にA難度技が入る", () => {
-    const specs = autoTumblingSpecs({ random: seeded(5) }).filter((sp) => sp.pattern.connect);
+    // 投げタンのつなぎには手具操作を付けない（`connectNoApparatus` は投げの無いシリーズだけを見る）
+    const specs = autoTumblingSpecs({ random: seeded(5) }).filter(
+      (sp) => sp.pattern.connect && !sp.pattern.throwCatch,
+    );
     expect(specs.length).toBeGreaterThan(0);
     specs.forEach((sp) => {
       const s = buildAutoTumblingSeries(sp);

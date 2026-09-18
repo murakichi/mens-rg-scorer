@@ -31,6 +31,7 @@ import {
   isBackwardSalto,
   skillDifficulty,
 } from "../constants";
+import { THROW_AFTER_CONNECT_SALTOS, THROW_AFTER_CONNECT_WEIGHT } from "../autoTumblings";
 
 const pattern = (id: string): AutoTumblingPattern =>
   AUTO_TUMBLING_PATTERNS.find((p) => p.id === id) as AutoTumblingPattern;
@@ -235,5 +236,22 @@ describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
     expect(tr.afterConnect(ROUNDOFF_SKILL_ID, "b_front")).not.toBe(
       tr.afterConnect(ROUNDOFF_SKILL_ID, "c_back15"),
     );
+  });
+});
+
+describe("つなぎの後の宙返りで投げる形（`connectThrowInSkill`）", () => {
+  it("つなぎの後の宙返りは、ダイビング前宙・前宙の重みが上がる", () => {
+    const plain = table("connect");
+    const throwing = table("connectThrowInSkill");
+    // ロンダートで繋いだ後の選択肢（＝後方系）にダイビング前宙が入っている
+    const after = (tr: ReturnType<typeof table>) => tr.afterConnect(ROUNDOFF_SKILL_ID, "b_backlayout");
+    expect(ids(after(plain))).toContain("b_divefront");
+    // 投げる形では、その技の重みが `THROW_AFTER_CONNECT_WEIGHT` 倍になる
+    const plainW = find(after(plain), "b_divefront")!.weight;
+    const throwW = find(after(throwing), "b_divefront")!.weight;
+    expect(throwW).toBeCloseTo(plainW * THROW_AFTER_CONNECT_WEIGHT, 6);
+    // 対象外の技は変わらない
+    const other = ids(after(plain)).find((id) => !THROW_AFTER_CONNECT_SALTOS.includes(id))!;
+    expect(find(after(throwing), other)!.weight).toBeCloseTo(find(after(plain), other)!.weight, 6);
   });
 });

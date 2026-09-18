@@ -209,7 +209,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     const next = skillItem(id, throwsHere);
     // 後ろ向きで終わる宙返りのあとに前方系で投げるのは、きりもみの視野外投げだけ
     if (throwsHere) {
-      const types = throwInSkillTypes(saltos[i - 1], id);
+      // 直前の技は並びから取る（つなぎ技が間に入るとそこで向きが変わる）
+      const types = throwInSkillTypes(prevSkillId(items, items.length), id);
       if (types) next.throwTypes = [...types];
     }
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
@@ -290,14 +291,18 @@ export function chainEndsOk(
   n: number,
   connectAt: number,
   draws: Pick<TumblingDraws, "backwardEnd" | "rareEnd" | "layoutAfterConnect" | "backToForwardThrow">,
+  connectId = "",
 ): boolean {
   const last = saltoIds[n - 1];
+  // 投げる位置の直前の技。つなぎ技が間に入るとそこで向きが変わるので、つなぎを見る
+  const beforeLast =
+    pattern.connect && connectId && connectAt === n - 1 ? connectId : saltoIds[n - 2];
   return (
     // つなぎの後の宙返りは必ず残す（つなぎで終わる形は作らない）
     (!pattern.connect || n > connectAt) &&
     canEndWith(last, draws) &&
     (draws.layoutAfterConnect || !layoutOnlyAfterConnect(pattern, saltoIds, n, connectAt)) &&
-    (!pattern.throwInSkill || canThrowAt(saltoIds[n - 2], last, draws))
+    (!pattern.throwInSkill || canThrowAt(beforeLast, last, draws))
   );
 }
 
@@ -354,8 +359,10 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       // つなぎ技を挟む位置：1本目の後（既定）か、2本目の後
       // （「前向きで終わる後方系→前宙→つなぎ→宙返り」はよくあるシリーズ）。
       // 2本目の後に挟むには宙返りが3本必要なので、その本数を取れる形だけ
-      const connectAt =
-        pattern.connect && pattern.saltos.max >= 3 && count >= 3 && rand() < CONNECT_AT_SECOND_CHANCE
+      // つなぎの後の宙返りで投げる形は、投げるのが最後の宙返り＝つなぎの直後になるように挟む
+      const connectAt = pattern.throwInSkill
+        ? count - 1
+        : pattern.connect && pattern.saltos.max >= 3 && count >= 3 && rand() < CONNECT_AT_SECOND_CHANCE
           ? 2
           : DEFAULT_CONNECT_AT;
       // 目標の本数まで続く1本目が引けるまで何回か引き直す（後ろ向きに降りる技は連続しない）
@@ -401,7 +408,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       // 続かなかったぶんは本数を減らす
       let saltoCount = Math.max(pattern.saltos.min, Math.min(count, saltoIds.length));
       const ends = drawChainEnd(rand, basicLevel, opts.targetScore);
-      const endsOk = (n: number) => chainEndsOk(pattern, saltoIds, n, connectAt, ends);
+      const endsOk = (n: number) => chainEndsOk(pattern, saltoIds, n, connectAt, ends, connectId);
       // 終われる本数を探す：まず伸ばして（前宙・側宙に続ける）、だめなら縮める
       let end = saltoCount;
       while (end < saltoIds.length && !endsOk(end)) end += 1;
@@ -582,6 +589,7 @@ export function withSaltoCount(t: AutoTumblingTemplate, saltoCount: number): Aut
   if (saltoCount > t.spec.saltoIds.length) return null;
   // 連続の終わり方・投げる位置は、候補を作ったときの抽選に従う
   const connectAt = t.spec.connectAt ?? DEFAULT_CONNECT_AT;
-  if (!chainEndsOk(t.spec.pattern, t.spec.saltoIds, saltoCount, connectAt, t.spec.draws)) return null;
+  if (!chainEndsOk(t.spec.pattern, t.spec.saltoIds, saltoCount, connectAt, t.spec.draws, t.spec.connectId))
+    return null;
   return autoTemplate(t.apparatus, { ...t.spec, saltoCount }, t.id);
 }
