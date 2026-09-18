@@ -15,6 +15,7 @@ import {
   JUNIOR_SKILL_DIFFICULTY,
   CATEGORY,
   DIFF_VALUE,
+  maxDiff,
   skillDef,
   skillDifficulty,
   skillOptions,
@@ -307,6 +308,25 @@ export const SALTO_DIFFICULTY_WEIGHT: Partial<Record<Difficulty, number>> = {
 };
 
 /**
+ * **その時代の上限難度の単発**の選ばれやすさ。現行規則ではE難度がそれで、
+ * 全国大会の最大Dスコアが5.0〜5.1という水準でも**単発のE難度は実戦でほぼ実施されない**
+ * （実施例自体はある）。E難度のユニットは単発ではなく C→B→B のような連続で作る。
+ * 単発と連続で点数は同じ0.7なので貪欲法はどちらでもよく、頻度は抽選が決められる
+ * （実測・E難度の単発／構成：上限4.0〜5.0で 0.20〜0.42本 → **0.11〜0.18本**。
+ *  実Dは 4.40／4.81、上限なしで 4.96 と変わらない）。
+ * 十年後モードでは上限が上がるので、**その上限（F・G）に同じ扱いが移り**、
+ * Eは普通の高難度（`SALTO_DIFFICULTY_WEIGHT`）に戻る。
+ */
+export const TOP_SINGLE_WEIGHT = 0.05;
+
+/** 単発の技の難度ごとの選ばれやすさ（その時代の上限難度だけ `TOP_SINGLE_WEIGHT` に抑える） */
+export function saltoDifficultyWeight(d: Difficulty, future: FutureLevel = null): number {
+  const base = SALTO_DIFFICULTY_WEIGHT[d];
+  if (base === undefined) return 1;
+  return DIFF_VALUE[d] >= maxDiff(future) ? Math.min(base, TOP_SINGLE_WEIGHT) : base;
+}
+
+/**
  * 手具ごとの、単発で高難度な技の出やすさの倍率（`SALTO_DIFFICULTY_WEIGHT` に掛ける）。
  * リングは重く、持ったままひねるのが難しいので、他の手具より更に頻度が低い。
  * 表に無い手具は1（倍率なし）。
@@ -360,8 +380,8 @@ export function baseSkillWeights(
   const factor = apparatusHighDifficultyWeight(apparatus);
   skillOptions(junior, ANY_SKILL_FLOW, future).forEach((sk) => {
     const d = skillDifficulty(sk.id, junior, future);
-    const w = d ? SALTO_DIFFICULTY_WEIGHT[d] : undefined;
-    if (w !== undefined) weights[sk.id] = Math.min(weights[sk.id] ?? 1, w * factor);
+    const w = d ? saltoDifficultyWeight(d, future) : undefined;
+    if (w !== undefined && w !== 1) weights[sk.id] = Math.min(weights[sk.id] ?? 1, w * factor);
   });
   // 実施の多さ（難度が同じ技どうしの優先度）を掛ける
   Object.entries(SKILL_PICK_WEIGHT).forEach(([id, w]) => {

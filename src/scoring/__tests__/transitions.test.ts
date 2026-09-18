@@ -36,6 +36,7 @@ import {
 } from "../constants";
 import {
   AFTER_FORWARD_KIRIMOMI,
+  maxSkillDiffValue,
   SIDE_SALTO_ID,
   TENCHU_SKILL_ID,
   THROW_AFTER_CONNECT_SALTOS,
@@ -307,5 +308,40 @@ describe("前方系のあとのきりもみ転回", () => {
     expect(THROW_FINISH_SALTOS).toContain("c_kirimomiten");
     const after = table("throwSalto").next("b_front");
     expect(ids(after).sort()).toEqual([SIDE_SALTO_ID, TENCHU_SKILL_ID, "c_kirimomiten"].sort());
+  });
+});
+
+describe("狙うDスコアごとの技の難度の上限", () => {
+  it("上限が上がるほど難しい技を実施できる（段はひとつずつ上がる）", () => {
+    // 2点台まではC難度まで、3点台はD難度まで、4点台以上は制限しない
+    expect(maxSkillDiffValue(1.5)).toBe(DIFF_VALUE.C);
+    expect(maxSkillDiffValue(2.9)).toBe(DIFF_VALUE.C);
+    expect(maxSkillDiffValue(3.0)).toBe(DIFF_VALUE.D);
+    expect(maxSkillDiffValue(3.9)).toBe(DIFF_VALUE.D);
+    expect(maxSkillDiffValue(4.0)).toBe(DIFF_VALUE.E);
+    // 上限を指定しない＝難度を狙いきる構成なので制限しない
+    expect(maxSkillDiffValue(null)).toBe(DIFF_VALUE.E);
+    // 単調（下がることはない）
+    const steps = [0, 1, 2, 2.9, 3, 3.9, 4, 5, 9].map((s) => maxSkillDiffValue(s));
+    steps.forEach((v, i) => i > 0 && expect(v).toBeGreaterThanOrEqual(steps[i - 1]));
+    // 十年後モードの上限を超えない／低い要求値では十年後モードでも上がらない
+    expect(maxSkillDiffValue(null, "G")).toBe(DIFF_VALUE.G);
+    expect(maxSkillDiffValue(2.0, "G")).toBe(DIFF_VALUE.C);
+  });
+
+  it("遷移表の候補からも上限を超える技が消える", () => {
+    const value = (id: string) => {
+      const d = skillDifficulty(id);
+      return d ? DIFF_VALUE[d] : 0;
+    };
+    const low = table("chain", { targetScore: 2.5 });
+    ids(low.first).forEach((id) => expect(value(id)).toBeLessThanOrEqual(DIFF_VALUE.C));
+    ids(low.next("c_back15")).forEach((id) => expect(value(id)).toBeLessThanOrEqual(DIFF_VALUE.C));
+    // 上限なしならE難度も候補に出る
+    expect(ids(table("chain").first).some((id) => value(id) === DIFF_VALUE.E)).toBe(true);
+    // 3点台はD難度まで
+    ids(table("chain", { targetScore: 3.5 }).first).forEach((id) =>
+      expect(value(id)).toBeLessThanOrEqual(DIFF_VALUE.D),
+    );
   });
 });

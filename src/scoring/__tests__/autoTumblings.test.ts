@@ -43,6 +43,8 @@ import {
   nextSaltoOptions,
   saltoCountRange,
   SALTO_DIFFICULTY_WEIGHT,
+  TOP_SINGLE_WEIGHT,
+  saltoDifficultyWeight,
   APPARATUS_HIGH_DIFFICULTY_WEIGHT,
   apparatusHighDifficultyWeight,
   isHighDifficultySkill,
@@ -311,8 +313,15 @@ describe("宙返りの連続の組み方", () => {
   it("単発で高難度な技ほど選ばれにくい", () => {
     expect(SALTO_DIFFICULTY_WEIGHT.E!).toBeLessThan(SALTO_DIFFICULTY_WEIGHT.D!);
     expect(SALTO_DIFFICULTY_WEIGHT.D!).toBeLessThan(1);
+    // その時代の上限難度（現行規則はE）の単発は、実戦でほぼ実施されないので更に低い
+    expect(saltoDifficultyWeight("E")).toBe(TOP_SINGLE_WEIGHT);
+    expect(TOP_SINGLE_WEIGHT).toBeLessThan(SALTO_DIFFICULTY_WEIGHT.E!);
+    expect(saltoDifficultyWeight("D")).toBe(SALTO_DIFFICULTY_WEIGHT.D);
+    // 十年後モードでは上限が上がるので、同じ扱いがF・Gに移りEは普通の高難度に戻る
+    expect(saltoDifficultyWeight("E", "G")).toBe(SALTO_DIFFICULTY_WEIGHT.E);
+    expect(saltoDifficultyWeight("G", "G")).toBe(TOP_SINGLE_WEIGHT);
     const w = saltoWeights("b_front");
-    expect(w["e_backlay3twist"]).toBe(SALTO_DIFFICULTY_WEIGHT.E);
+    expect(w["e_backlay3twist"]).toBe(TOP_SINGLE_WEIGHT);
     expect(w["d_back2twist"]).toBe(SALTO_DIFFICULTY_WEIGHT.D);
     expect(w["b_backsalto"]).toBeUndefined(); // 重み無し＝1
     // 実際に組み立てた候補でも、E難度の単発はB難度より少ない

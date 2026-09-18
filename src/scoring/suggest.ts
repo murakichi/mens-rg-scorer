@@ -21,7 +21,7 @@ import {
   canOperateApparatus,
 } from "./constants";
 import { computeScore, type ComputeOptions } from "./score";
-import { SALTO_DIFFICULTY_WEIGHT, SKILL_PICK_WEIGHT } from "./autoTumblings";
+import { SKILL_PICK_WEIGHT, saltoDifficultyWeight } from "./autoTumblings";
 import type { ApparatusKey, FutureLevel, Item, Series, Skill } from "./types";
 
 /** 提案の種類。表示のグループ分けと、同点のときの並び順に使う。 */
@@ -103,7 +103,7 @@ interface Candidate {
 
 /** その技がどれだけ実施されるか。生成器の重みをそのまま使う。 */
 const skillRealism = (skill: Skill): number =>
-  (SKILL_PICK_WEIGHT[skill.id] ?? 1) * (SALTO_DIFFICULTY_WEIGHT[skill.difficulty] ?? 1);
+  (SKILL_PICK_WEIGHT[skill.id] ?? 1) * saltoDifficultyWeight(skill.difficulty);
 
 /** シリーズ i のアイテムを差し替えた構成を作る（ほかのシリーズはそのまま） */
 function withItems(list: Series[], sIdx: number, items: Item[]): Series[] {
