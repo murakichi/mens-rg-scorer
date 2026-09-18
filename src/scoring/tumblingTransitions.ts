@@ -41,7 +41,11 @@ import {
   saltoWeights,
   withJuniorBoost,
 } from "./tumblingWeights";
-import { BASIC_LEVEL_MAX_DIFF, type AutoTumblingPattern } from "./tumblingPatterns";
+import {
+  BASIC_LEVEL_MAX_DIFF,
+  maxSkillDiffValue,
+  type AutoTumblingPattern,
+} from "./tumblingPatterns";
 import type { ApparatusKey, FutureLevel } from "./types";
 
 /** その位置で投げてよいか（連続の最後の宙返りで投げる形だけ関係する） */
@@ -106,7 +110,7 @@ export interface TumblingTransitions {
 /**
  * その条件で使ってよい転回技に絞り込む。
  *  - 登録テンプレートに出てくる技だけ（`skillIds`。未指定なら一覧すべて）
- *  - 基本的な構成の選手はD難度以上を実施しない（`BASIC_LEVEL_MAX_DIFF`）
+ *  - 狙うDスコアごとの難度の上限（`SKILL_MAX_DIFF_STEPS`。基本的な構成は `BASIC_LEVEL_MAX_DIFF`）
  *  - 個人で2回宙返り系を実施することはほぼない。実際に実施している（テンプレートに
  *    出てくる）ときだけ使い、技の一覧からは組み立てない
  *  - 十年後モードのF・G難度は**まだ誰も実施していない技**なので、`skillIds` に出てこなくても
@@ -114,11 +118,16 @@ export interface TumblingTransitions {
  *  - `noAuto` の技（ダイビング）は自動生成では組み立てない
  */
 export function usableSkills(
-  ctx: Pick<TransitionContext, "junior" | "future" | "basicLevel" | "skillIds">,
+  ctx: Pick<TransitionContext, "junior" | "future" | "basicLevel" | "skillIds" | "targetScore">,
 ): (ids: string[]) => string[] {
   const junior = !!ctx.junior;
   const future = ctx.future ?? null;
   const basicLevel = !!ctx.basicLevel;
+  // 狙うDスコアで単発の技の難度の上限が変わる（`SKILL_MAX_DIFF_STEPS`）
+  const maxValue = Math.min(
+    maxSkillDiffValue(ctx.targetScore, future),
+    basicLevel ? BASIC_LEVEL_MAX_DIFF : Infinity,
+  );
   const newSkills = futureSkillIds(future, junior).filter((id) => !skillDef(id)?.isDoubleSalto);
   const allowed =
     ctx.skillIds && ctx.skillIds.length > 0 ? new Set([...ctx.skillIds, ...newSkills]) : null;
@@ -127,7 +136,7 @@ export function usableSkills(
       (id) =>
         !skillDef(id)?.noAuto &&
         (!allowed || allowed.has(id)) &&
-        (!basicLevel || difficultyValue(id, junior, future) <= BASIC_LEVEL_MAX_DIFF) &&
+        difficultyValue(id, junior, future) <= maxValue &&
         (!skillDef(id)?.isDoubleSalto || !!allowed?.has(id)),
     );
 }

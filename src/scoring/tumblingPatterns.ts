@@ -6,9 +6,9 @@
 // その2つから導いた遷移表は `tumblingTransitions.ts`、実際の候補づくりは `autoTumblings.ts`。
 // =====================================================================
 
-import { DIFF_VALUE, hasTwoThrow } from "./constants";
+import { DIFF_VALUE, hasTwoThrow, maxDiff } from "./constants";
 import { NON_HAND_TAG, autoThrowStyles, type AutoThrowStyle } from "./autoThrows";
-import type { ApparatusKey } from "./types";
+import type { ApparatusKey, Difficulty, FutureLevel } from "./types";
 
 /** 自動生成するタンブリングの形 */
 export interface AutoTumblingPattern {
@@ -91,8 +91,32 @@ export function saltoCountRange(pattern: AutoTumblingPattern): number[] {
 
 /** 基本的な構成の選手が実施する技の難度の上限（D難度なし） */
 export const BASIC_LEVEL_MAX_DIFF = DIFF_VALUE.C;
+
 /** 基本的な構成の選手の連続宙返りの本数（三宙なし・2回で終わり） */
 export const BASIC_LEVEL_MAX_SALTOS = 2;
+
+/**
+ * **狙うDスコアごとに、実施する単発の技の難度の上限**が変わる。
+ * その水準の選手が実際に実施する技に合わせるため：Dスコアが2点台の選手は単発でD難度の技を
+ * 実施しないし、E難度（伸身前宙2回ひねり など）を実施するのは4点台からになる。
+ * これが無いと**難度を上げずに本数だけ増やして**Dスコアを満たしてしまう
+ * （実測：上限2.0点でもE難度が出て、転回技の平均難度は上限1.5〜5.0で 2.27〜2.66 とほぼ横ばい）。
+ * 上限（`maxScore`）を指定しないときは制限しない（難度を狙いきる構成）。
+ */
+export const SKILL_MAX_DIFF_STEPS: { under: number; diff: Difficulty }[] = [
+  // 0〜2点台：C難度まで（`BASIC_LEVEL_MAX_DIFF` と同じ水準）
+  { under: 3.0, diff: "C" },
+  // 3点台：D難度まで
+  { under: 4.0, diff: "D" },
+  // 4点台以上：制限しない（十年後モードならF・Gまで）
+];
+
+export function maxSkillDiffValue(targetScore?: number | null, future: FutureLevel = null): number {
+  const ceiling = maxDiff(future);
+  if (targetScore == null) return ceiling;
+  const step = SKILL_MAX_DIFF_STEPS.find((x) => targetScore < x.under);
+  return step ? Math.min(ceiling, DIFF_VALUE[step.diff]) : ceiling;
+}
 
 /**
  * 基本的な構成（Dスコアの低い選手）に合わせた形。
