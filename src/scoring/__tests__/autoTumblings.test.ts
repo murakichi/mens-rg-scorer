@@ -1500,15 +1500,17 @@ describe("通常の投げタンの背面キャッチ・左手投げ（実施例�
       }
   });
 
-  it("背面キャッチは連続投げが続く形・二つ投げでは実施しない", () => {
+  it("背面キャッチのあとに続く投げは視野外にしない（二つ投げとも併用しない）", () => {
     for (const app of ["stick", "clubs", "ring", "rope"] as const)
       for (let seed = 0; seed < 40; seed++)
         for (const t of autoTumblingTemplates(app, { random: seeded(seed), demandScore: 6.0 })) {
           const items = t.series.items;
           items.forEach((item, i) => {
             if (item.kind !== "catch" || !(item.catchTypes || []).includes("noview")) return;
-            // 視野外で受けてそのまま投げることはできない
-            expect(items.slice(i + 1).some((x) => x.kind === "throw")).toBe(false);
+            // 視野外で受けて**視野外に**投げることはできない（普通に投げるのは実施例がある）
+            items.slice(i + 1).forEach((x) => {
+              if (x.kind === "throw") expect(x.throwTypes || []).not.toContain("noview");
+            });
             // 2つ同時キャッチを視野外で受けることもしない
             expect(item.catchTwo).toBeFalsy();
           });

@@ -27,6 +27,7 @@ import { calcTumblingDifficulty, needsRoundoffBefore, prevSkillId, stripForAppar
 import {
   CATCH_USE_APPARATUS,
   NO_VIEW_TAG,
+  canThrowAfterCatch,
   type AutoThrowStyle,
 } from "./autoThrows";
 import { cycler, pickDifferent, shuffled } from "./pick";
@@ -222,10 +223,13 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   // 背面キャッチ（視野外）を引いたときはそちらで受ける（押さえつけとは同時に実施しない）
   if (pattern.throwCatch) {
     const press = rolled && draws.pressCatch && !draws.twoThrow && !draws.secondThrow;
-    // 背面キャッチ（視野外）も、連続投げが続く形では実施できない
-    // （視野外で受けてそのまま投げられない＝`NO_THROW_AFTER_CATCH_TAGS`）。
-    // 2つ同時キャッチを視野外で受けることもしない
-    const back = draws.backCatch && !draws.twoThrow && !draws.secondThrow;
+    // 背面キャッチ（視野外）は、続く投げが**視野外でなければ**実施できる
+    // （視野外で受けて視野外に投げることだけができない＝`canThrowAfterCatch`）。
+    // 2つ同時キャッチを視野外で受けることはしない
+    const back =
+      draws.backCatch &&
+      !draws.twoThrow &&
+      (!draws.secondThrow || canThrowAfterCatch({ id: NO_VIEW_TAG, name: "", catchTypes: [NO_VIEW_TAG] }, draws.secondThrow));
     const catchTypes = back ? [NO_VIEW_TAG] : press ? [CATCH_USE_APPARATUS] : [];
     items.push({
       kind: "catch",

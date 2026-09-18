@@ -43,7 +43,7 @@ import { DEFAULT_MAX_AUTO_THROWS, generateRoutine } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
 import type { ApparatusKey, Item, Series } from "../types";
-import { TECHNIQUE_BONUS } from "../constants";
+import { TECHNIQUE_BONUS, TWO_THROW_TAG } from "../constants";
 import { UNSEEN_SHAPES, unseenPenalty, unseenShapeChance } from "../unseenShapes";
 
 const APPARATUS_KEYS: ApparatusKey[] = ["stick", "clubs", "ring", "rope"];
@@ -212,8 +212,7 @@ describe("投げ方・受け方の網羅", () => {
 });
 
 describe("その受け方から投げに繋げられるか", () => {
-  it("視野外・手以外・手具を使ったキャッチのあとに投げは続けられない", () => {
-    expect(NO_THROW_AFTER_CATCH_TAGS).toContain(NO_VIEW_TAG);
+  it("手以外・手具を使ったキャッチのあとに投げは続けられない", () => {
     expect(NO_THROW_AFTER_CATCH_TAGS).toContain(NON_HAND_TAG);
     expect(NO_THROW_AFTER_CATCH_TAGS).toContain(CATCH_USE_APPARATUS);
     const style = (apparatus: ApparatusKey, id: string) =>
@@ -221,17 +220,34 @@ describe("その受け方から投げに繋げられるか", () => {
     expect(canThrowAfterCatch(style("clubs", "normal"))).toBe(true);
     expect(canThrowAfterCatch(style("clubs", CATCH_USE_APPARATUS))).toBe(false);
     expect(canThrowAfterCatch(style("clubs", NON_HAND_TAG))).toBe(false);
-    expect(canThrowAfterCatch(style("clubs", NO_VIEW_TAG))).toBe(false);
     // 2種類を同時に満たす受け方も、含むタグで判定する
     expect(canThrowAfterCatch(style("clubs", `${NO_VIEW_TAG}+${CATCH_USE_APPARATUS}`))).toBe(false);
+  });
+
+  it("視野外のキャッチのあとは、視野外以外なら投げられる", () => {
+    const style = (apparatus: ApparatusKey, id: string) =>
+      autoCatchStyles(apparatus).find((c) => c.id === id)!;
+    const noView = style("clubs", NO_VIEW_TAG);
+    const throwStyle = (id: string) => autoThrowStyles("clubs").find((t) => t.id === id)!;
+    // 視野外で受けて視野外に投げることはできない
+    expect(canThrowAfterCatch(noView, throwStyle(NO_VIEW_TAG))).toBe(false);
+    // 普通に見て投げる・二つ投げは実施例がある
+    // （視野外投げ→1シェネ→視野外キャッチ→二つ投げ→そのままキャッチ）
+    expect(canThrowAfterCatch(noView, throwStyle("normal"))).toBe(true);
+    expect(canThrowAfterCatch(noView, throwStyle(TWO_THROW_TAG))).toBe(true);
+    // 次の投げ方が決まっていないうちは外さない（投げ方を引くときに外す）
+    expect(canThrowAfterCatch(noView)).toBe(true);
   });
 
   it("投げが続く形ではそれらの受け方を配らない", () => {
     AUTO_THROW_PATTERNS.filter(throwsAfterCatch).forEach((pattern) => {
       APPARATUS_KEYS.forEach((app) =>
-        catchStylesForPattern(app, false, pattern).forEach((c) =>
-          expect(canThrowAfterCatch(c)).toBe(true),
-        ),
+        catchStylesForPattern(app, false, pattern).forEach((c) => {
+          // 無条件に投げに繋げない受け方はどの形でも配らない
+          NO_THROW_AFTER_CATCH_TAGS.forEach((tag) => expect(c.catchTypes || []).not.toContain(tag));
+          // 続けて視野外に投げる形（`noViewPair`）では、視野外の受けも配らない
+          if (pattern.noViewPair) expect(c.catchTypes || []).not.toContain(NO_VIEW_TAG);
+        }),
       );
     });
     // 組み立てた候補にも「投げに繋げない受け→投げ」は出ない
@@ -246,6 +262,9 @@ describe("その受け方から投げに繋げられるか", () => {
             NO_THROW_AFTER_CATCH_TAGS.forEach((tag) =>
               expect(it.catchTypes || []).not.toContain(tag),
             );
+            // 視野外で受けたら、続く投げは視野外以外
+            if ((it.catchTypes || []).includes(NO_VIEW_TAG))
+              expect(next.throwTypes || []).not.toContain(NO_VIEW_TAG);
           });
         });
     });
