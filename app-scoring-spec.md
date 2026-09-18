@@ -538,9 +538,33 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
   両方で上限を反映する。**個人は一般・ジュニアとも上限なし**、団体の演技全体の実施減点も上限なし。
 - **未対応**：変更規則1-1〜1-2（手具1つのみ）。
 
-### 8.6 テンプレートからのランダム生成（`generate.ts`）
+### 8.6 テンプレートからのランダム生成（`generate.ts` ほか）
 
 `generateRoutine(templates, opts)` は登録済みのシリーズテンプレートから演技構成を組み立てる。
+中身は役割ごとに4ファイルに分かれている（`generate.ts` は入口で、すべてを再エクスポートするので
+参照は今までどおり `from "./generate"` のまま）。
+
+| ファイル | 受け持ち |
+| --- | --- |
+| `generateOptions.ts` | 入力と結果の型（`GenerateOptions` / `GenerateResult`）。`junior` / `future`（十年後モード）もここ |
+| `generateWeights.ts` | **上限・目標値・重み**。`A_PRIORITY` / `*_WEIGHT` / `DEFAULT_MAX_*` / `preferredThrowCount` / `requiresAllElements` など、評価式に掛ける数だけ |
+| `generateEvaluate.ts` | **構成の評価**。構成から数を取り出す関数（`hardThrowCount` / `otherStyleCount` / `saltoRepeatCount` …）と、それを足し引きする `evaluate` / `shortfallPenalty` |
+| `generateSearch.ts` | **探索**。`greedyAttempt` / `swapIn` / `tuneAutoSeries` / `orderSeries` / `upgradeTumblings` / `satisfying` |
+| `generate.ts` | 入口（`generateRoutine` / `generateForApparatus`）と再エクスポート |
+
+評価式（`generateEvaluate.ts` の `evaluate`）はこの形をしている：
+
+```
+value = -(範囲外 + 本数超過) × 100        … 難度では覆せない
+        - 満たせていない必須要素            … shortfallPenalty
+        + Dスコア + 難度への上乗せ + A残点
+        - 実在の好みに合わない形            … 投げの回数・その他の投げ受け・縦3動作 …
+        - タイブレーク                      … 多様性・組み方の優先度・自動生成 …
+```
+
+重みの尺度は3段階で、**タイブレーク**（0.005〜0.05。難度の刻み0.1より小さいので同点のときだけ効く）／
+**実在の好み**（0.1〜0.9。点数と引き換えになる）／**要求と範囲**（不足10・範囲外×100）に分かれる。
+探索側はこの1つの数が上がるかどうかしか見ない。
 
 - 使えるのは**指定した手具のテンプレート＋共通**（`usableTemplates()`）。手具を指定しない場合は
   `generateForApparatus()` が全手具で組んでいちばん良かったものを返す
