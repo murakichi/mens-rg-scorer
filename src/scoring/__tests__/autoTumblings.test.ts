@@ -102,7 +102,11 @@ import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
 import { unseenShape } from "../unseenShapes";
 import { canOperateApparatus } from "../constants";
-import { AFTER_FORWARD_KIRIMOMI, THROW_AFTER_CONNECT_SALTOS } from "../autoTumblings";
+import {
+  AFTER_FORWARD_KIRIMOMI,
+  THROW_AFTER_CONNECT_SALTOS,
+  tumblingChainEndErrors,
+} from "../autoTumblings";
 import type { Item, Series } from "../types";
 
 /** 決まった順に進む疑似乱数（テストを安定させる） */
@@ -680,6 +684,35 @@ describe("つなぎ技", () => {
           t.series.items.forEach((it) => {
             if (it.kind === "skill" && !canOperateApparatus(it.skillId)) expect(it.hasApparatus).toBe(false);
           });
+  });
+
+  it("連続を終える技の後に技・徒手動作が続く並びは警告になる（キャッチは続けてよい）", () => {
+    const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
+    const sk = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: false, isThrow: false });
+    const roll: Item = { kind: "motion", motionId: "fwd_roll", count: 1 };
+    // 投げタンの締めの前転が付いてしまった形（オーナー報告の並び）
+    expect(
+      tumblingChainEndErrors(S({ kind: "throw" }, sk("b_front"), sk("c_kirimomiten"), roll, { kind: "catch" })),
+    ).toHaveLength(1);
+    // キャッチはそのまま続けてよい
+    expect(
+      tumblingChainEndErrors(S({ kind: "throw" }, sk("b_front"), sk("c_kirimomiten"), { kind: "catch" })),
+    ).toEqual([]);
+    // 技を続けるのも同じく警告
+    CHAIN_END_SKILLS.forEach((id) =>
+      expect(tumblingChainEndErrors(S(sk("b_front"), sk(id), sk("b_front")))).toHaveLength(1),
+    );
+    // `tumblingFlowErrors` からも出る（自動生成の自己検算に乗る）
+    expect(
+      tumblingFlowErrors(S({ kind: "throw" }, sk("b_front"), sk("c_kirimomiten"), roll, { kind: "catch" })).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("自動生成の候補には、連続を終える技の後に何も続かない", () => {
+    for (const app of ["stick", "clubs", "ring", "rope"] as const)
+      for (let seed = 0; seed < 30; seed++)
+        for (const t of autoTumblingTemplates(app, { random: seeded(seed) }))
+          expect(tumblingChainEndErrors(t.series)).toEqual([]);
   });
 
   it("首・背中から着地する技（きりもみ・とび前転・ダイビング）の後に前転は実施しない", () => {

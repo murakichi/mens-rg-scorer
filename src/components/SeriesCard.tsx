@@ -41,6 +41,7 @@ import {
   SERIES_TAGS,
   seriesTags,
 } from "../scoring/analysis";
+import { tumblingChainEndErrors } from "../scoring/tumblingChain";
 import type { SkillFlow } from "../scoring/constants";
 import type { ApparatusKey, FutureLevel, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
 import type { DiffRow, SeriesBreakdown } from "../scoring/score";
@@ -536,7 +537,9 @@ export function SeriesCard({
   onRemoveSeries,
 }: Props) {
   const seriesQualifies = a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus);
-  const flowErrors = checkApparatusFlow(ser, apparatus);
+  // 手具の流れ（投げてから受けるまで）と、連続を終える技の後に何か続いていないか。
+  // どちらも警告だけで採点には影響しない
+  const flowErrors = [...checkApparatusFlow(ser, apparatus), ...tumblingChainEndErrors(ser)];
   // 投げてからキャッチするまでは手元に手具が無いので、その間の技に手具操作は付けられない
   const handsEmpty = handsEmptyFlags(ser.items, apparatus);
   // 2つ同時キャッチは「2つとも空中にある（＝二つ投げの間）」ときだけ入力できる

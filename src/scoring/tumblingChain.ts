@@ -346,14 +346,35 @@ export function saltoOptionsAfterConnect(
 }
 
 /**
+ * **連続を終える技の後に技・徒手動作が続いている**並びを挙げる。
+ * とび前転・きりもみは首から背中にかけて、ダイビングは頭から着地し、側宙は連続の最後にしか
+ * 実施しない（`CHAIN_END_SKILLS`）ので、その後に技も前転も続けられない
+ * （投げ受けのキャッチは続けられるので、キャッチは対象外）。
+ * 自動生成は作らないが、手入力・インポート・古い保存データでは起こりうるので、
+ * 入力画面でも警告として出す（`SeriesCard`。採点には影響しない）。
+ */
+export function tumblingChainEndErrors(series: Series): string[] {
+  const errors: string[] = [];
+  series.items.forEach((item, i) => {
+    if (item.kind !== "skill" || !item.skillId || !endsChain(item.skillId)) return;
+    const next = series.items[i + 1];
+    if (next?.kind !== "skill" && next?.kind !== "motion") return;
+    const name = skillDef(item.skillId)?.name ?? item.skillId;
+    errors.push(`${i + 1}番目の${name}：この技の後に技・徒手動作は続けられない`);
+  });
+  return errors;
+}
+
+/**
  * 入力画面の制約に反する並びを挙げる（空なら入力画面でもそのまま入力できる）。
  * 判定は入力画面のプルダウンと同じ関数で行う（系統の絞り込みが変わっても追随する）。
  *  - その位置の選択肢に出る技か（`skillOptions(junior, skillFlowAfter(prev))`。
  *    ロンダート・バク転の直後は後方系だけ、ジュニアは2回宙返り系なし）
  *  - 後方系はロンダートを補わずに実施できる位置にあること（`needsRoundoffBefore`）
+ *  - 連続を終える技の後に何も続けていないこと（`tumblingChainEndErrors`）
  */
 export function tumblingFlowErrors(series: Series, junior = false, future: FutureLevel = null): string[] {
-  const errors: string[] = [];
+  const errors: string[] = [...tumblingChainEndErrors(series)];
   series.items.forEach((item, i) => {
     if (item.kind !== "skill" || !item.skillId) return;
     const name = skillDef(item.skillId)?.name ?? item.skillId;
