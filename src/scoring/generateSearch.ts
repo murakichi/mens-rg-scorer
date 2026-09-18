@@ -37,7 +37,7 @@ import {
 import { shuffled } from "./pick";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
 import type { GenerateOptions } from "./generateOptions";
-import type { ApparatusKey, Series } from "./types";
+import type { ApparatusKey, FutureLevel, Series } from "./types";
 
 /** 指定した手具で使えるシリーズテンプレート（その手具のもの＋共通） */
 export function usableTemplates(templates: SeriesTemplate[], apparatus: ApparatusKey): SeriesTemplate[] {
@@ -59,6 +59,8 @@ export function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () 
     pool.push(
       ...autoTumblingTemplates(opts.apparatus, {
         junior: !!opts.junior,
+        // 十年後モードではF・G難度の技もタンブリングの候補にする
+        future: opts.future ?? null,
         // 低いDスコアを狙うなら、基本的な構成の選手とみなして候補を寄せる
         basicLevel: opts.maxScore != null && opts.maxScore < BASIC_LEVEL_MAX_SCORE,
         // 後ろ向きで終わる後方宙返りで終わる確率は狙うDスコアで決まる
@@ -111,8 +113,14 @@ export function tuneAutoSeries(
 }
 
 /** 転回系（宙返り・投げタン）を含むシリーズか。並べ替えの区分に使う。 */
-export function isTumblingSeries(series: Series, junior: boolean): boolean {
-  return analyzeSeries(series, junior).units.some((u) => u.type === "tumbling" || u.isThrowTumbling);
+export function isTumblingSeries(
+  series: Series,
+  junior: boolean,
+  future: FutureLevel = null,
+): boolean {
+  return analyzeSeries(series, junior, future).units.some(
+    (u) => u.type === "tumbling" || u.isThrowTumbling,
+  );
 }
 
 /** 多いほうの並びに、少ないほうを均等に挟み込む */
@@ -142,8 +150,9 @@ export function orderSeries(
   opts: GenerateOptions,
 ): { used: SeriesTemplate[]; ev: Evaluation } {
   const junior = !!opts.junior;
-  const tumbling = used.filter((t) => isTumblingSeries(t.series, junior));
-  const throws = used.filter((t) => !isTumblingSeries(t.series, junior));
+  const future = opts.future ?? null;
+  const tumbling = used.filter((t) => isTumblingSeries(t.series, junior, future));
+  const throws = used.filter((t) => !isTumblingSeries(t.series, junior, future));
   let ordered = used;
   if (tumbling.length > 0 && throws.length > 0)
     ordered =
@@ -227,7 +236,7 @@ export function upgradeTumblings(
   opts: GenerateOptions,
 ): { used: SeriesTemplate[]; ev: Evaluation } {
   const junior = !!opts.junior;
-  const tumblings = pool.filter((t) => isTumblingSeries(t.series, junior));
+  const tumblings = pool.filter((t) => isTumblingSeries(t.series, junior, opts.future ?? null));
   if (tumblings.length === 0) return best;
   const swapped = swapIn(best.used, best.ev, tumblings, opts, TUMBLING_UPGRADE_ROUNDS);
   if (swapped.ev.value <= best.ev.value + 1e-9) return best;

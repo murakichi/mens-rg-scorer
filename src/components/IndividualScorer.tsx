@@ -6,12 +6,15 @@ import {
   ART_DEDUCTION_ITEMS,
   TUM_VARIETY_ITEM_ID,
   ART_DEDUCTION_STEP,
+  DEFAULT_FUTURE_LEVEL,
+  FUTURE_LEVELS,
   VIOLATION_OPTIONS,
   clampArtDeduction,
+  normalizeFutureLevel,
 } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
 import { apparatusBlockers, stripForApparatus } from "../scoring/analysis";
-import type { ApparatusKey, Series } from "../scoring/types";
+import type { ApparatusKey, FutureLevel, Series } from "../scoring/types";
 import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
 import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
@@ -19,6 +22,7 @@ import { TemplateModal } from "./TemplateModal";
 import { GenerateModal } from "./GenerateModal";
 import { SuggestModal } from "./SuggestModal";
 import { ScoreSummary } from "./ScoreSummary";
+import { useFutureUnlock } from "./useFutureUnlock";
 import {
   DRAFT_KEY_INDIVIDUAL,
   asStringArray,
@@ -50,6 +54,7 @@ interface Props {
     apparatusElements?: unknown;
     violations?: unknown;
     junior?: unknown;
+    future?: unknown;
     artDeductions?: unknown;
     series?: unknown;
   };
@@ -70,6 +75,14 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [apparatusElements, setApparatusElements] = useState<string[]>(() => init?.apparatusElements ?? []);
   const [violations, setViolations] = useState<string[]>(() => init?.violations ?? []);
   const [junior, setJunior] = useState<boolean>(init?.junior ?? false);
+  // 十年後モード（F・G難度を認定する仮想ルール）。既定は非表示で、ジュニアモードを
+  // 何度も切り替えると切り替え自体が出てくる（`useFutureUnlock`）。
+  const [future, setFuture] = useState<FutureLevel>(init?.future ?? null);
+  const futureUnlock = useFutureUnlock();
+  const toggleJunior = () => {
+    setJunior((p) => !p);
+    futureUnlock.countJuniorToggle();
+  };
   const [artDeductions, setArtDeductions] = useState<Record<string, number>>(() => init?.artDeductions ?? {});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
@@ -92,9 +105,10 @@ export function IndividualScorer({ initialData }: Props = {}) {
         apparatusElements,
         violations,
         junior,
+        future,
         artDeductions,
       }),
-    [series, apparatus, overallExecution, apparatusElements, violations, junior, artDeductions],
+    [series, apparatus, overallExecution, apparatusElements, violations, junior, future, artDeductions],
   );
 
   // ---- 入力中の構成を自動保存する ----
@@ -119,7 +133,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
       alert("入力内容を自動保存できませんでした（ブラウザの設定・空き容量をご確認ください）。\nエクスポートか共有URLで控えを取ってください。");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apparatus, series, overallExecution, apparatusElements, violations, junior, artDeductions]);
+  }, [apparatus, series, overallExecution, apparatusElements, violations, junior, future, artDeductions]);
 
   /** 復元した内容を破棄して最初からにする */
   const discardDraft = () => {
@@ -129,6 +143,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setApparatusElements([]);
     setViolations([]);
     setJunior(false);
+    setFuture(null);
     setArtDeductions({});
     clearDraft(DRAFT_KEY_INDIVIDUAL);
     setDraftNotice(false);
@@ -148,6 +163,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     apparatusElements,
     violations,
     junior,
+    future,
     artDeductions,
     series,
   });
@@ -172,6 +188,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setApparatusElements(asStringArray(data.apparatusElements));
     setViolations(asStringArray(data.violations));
     setJunior(!!data.junior);
+    setFuture(normalizeFutureLevel(data.future));
     setArtDeductions(normalizeArtDeductions(data.artDeductions));
     if (Array.isArray(data.series) && data.series.length > 0) {
       // 読み込んだ内容のうち、その手具で入力できないものは落とす
@@ -324,6 +341,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         templates={templates.series}
         apparatus={apparatus}
         junior={junior}
+        future={future}
         onClose={() => setGenerateOpen(false)}
         onApply={(ap, r) => {
           if (!window.confirm("生成した構成を反映します。編集中の構成は置き換わります。")) return;
@@ -337,6 +355,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         series={series}
         apparatus={apparatus}
         junior={junior}
+        future={future}
         apparatusElements={apparatusElements}
         violations={violations}
         artDeductions={artDeductions}
@@ -347,6 +366,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         store={templates}
         apparatus={apparatus}
         junior={junior}
+        future={future}
         onChange={updateTemplates}
         onClose={() => setTemplateOpen(false)}
         onSaveCurrentRoutine={saveCurrentRoutine}
@@ -423,7 +443,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
             role="switch"
             aria-checked={junior}
             className={junior ? "switch is-on" : "switch"}
-            onClick={() => setJunior((p) => !p)}
+            onClick={toggleJunior}
           >
             <span className="switch-knob" />
           </button>
@@ -433,6 +453,41 @@ export function IndividualScorer({ initialData }: Props = {}) {
           ジュニア適用規則（§10 変更規則1）で採点します。ダイビング前宙・後方宙返り半ひねりをC難度で認定し、
           投げ上げの最低回数を2回とします。
         </p>
+        {futureUnlock.unlocked && (
+          <>
+            <div className="switch-row">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!!future}
+                className={future ? "switch is-on" : "switch"}
+                onClick={() => setFuture((p) => (p ? null : DEFAULT_FUTURE_LEVEL))}
+              >
+                <span className="switch-knob" />
+              </button>
+              <span className="switch-label">十年後モード{future ? "：ON" : "：OFF"}</span>
+              {future && (
+                <select
+                  className="select switch-select"
+                  value={future}
+                  aria-label="十年後モードの上限難度"
+                  onChange={(e) => setFuture(normalizeFutureLevel(e.target.value))}
+                >
+                  {FUTURE_LEVELS.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <p className="hint">
+              {futureUnlock.justUnlocked && <b>十年後モードが使えるようになりました。</b>}
+              現行規則には無いF難度（0.9点）・G難度（1.1点）まで認定する、十年後を想像するためのモードです。
+              上限をF・Gのどちらにするかを選べます（ランダム生成のタンブリングも、その上限を前提に組みます）。
+            </p>
+          </>
+        )}
       </section>
 
       <section className="card">
@@ -461,6 +516,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         series={series}
         apparatus={apparatus}
         junior={junior}
+        future={future}
         result={result}
         onChange={setSeries}
         templateOptions={seriesTemplateOptions}

@@ -41,8 +41,25 @@
   丸ごとバイト一致になる。
   - 条件に入れたもの: 上限/下限/範囲指定、ジュニア、`autoRatio` 0〜0.5、`autoThrows`/`autoTumblings` オフ、
     `requireAllElements` の明示、`maxSeries` / `maxThrowTumbling` / `maxTumblings` / `attempts` の変更。
-- `npm test`: 528 passed（テストの変更なし）。
+- `npm test`: main 取り込み後も全件パス（テストの変更なし。#93 が追加した `future.test.ts` も含む）。
 - `npm run build`: 成功。
+
+## main（#93 十年後モード）の取り込み
+
+分割中に main に #93（十年後モード F・G難度）が入り、それが `generate.ts` に `future` を
+通していたため、そのぶんを分割先に入れ直した。main 側の `future` 21箇所を
+`generateOptions.ts`（`GenerateOptions.future`）／`generateEvaluate.ts`（`highDifficultyCount` /
+`shapeRankTotal` / `hardThrowCount` / `verticalThreeThrowCount` / `evaluate`）／
+`generateSearch.ts`（`autoPool` / `isTumblingSeries` / `orderSeries` / `upgradeTumblings`）に振り分けた。
+
+取り込みの検算は2通りで行った。
+
+1. **宣言の突き合わせ**：main の `generate.ts` のトップレベル宣言79個すべてが分割先に存在し、
+   本文が違うのは2個だけ（`verticalThreeThrowCount` / `isTumblingSeries` の**シグネチャの改行位置**のみ。
+   引数も本文も同じ）。
+2. **実行結果の突き合わせ**：main を worktree に出し、同じプローブを両方で走らせた。
+   4手具 × 16条件（十年後 F・G、`future` × ジュニア、`future` × スコア範囲を含む）× 4シード＋
+   `generateForApparatus` 8件 = **264件すべて完全一致**。
 
 ## 結果
 

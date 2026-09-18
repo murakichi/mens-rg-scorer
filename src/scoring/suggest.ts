@@ -21,7 +21,7 @@ import {
 } from "./constants";
 import { computeScore, type ComputeOptions } from "./score";
 import { SALTO_DIFFICULTY_WEIGHT, SKILL_PICK_WEIGHT } from "./autoTumblings";
-import type { ApparatusKey, Item, Series, Skill } from "./types";
+import type { ApparatusKey, FutureLevel, Item, Series, Skill } from "./types";
 
 /** 提案の種類。表示のグループ分けと、同点のときの並び順に使う。 */
 export type SuggestionKind =
@@ -115,7 +115,7 @@ function withItems(list: Series[], sIdx: number, items: Item[]): Series[] {
  * 後方系を前向きの位置に置いたときは編集画面と同じくロンダートを挿入する
  * （`SeriesListEditor.updateItem` と同じ手順 — 提案どおりに操作すれば同じ結果になる）。
  */
-function skillEdits(list: Series[], junior: boolean): Candidate[] {
+function skillEdits(list: Series[], junior: boolean, future: FutureLevel = null): Candidate[] {
   const out: Candidate[] = [];
   list.forEach((ser, sIdx) => {
     ser.items.forEach((item, iIdx) => {
@@ -125,7 +125,7 @@ function skillEdits(list: Series[], junior: boolean): Candidate[] {
 
       // --- 置き換え ---
       const flow = skillFlowAfter(prevSkillId(ser.items, iIdx));
-      skillOptions(junior, flow).forEach((skill) => {
+      skillOptions(junior, flow, future).forEach((skill) => {
         if (skill.id === item.skillId) return;
         const items = ser.items.map((x, k) => (k === iIdx ? { ...x, skillId: skill.id } : x));
         const roundoff = needsRoundoffBefore(items, iIdx);
@@ -149,7 +149,7 @@ function skillEdits(list: Series[], junior: boolean): Candidate[] {
       // --- タンブリングの最後に1本足す（連続した技の並びの末尾だけ）---
       const next = ser.items[iIdx + 1];
       if (next?.kind === "skill") return;
-      skillOptions(junior, skillFlowAfter(item.skillId)).forEach((skill) => {
+      skillOptions(junior, skillFlowAfter(item.skillId), future).forEach((skill) => {
         const items = [...ser.items];
         items.splice(iIdx + 1, 0, { kind: "skill", skillId: skill.id, hasApparatus: false, isThrow: false });
         const roundoff = needsRoundoffBefore(items, iIdx + 1);
@@ -262,6 +262,7 @@ export function suggestImprovements(
 ): Suggestion[] {
   const { limit = DEFAULT_SUGGESTION_LIMIT, ...scoreOpts } = opts;
   const junior = !!scoreOpts.junior;
+  const future = scoreOpts.future ?? null;
   const base = computeScore(series, apparatus, scoreOpts);
   const baseTotal = base.dScore + base.aScore;
 
@@ -269,7 +270,7 @@ export function suggestImprovements(
     ...apparatusOps(series),
     ...styleTags(series, apparatus),
     ...seriesRemovals(series),
-    ...skillEdits(series, junior),
+    ...skillEdits(series, junior, future),
   ];
 
   // 1箇所につき最良の1件だけ残す。同じ点差なら、実際によく行われる小さい一手を選ぶ。

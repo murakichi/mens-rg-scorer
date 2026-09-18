@@ -32,9 +32,10 @@
 | 規則の項目 | 定義名 | ファイル |
 |-----------|--------|---------|
 | 技リスト・系統・難度 | `SKILL_LIST` | `constants.ts` |
-| 難度点（A=0.1〜E=0.7） | `DIFF_SCORE` | `constants.ts` |
-| 難度の数値対応（A=1〜E=5） | `DIFF_VALUE` / `VALUE_DIFF` | `constants.ts` |
-| 難度上限 | `MAX_DIFF = 5` | `constants.ts` |
+| 難度点（A=0.1〜E=0.7、十年後モードのF=0.9・G=1.1） | `DIFF_SCORE` | `constants.ts` |
+| 難度の数値対応（A=1〜E=5、F=6・G=7） | `DIFF_VALUE` / `VALUE_DIFF` | `constants.ts` |
+| 難度上限（現行規則） | `MAX_DIFF = 5` | `constants.ts` |
+| 適用中の難度上限（十年後モード） | `maxDiff(future)` / `clampDifficulty()` | `constants.ts` |
 | 系統タグ（前方/側方/後方/その他） | `CATEGORY` | `constants.ts` |
 | 手具定義 | `APPARATUS` | `constants.ts` |
 | 手具ごとの必須投げ | `REQUIRED_THROW_OPTIONS` | `constants.ts` |
@@ -52,7 +53,8 @@
 「手動入力に切り替え／一覧入力に切り替え」ボタンで切り替え）。
 
 - 選択肢：`TWIST_BASES`（後方宙返り／前宙）× `POSTURE_OPTIONS`（抱え込み・屈伸・伸身）×
-  `TWIST_OPTIONS`（なし〜3回半ひねり、0.5刻み）
+  `TWIST_OPTIONS`（なし〜3回半ひねり、0.5刻み。十年後モードでは `twistOptions(future, …)` が
+  `FUTURE_TWIST_OPTIONS` ＝4回〜5回ひねりまで伸ばす）
 - 難度は §3.6.2 の表どおり `twistDifficulty()` で決める
   - **後方系は姿勢によらずひねり回数だけ**：0・半＝B／1回・1回半＝C／2回・2回半＝D／3回以上＝E（#7・#12〜#17）
   - **前方系は伸身が1段階上**：かかえ込み・屈身は後方系と同じ表、伸身は 0＝C／1回・1回半＝D／2回以上＝E（#8・#11〜#14）
@@ -393,6 +395,71 @@ A減点に加算する。方向系・連続宙返り・投げ回数は従来ど�
 
 ---
 
+## 8.4 十年後モード（F・G難度／個人・団体）
+
+**現行規則には無い仮想ルール**。十年後の男子新体操を想像するためのモードで、E難度の上に
+F難度（0.9点）・G難度（1.1点）を足す。規則書に対応する条文は無く、本書だけが仕様。
+
+| 項目 | 定義 | 備考 |
+|------|------|------|
+| 上限難度 | `FutureLevel`（`"F"` / `"G"` / `null`） | `null` がモードOFF＝現行規則（E止め） |
+| 上限の選択肢 | `FUTURE_LEVELS` / `DEFAULT_FUTURE_LEVEL`（`"F"`） | UIのプルダウン（F難度まで／G難度まで） |
+| 価値点 | `DIFF_SCORE.F = 0.9` / `DIFF_SCORE.G = 1.1` | E(0.7) から0.2刻み |
+| 難度値 | `DIFF_VALUE.F = 6` / `DIFF_VALUE.G = 7` | 現行規則の上限は `MAX_DIFF = 5` のまま |
+| 適用中の上限 | `maxDiff(future)` / `clampDifficulty(value, future)` | E止めだった箇所はすべてここを通す |
+| F・G難度の技 | `Skill.future` が付いた `SKILL_LIST` の項目 | `futureSkillIds(future, junior, team)` で引ける |
+| 団体でしか実施しない技 | `Skill.teamOnly` | 十年後モードの2回宙返り系。個人モードの選択肢に出さない |
+| 十年後の難度認定 | `FUTURE_SKILL_DIFFICULTY` | 現行規則の技でも十年後は上がるもの（ルドルフ E→F） |
+
+### 十年後モードで増える技（`Skill.future`）
+
+| 技 | id | 難度 | 個人/団体 |
+|----|----|------|----------|
+| 後方伸身宙返り4回ひねり | `f_backlay4twist` | F | 両方 |
+| 後方伸身宙返り4回半ひねり | `f_backlay45twist` | F | 両方 |
+| 後方伸身宙返り5回ひねり | `g_backlay5twist` | G | 両方 |
+| 伸身前宙3回ひねり | `f_frontlay3` | F | 両方 |
+| 伸身前宙4回ひねり | `g_frontlay4` | G | 両方 |
+| 後方2回宙返り2回半ひねり（ルドルフハーフ） | `f_rudolphhalf` | F | 団体のみ |
+| 後方伸身2回宙返り1回ひねり | `f_doublelay1twist` | F | 団体のみ |
+| 後方2回宙返り3回ひねり（リジョンソン） | `g_rijonson` | G | 団体のみ |
+
+加えて、既存の**ルドルフ（`e_rudolph`、現行E）は十年後モードでF**として認定する
+（`FUTURE_SKILL_DIFFICULTY`）。ひねり系はどれも §3.6.2 の刻みをそのまま伸ばした値と一致する
+（`twistDiffValue()`）ので、一覧から選んでも手動入力（ひねり指定）で組んでも同じ難度・同じidになる。
+**2回宙返り系は個人では実施しない**ので、十年後モードで増える2回宙返り系は `teamOnly` を付けて
+団体モードの選択肢にだけ出す（既存の2回宙返り系は従来どおり両モードで選べる）。
+
+- **難度計算の変更はE止めの上限だけ**。加点・減点・必須要素・重複判定・シリーズ構成のルールは現行のまま。
+  - ひねりの難度（`twistDiffValue()`）：半ひねりごとに1段の刻みをそのまま伸ばし、
+    後方は4回・4回半＝F／5回＝G、前方の伸身はそこから1段上（3回・3回半＝F／4回・4回半＝G）。
+  - タンブリングの連続加算（`calcTumblingDifficulty`）：C→B→B→B ＝ F、もう1本足して G。
+  - 徒手系難度（`calcHandDifficulty`）：動作数をA起点で足した値が上限まで伸びる（縦3動作は従来どおりE）。
+  - 手具操作加点 §3.5.5.5(3) は「E難度**以上**の転回系」で付く（現行規則では上限がEなので挙動は同じ）。
+  - 団体も同じ上限を共有する（`TeamState.future` → `calcChunkDifficulty` / 5人格上げ / 交差の難度）。
+- **技の選択肢**：`Skill.future` の技は、モードOFFでも上限を超える難度（上限FのときのG難度）でも出さない。
+  `teamOnly` の技は個人モードに出さない（`skillAllowed(id, junior, future, team)` — 団体の画面だけ
+  `team: true` を渡す）。ジュニアの2回宙返り禁止は十年後モードでも効く。選択済みの技を選択肢に残すときの
+  但し書き（ジュニア禁止／十年後モード専用／団体のみ）は `skillBlockedReason()` が返す。
+- **難度の丸め**：`skillDifficulty(id, junior, future)` が適用中の上限で丸めるので、**モードをOFFに戻しても
+  F難度の技が0.9点で残ることはない**（E止めで採点される）。`skillDef()` が返すのは技そのものの定義なので
+  丸めない（F・Gのまま）。
+- **ランダム生成**：`GenerateOptions.future` を `autoTumblingTemplates` → `TransitionContext.future` まで
+  引き渡す。F・G難度の技は**まだ誰も実施していない技**なので、「テンプレートに出てくる技だけで組む」制限の
+  例外として候補に加える（`usableSkills` in `tumblingTransitions.ts`。2回宙返り系は現行どおり
+  テンプレートに出てくるときだけで、`teamOnly` の技は個人の生成ではそもそも候補に入らない）。
+  **モードOFFのときは候補の技に一切入らない** — 遷移表の技は `skillOptions(junior, flow, future)` から
+  引くので、テンプレートにF難度の技が入っていても自動生成の連続には現れない。選ばれやすさは
+  `SALTO_DIFFICULTY_WEIGHT`（D 0.6 → E 0.3 → F 0.15 → G 0.08）で、単発の高難度ほど出にくいのも同じ。
+  連続の「難度は下がっていく」ルールも上限が上がるだけで変わらない
+  （実測：上限なしで生成したときのDスコアが 現行4.9 → 上限F 5.5前後 → 上限G 6.0前後）。
+- **UIは既定で隠す**：`IndividualScorer` / `TeamScorer` の「適用規則」カードに、ジュニアモードの下に
+  トグルと上限プルダウンを出すが、**ジュニアモードを `FUTURE_UNLOCK_TOGGLES`（10）回切り替えるまで表示しない**。
+  解放状態は端末ごとに localStorage（`mens-rg-scorer:future-unlock:v1`）に覚え、個人・団体で共有する
+  （`useFutureUnlock` / `loadFutureUnlock` / `saveFutureUnlock`）。
+- **保存**：`SaveData.future` / `TeamState.future`（任意・既定 null）としてエクスポート・共有URL・
+  自動保存のドラフトに往復する（`normalizeFutureLevel()` が不正値を null に倒す）。
+
 ## 8.5 ジュニア適用規則（個人モード）
 
 `§10 変更規則1`。個人モードのトグルスイッチ（`IndividualScorer` の「適用規則」カード）で ON/OFF する。
@@ -420,7 +487,7 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 **超過1回につき −0.30**（`THROW_COUNT_OVER_DEDUCTION`）。`ScoreResult` は実施回数を
 `performedThrowCount`、要素として数えた回数を `totalThrowCount`、超過数を `overThrowCount` で返す。
 
-- 難度参照は `skillDifficulty(id, junior)` に集約。`junior` は `computeScore` → `analyzeSeries` →
+- 難度参照は `skillDifficulty(id, junior, future)` に集約。`junior` は `computeScore` → `analyzeSeries` →
   `calcTumblingDifficulty` へ引き渡す（既定 `false` なので既存の呼び出しは無変更）。
   `skillDef()` を直接見ている `isSalto` / `category` / `isConnectA` は適用規則で変わらないため据え置き。
 - `SaveData.junior`（任意・既定 false）としてファイル/テキスト/共有URLに往復する。
@@ -446,7 +513,7 @@ ON にすると `computeScore(series, apparatus, { junior: true })` が呼ばれ
 
 | ファイル | 受け持ち |
 | --- | --- |
-| `generateOptions.ts` | 入力と結果の型（`GenerateOptions` / `GenerateResult`） |
+| `generateOptions.ts` | 入力と結果の型（`GenerateOptions` / `GenerateResult`）。`junior` / `future`（十年後モード）もここ |
 | `generateWeights.ts` | **上限・目標値・重み**。`A_PRIORITY` / `*_WEIGHT` / `DEFAULT_MAX_*` / `preferredThrowCount` / `requiresAllElements` など、評価式に掛ける数だけ |
 | `generateEvaluate.ts` | **構成の評価**。構成から数を取り出す関数（`hardThrowCount` / `otherStyleCount` / `saltoRepeatCount` …）と、それを足し引きする `evaluate` / `shortfallPenalty` |
 | `generateSearch.ts` | **探索**。`greedyAttempt` / `swapIn` / `tuneAutoSeries` / `orderSeries` / `upgradeTumblings` / `satisfying` |
@@ -958,6 +1025,7 @@ value = -(範囲外 + 本数超過) × 100        … 難度では覆せない
 | `TeamScorer` | 団体モードの全UI・state管理 |
 | `JsonModal` | インポート/エクスポート（個人のみ） |
 | `TemplateModal` | テンプレート管理画面（左に一覧、右に `SeriesListEditor` の編集欄） |
+| `useFutureUnlock` | 十年後モードの解放（ジュニアモードを10回切り替えると表示。個人・団体で共有） |
 
 ### 9.1 テンプレート（個人モード）
 

@@ -8,12 +8,17 @@
 // 入口は `generate.ts`。
 // =====================================================================
 
-import type { ApparatusKey, Series } from "./types";
+import type { ApparatusKey, FutureLevel, Series } from "./types";
 import type { SeriesTemplate } from "./templates";
 
 export interface GenerateOptions {
   apparatus: ApparatusKey;
   junior?: boolean;
+  /**
+   * 十年後モードの上限難度（"F" / "G"）。採点も自動生成のタンブリングも
+   * F・G難度を前提に組む（null・未指定は現行規則）。
+   */
+  future?: FutureLevel;
   /** Dスコアの下限・上限（未指定＝制限なし） */
   minScore?: number | null;
   maxScore?: number | null;

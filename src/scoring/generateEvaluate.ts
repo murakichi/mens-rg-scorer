@@ -63,7 +63,7 @@ import {
 import { computeScore, type ScoreResult } from "./score";
 import type { GenerateOptions } from "./generateOptions";
 import type { SeriesTemplate } from "./templates";
-import type { ApparatusKey, Series } from "./types";
+import type { ApparatusKey, FutureLevel, Series } from "./types";
 
 /** 演技全体での、実施が少ない技の回数（技idごと） */
 export function limitedSkillCounts(series: Series[]): Map<string, number> {
@@ -81,11 +81,16 @@ export function limitedSkillCounts(series: Series[]): Map<string, number> {
 }
 
 /** 演技全体での、単発で高難度（D難度以上）な技の数 */
-export function highDifficultyCount(series: Series[], junior = false): number {
+export function highDifficultyCount(
+  series: Series[],
+  junior = false,
+  future: FutureLevel = null,
+): number {
   let n = 0;
   series.forEach((ser) =>
     ser.items.forEach((item) => {
-      if (item.kind === "skill" && item.skillId && isHighDifficultySkill(item.skillId, junior)) n += 1;
+      if (item.kind === "skill" && item.skillId && isHighDifficultySkill(item.skillId, junior, future))
+        n += 1;
     }),
   );
   return n;
@@ -95,12 +100,17 @@ export function highDifficultyCount(series: Series[], junior = false): number {
  * 構成全体で、実施されにくい組み方ぶんの順位の合計（`TUMBLING_SHAPE_ORDER`）。
  * 転回系のユニットが1つのシリーズだけを見る（テンプレートの複合シリーズは対象外）。
  */
-export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false): number {
+export function shapeRankTotal(
+  series: Series[],
+  r: ScoreResult,
+  junior = false,
+  future: FutureLevel = null,
+): number {
   let total = 0;
   series.forEach((ser, i) => {
     const units = (r.analysis[i]?.units ?? []).filter((u) => u.type === "tumbling" || u.isThrowTumbling);
     if (units.length !== 1) return;
-    const shape = readTumblingShape(ser, junior);
+    const shape = readTumblingShape(ser, junior, future);
     if (!shape) return;
     total += units[0].isThrowTumbling
       ? throwTumblingShapeRank(shape, units[0].finalDiff)
@@ -110,7 +120,7 @@ export function shapeRankTotal(series: Series[], r: ScoreResult, junior = false)
 }
 
 /** その構成で「手以外・手具を使った投げのあとに徒手を2動作以上または転回系」を実施している回数 */
-export function hardThrowCount(series: Series[], junior = false): number {
+export function hardThrowCount(series: Series[], junior = false, future: FutureLevel = null): number {
   let count = 0;
   series.forEach((ser) => {
     let open = false;
@@ -127,7 +137,7 @@ export function hardThrowCount(series: Series[], junior = false): number {
       }
       if (!open) return;
       if (item.kind === "motion") {
-        const def = motionDef(item.motionId, junior);
+        const def = motionDef(item.motionId, junior, future);
         if (def) motions += motionTimes(item.count);
         return;
       }
@@ -172,7 +182,11 @@ export function otherStyleCount(series: Series[]): number {
   return count;
 }
 
-export function verticalThreeThrowCount(series: Series[], junior = false): number {
+export function verticalThreeThrowCount(
+  series: Series[],
+  junior = false,
+  future: FutureLevel = null,
+): number {
   let count = 0;
   series.forEach((ser) => {
     let vertical = 0;
@@ -184,7 +198,7 @@ export function verticalThreeThrowCount(series: Series[], junior = false): numbe
         return;
       }
       if (item.kind === "motion" && open) {
-        const def = motionDef(item.motionId, junior);
+        const def = motionDef(item.motionId, junior, future);
         if (def) vertical += def.vertical * motionTimes(item.count);
         return;
       }
@@ -268,7 +282,7 @@ export interface Evaluation {
  * 「必須要素を満たしつつ難度を上げる」方向に進む。
  */
 export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evaluation {
-  const r = computeScore(series, opts.apparatus, { junior: !!opts.junior });
+  const r = computeScore(series, opts.apparatus, { junior: !!opts.junior, future: opts.future ?? null });
   const penalty = rangePenalty(r.dScore, opts.minScore, opts.maxScore);
   // 投げタンの本数制限（既定1本）。超えた分は範囲外と同じ強さで嫌う。
   const maxThrowTum = opts.maxThrowTumbling ?? DEFAULT_MAX_THROW_TUMBLING;
@@ -280,7 +294,7 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
   // タンブリングは投げタンを含めて3本までしか評価されない。4本目は入れない
   const overTumbling = Math.max(0, r.nonDupTumblingCount - (opts.maxTumblings ?? DEFAULT_MAX_TUMBLINGS));
   // 単発で高難度（D難度以上）な技は数が少ない。上限は決めず、重みで抑える
-  const highDifficulty = highDifficultyCount(series, !!opts.junior);
+  const highDifficulty = highDifficultyCount(series, !!opts.junior, opts.future ?? null);
   // 実施が少ない技（ハンドスプリング・転宙）は演技内で1回まで。使うこと自体も弱く嫌う
   const limited = limitedSkillCounts(series);
   let limitedUsed = 0;
@@ -295,7 +309,7 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
   // 上級者（難度の高い構成）になるほど宙返りの種類が増えるので、この減点は自然に小さくなる
   const tumVariety = r.tumVariety.deduction;
   // 同じ難度なら、より実施される組み方（C→B→B など）を選ぶ
-  const shape = shapeRankTotal(series, r, !!opts.junior) * SHAPE_PRIORITY_WEIGHT;
+  const shape = shapeRankTotal(series, r, !!opts.junior, opts.future ?? null) * SHAPE_PRIORITY_WEIGHT;
   // 連続投げは1回目のほうが難度が高いのが普通（逆の構成も現実にあるので弱く嫌うだけ）
   const throwOrder = reversedThrowOrderCount(r) * THROW_ORDER_WEIGHT;
   // 投げ上げの回数はDスコアに応じた最頻値に寄せる
@@ -304,14 +318,14 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
   const extraOperation = extraThrowOperation(r) * EXTRA_THROW_OPERATION_WEIGHT;
   // 前転3回（縦3動作）を手具を使ったキャッチ以外で受ける形は基本実施しない
   const verticalThree =
-    verticalThreeThrowCount(series, !!opts.junior) * VERTICAL_THREE_THROW_WEIGHT;
+    verticalThreeThrowCount(series, !!opts.junior, opts.future ?? null) * VERTICAL_THREE_THROW_WEIGHT;
   // その他の投げ・その他のキャッチは可能な限り使わない
   const otherStyle = otherStyleCount(series) * OTHER_STYLE_WEIGHT;
   // クラブは押さえてキャッチ、ロープは足に絡めたキャッチで演技を締める
   const finishCatch = missesFinishCatch(series, opts.apparatus) ? FINISH_CATCH_WEIGHT : 0;
   // 手以外・手具を使った投げのあとに徒手を多く実施する形は、要求値が5.0を超えるまで嫌う
   const hardThrow = suppressHardThrow(opts)
-    ? hardThrowCount(series, !!opts.junior) * HARD_THROW_WEIGHT
+    ? hardThrowCount(series, !!opts.junior, opts.future ?? null) * HARD_THROW_WEIGHT
     : 0;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));

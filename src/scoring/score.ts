@@ -55,7 +55,7 @@ import {
   tumblingVariety,
   type TumblingVariety,
 } from "./analysis";
-import type { ApparatusKey, Difficulty, Series, SeriesAnalysis, Unit } from "./types";
+import type { ApparatusKey, Difficulty, FutureLevel, Series, SeriesAnalysis, Unit } from "./types";
 
 /** シリーズ内のユニット1つ分の難度点の内訳（表示用） */
 export interface DiffRow {
@@ -187,6 +187,11 @@ export interface ComputeOptions {
   violations?: string[];
   /** ジュニア適用規則（変更規則1）で採点するか */
   junior?: boolean;
+  /**
+   * 十年後モードの上限難度（"F" / "G"）。null・未指定なら現行規則どおりE止め。
+   * F・G難度を認定するだけで、他の規則（加点・減点・必須要素）は現行のまま。
+   */
+  future?: FutureLevel;
   /** §3.5.6.4 芸術と多様性の欠点テーブル（項目id → 減点）。審判の主観評価。 */
   artDeductions?: Record<string, number>;
 }
@@ -205,9 +210,10 @@ export function computeScore(
     apparatusElements = [],
     violations = [],
     junior = false,
+    future = null,
     artDeductions = {},
   } = opts;
-  const analysis = series.map((ser) => analyzeSeries(ser, junior));
+  const analysis = series.map((ser) => analyzeSeries(ser, junior, future));
   const requiredThrowCount = throwCountRequired(junior);
   const maxThrowCount = throwCountMax(junior);
   const allUnits = analysis.flatMap((a) => a.units);
@@ -378,7 +384,8 @@ export function computeScore(
           (m, u, j) => (overLimitUnit[i][j] ? m : Math.max(m, DIFF_VALUE[u.finalDiff] || 0)),
           0,
         );
-        if (maxD === DIFF_VALUE.E) appOp = APPARATUS_OP_BONUS;
+        // 十年後モードではE難度を超える転回系もこの加点の対象（現行規則では上限がEなので同じ）
+        if (maxD >= DIFF_VALUE.E) appOp = APPARATUS_OP_BONUS;
       }
     }
 

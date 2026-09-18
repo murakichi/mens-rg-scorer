@@ -12,7 +12,7 @@
 // （`endNever` ／ 抽選待ち）、投げられない位置なのか（`throwRule`）。
 // =====================================================================
 
-import { isBackwardSalto, skillDef } from "./constants";
+import { futureSkillIds, isBackwardSalto, skillDef } from "./constants";
 import {
   KIRIMOMI_THROW_SKILL_ID,
   RARE_CHAIN_END_SKILLS,
@@ -41,7 +41,7 @@ import {
   withJuniorBoost,
 } from "./tumblingWeights";
 import { BASIC_LEVEL_MAX_DIFF, type AutoTumblingPattern } from "./tumblingPatterns";
-import type { ApparatusKey } from "./types";
+import type { ApparatusKey, FutureLevel } from "./types";
 
 /** その位置で投げてよいか（連続の最後の宙返りで投げる形だけ関係する） */
 export type ThrowRule =
@@ -80,6 +80,8 @@ export interface ConnectEdge {
 export interface TransitionContext {
   pattern: AutoTumblingPattern;
   junior?: boolean;
+  /** 十年後モードの上限難度（"F" / "G"）。F・G難度の技も候補に含める。 */
+  future?: FutureLevel;
   basicLevel?: boolean;
   apparatus?: ApparatusKey;
   /** 狙うDスコアの上限（入り方・終わり方の頻度が変わる） */
@@ -106,18 +108,23 @@ export interface TumblingTransitions {
  *  - 基本的な構成の選手はD難度以上を実施しない（`BASIC_LEVEL_MAX_DIFF`）
  *  - 個人で2回宙返り系を実施することはほぼない。実際に実施している（テンプレートに
  *    出てくる）ときだけ使い、技の一覧からは組み立てない
+ *  - 十年後モードのF・G難度は**まだ誰も実施していない技**なので、`skillIds` に出てこなくても
+ *    使ってよい（2回宙返り系はこの例外に入れない）
  */
 export function usableSkills(
-  ctx: Pick<TransitionContext, "junior" | "basicLevel" | "skillIds">,
+  ctx: Pick<TransitionContext, "junior" | "future" | "basicLevel" | "skillIds">,
 ): (ids: string[]) => string[] {
   const junior = !!ctx.junior;
+  const future = ctx.future ?? null;
   const basicLevel = !!ctx.basicLevel;
-  const allowed = ctx.skillIds && ctx.skillIds.length > 0 ? new Set(ctx.skillIds) : null;
+  const newSkills = futureSkillIds(future, junior).filter((id) => !skillDef(id)?.isDoubleSalto);
+  const allowed =
+    ctx.skillIds && ctx.skillIds.length > 0 ? new Set([...ctx.skillIds, ...newSkills]) : null;
   return (ids) =>
     ids.filter(
       (id) =>
         (!allowed || allowed.has(id)) &&
-        (!basicLevel || difficultyValue(id, junior) <= BASIC_LEVEL_MAX_DIFF) &&
+        (!basicLevel || difficultyValue(id, junior, future) <= BASIC_LEVEL_MAX_DIFF) &&
         (!skillDef(id)?.isDoubleSalto || !!allowed?.has(id)),
     );
 }
@@ -179,11 +186,12 @@ export const canThrowAt = (
 export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
   const { pattern, apparatus } = ctx;
   const junior = !!ctx.junior;
+  const future = ctx.future ?? null;
   const basicLevel = !!ctx.basicLevel;
   const target = ctx.targetScore;
   const usable = usableSkills(ctx);
 
-  const base = withJuniorBoost(baseSkillWeights(junior, apparatus), junior, target);
+  const base = withJuniorBoost(baseSkillWeights(junior, apparatus, future), junior, target);
 
   // ---- 連続の1本目 ----
   let firstWeights = base;
@@ -202,12 +210,12 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
     roundoffEntryWeight(target, !!pattern.connect),
     pattern.throwInSkill ? THROW_IN_SKILL_ROUNDOFF_WEIGHT : 1,
   );
-  const firstIds = usable(firstSaltoOptions(junior))
+  const firstIds = usable(firstSaltoOptions(junior, future))
     // 投げてから実施する投げ受けの1本目は前方系（手具の滞空時間の都合で後方系は実施しない）。
     // 連続の最後に投げる形は投げる前が普通のタンブリングなので、この制限は無い
     .filter((id) => !pattern.throwCatch || pattern.throwInSkill || isForwardSalto(id))
     // つなぎの形は、つなぎ技を挟める技（前向きに降りる技・テンポ）だけを1本目にする
-    .filter((id) => !pattern.connect || usable(connectOptionsAfter(id, junior)).length > 0);
+    .filter((id) => !pattern.connect || usable(connectOptionsAfter(id, junior, future)).length > 0);
   const first = firstIds.map((id) =>
     edge(
       undefined,
@@ -219,14 +227,14 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
   // ---- 続けて実施できる宙返り ----
   /** 投げてから跳ぶ投げ受けは側宙・転宙だけ */
   const continuations = (prevId: string) =>
-    usable(nextSaltoOptions(prevId, junior)).filter(
+    usable(nextSaltoOptions(prevId, junior, future)).filter(
       (id) => !pattern.throwCatch || pattern.throwInSkill || THROW_FINISH_SALTOS.includes(id),
     );
   const nextCache = new Map<string, SaltoEdge[]>();
   const next = (prevId: string): SaltoEdge[] => {
     const hit = nextCache.get(prevId);
     if (hit) return hit;
-    const w = withJuniorBoost(saltoWeights(prevId, junior, apparatus), junior, target);
+    const w = withJuniorBoost(saltoWeights(prevId, junior, apparatus, future), junior, target);
     const edges = continuations(prevId).map((id) =>
       edge(
         prevId,
@@ -246,7 +254,7 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
     const hit = connectCache.get(prevId);
     if (hit) return hit;
     // つなぎ技も実施の多さで選ぶ（ロンダート＞バク転＞ハンドスプリング）
-    const edges = usable(connectOptionsAfter(prevId, junior)).map((id) => ({
+    const edges = usable(connectOptionsAfter(prevId, junior, future)).map((id) => ({
       id,
       weight: base[id] ?? 1,
     }));
@@ -256,7 +264,7 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
 
   // ---- つなぎ技のあとの宙返り ----
   const finishWeights = withJuniorBoost(
-    connectFinishWeights(junior || basicLevel, junior, apparatus),
+    connectFinishWeights(junior || basicLevel, junior, apparatus, future),
     junior,
     target,
   );
@@ -266,13 +274,13 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
     const hit = afterCache.get(key);
     if (hit) return hit;
     // つなぎの後に難度が上がる組み方は少ない（C→B→B ＞ B→C→B）
-    const beforeValue = difficultyValue(beforeId, junior);
-    const edges = usable(saltoOptionsAfterConnect(connectId, junior)).map((id) =>
+    const beforeValue = difficultyValue(beforeId, junior, future);
+    const edges = usable(saltoOptionsAfterConnect(connectId, junior, future)).map((id) =>
       edge(
         connectId,
         id,
         (finishWeights[id] ?? 1) *
-          (difficultyValue(id, junior) > beforeValue ? CONNECT_RISE_WEIGHT : 1),
+          (difficultyValue(id, junior, future) > beforeValue ? CONNECT_RISE_WEIGHT : 1),
       ),
     );
     afterCache.set(key, edges);
