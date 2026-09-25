@@ -33,6 +33,9 @@ import {
   throwStylesForPattern,
   VERTICAL_THREE_OTHER_CATCH_WEIGHT,
   VERTICAL_THREE_CHANCE,
+  TWO_THROW_NON_HAND_WEIGHT,
+  TWO_THROW_NON_HAND_FREE_SCORE,
+  twoThrowNonHandWeight,
   VERTICAL_THREE_FREE_SCORE,
   verticalThreeChance,
   cheneCountRange,
@@ -765,6 +768,29 @@ describe("ランダム生成への組み込み", () => {
     [...count.entries()]
       .filter(([id]) => id !== CATCH_USE_APPARATUS)
       .forEach(([, n]) => expect(useapp).toBeGreaterThan(n));
+  });
+
+  it("クラブの二つ投げを手以外で受けるのはほぼ不可能（要求Dスコアが5を超えるまで出さない）", () => {
+    expect(TWO_THROW_NON_HAND_WEIGHT).toBeLessThan(0.1);
+    // クラブは要求Dスコアが 5.0 を超えるまで事実上0、超えたら普通の重みに戻る
+    expect(twoThrowNonHandWeight("clubs")).toBe(TWO_THROW_NON_HAND_WEIGHT);
+    expect(twoThrowNonHandWeight("clubs", TWO_THROW_NON_HAND_FREE_SCORE)).toBe(
+      TWO_THROW_NON_HAND_WEIGHT,
+    );
+    expect(twoThrowNonHandWeight("clubs", TWO_THROW_NON_HAND_FREE_SCORE + 0.1)).toBe(1);
+    // リングは輪なので腕・首で受けられる余地があり、対象外
+    expect(twoThrowNonHandWeight("ring")).toBe(1);
+
+    const pattern = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree && !rollFinishShape(x))!;
+    const two = autoThrowStyles("clubs").find((t) => t.two)!;
+    const plainThrow = autoThrowStyles("clubs").find((t) => !t.two && t.id === "normal")!;
+    const nonHand = autoCatchStyles("clubs").find((c) => c.id === NON_HAND_TAG)!;
+    const w = (throwStyle: typeof two, demandScore?: number | null) =>
+      catchStyleWeight({ throwStyle, catchStyle: nonHand, pattern, apparatus: "clubs", motions: 0, demandScore });
+    // 二つ投げのときだけ、普通の投げより桁違いに低い
+    expect(w(two)).toBeLessThan(w(plainThrow) * 0.1);
+    // 点数がどうしても要るときは戻る（禁止ではない）
+    expect(w(two, TWO_THROW_NON_HAND_FREE_SCORE + 0.5)).toBe(w(plainThrow));
   });
 
   it("前転3回（縦3動作）は珍しい寄りの技（要求Dスコアが高いときだけ下げない）", () => {

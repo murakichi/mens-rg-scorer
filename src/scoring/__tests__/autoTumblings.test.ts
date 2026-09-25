@@ -1285,9 +1285,10 @@ describe("つなぎ技", () => {
             if (!found && t.spec.saltoIds[0] === "b_front") found = t.series;
           }
         }
-    // 前宙→きりもみ転回 の形が実際に作られる
+    // 前宙→きりもみ転回 の形が実際に作られる。
+    // 連続投げ（`secondThrow`）が後ろに付くことがあるので、先頭の投げ受けだけを見る
     expect(found).not.toBeNull();
-    expect(names(found!)).toEqual(["throw", "前宙", "きりもみ転回", "catch"]);
+    expect(names(found!).slice(0, 4)).toEqual(["throw", "前宙", "きりもみ転回", "catch"]);
     expect(analyzeSeries(found!).units[0].isThrowTumbling).toBe(true);
     // 側宙より少なく、きりもみは来ない
     expect(finishes.get("c_kirimomiten")!).toBeLessThan(finishes.get("b_sidesalto")!);

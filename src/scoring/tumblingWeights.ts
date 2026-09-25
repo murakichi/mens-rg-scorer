@@ -15,6 +15,7 @@ import {
   JUNIOR_SKILL_DIFFICULTY,
   CATEGORY,
   DIFF_VALUE,
+  isBackwardSalto,
   maxDiff,
   skillDef,
   skillDifficulty,
@@ -26,11 +27,13 @@ import {
   CHAIN_END_SKILLS,
   DIFFICULTY_RISE_AFTER,
   TEMPO_SKILL_ID,
+  TEMPO_SKILLS,
   SIDE_SALTO_ID,
   TEMPO_TWIST_SKILL_ID,
   TENCHU_SKILL_ID,
   endsFacingBackward,
   isBackLayoutSalto,
+  isForwardSalto,
   noRollAfter,
 } from "./tumblingChain";
 import type { AutoTumblingPattern } from "./tumblingPatterns";
@@ -188,6 +191,48 @@ export function forwardEntryWeight(targetScore?: number | null, connect = false)
   if (targetScore != null && targetScore <= free) return 1;
   return FORWARD_ENTRY_WEIGHT;
 }
+
+/** ダイビング前宙（後方系だが前向きに降りる） */
+export const DIVE_FRONT_SKILL_ID = "b_divefront";
+
+/**
+ * **後ろ向きに降りる宙返りから、ロンダートを挟まずに後方系を続ける**のは、
+ * テンポ系の後を除いて珍しい寄り。禁止はしない。
+ *
+ * 同じ1つの話だが、効かせる場所は2つに分かれる：
+ *  - **後方伸身→後方系**（`AFTER_BACK_LAYOUT_BACKWARD_SALTOS`）は、その位置に前方系
+ *    （前宙・きりもみ）も並ぶので、**その位置の辺**を下げれば選ばれにくくなる
+ *  - **前方系の半ひねり→後方系**は、その位置に後方系しか並ばない（`skillFlowAfter`）ので
+ *    辺を下げても選択は変わらない。後ろ向きに降りる技は連続の最後に置けない
+ *    （`canEndChain`）＝その技を選ぶこと自体がこの形を確定させるので、
+ *    **技そのものの重み**を下げる（`backLandingForwardWeight`）
+ */
+export const BACK_TO_BACK_WEIGHT = 0.3;
+
+export function backToBackWeight(prevId: string, id: string): number {
+  // テンポの後だけは後方系を続けるのが普通
+  if (TEMPO_SKILLS.includes(prevId)) return 1;
+  if (!endsFacingBackward(prevId)) return 1;
+  return isBackwardSalto(id) ? BACK_TO_BACK_WEIGHT : 1;
+}
+
+/** 後ろ向きに降りる**前方系**の宙返り（前宙半ひねりなど）の重み。上の説明を参照 */
+export const BACK_LANDING_FORWARD_WEIGHT = 0.3;
+
+export const backLandingForwardWeight = (id: string): number =>
+  isForwardSalto(id) && endsFacingBackward(id) ? BACK_LANDING_FORWARD_WEIGHT : 1;
+
+/**
+ * 直前の技との**組み合わせ**で少し珍しくなる並び（どの位置・どの形でも効く）。
+ * ダイビング前宙は前向きに降りるので前転・そのまま終了・前宙のどれも実施できるが、
+ * そのうち**前宙を続ける**のは少ない。
+ */
+export const RARE_SALTO_PAIRS: { prev: string; next: string; weight: number }[] = [
+  { prev: DIVE_FRONT_SKILL_ID, next: FRONT_SALTO_ID, weight: 0.3 },
+];
+
+export const saltoPairWeight = (prevId: string, id: string): number =>
+  RARE_SALTO_PAIRS.find((x) => x.prev === prevId && x.next === id)?.weight ?? 1;
 
 /**
  * **切り返し**（後ろ向きで終わる宙返り→前方系）**からの側宙**は少し珍しい寄りの並び。
