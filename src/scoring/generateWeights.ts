@@ -353,6 +353,59 @@ export const DIFFICULTY_PREFERENCE_WEIGHT = 0.3;
  */
 export const TUMBLING_PREFERENCE_WEIGHT = 0.3;
 
+/**
+ * **難度点をタンブリングと徒手のどちらで取るかの比重はユーザーが決める**（0〜100、既定50）。
+ * 上限の低い構成ほどタンブリング寄りになる（実測：上限3.0点でタンブリング1.68 対 徒手0.85、
+ * 上限なしで 2.07 対 2.05）ので、どちらに寄せるかを選べるようにした。
+ *
+ * 上乗せは `DIFFICULTY_PREFERENCE_WEIGHT`（タンブリング・徒手の両方に0.3）に、
+ * この比重ぶんを足したもの：
+ *  - 0 … 徒手に `TUMBLING_PREFERENCE_WEIGHT` を足す（徒手・投げ寄り）
+ *  - 50 … タンブリングに `TUMBLING_PREFERENCE_WEIGHT` を足す（**既定＝実測どおり**）
+ *  - 100 … タンブリングに `TUMBLING_PREFERENCE_WEIGHT` の2倍を足す（タンブリング寄り）
+ *
+ * 片寄り（タンブリング − 徒手）は 0/25/50/75/100 で −0.3 / 0 / +0.3 / +0.45 / +0.6 と単調に動く。
+ * 両者を等しく扱う点が25にあるのは、50が「今までどおり」でなければならないため。
+ * `upgradeTumblings`（タンブリング候補だけの入れ替え）は評価が上がるときしか採らないので、
+ * 比重を下げればそのパスも自然に効かなくなる。
+ *
+ * **効き幅は小さい**（実測、上限3.0点・30構成：比重0で タンブリング1.65／徒手0.92、
+ * 比重50で 1.72／0.86、比重100で 1.73／0.86。上限4.5点でも 1.93／1.75 → 1.96／1.71）。
+ * 理由は2つあり、どちらも構造の話なので重みでは越えられない：
+ *  - 難度点そのものは評価に重み1で入るので、**Dスコアが上限に張り付いていない限り**
+ *    「難度を上げる」が常に勝つ。上乗せが効くのは上限ぎりぎりの比較だけ
+ *  - 必須要素（三宙・つなぎ・投げタン）がそれぞれ別のシリーズを要求するので、
+ *    タンブリングのシリーズ数は実質3本で固定される
+ * 実際に大きく動くのは**シリーズ数**のほう（`maxTumblings`）だが、3→2で必須要素が
+ * ちょうど1つ未達になる（実測：未達0.03 → 1.00、A減点 0.61 → 0.90、上限3.0点で
+ * タンブリング1.72／徒手0.86 → 1.25／1.37）。規則を落とす選択なのでつまみには繋いでいない。
+ * 重みを3倍・6倍にしても 1.65／0.94・1.62／1.00 までしか動かず、6倍では投げの本数まで
+ * 歪み始める（4.0本 → 4.4本）ので、素直な2倍幅のままにしてある。
+ */
+export const DEFAULT_TUMBLING_BALANCE = 50;
+
+export const TUMBLING_BALANCE_MIN = 0;
+
+export const TUMBLING_BALANCE_MAX = 100;
+
+export const TUMBLING_BALANCE_STEP = 25;
+
+/** その比重での「タンブリング難度1点」「徒手難度1点」への上乗せ（共通ぶんとは別） */
+export function preferenceWeights(balance: number = DEFAULT_TUMBLING_BALANCE): {
+  tumbling: number;
+  hand: number;
+} {
+  const b = Math.min(
+    TUMBLING_BALANCE_MAX,
+    Math.max(TUMBLING_BALANCE_MIN, Number.isFinite(balance) ? balance : DEFAULT_TUMBLING_BALANCE),
+  );
+  const t = b / DEFAULT_TUMBLING_BALANCE; // 0〜2（1が既定）
+  return {
+    tumbling: TUMBLING_PREFERENCE_WEIGHT * t,
+    hand: TUMBLING_PREFERENCE_WEIGHT * Math.max(0, 1 - t),
+  };
+}
+
 /** 不足を満たす候補を必ず入れて組み直す回数（足す順番で結果が変わるため） */
 export const REBUILD_ATTEMPTS = 5;
 

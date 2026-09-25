@@ -27,6 +27,11 @@ import {
   THROW_ORDER_WEIGHT,
   reversedThrowOrderCount,
   preferredThrowCount,
+  preferenceWeights,
+  DEFAULT_TUMBLING_BALANCE,
+  TUMBLING_BALANCE_MIN,
+  TUMBLING_BALANCE_MAX,
+  TUMBLING_PREFERENCE_WEIGHT,
   throwCountPenalty,
   extraThrowOperation,
   verticalThreeThrowCount,
@@ -117,6 +122,63 @@ describe("使えるテンプレートの絞り込み", () => {
 });
 
 describe("ランダム生成", () => {
+  it("難度をタンブリングと徒手のどちらで取るかの比重はユーザーが選ぶ", () => {
+    // 既定（50）は今までどおり：タンブリングにだけ `TUMBLING_PREFERENCE_WEIGHT` が乗る
+    expect(preferenceWeights(DEFAULT_TUMBLING_BALANCE)).toEqual({
+      tumbling: TUMBLING_PREFERENCE_WEIGHT,
+      hand: 0,
+    });
+    expect(preferenceWeights()).toEqual(preferenceWeights(DEFAULT_TUMBLING_BALANCE));
+    // 0 は徒手寄り、100 はタンブリング寄り
+    expect(preferenceWeights(TUMBLING_BALANCE_MIN)).toEqual({
+      tumbling: 0,
+      hand: TUMBLING_PREFERENCE_WEIGHT,
+    });
+    expect(preferenceWeights(TUMBLING_BALANCE_MAX)).toEqual({
+      tumbling: TUMBLING_PREFERENCE_WEIGHT * 2,
+      hand: 0,
+    });
+    // 片寄り（タンブリング − 徒手）は単調に増える
+    const lean = [0, 25, 50, 75, 100].map((b) => {
+      const w = preferenceWeights(b);
+      return w.tumbling - w.hand;
+    });
+    lean.forEach((v, i) => i > 0 && expect(v).toBeGreaterThan(lean[i - 1]));
+    // 範囲外・壊れた値は丸める（古い保存データやURLから来ても落ちない）
+    expect(preferenceWeights(-50)).toEqual(preferenceWeights(TUMBLING_BALANCE_MIN));
+    expect(preferenceWeights(500)).toEqual(preferenceWeights(TUMBLING_BALANCE_MAX));
+    expect(preferenceWeights(NaN)).toEqual(preferenceWeights(DEFAULT_TUMBLING_BALANCE));
+
+    // 生成に通る：徒手寄りにすると徒手の難度が上がり、Dスコアは変わらない。
+    // 必須要素（三宙・つなぎ・投げタン）が別々のシリーズを要求するので
+    // タンブリングは3本で固定され、**効き幅は小さい**（実測0.07前後）
+    const run = (tumblingBalance: number) => {
+      let tum = 0, hand = 0, d = 0, n = 0;
+      for (let seed = 1; seed <= 10; seed++) {
+        const r = generateRoutine([], {
+          apparatus: "stick",
+          tumblingBalance,
+          minScore: 2.5,
+          maxScore: 3.0,
+          random: seeded(seed * 7919 + 13),
+        });
+        if (!r) continue;
+        const sc = computeScore(r.series, "stick");
+        tum += sc.tumblingScore;
+        hand += sc.handScore;
+        d += sc.dScore;
+        n += 1;
+      }
+      return { tum: tum / n, hand: hand / n, d: d / n };
+    };
+    const handLean = run(TUMBLING_BALANCE_MIN);
+    const base = run(DEFAULT_TUMBLING_BALANCE);
+    expect(handLean.hand).toBeGreaterThanOrEqual(base.hand);
+    expect(handLean.tum).toBeLessThanOrEqual(base.tum);
+    // Dスコアは比重で動かない（点の取り方を選ぶだけで、点数そのものは変えない）
+    expect(handLean.d).toBeCloseTo(base.d, 1);
+  }, 120_000);
+
   it("上限3.0点の構成は単発D難度を実施せず、投げの本数で満たす", () => {
     // 上限は上から抑える値なので、3.0点を指定した構成が実際に取るのは2.9点台＝2点台の選手。
     // 以前はこの位置でD難度が解禁されていて、「投げを最低限にして高難度タンブリングで

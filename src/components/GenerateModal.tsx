@@ -4,6 +4,10 @@ import { APPARATUS } from "../scoring/constants";
 import {
   DEFAULT_MAX_AUTO_THROWS,
   DEFAULT_RARITY,
+  DEFAULT_TUMBLING_BALANCE,
+  TUMBLING_BALANCE_MIN,
+  TUMBLING_BALANCE_MAX,
+  TUMBLING_BALANCE_STEP,
   DEFAULT_MAX_AUTO_TUMBLINGS,
   DEFAULT_MAX_SERIES,
   generateForApparatus,
@@ -44,6 +48,7 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
   const [autoPercent, setAutoPercent] = useState(100);
   /** 生成する形の珍しさ（0＝ありふれた形だけ／50＝実測どおり／100＝珍しい形を優先） */
   const [rarity, setRarity] = useState(DEFAULT_RARITY);
+  const [tumblingBalance, setTumblingBalance] = useState(DEFAULT_TUMBLING_BALANCE);
   /** 技ごとの出やすさ（端末に保存。既定から変えた技だけ入っている） */
   const [skillWeights, setSkillWeights] = useState<SkillWeightStore>(() => loadSkillWeights());
   const [weightOpen, setWeightOpen] = useState(false);
@@ -68,6 +73,7 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
       autoTumblings,
       autoRatio: autoPercent / 100,
       rarity,
+      tumblingBalance,
       skillWeights,
       minScore: minScore ? parseFloat(minScore) : null,
       maxScore: maxScore ? parseFloat(maxScore) : null,
@@ -151,6 +157,26 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
                 : rarity < DEFAULT_RARITY
                   ? "（よく実施される形に寄せる）"
                   : "（珍しい形を優先する）"}
+            </span>
+          </div>
+          <div className="gen-ratio">
+            <input
+              className="gen-ratio-range"
+              type="range"
+              min={TUMBLING_BALANCE_MIN}
+              max={TUMBLING_BALANCE_MAX}
+              step={TUMBLING_BALANCE_STEP}
+              value={tumblingBalance}
+              onChange={(e) => setTumblingBalance(parseInt(e.target.value, 10))}
+              aria-label="難度をどちらで取るか"
+            />
+            <span className="gen-ratio-value">
+              難度の比重 {tumblingBalance}
+              {tumblingBalance === DEFAULT_TUMBLING_BALANCE
+                ? "（実際の演技どおり：タンブリング寄り）"
+                : tumblingBalance < DEFAULT_TUMBLING_BALANCE
+                  ? "（投げ・徒手で取る）"
+                  : "（タンブリングで取る）"}
             </span>
           </div>
           <div className="weight-head">
