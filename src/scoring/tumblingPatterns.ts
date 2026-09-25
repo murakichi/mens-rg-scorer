@@ -102,19 +102,24 @@ export const BASIC_LEVEL_MAX_SALTOS = 2;
  * これが無いと**難度を上げずに本数だけ増やして**Dスコアを満たしてしまう
  * （実測：上限2.0点でもE難度が出て、転回技の平均難度は上限1.5〜5.0で 2.27〜2.66 とほぼ横ばい）。
  * 上限（`maxScore`）を指定しないときは制限しない（難度を狙いきる構成）。
+ *
+ * 段の境目は**上限ぴったりを含める**（`upTo` 以下）。上限は上から抑える値なので、
+ * 3.0点を指定した構成が実際に取るのは 2.9点台＝2点台の選手であり、そこにD難度の単発が
+ * 出るのはおかしい。実測でも上限3.0点のほうが上限3.5点よりD難度以上の技が多く
+ * （0.57個 対 0.45個）、段が1つずれていた。
  */
-export const SKILL_MAX_DIFF_STEPS: { under: number; diff: Difficulty }[] = [
-  // 0〜2点台：C難度まで（`BASIC_LEVEL_MAX_DIFF` と同じ水準）
-  { under: 3.0, diff: "C" },
-  // 3点台：D難度まで
-  { under: 4.0, diff: "D" },
-  // 4点台以上：制限しない（十年後モードならF・Gまで）
+export const SKILL_MAX_DIFF_STEPS: { upTo: number; diff: Difficulty }[] = [
+  // 上限2点台まで（3.0点ぴったりを含む）：C難度まで（`BASIC_LEVEL_MAX_DIFF` と同じ水準）
+  { upTo: 3.0, diff: "C" },
+  // 上限3点台まで（4.0点ぴったりを含む）：D難度まで
+  { upTo: 4.0, diff: "D" },
+  // それより上：制限しない（十年後モードならF・Gまで）
 ];
 
 export function maxSkillDiffValue(targetScore?: number | null, future: FutureLevel = null): number {
   const ceiling = maxDiff(future);
   if (targetScore == null) return ceiling;
-  const step = SKILL_MAX_DIFF_STEPS.find((x) => targetScore < x.under);
+  const step = SKILL_MAX_DIFF_STEPS.find((x) => targetScore <= x.upTo);
   return step ? Math.min(ceiling, DIFF_VALUE[step.diff]) : ceiling;
 }
 

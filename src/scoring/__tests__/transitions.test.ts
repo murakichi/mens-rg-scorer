@@ -418,20 +418,25 @@ describe("前方系のあとのきりもみ転回", () => {
 
 describe("狙うDスコアごとの技の難度の上限", () => {
   it("上限が上がるほど難しい技を実施できる（段はひとつずつ上がる）", () => {
-    // 2点台まではC難度まで、3点台はD難度まで、4点台以上は制限しない
+    // 2点台まではC難度まで、3点台はD難度まで、4点台以上は制限しない。
+    // 段の境目は**上限ぴったりを含める**：上限3.0点の構成が実際に取るのは2.9点台＝2点台の
+    // 選手なので、そこにD難度の単発は出さない
     expect(maxSkillDiffValue(1.5)).toBe(DIFF_VALUE.C);
     expect(maxSkillDiffValue(2.9)).toBe(DIFF_VALUE.C);
-    expect(maxSkillDiffValue(3.0)).toBe(DIFF_VALUE.D);
+    expect(maxSkillDiffValue(3.0)).toBe(DIFF_VALUE.C);
+    expect(maxSkillDiffValue(3.1)).toBe(DIFF_VALUE.D);
     expect(maxSkillDiffValue(3.9)).toBe(DIFF_VALUE.D);
-    expect(maxSkillDiffValue(4.0)).toBe(DIFF_VALUE.E);
+    expect(maxSkillDiffValue(4.0)).toBe(DIFF_VALUE.D);
+    expect(maxSkillDiffValue(4.1)).toBe(DIFF_VALUE.E);
     // 上限を指定しない＝難度を狙いきる構成なので制限しない
     expect(maxSkillDiffValue(null)).toBe(DIFF_VALUE.E);
     // 単調（下がることはない）
-    const steps = [0, 1, 2, 2.9, 3, 3.9, 4, 5, 9].map((s) => maxSkillDiffValue(s));
+    const steps = [0, 1, 2, 2.9, 3, 3.1, 3.9, 4, 4.1, 5, 9].map((s) => maxSkillDiffValue(s));
     steps.forEach((v, i) => i > 0 && expect(v).toBeGreaterThanOrEqual(steps[i - 1]));
     // 十年後モードの上限を超えない／低い要求値では十年後モードでも上がらない
     expect(maxSkillDiffValue(null, "G")).toBe(DIFF_VALUE.G);
     expect(maxSkillDiffValue(2.0, "G")).toBe(DIFF_VALUE.C);
+    expect(maxSkillDiffValue(3.0, "G")).toBe(DIFF_VALUE.C);
   });
 
   it("遷移表の候補からも上限を超える技が消える", () => {
@@ -447,6 +452,10 @@ describe("狙うDスコアごとの技の難度の上限", () => {
     // 3点台はD難度まで
     ids(table("chain", { targetScore: 3.5 }).first).forEach((id) =>
       expect(value(id)).toBeLessThanOrEqual(DIFF_VALUE.D),
+    );
+    // 上限3.0点ぴったりは2点台の構成（実際に取るのは2.9点台）なのでC難度まで
+    ids(table("chain", { targetScore: 3.0 }).first).forEach((id) =>
+      expect(value(id)).toBeLessThanOrEqual(DIFF_VALUE.C),
     );
   });
 });

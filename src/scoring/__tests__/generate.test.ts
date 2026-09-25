@@ -36,7 +36,7 @@ import {
   shortfallPenalty,
   usableTemplates,
 } from "../generate";
-import { ADOPT_COUNT, DIFF_SCORE, TECHNIQUE_BONUS } from "../constants";
+import { ADOPT_COUNT, DIFF_SCORE, DIFF_VALUE, TECHNIQUE_BONUS, skillDifficulty } from "../constants";
 import { analyzeSeries, seriesSignature } from "../analysis";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
@@ -117,6 +117,40 @@ describe("使えるテンプレートの絞り込み", () => {
 });
 
 describe("ランダム生成", () => {
+  it("上限3.0点の構成は単発D難度を実施せず、投げの本数で満たす", () => {
+    // 上限は上から抑える値なので、3.0点を指定した構成が実際に取るのは2.9点台＝2点台の選手。
+    // 以前はこの位置でD難度が解禁されていて、「投げを最低限にして高難度タンブリングで
+    // 効率よく満たす」構成になっていた（実測：D難度以上の技 0.57個・投げ3本が15%）
+    let hard = 0;
+    const throwCounts: number[] = [];
+    for (let seed = 1; seed <= 12; seed++) {
+      const r = generateRoutine([], {
+        apparatus: "stick",
+        minScore: 2.5,
+        maxScore: 3.0,
+        random: seeded(seed * 7919 + 13),
+      });
+      if (!r) continue;
+      const score = computeScore(r.series, "stick");
+      throwCounts.push(score.totalThrowCount);
+      r.series.forEach((ser) =>
+        ser.items.forEach((it) => {
+          if (it.kind !== "skill") return;
+          const d = skillDifficulty(it.skillId);
+          if (d && DIFF_VALUE[d] >= DIFF_VALUE.D) hard += 1;
+        }),
+      );
+    }
+    expect(throwCounts.length).toBeGreaterThan(0);
+    // 2点台の選手は単発でD難度を実施しない（段の判定は決定的なので必ず0）
+    expect(hard).toBe(0);
+    // 投げは規則の最低限（3回）で済ませず、その水準の最頻値まで出す。
+    // 貪欲法は乱択なので本数は分布で見る（実測：4本85% / 5本10%）
+    expect(preferredThrowCount(2.9)).toBe(4);
+    const atMode = throwCounts.filter((n) => n >= 4).length;
+    expect(atMode / throwCounts.length).toBeGreaterThan(0.7);
+  }, 60_000);
+
   it("必須要素をできるだけ満たす（投げ3回・投げタン・三宙・つなぎ・方向系）", () => {
     const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(7) })!;
     expect(r).not.toBeNull();
