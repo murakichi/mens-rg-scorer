@@ -354,6 +354,49 @@ export const DIFFICULTY_PREFERENCE_WEIGHT = 0.3;
 export const TUMBLING_PREFERENCE_WEIGHT = 0.3;
 
 /**
+ * **実際の大会でのDスコアの目安**（2025年度・個人）。オーナー提供の配布資料そのまま。
+ * 生成の目標範囲をこの表から選べるようにするためだけのもので、**採点には一切使わない**。
+ *
+ * 数字は資料の値をそのまま持つ（丸めたり足したりしない）。表が更新されたらここを差し替える。
+ * `junior` は**その大会がジュニア適用規則で採点されるか**。採点画面のジュニア設定は
+ * ここからは変えられない（`GenerateModal` の `junior` は props）ので、食い違ったら注意だけ出す。
+ */
+export interface CompetitionLevel {
+  /** 大会名 */
+  meet: string;
+  /** その大会での順位帯 */
+  rank: string;
+  min: number;
+  max: number;
+  /** ジュニア適用規則で採点される大会か */
+  junior?: boolean;
+}
+
+export const COMPETITION_LEVELS: CompetitionLevel[] = [
+  { meet: "全日本", rank: "1〜5位", min: 4.5, max: 5.0 },
+  { meet: "全日本", rank: "15位", min: 3.8, max: 4.7 },
+  { meet: "全日本", rank: "30位", min: 3.7, max: 4.4 },
+  { meet: "インターハイ", rank: "1〜5位", min: 3.8, max: 4.7 },
+  { meet: "インターハイ", rank: "15位", min: 2.8, max: 3.9 },
+  { meet: "インターハイ", rank: "30位", min: 1.9, max: 2.9 },
+  { meet: "全日本ジュニア", rank: "1〜2位", min: 4.0, max: 4.2, junior: true },
+  { meet: "全日本ジュニア", rank: "3〜5位", min: 3.7, max: 4.0, junior: true },
+  { meet: "全日本ジュニア", rank: "20位", min: 2.7, max: 3.5, junior: true },
+  { meet: "全日本ジュニア", rank: "下位", min: 1.7, max: 2.2, junior: true },
+];
+
+/** 大会ごとにまとめた目安（プルダウンの `optgroup` 用。表の並びを保つ） */
+export function competitionLevelGroups(): { meet: string; levels: CompetitionLevel[] }[] {
+  const groups: { meet: string; levels: CompetitionLevel[] }[] = [];
+  COMPETITION_LEVELS.forEach((lv) => {
+    const hit = groups.find((g) => g.meet === lv.meet);
+    if (hit) hit.levels.push(lv);
+    else groups.push({ meet: lv.meet, levels: [lv] });
+  });
+  return groups;
+}
+
+/**
  * **難度点をタンブリングと徒手のどちらで取るかの比重はユーザーが決める**（0〜100、既定50）。
  * 上限の低い構成ほどタンブリング寄りになる（実測：上限3.0点でタンブリング1.68 対 徒手0.85、
  * 上限なしで 2.07 対 2.05）ので、どちらに寄せるかを選べるようにした。

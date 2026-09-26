@@ -28,6 +28,8 @@ import {
   reversedThrowOrderCount,
   preferredThrowCount,
   preferenceWeights,
+  COMPETITION_LEVELS,
+  competitionLevelGroups,
   DEFAULT_TUMBLING_BALANCE,
   TUMBLING_BALANCE_MIN,
   TUMBLING_BALANCE_MAX,
@@ -122,6 +124,42 @@ describe("使えるテンプレートの絞り込み", () => {
 });
 
 describe("ランダム生成", () => {
+  it("大会レベルのDスコアの目安から範囲を選べる", () => {
+    // 表そのもの（配布資料の値をそのまま持つ）
+    expect(COMPETITION_LEVELS.length).toBeGreaterThan(0);
+    COMPETITION_LEVELS.forEach((lv) => {
+      expect(lv.min).toBeLessThan(lv.max);
+      expect(lv.min).toBeGreaterThan(0);
+      expect(lv.max).toBeLessThanOrEqual(DIFF_SCORE.E * 10);
+    });
+    // 大会名＋順位帯で一意（プルダウンの value に使う）
+    const keys = COMPETITION_LEVELS.map((lv) => `${lv.meet}:${lv.rank}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    // ジュニア大会だけ `junior` が付く
+    COMPETITION_LEVELS.forEach((lv) => {
+      expect(!!lv.junior).toBe(lv.meet.includes("ジュニア"));
+    });
+    // 大会ごとにまとまり、表の並びが保たれる
+    const groups = competitionLevelGroups();
+    expect(groups.map((g) => g.meet)).toEqual([...new Set(COMPETITION_LEVELS.map((lv) => lv.meet))]);
+    expect(groups.reduce((n, g) => n + g.levels.length, 0)).toBe(COMPETITION_LEVELS.length);
+
+    // どのレベルでも、その範囲に収まる構成が組める（実測：どれも20/20）
+    COMPETITION_LEVELS.forEach((lv) => {
+      const r = generateRoutine([], {
+        apparatus: "stick",
+        junior: !!lv.junior,
+        minScore: lv.min,
+        maxScore: lv.max,
+        random: seeded(7),
+      });
+      expect(r).not.toBeNull();
+      const d = computeScore(r!.series, "stick", { junior: !!lv.junior }).dScore;
+      expect(d).toBeGreaterThanOrEqual(lv.min - 1e-9);
+      expect(d).toBeLessThanOrEqual(lv.max + 1e-9);
+    });
+  }, 120_000);
+
   it("難度をタンブリングと徒手のどちらで取るかの比重はユーザーが選ぶ", () => {
     // 既定（50）は今までどおり：タンブリングにだけ `TUMBLING_PREFERENCE_WEIGHT` が乗る
     expect(preferenceWeights(DEFAULT_TUMBLING_BALANCE)).toEqual({

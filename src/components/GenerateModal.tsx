@@ -3,6 +3,8 @@ import { X, Shuffle } from "lucide-react";
 import { APPARATUS } from "../scoring/constants";
 import {
   DEFAULT_MAX_AUTO_THROWS,
+  COMPETITION_LEVELS,
+  competitionLevelGroups,
   DEFAULT_RARITY,
   DEFAULT_TUMBLING_BALANCE,
   TUMBLING_BALANCE_MIN,
@@ -42,6 +44,20 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
   const [target, setTarget] = useState<ApparatusKey | "">(apparatus);
   const [minScore, setMinScore] = useState("");
   const [maxScore, setMaxScore] = useState("");
+  /** 大会レベルのプリセット（`大会名:順位帯`。手で範囲を変えたら選択は外す） */
+  const [levelKey, setLevelKey] = useState("");
+  const applyLevel = (key: string) => {
+    setLevelKey(key);
+    const lv = COMPETITION_LEVELS.find((x) => `${x.meet}:${x.rank}` === key);
+    if (!lv) return;
+    setMinScore(String(lv.min));
+    setMaxScore(String(lv.max));
+  };
+  /** ジュニア大会を選んだのに採点画面がジュニアでないときの注意（大会名） */
+  const juniorMismatch = (() => {
+    const lv = COMPETITION_LEVELS.find((x) => `${x.meet}:${x.rank}` === levelKey);
+    return lv?.junior && !junior ? lv.meet : "";
+  })();
   const [autoThrows, setAutoThrows] = useState(true);
   const [autoTumblings, setAutoTumblings] = useState(true);
   /** 自動生成にしてよい割合（%）。100%＝種類ごとの上限だけ */
@@ -197,6 +213,30 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
           </p>
 
           <div className="line-head">Dスコアの範囲</div>
+          <div className="gen-level">
+            <select
+              className="skill-select"
+              value={levelKey}
+              onChange={(e) => applyLevel(e.target.value)}
+              aria-label="大会レベルから選ぶ"
+            >
+              <option value="">大会レベルから選ぶ…</option>
+              {competitionLevelGroups().map((g) => (
+                <optgroup key={g.meet} label={g.meet}>
+                  {g.levels.map((lv) => (
+                    <option key={`${lv.meet}:${lv.rank}`} value={`${lv.meet}:${lv.rank}`}>
+                      {lv.rank}（{lv.min.toFixed(1)}〜{lv.max.toFixed(1)}）
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+          {juniorMismatch && (
+            <p className="hint">
+              {juniorMismatch}はジュニア適用規則で採点される大会です。採点画面の「ジュニア」も入れてください。
+            </p>
+          )}
           <div className="tpl-range">
             <input
               className="tpl-range-input"
@@ -204,7 +244,10 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
               step="0.1"
               min="0"
               value={minScore}
-              onChange={(e) => setMinScore(e.target.value)}
+              onChange={(e) => {
+                setMinScore(e.target.value);
+                setLevelKey("");
+              }}
               placeholder="下限"
             />
             〜
@@ -214,7 +257,10 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
               step="0.1"
               min="0"
               value={maxScore}
-              onChange={(e) => setMaxScore(e.target.value)}
+              onChange={(e) => {
+                setMaxScore(e.target.value);
+                setLevelKey("");
+              }}
               placeholder="上限"
             />
           </div>
