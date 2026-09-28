@@ -231,7 +231,6 @@ export const APPARATUS_REQUIRED_ELEMENTS: Record<
     { id: "stick_right", name: "右投げ右受け1回以上", auto: "rightThrow" },
     { id: "stick_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "stick_roll", name: "1m以上のころがし" },
-    { id: "stick_propeller", name: "プロペラ回旋2回以上" },
   ],
   ring: [
     { id: "ring_twothrow", name: "2つ同時投げ", auto: "twoThrow" },
@@ -250,7 +249,6 @@ export const APPARATUS_REQUIRED_ELEMENTS: Record<
     { id: "clubs_twothrow", name: "2つ同時投げ", auto: "twoThrow" },
     { id: "clubs_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "clubs_roll", name: "50cm以上のころがし" },
-    { id: "clubs_propeller", name: "プロペラ回旋2回以上" },
   ],
 };
 
@@ -301,6 +299,65 @@ export function clampArtDeduction(id: string, value: unknown): number {
   const v = Number(value);
   if (!Number.isFinite(v) || v <= 0) return 0;
   return Math.min(Math.round(v * 10) / 10, item.max);
+}
+
+// ---- 基本徒手（§3.5.2 徒手系基礎要素群1群「各種徒手」）----
+
+/** 深い運動の部位。演技にはどちらも入れる。 */
+export type DeepMotionPart = "upper" | "lower";
+export const DEEP_MOTION_PARTS: { id: DeepMotionPart; name: string }[] = [
+  { id: "upper", name: "上半身の深い運動" },
+  { id: "lower", name: "下半身の深い運動" },
+];
+
+/**
+ * 基本徒手の一覧。`parts` は、その動作が満たす深い運動（複数可）。
+ * 表を増やすときはここに1行足すだけでよい（採点側は `parts` しか見ない）。
+ */
+export interface BasicHandElement {
+  id: string;
+  name: string;
+  parts: DeepMotionPart[];
+}
+export const BASIC_HAND_ELEMENTS: BasicHandElement[] = [
+  { id: "slantfwd", name: "斜前屈", parts: ["upper", "lower"] },
+  { id: "chestback", name: "胸後反", parts: ["lower"] },
+  { id: "snake", name: "蛇動", parts: ["lower"] },
+  { id: "forwardbend", name: "前屈", parts: ["upper"] },
+];
+
+export const basicHandDef = (id: string): BasicHandElement | undefined =>
+  BASIC_HAND_ELEMENTS.find((x) => x.id === id);
+
+/** 深い運動が1部位不足するごとのA減点（§3.5.6.4 徒手系の種類・組み合わせの多様性） */
+export const DEEP_MOTION_DEDUCTION = 0.1;
+
+/** 入力された基本徒手が満たす深い運動の部位 */
+export function deepMotionParts(ids: string[]): Set<DeepMotionPart> {
+  const set = new Set<DeepMotionPart>();
+  ids.forEach((id) => basicHandDef(id)?.parts.forEach((p) => set.add(p)));
+  return set;
+}
+
+// ---- 手具操作の多様性（§3.5.6.4 さまざまな操作）----
+
+/** 実施していれば減点なしのチェック項目 */
+export const HAND_OP_CHECKS: { id: string; name: string }[] = [
+  { id: "twoParts", name: "2部位以上を通る手具操作" },
+  { id: "character", name: "手具の特性を生かした手具操作" },
+];
+/** チェック項目1つにつきのA減点 */
+export const HAND_OP_CHECK_DEDUCTION = 0.1;
+
+/** 身体を離れる手具操作（プロペラ回旋・まわしなど）に必要な回数 */
+export const OFF_BODY_REQUIRED_COUNT = 4;
+/** 身体を離れる手具操作が1回不足するごとのA減点 */
+export const OFF_BODY_DEDUCTION_STEP = 0.1;
+
+/** 身体を離れる手具操作の不足回数（0〜必要回数） */
+export function offBodyShortage(count: unknown): number {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  return Math.max(0, OFF_BODY_REQUIRED_COUNT - n);
 }
 
 export const VIOLATION_OPTIONS = [

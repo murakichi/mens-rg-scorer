@@ -204,5 +204,11 @@ export interface SaveData {
   junior?: boolean;
   /** §3.5.6.4 芸術と多様性の欠点テーブル（項目id → 減点）。 */
   artDeductions?: Record<string, number>;
+  /** 実施した基本徒手のid（BASIC_HAND_ELEMENTS）。 */
+  basicHands?: string[];
+  /** 実施した手具操作のチェック項目id（HAND_OP_CHECKS）。 */
+  handOps?: string[];
+  /** 身体を離れる手具操作の回数。 */
+  offBodyCount?: number;
   series: Series[];
 }

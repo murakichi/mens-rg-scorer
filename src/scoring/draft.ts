@@ -7,7 +7,14 @@
 // =====================================================================
 
 import { stripForApparatus } from "./analysis";
-import { APPARATUS, ART_DEDUCTION_ITEMS, clampArtDeduction, normalizeFutureLevel } from "./constants";
+import {
+  APPARATUS,
+  ART_DEDUCTION_ITEMS,
+  BASIC_HAND_ELEMENTS,
+  HAND_OP_CHECKS,
+  clampArtDeduction,
+  normalizeFutureLevel,
+} from "./constants";
 import { initialTeamState, normalizeTeamState, type TeamState } from "./team";
 import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
@@ -32,6 +39,12 @@ export interface IndividualDraft {
   apparatusElements: string[];
   violations: string[];
   artDeductions: Record<string, number>;
+  /** 実施した基本徒手のid */
+  basicHands: string[];
+  /** 実施した手具操作のチェック項目id */
+  handOps: string[];
+  /** 身体を離れる手具操作の回数 */
+  offBodyCount: number;
 }
 
 export const asStringArray = (v: unknown): string[] =>
@@ -47,6 +60,15 @@ export function normalizeArtDeductions(v: unknown): Record<string, number> {
   });
   return out;
 }
+
+/** 既知のidだけを残す（表から消えた項目・壊れたデータを落とす） */
+const knownIds = (v: unknown, known: { id: string }[]): string[] => {
+  const ids = new Set(known.map((x) => x.id));
+  return asStringArray(v).filter((id) => ids.has(id));
+};
+
+/** 身体を離れる手具操作の回数（0以上の整数に丸める） */
+export const normalizeOffBodyCount = (v: unknown): number => Math.max(0, Math.floor(Number(v) || 0));
 
 const ITEM_KINDS = new Set<string>(["throw", "catch", "skill", "motion", "ropeJump"]);
 
@@ -87,6 +109,9 @@ export function normalizeIndividualDraft(data: unknown): IndividualDraft | null 
     apparatusElements: asStringArray(d.apparatusElements),
     violations: asStringArray(d.violations),
     artDeductions: normalizeArtDeductions(d.artDeductions),
+    basicHands: knownIds(d.basicHands, BASIC_HAND_ELEMENTS),
+    handOps: knownIds(d.handOps, HAND_OP_CHECKS),
+    offBodyCount: normalizeOffBodyCount(d.offBodyCount),
   };
 }
 
@@ -113,7 +138,10 @@ export function isBlankIndividualDraft(d: IndividualDraft): boolean {
     !d.future &&
     d.apparatusElements.length === 0 &&
     d.violations.length === 0 &&
-    Object.keys(d.artDeductions).length === 0
+    Object.keys(d.artDeductions).length === 0 &&
+    !d.basicHands?.length &&
+    !d.handOps?.length &&
+    !d.offBodyCount
   );
 }
 

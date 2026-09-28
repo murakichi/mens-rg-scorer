@@ -7,6 +7,10 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
   const {
     required,
     missing,
+    deepMotionChecks,
+    deepMotionDeduction,
+    handOpChecks,
+    handOpDeduction,
     apparatusElementChecks,
     apparatusElementDeduction,
     violationChecks,
@@ -82,6 +86,17 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
             </ul>
           </>
         )}
+
+        <div className="line-head" style={{ marginTop: 12 }}>基本徒手・手具操作の多様性</div>
+        <ul className="check-list">
+          {[...deepMotionChecks, ...handOpChecks].map((r) => (
+            <li key={r.key} className="check-item">
+              <span className={`mark ${r.passed ? "ok" : "ng"}`}>{r.passed ? "✓" : "×"}</span>
+              <span className={r.passed ? "ok-text" : "ng-text"}>{r.label}</span>
+              {!r.passed && !!r.deduction && <span className="ng-text">-{r.deduction.toFixed(1)}</span>}
+            </li>
+          ))}
+        </ul>
 
         <div className="line-head" style={{ marginTop: 12 }}>違反・欠如（§3.5.6.3）</div>
         <ul className="check-list">
@@ -176,6 +191,32 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
         <div className="total-row">
           <span>必須要素の欠如減点（投げタン・つなぎ技・タンブリング本数／1つにつき0.3）</span>
           <span>-{missingElementDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>
+            基本徒手の不足減点（深い運動／
+            {deepMotionChecks.filter((c) => !c.passed).length > 0
+              ? deepMotionChecks
+                  .filter((c) => !c.passed)
+                  .map((c) => c.label)
+                  .join("・")
+              : "不足なし"}
+            ）
+          </span>
+          <span>-{deepMotionDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>
+            手具操作の多様性減点（
+            {handOpChecks.filter((c) => !c.passed).length > 0
+              ? handOpChecks
+                  .filter((c) => !c.passed)
+                  .map((c) => c.label)
+                  .join("・")
+              : "不足なし"}
+            ）
+          </span>
+          <span>-{handOpDeduction.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
           <span>手具別必須要素の欠如減点（§3.2／1つにつき0.3）</span>

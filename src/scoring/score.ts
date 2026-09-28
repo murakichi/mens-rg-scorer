@@ -42,6 +42,14 @@ import {
   ART_DEDUCTION_ITEMS,
   clampArtDeduction,
   canOperateApparatus,
+  DEEP_MOTION_PARTS,
+  DEEP_MOTION_DEDUCTION,
+  deepMotionParts,
+  HAND_OP_CHECKS,
+  HAND_OP_CHECK_DEDUCTION,
+  OFF_BODY_REQUIRED_COUNT,
+  OFF_BODY_DEDUCTION_STEP,
+  offBodyShortage,
 } from "./constants";
 import {
   analyzeSeries,
@@ -122,6 +130,15 @@ export interface ScoreResult {
   dScore: number;
 
   // A
+  /** 基本徒手から判定した深い運動の充足（上半身・下半身） */
+  deepMotionChecks: RequiredCheck[];
+  deepMotionDeduction: number;
+  /** 手具操作の多様性チェック（2部位以上・特性・身体を離れる操作） */
+  handOpChecks: RequiredCheck[];
+  handOpDeduction: number;
+  /** 身体を離れる手具操作の回数と不足回数 */
+  offBodyCount: number;
+  offBodyShort: number;
   apparatusElementChecks: RequiredCheck[];
   apparatusElementDeduction: number;
   violationChecks: RequiredCheck[];
@@ -198,6 +215,12 @@ export interface ComputeOptions {
   future?: FutureLevel;
   /** §3.5.6.4 芸術と多様性の欠点テーブル（項目id → 減点）。審判の主観評価。 */
   artDeductions?: Record<string, number>;
+  /** 実施した基本徒手のid（BASIC_HAND_ELEMENTS）。深い運動の充足を判定する。 */
+  basicHands?: string[];
+  /** 実施した手具操作のチェック項目id（HAND_OP_CHECKS）。 */
+  handOps?: string[];
+  /** 身体を離れる手具操作の回数。 */
+  offBodyCount?: number;
 }
 
 export function computeScore(
@@ -216,6 +239,9 @@ export function computeScore(
     junior = false,
     future = null,
     artDeductions = {},
+    basicHands = [],
+    handOps = [],
+    offBodyCount = 0,
   } = opts;
   const analysis = series.map((ser) => analyzeSeries(ser, junior, future));
   const requiredThrowCount = throwCountRequired(junior);
@@ -682,6 +708,36 @@ export function computeScore(
   const apparatusElementDeduction =
     apparatusElementChecks.filter((c) => !c.passed).length * REQUIRED_ELEMENT_DEDUCTION;
 
+  // ---- 基本徒手（深い運動の充足）と手具操作の多様性 ----
+  const coveredParts = deepMotionParts(basicHands);
+  const deepMotionChecks: RequiredCheck[] = DEEP_MOTION_PARTS.map((part) => ({
+    key: `deep_${part.id}`,
+    label: part.name,
+    passed: coveredParts.has(part.id),
+    deduction: DEEP_MOTION_DEDUCTION,
+  }));
+  const deepMotionDeduction = deepMotionChecks.filter((c) => !c.passed).length * DEEP_MOTION_DEDUCTION;
+
+  const offBodyShort = offBodyShortage(offBodyCount);
+  const offBodyDeduction = offBodyShort * OFF_BODY_DEDUCTION_STEP;
+  const handOpChecks: RequiredCheck[] = [
+    ...HAND_OP_CHECKS.map((c) => ({
+      key: `handOp_${c.id}`,
+      label: c.name,
+      passed: handOps.includes(c.id),
+      deduction: HAND_OP_CHECK_DEDUCTION,
+    })),
+    {
+      key: "handOp_offBody",
+      label: `身体を離れる手具操作${OFF_BODY_REQUIRED_COUNT}回以上（${Math.max(0, Math.floor(Number(offBodyCount) || 0))}回）`,
+      passed: offBodyShort === 0,
+      deduction: offBodyDeduction,
+    },
+  ];
+  const handOpDeduction =
+    handOpChecks.filter((c) => c.key !== "handOp_offBody" && !c.passed).length * HAND_OP_CHECK_DEDUCTION +
+    offBodyDeduction;
+
   // passed = 違反・欠如が「ない」状態
   const violationChecks: RequiredCheck[] = VIOLATION_OPTIONS.map((v) => ({
     key: `viol_${v.id}`,
@@ -719,6 +775,8 @@ export function computeScore(
     saltoChainDeduction +
     varietyDeduction +
     missingElementDeduction +
+    deepMotionDeduction +
+    handOpDeduction +
     apparatusElementDeduction +
     violationDeduction;
   const aScore = Math.max(0, AE_FULL - aDeduction);
@@ -767,6 +825,12 @@ export function computeScore(
     catchOtherCount,
     varietyDeduction,
     missingElementDeduction,
+    deepMotionChecks,
+    deepMotionDeduction,
+    handOpChecks,
+    handOpDeduction,
+    offBodyCount: Math.max(0, Math.floor(Number(offBodyCount) || 0)),
+    offBodyShort,
     aDeduction,
     aScore,
     seriesExecutionDeduction,
