@@ -398,14 +398,31 @@ export function deepMotionParts(ids: string[]): Set<DeepMotionPart> {
 // ---- 手具操作の多様性（§3.5.6.4 さまざまな操作）----
 
 /** 実施していれば減点なしのチェック項目（`tip` は画面の注記・ツールチップ） */
-export const HAND_OP_CHECKS: { id: string; name: string; tip: string }[] = [
+export interface HandOpCheck {
+  id: string;
+  name: string;
+  tip: string;
+  /** この手具でだけ出す項目（未指定＝全手具） */
+  only?: ApparatusKey[];
+}
+export const HAND_OP_CHECKS: HandOpCheck[] = [
   {
     id: "twoParts",
     name: "2部位以上を通る手具操作",
     tip: "身体の部位は右腕・左腕・右足・左足・胴・首の6つ。そのうち2つ以上を通して操作すること",
   },
   { id: "character", name: "手具の特性を生かした手具操作", tip: "その手具にしかできない操作をすること" },
+  {
+    id: "leftHand",
+    name: "左手の手具操作",
+    tip: "左手でも手具を操作すること（スティックは左投げ左受けが必須要素）",
+    only: ["stick"],
+  },
 ];
+
+/** その手具で出すチェック項目 */
+export const handOpChecksFor = (apparatus: ApparatusKey): HandOpCheck[] =>
+  HAND_OP_CHECKS.filter((c) => !c.only || c.only.includes(apparatus));
 /** 身体の部位（2部位以上を通る手具操作の判定に使う） */
 export const BODY_PARTS = ["右腕", "左腕", "右足", "左足", "胴", "首"];
 

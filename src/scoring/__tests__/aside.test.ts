@@ -14,6 +14,7 @@ import {
   DEEP_MOTION_PARTS,
   HAND_OP_CHECKS,
   HAND_OP_CHECK_DEDUCTION,
+  handOpChecksFor,
   APPARATUS_CHARACTER_HINTS,
   ART_DEDUCTION_ITEMS,
   appInTumblingDeduction,
@@ -103,7 +104,25 @@ describe("手具操作の多様性", () => {
     expect(none.handOpDeduction - one.handOpDeduction).toBeCloseTo(HAND_OP_CHECK_DEDUCTION, 5);
   });
 
-  it("両方チェックすれば回数ぶんだけが残る", () => {
+  it("スティックだけ左手の手具操作が増える", () => {
+    expect(handOpChecksFor("stick").map((c) => c.id)).toEqual(["twoParts", "character", "leftHand"]);
+    (["ring", "rope", "clubs"] as const).forEach((ap) =>
+      expect(handOpChecksFor(ap).map((c) => c.id)).toEqual(["twoParts", "character"]),
+    );
+    // 未実施のぶんスティックだけ0.1多い
+    expect(computeScore([], "stick").handOpDeduction).toBeCloseTo(
+      computeScore([], "clubs").handOpDeduction + HAND_OP_CHECK_DEDUCTION,
+      5,
+    );
+    const done = computeScore([], "stick", { handOps: ["leftHand"] });
+    expect(done.handOpChecks.find((c) => c.key === "handOp_leftHand")?.passed).toBe(true);
+    // 他の手具では行そのものが出ない（保存された値はそのまま残す）
+    expect(computeScore([], "clubs", { handOps: ["leftHand"] }).handOpChecks.map((c) => c.key)).not.toContain(
+      "handOp_leftHand",
+    );
+  });
+
+  it("全部チェックすれば回数ぶんだけが残る", () => {
     const r = computeScore([], "stick", { handOps: HAND_OP_CHECKS.map((c) => c.id), offBodyCount: 4 });
     expect(r.handOpDeduction).toBe(0);
     expect(op(r, "offBody")?.passed).toBe(true);
