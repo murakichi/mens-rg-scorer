@@ -299,7 +299,7 @@ export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
     name: "転回中の操作",
     max: 0.5,
     note: "0〜0.4",
-    tip: "各技の「手具操作」チェックが転回中の操作にあたる。操作なしのタンブリングは別に自動で引いている（宙返り系すべてで無操作 −0.1／シリーズ全体で無操作 −0.2・上限0.4）",
+    tip: "自動計算：手具操作を付けられる技のうち操作した割合で 0〜0.4（8割以上で0／2割未満で0.4）。操作がまったく無いタンブリングは別に自動で引いている（宙返り系すべてで無操作 −0.1／シリーズ全体で無操作 −0.2・上限0.4）",
   },
   { id: "rhythm", group: "芸術性と技術価値", name: "リズム変化・ダイナミズムによる表現", max: 0.5, note: "0.1 / 0.2" },
   { id: "space", group: "芸術性と技術価値", name: "空間使用による表現", max: 0.5, note: "0.1 / 0.2" },
@@ -317,6 +317,27 @@ export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
  */
 export const TUM_VARIETY_ITEM_ID = "tumVariety";
 export const TUM_VARIETY_DEDUCTION_STEP = 0.1;
+
+/**
+ * 「転回中の操作」（§3.5.6.4）の自動計算。
+ * 手具操作を付けられる技（＝入力欄に「手具操作」チェックが出る技）のうち、
+ * 実際に操作した割合で減点幅 0〜0.4 を割り当てる。割合の区切りは規則には無いので
+ * **この表がアプリの判断**（自動計算ボタンで手入力欄に入れるだけなので、上書きできる）。
+ */
+export const APP_IN_TUM_ITEM_ID = "appInTumbling";
+export const APP_IN_TUM_STEPS: { minRatio: number; deduction: number }[] = [
+  { minRatio: 0.8, deduction: 0 },
+  { minRatio: 0.6, deduction: 0.1 },
+  { minRatio: 0.4, deduction: 0.2 },
+  { minRatio: 0.2, deduction: 0.3 },
+  { minRatio: 0, deduction: 0.4 },
+];
+/** 割合から減点を引く（操作できる技が無ければ減点なし） */
+export function appInTumblingDeduction(withOp: number, total: number): number {
+  if (total <= 0) return 0;
+  const ratio = withOp / total;
+  return APP_IN_TUM_STEPS.find((s) => ratio >= s.minRatio)?.deduction ?? 0;
+}
 
 export function artDeductionItem(id: string): ArtDeductionItem | undefined {
   return ART_DEDUCTION_ITEMS.find((x) => x.id === id);
@@ -510,6 +531,15 @@ export const soloHandElementScored = (id: string): boolean =>
   SOLO_HAND_ELEMENT_GROUPS.some((g) => g.scored && g.items.some((x) => x.id === id));
 /** 柔軟の要素か（実施の有無だけを見る） */
 export const isFlexElement = (id: string): boolean => SOLO_FLEX_ELEMENTS.some((x) => x.id === id);
+
+/**
+ * 跳躍だが柔軟性としても評価する技（反り身の跳躍）。
+ * 難度は跳躍として数えたうえで、柔軟の実施にも数える。
+ */
+export const FLEX_EQUIVALENT_JUMPS: string[] = ["j8", "j9"];
+
+/** 柔軟性の実施として数える要素か（柔軟の3つ＋反り身の跳躍） */
+export const countsAsFlex = (id: string): boolean => isFlexElement(id) || FLEX_EQUIVALENT_JUMPS.includes(id);
 /** 柔軟を1つも実施していないときのA減点 */
 export const FLEX_ELEMENT_DEDUCTION = 0.1;
 export const SOLO_HAND_ELEMENTS: HandElement[] = SOLO_HAND_ELEMENT_GROUPS.flatMap((g) => g.items);

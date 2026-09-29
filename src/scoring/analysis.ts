@@ -29,6 +29,7 @@ import {
   TUM_VARIETY_ITEM_ID,
   TUM_VARIETY_DEDUCTION_STEP,
   canOperateApparatus,
+  appInTumblingDeduction,
 } from "./constants";
 import type {
   ApparatusKey,
@@ -795,6 +796,37 @@ export function tumblingVariety(list: Series[], junior = false): TumblingVariety
   const max = artDeductionItem(TUM_VARIETY_ITEM_ID)?.max ?? 0;
   const deduction = Math.min(max, Math.round(repeats * TUM_VARIETY_DEDUCTION_STEP * 10) / 10);
   return { total, distinct, repeats, deduction };
+}
+
+/**
+ * **転回中の操作**（§3.5.6.4 の欠点テーブル）の自動判定。
+ * 数えるのは「手具操作を付けられる技」＝入力欄にチェックが出る技だけ
+ * （きりもみ系のように操作できない技、投げている間で手元に手具が無い技は数えない）。
+ * そのうち実際に操作した割合から `appInTumblingDeduction` で減点を引く。
+ */
+export interface TumblingOperation {
+  /** 手具操作を付けられる技の数 */
+  total: number;
+  /** そのうち操作を伴ったもの */
+  withOp: number;
+  /** 自動計算した減点（0〜0.4） */
+  deduction: number;
+}
+
+export function tumblingOperation(list: Series[], apparatus: ApparatusKey): TumblingOperation {
+  let total = 0;
+  let withOp = 0;
+  list.forEach((ser) => {
+    const empty = handsEmptyFlags(ser.items, apparatus);
+    ser.items.forEach((item, i) => {
+      if (item.kind !== "skill" || !item.skillId) return;
+      // 手元に手具が無い間・操作できない技は「操作しなかった」ではなく最初から数えない
+      if (empty[i] || !canOperateApparatus(item.skillId)) return;
+      total += 1;
+      if (item.hasApparatus) withOp += 1;
+    });
+  });
+  return { total, withOp, deduction: appInTumblingDeduction(withOp, total) };
 }
 
 export function seriesSignature(series: Series): string {
