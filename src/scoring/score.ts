@@ -45,7 +45,7 @@ import {
   DEEP_MOTION_PARTS,
   DEEP_MOTION_DEDUCTION,
   deepMotionParts,
-  HAND_OP_CHECKS,
+  handOpChecksFor,
   HAND_OP_CHARACTER_ID,
   HAND_OP_CHECK_DEDUCTION,
   APPARATUS_CHARACTER_HINTS,
@@ -830,7 +830,7 @@ export function computeScore(
   const offBodyShort = offBodyShortage(offBodyCount);
   const offBodyDeduction = offBodyShort * OFF_BODY_DEDUCTION_STEP;
   const handOpChecks: RequiredCheck[] = [
-    ...HAND_OP_CHECKS.map((c) => ({
+    ...handOpChecksFor(apparatus).map((c) => ({
       key: `handOp_${c.id}`,
       label: c.name,
       passed: handOps.includes(c.id),

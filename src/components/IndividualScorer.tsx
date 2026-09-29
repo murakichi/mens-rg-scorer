@@ -8,6 +8,7 @@ import {
   DEEP_MOTION_DEDUCTION,
   DEEP_MOTION_PARTS,
   HAND_OP_CHECKS,
+  handOpChecksFor,
   HAND_OP_CHARACTER_ID,
   HAND_OP_CHECK_DEDUCTION,
   OFF_BODY_REQUIRED_COUNT,
@@ -759,7 +760,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
 
       <section className="card">
         <div className="line-head">手具操作の多様性</div>
-        {HAND_OP_CHECKS.map((c) => {
+        {handOpChecksFor(apparatus).map((c) => {
           const examples = c.id === HAND_OP_CHARACTER_ID ? APPARATUS_CHARACTER_HINTS[apparatus] : null;
           const note = examples ? `${c.tip}（例：${examples.join("／")}）` : c.tip;
           return (
