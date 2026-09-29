@@ -18,6 +18,7 @@ import {
   APPARATUS_CHARACTER_HINTS,
   OFF_BODY_TIP,
   TUM_VARIETY_ITEM_ID,
+  APP_IN_TUM_ITEM_ID,
   ART_DEDUCTION_STEP,
   DEFAULT_FUTURE_LEVEL,
   FUTURE_LEVELS,
@@ -514,7 +515,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
           className={tab === "d" ? "tab-btn is-active" : "tab-btn"}
           onClick={() => setTab("d")}
         >
-          D（難度）<span className="tab-btn-sub">構成の入力</span>
+          投げ・タンブリング
         </button>
         <button
           type="button"
@@ -523,7 +524,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
           className={tab === "a" ? "tab-btn is-active" : "tab-btn"}
           onClick={() => setTab("a")}
         >
-          A（芸術と多様性）<span className="tab-btn-sub">減点の入力</span>
+          徒手・構成
         </button>
       </div>
 
@@ -619,67 +620,6 @@ export function IndividualScorer({ initialData }: Props = {}) {
       />
 
       <section className="card">
-        <div className="line-head">徒手系要素（跳躍・柔軟）</div>
-        {handElements.map((id, i) => {
-          const row = result.handElementRows.find((r) => r.index === i);
-          return (
-            <div key={i} className="basic-hand-row">
-              <select
-                className="select"
-                value={id}
-                aria-label={`徒手系要素 ${i + 1}`}
-                onChange={(ev) => setHandElements((p) => p.map((x, k) => (k === i ? ev.target.value : x)))}
-              >
-                <option value="">徒手系要素</option>
-                {SOLO_HAND_ELEMENT_GROUPS.map((g) => (
-                  <optgroup key={g.id} label={g.name}>
-                    {g.items.map((h) => (
-                      <option key={h.id} value={h.id} title={SOLO_ELEMENT_TIPS[h.id]}>
-                        {h.name}
-                        {g.scored ? `（${h.solo}）` : ""}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              {row && (
-                <span className={row.inTop || !row.scored ? "check-ok" : "check-ng"}>
-                  {!row.scored
-                    ? "実施（難度には数えない）"
-                    : row.inTop
-                      ? `難度${row.difficulty}（+${row.score.toFixed(1)}）`
-                      : row.duplicate
-                        ? "同じ要素は1回のみ"
-                        : "上位3つ外"}
-                </span>
-              )}
-              <button
-                className="remove-btn-xs"
-                aria-label="削除"
-                onClick={() => setHandElements((p) => p.filter((_, k) => k !== i))}
-              >
-                <X size={12} />
-              </button>
-            </div>
-          );
-        })}
-        <button className="add-btn" onClick={() => setHandElements((p) => [...p, ""])}>
-          <Plus size={14} /> 徒手系要素を追加
-        </button>
-        <p className="hint">
-          単独で実施した跳躍・柔軟を入力します。<b>跳躍</b>は §3.6.1 の個人難度を徒手系難度として採用します
-          （投げ受けの徒手と合わせて上位3つ。同じ要素は何度実施しても1回だけ）。
-          <b>柔軟</b>は難度に数えず、実施したかどうかだけをA側で見ます
-          （1つも無ければ −{FLEX_ELEMENT_DEDUCTION.toFixed(1)}点）。
-        </p>
-        <div className="check-result-row">
-          <span className={result.flexCheck.passed ? "check-ok" : "check-ng"} title={result.flexCheck.tip}>
-            {result.flexCheck.passed ? "✓" : "×"} {result.flexCheck.label}
-          </span>
-        </div>
-      </section>
-
-      <section className="card">
         <div className="line-head">実施減点（演技全体）</div>
         <label className="exec-label">
           演技全体の実施減点(E)：
@@ -757,6 +697,67 @@ export function IndividualScorer({ initialData }: Props = {}) {
       </section>
 
       <section className="card">
+        <div className="line-head">徒手系要素（跳躍・柔軟）</div>
+        {handElements.map((id, i) => {
+          const row = result.handElementRows.find((r) => r.index === i);
+          return (
+            <div key={i} className="basic-hand-row">
+              <select
+                className="select"
+                value={id}
+                aria-label={`徒手系要素 ${i + 1}`}
+                onChange={(ev) => setHandElements((p) => p.map((x, k) => (k === i ? ev.target.value : x)))}
+              >
+                <option value="">徒手系要素</option>
+                {SOLO_HAND_ELEMENT_GROUPS.map((g) => (
+                  <optgroup key={g.id} label={g.name}>
+                    {g.items.map((h) => (
+                      <option key={h.id} value={h.id} title={SOLO_ELEMENT_TIPS[h.id]}>
+                        {h.name}
+                        {g.scored ? `（${h.solo}）` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {row && (
+                <span className={row.inTop || !row.scored ? "check-ok" : "check-ng"}>
+                  {!row.scored
+                    ? "実施（難度には数えない）"
+                    : row.inTop
+                      ? `難度${row.difficulty}（+${row.score.toFixed(1)}）`
+                      : row.duplicate
+                        ? "同じ要素は1回のみ"
+                        : "上位3つ外"}
+                </span>
+              )}
+              <button
+                className="remove-btn-xs"
+                aria-label="削除"
+                onClick={() => setHandElements((p) => p.filter((_, k) => k !== i))}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          );
+        })}
+        <button className="add-btn" onClick={() => setHandElements((p) => [...p, ""])}>
+          <Plus size={14} /> 徒手系要素を追加
+        </button>
+        <p className="hint">
+          単独で実施した跳躍・柔軟を入力します。<b>跳躍</b>は §3.6.1 の個人難度を徒手系難度として採用するので、
+          <b>難度（D）に入ります</b>（投げ受けの徒手と合わせて上位3つ。同じ要素は何度実施しても1回だけ）。
+          <b>柔軟</b>は難度に数えず、実施したかどうかだけをA側で見ます
+          （1つも無ければ −{FLEX_ELEMENT_DEDUCTION.toFixed(1)}点。反り身の跳躍も柔軟性として数えます）。
+        </p>
+        <div className="check-result-row">
+          <span className={result.flexCheck.passed ? "check-ok" : "check-ng"} title={result.flexCheck.tip}>
+            {result.flexCheck.passed ? "✓" : "×"} {result.flexCheck.label}
+          </span>
+        </div>
+      </section>
+
+      <section className="card">
         <div className="line-head">手具操作の多様性</div>
         {HAND_OP_CHECKS.map((c) => {
           const examples = c.id === HAND_OP_CHARACTER_ID ? APPARATUS_CHARACTER_HINTS[apparatus] : null;
@@ -828,6 +829,22 @@ export function IndividualScorer({ initialData }: Props = {}) {
         {ART_DEDUCTION_ITEMS.map((item, i) => {
           const prev = ART_DEDUCTION_ITEMS[i - 1];
           const value = artDeductions[item.id] ?? 0;
+          // 自動計算できる項目（ボタンで手入力欄に入れる。入れた後は手で直せる）
+          const auto =
+            item.id === TUM_VARIETY_ITEM_ID
+              ? {
+                  value: result.tumVariety.deduction,
+                  note: `宙返り${result.tumVariety.total}個・${result.tumVariety.distinct}種類`,
+                  title: "実施した宙返りの種類から自動計算します（全部違う技なら減点なし）",
+                }
+              : item.id === APP_IN_TUM_ITEM_ID
+                ? {
+                    value: result.tumOperation.deduction,
+                    note: `操作 ${result.tumOperation.withOp}/${result.tumOperation.total}技`,
+                    title:
+                      "手具操作を付けられる技のうち、実際に操作した割合から自動計算します（8割以上で減点なし／2割未満で0.4）",
+                  }
+                : null;
           return (
             <div key={item.id}>
               {item.group !== prev?.group && <div className="art-group">{item.group}</div>}
@@ -836,23 +853,18 @@ export function IndividualScorer({ initialData }: Props = {}) {
                   {item.name}
                   <span className="art-row-note">
                     上限 {item.max.toFixed(2)}／減点幅 {item.note}
+                    {auto && <> ／{auto.note}</>}
                     {item.tip && <span className="check-note">{item.tip}</span>}
-                    {item.id === TUM_VARIETY_ITEM_ID && (
-                      <>
-                        {" "}
-                        ／宙返り{result.tumVariety.total}個・{result.tumVariety.distinct}種類
-                      </>
-                    )}
                   </span>
                 </span>
-                {item.id === TUM_VARIETY_ITEM_ID && (
+                {auto && (
                   <button
                     type="button"
                     className="io-btn art-auto-btn"
-                    title="実施した宙返りの種類から自動計算します（全部違う技なら減点なし）"
+                    title={auto.title}
                     onClick={(e) => {
                       e.preventDefault();
-                      const v = result.tumVariety.deduction;
+                      const v = auto.value;
                       setArtDeductions((p) => {
                         const n = { ...p };
                         if (v > 0) n[item.id] = v;

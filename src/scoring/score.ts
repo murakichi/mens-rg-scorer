@@ -55,7 +55,7 @@ import {
   offBodyShortage,
   soloHandElementDef,
   soloHandElementScored,
-  isFlexElement,
+  countsAsFlex,
   FLEX_ELEMENT_DEDUCTION,
 } from "./constants";
 import {
@@ -69,7 +69,9 @@ import {
   hasConnectWithoutApparatus,
   stripForApparatus,
   tumblingVariety,
+  tumblingOperation,
   type TumblingVariety,
+  type TumblingOperation,
 } from "./analysis";
 import type { ApparatusKey, Difficulty, FutureLevel, Series, SeriesAnalysis, Unit } from "./types";
 
@@ -190,6 +192,11 @@ export interface ScoreResult {
    * A減点には自動では入れない（手動入力の欄に入れる値として画面に出す）。
    */
   tumVariety: TumblingVariety;
+  /**
+   * 「転回中の操作」の**自動計算**（`tumblingOperation`）。
+   * こちらも A減点には自動では入れない（自動計算ボタンで手入力欄に入れる値）。
+   */
+  tumOperation: TumblingOperation;
   noApparatusDeduction: number;
   connectNoApparatus: boolean;
   missingDirCount: number;
@@ -814,9 +821,9 @@ export function computeScore(
   const flexCheck: RequiredCheck = {
     key: "flexElement",
     label: "柔軟の徒手を実施",
-    passed: handElements.some((id) => isFlexElement(id)),
+    passed: handElements.some((id) => countsAsFlex(id)),
     deduction: FLEX_ELEMENT_DEDUCTION,
-    tip: "前後開脚・左右開脚・ブリッジのいずれか",
+    tip: "前後開脚・左右開脚・ブリッジのいずれか。反り身の跳躍も柔軟性として数える",
   };
   const flexDeduction = flexCheck.passed ? 0 : FLEX_ELEMENT_DEDUCTION;
 
@@ -869,6 +876,7 @@ export function computeScore(
   const artDeduction = artRows.reduce((s, r) => s + r.value, 0);
   // 転回系の多様性は自動で計算して返すだけ（A減点に入れるかは入力しだい）
   const tumVariety = tumblingVariety(series, junior);
+  const tumOperation = tumblingOperation(series, apparatus);
 
   const aDeduction =
     artDeduction +
@@ -913,6 +921,7 @@ export function computeScore(
     artDeduction,
     artRows,
     tumVariety,
+    tumOperation,
     noApparatusDeduction,
     connectNoApparatus,
     missingDirCount,

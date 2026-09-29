@@ -7,6 +7,8 @@ import {
   soloHandDifficulty,
   soloHandElementScored,
   FLEX_ELEMENT_DEDUCTION,
+  FLEX_EQUIVALENT_JUMPS,
+  countsAsFlex,
   BASIC_HAND_ELEMENTS,
   DEEP_MOTION_DEDUCTION,
   DEEP_MOTION_PARTS,
@@ -14,6 +16,7 @@ import {
   HAND_OP_CHECK_DEDUCTION,
   APPARATUS_CHARACTER_HINTS,
   ART_DEDUCTION_ITEMS,
+  appInTumblingDeduction,
   OFF_BODY_TIP,
   OFF_BODY_DEDUCTION_STEP,
   OFF_BODY_REQUIRED_COUNT,
@@ -22,7 +25,7 @@ import {
 } from "../constants";
 import { computeScore } from "../score";
 import { normalizeIndividualDraft } from "../draft";
-import type { Series } from "../types";
+import type { Item, Series } from "../types";
 
 const deep = (r: ReturnType<typeof computeScore>, id: string) =>
   r.deepMotionChecks.find((c) => c.key === `deep_${id}`);
@@ -183,6 +186,20 @@ describe("単独の徒手系要素（跳躍・柔軟）", () => {
     expect(none.aDeduction - r.aDeduction).toBeCloseTo(FLEX_ELEMENT_DEDUCTION, 5);
   });
 
+  it("反り身の跳躍は難度は跳躍のまま、柔軟性としても数える", () => {
+    FLEX_EQUIVALENT_JUMPS.forEach((id) => {
+      expect(soloHandElementScored(id)).toBe(true); // 難度は跳躍として入る
+      expect(countsAsFlex(id)).toBe(true);
+      const r = computeScore([], "stick", { handElements: [id] });
+      expect(r.flexCheck.passed).toBe(true);
+      expect(r.flexDeduction).toBe(0);
+      expect(r.handScore).toBeCloseTo(DIFF_SCORE[soloHandDifficulty(id)!], 5);
+    });
+    // 反り身でない跳躍は柔軟性にならない
+    expect(countsAsFlex("j11")).toBe(false);
+    expect(computeScore([], "stick", { handElements: ["j11"] }).flexCheck.passed).toBe(false);
+  });
+
   it("同じ跳躍は何度実施しても1回だけ数える（§3.4.4）", () => {
     const r = computeScore([], "stick", { handElements: ["j12", "j12", "j3"] });
     expect(r.handElementRows.map((x) => x.adopted)).toEqual([true, false, true]);
@@ -268,5 +285,61 @@ describe("自動判定している項目はコードの内容を説明に持つ"
 
   it("柔軟のチェックも説明を持つ", () => {
     expect(computeScore([], "stick").flexCheck.tip).toBeTruthy();
+  });
+});
+
+describe("転回中の操作の自動計算（§3.5.6.4）", () => {
+  const skill = (skillId: string, hasApparatus = false): Item => ({
+    kind: "skill",
+    skillId,
+    hasApparatus,
+    isThrow: false,
+  });
+  const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
+
+  it("割合の表は8割以上で0、2割未満で0.4", () => {
+    expect(appInTumblingDeduction(10, 10)).toBe(0);
+    expect(appInTumblingDeduction(8, 10)).toBe(0);
+    expect(appInTumblingDeduction(7, 10)).toBeCloseTo(0.1, 5);
+    expect(appInTumblingDeduction(5, 10)).toBeCloseTo(0.2, 5);
+    expect(appInTumblingDeduction(3, 10)).toBeCloseTo(0.3, 5);
+    expect(appInTumblingDeduction(1, 10)).toBeCloseTo(0.4, 5);
+    // 操作できる技が無ければ減点なし
+    expect(appInTumblingDeduction(0, 0)).toBe(0);
+  });
+
+  it("操作した技の割合から引く", () => {
+    const all = computeScore([S(skill("a_roundoff", true), skill("b_backsalto", true))], "stick");
+    expect(all.tumOperation).toMatchObject({ total: 2, withOp: 2, deduction: 0 });
+
+    const half = computeScore([S(skill("a_roundoff", true), skill("b_backsalto"))], "stick");
+    expect(half.tumOperation).toMatchObject({ total: 2, withOp: 1 });
+    expect(half.tumOperation.deduction).toBeCloseTo(0.2, 5);
+
+    const none = computeScore([S(skill("a_roundoff"), skill("b_backsalto"))], "stick");
+    expect(none.tumOperation.deduction).toBeCloseTo(0.4, 5);
+  });
+
+  it("操作できない技・手元に手具が無い間の技は数えない", () => {
+    // きりもみ系は首と背中で着くので操作できない
+    const kirimomi = computeScore([S(skill("a_roundoff", true), skill("b_kirimomi"))], "stick");
+    expect(kirimomi.tumOperation).toMatchObject({ total: 1, withOp: 1, deduction: 0 });
+
+    // 投げてからキャッチするまでは手元に手具が無い
+    const inAir = computeScore(
+      [S({ kind: "throw", throwTypes: [], reqTypes: [] }, skill("b_backsalto"), { kind: "catch" })],
+      "stick",
+    );
+    expect(inAir.tumOperation).toMatchObject({ total: 0, withOp: 0, deduction: 0 });
+  });
+
+  it("A減点には自動では入らない（自動計算ボタンで手入力欄に入れる値）", () => {
+    const r = computeScore([S(skill("a_roundoff"), skill("b_backsalto"))], "stick");
+    expect(r.tumOperation.deduction).toBeGreaterThan(0);
+    expect(r.artDeduction).toBe(0);
+    const applied = computeScore([S(skill("a_roundoff"), skill("b_backsalto"))], "stick", {
+      artDeductions: { appInTumbling: r.tumOperation.deduction },
+    });
+    expect(applied.artDeduction).toBeCloseTo(r.tumOperation.deduction, 5);
   });
 });
