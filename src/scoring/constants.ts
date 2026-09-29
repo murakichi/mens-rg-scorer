@@ -264,13 +264,43 @@ export interface ArtDeductionItem {
   name: string;
   max: number;
   note: string;
+  /** 画面のツールチップ。自動判定している部分がある項目だけ、その中身を要約して持つ */
+  tip?: string;
 }
 export const ART_DEDUCTION_STEP = 0.1;
 export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
-  { id: "handVariety", group: "多様性と技術価値", name: "徒手系の種類・組み合わせの多様性", max: 1.0, note: "0.1 / 0.2" },
-  { id: "tumVariety", group: "多様性と技術価値", name: "転回系の種類・組み合わせの多様性", max: 0.5, note: "0.1 / 0.2" },
-  { id: "appVariety", group: "多様性と技術価値", name: "さまざまな操作", max: 1.0, note: "0.1 / 0.2" },
-  { id: "appInTumbling", group: "手具操作の多様性", name: "転回中の操作", max: 0.5, note: "0〜0.4" },
+  {
+    id: "handVariety",
+    group: "多様性と技術価値",
+    name: "徒手系の種類・組み合わせの多様性",
+    max: 1.0,
+    note: "0.1 / 0.2",
+    tip: "上半身・下半身の深い運動の不足は「基本徒手」カードで自動判定して別に引いている。ここはそれ以外の主観評価ぶん",
+  },
+  {
+    id: "tumVariety",
+    group: "多様性と技術価値",
+    name: "転回系の種類・組み合わせの多様性",
+    max: 0.5,
+    note: "0.1 / 0.2",
+    tip: "自動計算：A難度技と徒手扱いの転回を除いた宙返りについて、実施数−種類数ぶん1つにつき −0.1（上限0.50）。ひねり回数・姿勢が違えば別の技として数える",
+  },
+  {
+    id: "appVariety",
+    group: "多様性と技術価値",
+    name: "さまざまな操作",
+    max: 1.0,
+    note: "0.1 / 0.2",
+    tip: "投げ受けの種類の不足は「投げ方・受け方の種類不足」として自動で引いている（投げ方・受け方それぞれ3種類、1種類不足につき −0.1・合計上限0.5）。ここはそれ以外の操作の多様性",
+  },
+  {
+    id: "appInTumbling",
+    group: "手具操作の多様性",
+    name: "転回中の操作",
+    max: 0.5,
+    note: "0〜0.4",
+    tip: "各技の「手具操作」チェックが転回中の操作にあたる。操作なしのタンブリングは別に自動で引いている（宙返り系すべてで無操作 −0.1／シリーズ全体で無操作 −0.2・上限0.4）",
+  },
   { id: "rhythm", group: "芸術性と技術価値", name: "リズム変化・ダイナミズムによる表現", max: 0.5, note: "0.1 / 0.2" },
   { id: "space", group: "芸術性と技術価値", name: "空間使用による表現", max: 0.5, note: "0.1 / 0.2" },
   { id: "originality", group: "芸術性と技術価値", name: "独創性の高い内容と表現", max: 0.5, note: "0.1 / 0.2" },
@@ -344,9 +374,16 @@ export function deepMotionParts(ids: string[]): Set<DeepMotionPart> {
 
 /** 実施していれば減点なしのチェック項目（`tip` は画面の注記・ツールチップ） */
 export const HAND_OP_CHECKS: { id: string; name: string; tip: string }[] = [
-  { id: "twoParts", name: "2部位以上を通る手具操作", tip: "手→腕→体幹のように、身体の2つ以上の部位を通して操作すること" },
+  {
+    id: "twoParts",
+    name: "2部位以上を通る手具操作",
+    tip: "身体の部位は右腕・左腕・右足・左足・胴・首の6つ。そのうち2つ以上を通して操作すること",
+  },
   { id: "character", name: "手具の特性を生かした手具操作", tip: "その手具にしかできない操作をすること" },
 ];
+/** 身体の部位（2部位以上を通る手具操作の判定に使う） */
+export const BODY_PARTS = ["右腕", "左腕", "右足", "左足", "胴", "首"];
+
 /** 「手具の特性を生かした手具操作」の項目id（手具ごとの例を出すため） */
 export const HAND_OP_CHARACTER_ID = "character";
 
@@ -455,17 +492,32 @@ export const SOLO_FLEX_ELEMENTS: HandElement[] = [
   { id: "sf_bridge", group: "flex", name: "ブリッジ", solo: "A", team: "B" },
 ];
 
-/** 個人の徒手系要素の選択肢（跳躍＝§3.6.1 の表／柔軟＝上の3つ） */
-export const SOLO_HAND_ELEMENT_GROUPS: { id: HandElementGroup; name: string; items: HandElement[] }[] = [
-  { id: "jump", name: "跳躍", items: HAND_ELEMENTS.filter((h) => h.group === "jump") },
-  { id: "flex", name: "柔軟", items: SOLO_FLEX_ELEMENTS },
+/**
+ * 個人の徒手系要素の選択肢（跳躍＝§3.6.1 の表／柔軟＝上の3つ）。
+ * `scored` … 徒手系難度（D）に算入するか。柔軟は難度に数えず、実施したかだけをA側で見る。
+ */
+export const SOLO_HAND_ELEMENT_GROUPS: {
+  id: HandElementGroup;
+  name: string;
+  items: HandElement[];
+  scored: boolean;
+}[] = [
+  { id: "jump", name: "跳躍", items: HAND_ELEMENTS.filter((h) => h.group === "jump"), scored: true },
+  { id: "flex", name: "柔軟", items: SOLO_FLEX_ELEMENTS, scored: false },
 ];
+/** その要素を徒手系難度に算入するか */
+export const soloHandElementScored = (id: string): boolean =>
+  SOLO_HAND_ELEMENT_GROUPS.some((g) => g.scored && g.items.some((x) => x.id === id));
+/** 柔軟の要素か（実施の有無だけを見る） */
+export const isFlexElement = (id: string): boolean => SOLO_FLEX_ELEMENTS.some((x) => x.id === id);
+/** 柔軟を1つも実施していないときのA減点 */
+export const FLEX_ELEMENT_DEDUCTION = 0.1;
 export const SOLO_HAND_ELEMENTS: HandElement[] = SOLO_HAND_ELEMENT_GROUPS.flatMap((g) => g.items);
 export const soloHandElementDef = (id: string): HandElement | undefined =>
   SOLO_HAND_ELEMENTS.find((x) => x.id === id);
 /** 補足のある徒手系要素だけの説明（ツールチップ） */
 export const SOLO_ELEMENT_TIPS: Record<string, string> = {
-  sf_bridge: "§3.6.1 の表に無いため、柔軟の基礎難度に合わせて暫定でA",
+  sf_bridge: "§3.6.1 の表には無い項目",
 };
 
 /** 個人での難度（表の個人列） */

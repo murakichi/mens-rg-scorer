@@ -14,6 +14,7 @@ import {
   OFF_BODY_DEDUCTION_STEP,
   SOLO_HAND_ELEMENT_GROUPS,
   SOLO_ELEMENT_TIPS,
+  FLEX_ELEMENT_DEDUCTION,
   APPARATUS_CHARACTER_HINTS,
   OFF_BODY_TIP,
   TUM_VARIETY_ITEM_ID,
@@ -26,7 +27,7 @@ import {
 } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
 import { apparatusBlockers, stripForApparatus } from "../scoring/analysis";
-import type { ApparatusKey, FutureLevel, HandElementEntry, Series } from "../scoring/types";
+import type { ApparatusKey, FutureLevel, Series } from "../scoring/types";
 import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
 import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
@@ -107,7 +108,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [handOps, setHandOps] = useState<string[]>(() => init?.handOps ?? []);
   const [offBodyCount, setOffBodyCount] = useState<number>(() => init?.offBodyCount ?? 0);
   // 単独で実施した徒手系要素（跳躍・柔軟）。手具操作を伴うものが徒手系難度に入る（§3.5.5.3(1)）
-  const [handElements, setHandElements] = useState<HandElementEntry[]>(() => init?.handElements ?? []);
+  const [handElements, setHandElements] = useState<string[]>(() => init?.handElements ?? []);
   /** 画面のタブ（D＝構成の入力、A＝芸術と多様性の入力） */
   const [tab, setTab] = useState<"d" | "a">("d");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -619,49 +620,36 @@ export function IndividualScorer({ initialData }: Props = {}) {
 
       <section className="card">
         <div className="line-head">徒手系要素（跳躍・柔軟）</div>
-        {handElements.map((e, i) => {
+        {handElements.map((id, i) => {
           const row = result.handElementRows.find((r) => r.index === i);
           return (
             <div key={i} className="basic-hand-row">
               <select
                 className="select"
-                value={e.id}
+                value={id}
                 aria-label={`徒手系要素 ${i + 1}`}
-                onChange={(ev) =>
-                  setHandElements((p) => p.map((x, k) => (k === i ? { ...x, id: ev.target.value } : x)))
-                }
+                onChange={(ev) => setHandElements((p) => p.map((x, k) => (k === i ? ev.target.value : x)))}
               >
                 <option value="">徒手系要素</option>
                 {SOLO_HAND_ELEMENT_GROUPS.map((g) => (
                   <optgroup key={g.id} label={g.name}>
                     {g.items.map((h) => (
                       <option key={h.id} value={h.id} title={SOLO_ELEMENT_TIPS[h.id]}>
-                        {h.name}（{h.solo}）
+                        {h.name}
+                        {g.scored ? `（${h.solo}）` : ""}
                       </option>
                     ))}
                   </optgroup>
                 ))}
               </select>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={!!e.withApparatus}
-                  onChange={(ev) =>
-                    setHandElements((p) =>
-                      p.map((x, k) => (k === i ? { ...x, withApparatus: ev.target.checked } : x)),
-                    )
-                  }
-                />
-                手具操作
-              </label>
               {row && (
-                <span className={row.inTop ? "check-ok" : "check-ng"}>
-                  {row.inTop
-                    ? `難度${row.difficulty}（+${row.score.toFixed(1)}）`
-                    : row.duplicate
-                      ? "同じ要素は1回のみ"
-                      : !row.withApparatus
-                        ? "手具操作なしは不算入"
+                <span className={row.inTop || !row.scored ? "check-ok" : "check-ng"}>
+                  {!row.scored
+                    ? "実施（難度には数えない）"
+                    : row.inTop
+                      ? `難度${row.difficulty}（+${row.score.toFixed(1)}）`
+                      : row.duplicate
+                        ? "同じ要素は1回のみ"
                         : "上位3つ外"}
                 </span>
               )}
@@ -675,15 +663,20 @@ export function IndividualScorer({ initialData }: Props = {}) {
             </div>
           );
         })}
-        <button className="add-btn" onClick={() => setHandElements((p) => [...p, { id: "", withApparatus: true }])}>
+        <button className="add-btn" onClick={() => setHandElements((p) => [...p, ""])}>
           <Plus size={14} /> 徒手系要素を追加
         </button>
         <p className="hint">
-          単独で実施した跳躍・柔軟を入力します。§3.5.5.3(1) により**手具操作を伴って実施したもの**だけ、
-          §3.6.1 の個人難度を徒手系難度として採用します（投げ受けの徒手と合わせて上位3つ）。
-          同じ要素は何度実施しても1回しか数えません（§3.4.4）。
-          跳躍は規則の表そのまま、柔軟は前後開脚・左右開脚・ブリッジの3つです（ブリッジは規則の表に無いため暫定でA）。
+          単独で実施した跳躍・柔軟を入力します。<b>跳躍</b>は §3.6.1 の個人難度を徒手系難度として採用します
+          （投げ受けの徒手と合わせて上位3つ。同じ要素は何度実施しても1回だけ）。
+          <b>柔軟</b>は難度に数えず、実施したかどうかだけをA側で見ます
+          （1つも無ければ −{FLEX_ELEMENT_DEDUCTION.toFixed(1)}点）。
         </p>
+        <div className="check-result-row">
+          <span className={result.flexCheck.passed ? "check-ok" : "check-ng"} title={result.flexCheck.tip}>
+            {result.flexCheck.passed ? "✓" : "×"} {result.flexCheck.label}
+          </span>
+        </div>
       </section>
 
       <section className="card">
@@ -838,11 +831,12 @@ export function IndividualScorer({ initialData }: Props = {}) {
           return (
             <div key={item.id}>
               {item.group !== prev?.group && <div className="art-group">{item.group}</div>}
-              <label className="art-row">
+              <label className="art-row" title={item.tip}>
                 <span className="art-row-name">
                   {item.name}
                   <span className="art-row-note">
                     上限 {item.max.toFixed(2)}／減点幅 {item.note}
+                    {item.tip && <span className="check-note">{item.tip}</span>}
                     {item.id === TUM_VARIETY_ITEM_ID && (
                       <>
                         {" "}

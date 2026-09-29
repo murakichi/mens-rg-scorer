@@ -9,6 +9,8 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
     missing,
     deepMotionChecks,
     deepMotionDeduction,
+    flexCheck,
+    flexDeduction,
     handOpChecks,
     handOpDeduction,
     apparatusElementChecks,
@@ -60,7 +62,7 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
         <div className="line-head">必須要素チェック</div>
         <ul className="check-list">
           {required.map((r) => (
-            <li key={r.key} className="check-item">
+            <li key={r.key} className="check-item" title={r.tip}>
               <span className={`mark ${r.passed === false ? "ng" : r.passed === null ? "pending" : "ok"}`}>
                 {r.passed === false ? "×" : r.passed === null ? "?" : "✓"}
               </span>
@@ -89,9 +91,9 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
           </>
         )}
 
-        <div className="line-head" style={{ marginTop: 12 }}>基本徒手・手具操作の多様性</div>
+        <div className="line-head" style={{ marginTop: 12 }}>基本徒手・柔軟・手具操作の多様性</div>
         <ul className="check-list">
-          {[...deepMotionChecks, ...handOpChecks].map((r) => (
+          {[...deepMotionChecks, flexCheck, ...handOpChecks].map((r) => (
             <li key={r.key} className="check-item" title={r.tip}>
               <span className={`mark ${r.passed ? "ok" : "ng"}`}>{r.passed ? "✓" : "×"}</span>
               <span className={r.passed ? "ok-text" : "ng-text"}>{r.label}</span>
@@ -192,11 +194,17 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
             <span>-{throwCountOverDeduction.toFixed(1)} 点</span>
           </div>
         )}
-        <div className="total-row">
+        <div
+          className="total-row"
+          title="宙返り系が途切れず続いた最大の回数。A難度技（ロンダート・バク転等）は連鎖を切り、きりもみ系は宙返りの連続の中でだけ宙返りとして数える。2連続で −0.1、無しで −0.2"
+        >
           <span>連続宙返り減点（最大 {maxChainAll} 回連続）</span>
           <span>-{saltoChainDeduction.toFixed(1)} 点</span>
         </div>
-        <div className="total-row">
+        <div
+          className="total-row"
+          title="投げ方・受け方それぞれ3種類必要（通常・左手投げ／二つ投げ・視野外・手以外・手具を使った・その他など）。1種類不足につき −0.1、合計の上限0.5。「その他」は別の種類として数える"
+        >
           <span>
             投げ方・受け方の種類不足減点（投げ{throwKindCount}/3・受け{catchKindCount}/3｜上限0.5）
           </span>
@@ -218,6 +226,10 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
             ）
           </span>
           <span>-{deepMotionDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>柔軟の徒手の不足減点（{flexCheck.passed ? "実施あり" : "実施なし"}）</span>
+          <span>-{flexDeduction.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
           <span>

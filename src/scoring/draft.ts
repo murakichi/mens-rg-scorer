@@ -17,7 +17,7 @@ import {
   normalizeFutureLevel,
 } from "./constants";
 import { initialTeamState, normalizeTeamState, type TeamState } from "./team";
-import type { ApparatusKey, FutureLevel, HandElementEntry, Item, Series } from "./types";
+import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
 export const DRAFT_KEY_INDIVIDUAL = "mens-rg-scorer:draft:individual:v1";
 export const DRAFT_KEY_TEAM = "mens-rg-scorer:draft:team:v1";
@@ -46,8 +46,8 @@ export interface IndividualDraft {
   handOps: string[];
   /** 身体を離れる手具操作の回数 */
   offBodyCount: number;
-  /** 単独で実施した徒手系要素（跳躍・柔軟） */
-  handElements: HandElementEntry[];
+  /** 単独で実施した徒手系要素（跳躍・柔軟）のid */
+  handElements: string[];
 }
 
 export const asStringArray = (v: unknown): string[] =>
@@ -70,13 +70,15 @@ const knownIds = (v: unknown, known: { id: string }[]): string[] => {
   return asStringArray(v).filter((id) => ids.has(id));
 };
 
-/** 徒手系要素の入力を取り込む（知らないidは落とす） */
-export function normalizeHandElements(v: unknown): HandElementEntry[] {
+/**
+ * 徒手系要素の入力を取り込む（知らないidは落とす）。
+ * 手具操作の有無を持っていた頃の `{ id, withApparatus }` 形も読める。
+ */
+export function normalizeHandElements(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return v.flatMap((x) => {
-    const id = (x as { id?: unknown })?.id;
-    if (typeof id !== "string" || !soloHandElementDef(id)) return [];
-    return [{ id, withApparatus: !!(x as { withApparatus?: unknown }).withApparatus }];
+    const id = typeof x === "string" ? x : (x as { id?: unknown })?.id;
+    return typeof id === "string" && soloHandElementDef(id) ? [id] : [];
   });
 }
 

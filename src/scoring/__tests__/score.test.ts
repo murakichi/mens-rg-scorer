@@ -17,11 +17,11 @@ describe("computeScore — 空の演技（回帰アンカー）", () => {
     expect(r.eScore).toBe(10);
     // 方向系3不足(0.9) + 投げ不足(0.3) + 宙返り連続なし(0.2) + 多様性上限(0.5)
     //  + 必須要素の欠如3項目(投げタン・つなぎ技・タンブリング本数 3×0.3=0.9)
-    //  + 深い運動2部位不足(0.2) + 手具操作チェック2件(0.2) + 身体を離れる操作4回不足(0.4)
-    //  + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 4.8
-    expect(r.aDeduction).toBeCloseTo(4.8, 5);
-    expect(r.aScore).toBeCloseTo(5.2, 5);
-    expect(r.grandTotal).toBeCloseTo(15.2, 5);
+    //  + 深い運動2部位不足(0.2) + 柔軟なし(0.1) + 手具操作チェック2件(0.2)
+    //  + 身体を離れる操作4回不足(0.4) + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 4.9
+    expect(r.aDeduction).toBeCloseTo(4.9, 5);
+    expect(r.aScore).toBeCloseTo(5.1, 5);
+    expect(r.grandTotal).toBeCloseTo(15.1, 5);
     expect(r.missing.length).toBeGreaterThan(0);
     expect(r.missingElementDeduction).toBeCloseTo(0.9, 5);
     // 手具別必須要素は未実施4項目で −1.2
@@ -974,6 +974,7 @@ describe("computeScore — 必須要素チェックの不足も減点する", ()
       r.varietyDeduction +
       r.missingElementDeduction +
       r.deepMotionDeduction +
+      r.flexDeduction +
       r.handOpDeduction +
       r.apparatusElementDeduction +
       r.violationDeduction;
