@@ -339,6 +339,32 @@ export function appInTumblingDeduction(withOp: number, total: number): number {
   return APP_IN_TUM_STEPS.find((s) => ratio >= s.minRatio)?.deduction ?? 0;
 }
 
+/**
+ * ジュニアをONにしたとき、既定で**上限まで引く**欠点テーブルの項目。
+ * ジュニアの水準では一部のトップクラスしか達成できないため。
+ * あくまで既定値なので、入れたあとに手で下げられる。
+ */
+export const JUNIOR_MAX_ART_ITEMS: string[] = ["originality"];
+
+/**
+ * ジュニアの切り替えに合わせて欠点テーブルの既定値を入れ替える。
+ * ON …… 対象項目を上限まで引く（手入力を上書きする＝既定値なので）
+ * OFF …… 上限のままの項目だけ戻す（手で下げた値はそのまま残す）
+ */
+export function withJuniorArtDefaults(
+  current: Record<string, number>,
+  junior: boolean,
+): Record<string, number> {
+  const next = { ...current };
+  JUNIOR_MAX_ART_ITEMS.forEach((id) => {
+    const max = artDeductionItem(id)?.max ?? 0;
+    if (!max) return;
+    if (junior) next[id] = max;
+    else if (next[id] === max) delete next[id];
+  });
+  return next;
+}
+
 export function artDeductionItem(id: string): ArtDeductionItem | undefined {
   return ART_DEDUCTION_ITEMS.find((x) => x.id === id);
 }

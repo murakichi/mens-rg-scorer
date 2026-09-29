@@ -25,6 +25,8 @@ import {
   FUTURE_LEVELS,
   VIOLATION_OPTIONS,
   clampArtDeduction,
+  withJuniorArtDefaults,
+  JUNIOR_MAX_ART_ITEMS,
   normalizeFutureLevel,
 } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
@@ -101,7 +103,12 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [future, setFuture] = useState<FutureLevel>(init?.future ?? null);
   const futureUnlock = useFutureUnlock();
   const toggleJunior = () => {
-    setJunior((p) => !p);
+    setJunior((p) => {
+      const next = !p;
+      // ジュニアでは一部のトップクラスしか達成できない項目を既定で上限まで引く
+      setArtDeductions((d) => withJuniorArtDefaults(d, next));
+      return next;
+    });
     futureUnlock.countJuniorToggle();
   };
   const [artDeductions, setArtDeductions] = useState<Record<string, number>>(() => init?.artDeductions ?? {});
@@ -855,6 +862,11 @@ export function IndividualScorer({ initialData }: Props = {}) {
                   <span className="art-row-note">
                     上限 {item.max.toFixed(2)}／減点幅 {item.note}
                     {auto && <> ／{auto.note}</>}
+                    {junior && JUNIOR_MAX_ART_ITEMS.includes(item.id) && (
+                      <span className="check-note">
+                        ジュニアは既定で上限まで引く（この水準では一部のトップクラスしか達成できないため）。手で下げられます
+                      </span>
+                    )}
                     {item.tip && <span className="check-note">{item.tip}</span>}
                   </span>
                 </span>

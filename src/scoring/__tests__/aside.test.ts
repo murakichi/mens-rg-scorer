@@ -17,6 +17,8 @@ import {
   handOpChecksFor,
   APPARATUS_CHARACTER_HINTS,
   ART_DEDUCTION_ITEMS,
+  JUNIOR_MAX_ART_ITEMS,
+  withJuniorArtDefaults,
   appInTumblingDeduction,
   OFF_BODY_TIP,
   OFF_BODY_DEDUCTION_STEP,
@@ -392,5 +394,37 @@ describe("左手の手具操作は必須要素とは別軸", () => {
   it("説明文が必須要素を理由にしていない", () => {
     const tip = HAND_OP_CHECKS.find((c) => c.id === "leftHand")!.tip;
     expect(tip).toContain("別軸");
+  });
+});
+
+describe("ジュニアの欠点テーブル既定値（独創性）", () => {
+  const max = (id: string) => ART_DEDUCTION_ITEMS.find((i) => i.id === id)!.max;
+
+  it("対象は独創性だけ", () => {
+    expect(JUNIOR_MAX_ART_ITEMS).toEqual(["originality"]);
+  });
+
+  it("ONで上限まで引く（他の項目は触らない）", () => {
+    const next = withJuniorArtDefaults({ rhythm: 0.2 }, true);
+    expect(next.originality).toBeCloseTo(max("originality"), 5);
+    expect(next.rhythm).toBeCloseTo(0.2, 5);
+  });
+
+  it("手入力があってもONなら上限に揃える（既定値なので）", () => {
+    expect(withJuniorArtDefaults({ originality: 0.1 }, true).originality).toBeCloseTo(max("originality"), 5);
+  });
+
+  it("OFFで戻すのは上限のままのものだけ（手で下げた値は残す）", () => {
+    expect(withJuniorArtDefaults({ originality: max("originality") }, false).originality).toBeUndefined();
+    expect(withJuniorArtDefaults({ originality: 0.2 }, false).originality).toBeCloseTo(0.2, 5);
+    expect(withJuniorArtDefaults({}, false)).toEqual({});
+  });
+
+  it("入れた値はそのままA減点に乗る", () => {
+    const d = withJuniorArtDefaults({}, true);
+    const r = computeScore([], "stick", { junior: true, artDeductions: d });
+    const base = computeScore([], "stick", { junior: true });
+    expect(r.artDeduction).toBeCloseTo(max("originality"), 5);
+    expect(base.aDeduction - r.aDeduction).toBeCloseTo(-max("originality"), 5);
   });
 });
