@@ -376,6 +376,10 @@ export const BASIC_HAND_ELEMENTS: BasicHandElement[] = [
   { id: "chestback", name: "胸後反", parts: ["lower"] },
   { id: "snake", name: "蛇動", parts: ["lower"] },
   { id: "forwardbend", name: "前屈", parts: ["upper"] },
+  // 表に無い動作の受け皿。実施した部位を選んで深い運動の充足に数える
+  { id: "other_upper", name: "その他上半身の運動", parts: ["upper"] },
+  { id: "other_lower", name: "その他下半身の運動", parts: ["lower"] },
+  { id: "other_whole", name: "その他全身の運動", parts: ["upper", "lower"] },
 ];
 
 export const basicHandDef = (id: string): BasicHandElement | undefined =>
