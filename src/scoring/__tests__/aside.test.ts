@@ -375,3 +375,22 @@ describe("転回中の操作の自動計算（§3.5.6.4）", () => {
     expect(applied.artDeduction).toBeCloseTo(r.tumOperation.deduction, 5);
   });
 });
+
+describe("左手の手具操作は必須要素とは別軸", () => {
+  it("左投げ左受けを実施してもチェックは自動では立たない", () => {
+    const left: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", throwTypes: [], reqTypes: ["lefthand"] }, { kind: "catch" }],
+    };
+    const r = computeScore([left], "stick");
+    // 必須要素（§3.2）の左投げ左受けは自動で満たされる
+    expect(r.apparatusElementChecks.find((c) => c.key === "appEl_stick_left")?.passed).toBe(true);
+    // 手具操作の多様性の「左手の手具操作」は手入力のまま
+    expect(r.handOpChecks.find((c) => c.key === "handOp_leftHand")?.passed).toBe(false);
+  });
+
+  it("説明文が必須要素を理由にしていない", () => {
+    const tip = HAND_OP_CHECKS.find((c) => c.id === "leftHand")!.tip;
+    expect(tip).toContain("別軸");
+  });
+});

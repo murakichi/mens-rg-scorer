@@ -415,7 +415,7 @@ export const HAND_OP_CHECKS: HandOpCheck[] = [
   {
     id: "leftHand",
     name: "左手の手具操作",
-    tip: "左手でも手具を操作すること（スティックは左投げ左受けが必須要素）",
+    tip: "左手で手具を操作すること。必須要素の左投げ左受けとは別軸の評価",
     only: ["stick"],
   },
 ];
