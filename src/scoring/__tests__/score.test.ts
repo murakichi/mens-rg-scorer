@@ -13,9 +13,11 @@ describe("computeScore — 空の演技（回帰アンカー）", () => {
     // 方向系3不足(0.9) + 投げ不足(0.3) + 宙返り連続なし(0.2) + 多様性上限(0.5)
     //  + 必須要素の欠如3項目(投げタン・つなぎ技・タンブリング本数 3×0.3=0.9)
     //  + スティック手具別必須要素5項目未実施(5×0.3=1.5) = 4.3
-    expect(r.aDeduction).toBeCloseTo(4.3, 5);
-    expect(r.aScore).toBeCloseTo(5.7, 5);
-    expect(r.grandTotal).toBeCloseTo(15.7, 5);
+    //  + §3.5.6.4 の自動判定（内容が何も無いので多様性・徒手の割合が満額に近い）1.9 = 6.2
+    expect(r.artDeduction).toBeCloseTo(1.9, 5);
+    expect(r.aDeduction).toBeCloseTo(6.2, 5);
+    expect(r.aScore).toBeCloseTo(3.8, 5);
+    expect(r.grandTotal).toBeCloseTo(13.8, 5);
     expect(r.missing.length).toBeGreaterThan(0);
     expect(r.missingElementDeduction).toBeCloseTo(0.9, 5);
     // 手具別必須要素は未実施5項目で −1.5
@@ -959,6 +961,7 @@ describe("computeScore — 必須要素チェックの不足も減点する", ()
   it("連続宙返り・方向系・投げ回数は既存の減点のままで二重計上しない", () => {
     const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
     const sum =
+      r.artDeduction +
       r.noApparatusDeduction +
       r.directionDeduction +
       r.throwCountDeduction +
@@ -972,33 +975,44 @@ describe("computeScore — 必須要素チェックの不足も減点する", ()
   });
 });
 
-describe("§3.5.6.4 芸術と多様性の欠点テーブル（手入力）", () => {
-  it("入力した分だけA減点に加算される", () => {
+describe("§3.5.6.4 芸術と多様性の欠点テーブル（自動判定＋手入力）", () => {
+  it("手入力した分だけA減点に加算される", () => {
     const base = computeScore([], "stick");
     const r = computeScore([], "stick", { artDeductions: { rhythm: 0.2, volume: 0.1 } });
-    expect(r.artDeduction).toBeCloseTo(0.3, 5);
+    expect(r.artDeduction - base.artDeduction).toBeCloseTo(0.3, 5);
     expect(r.aDeduction - base.aDeduction).toBeCloseTo(0.3, 5);
     expect(base.aScore - r.aScore).toBeCloseTo(0.3, 5);
   });
 
-  it("項目ごとの上限で丸める", () => {
-    const r = computeScore([], "stick", { artDeductions: { rhythm: 1.5, handVariety: 1.5 } });
-    // リズムは上限0.5、徒手系の多様性は上限1.0
+  it("手入力の項目は上限で丸める", () => {
+    const r = computeScore([], "stick", { artDeductions: { rhythm: 1.5 } });
+    // リズムは上限0.5
     expect(r.artRows.find((x) => x.id === "rhythm")?.value).toBeCloseTo(0.5, 5);
-    expect(r.artRows.find((x) => x.id === "handVariety")?.value).toBeCloseTo(1.0, 5);
-    expect(r.artDeduction).toBeCloseTo(1.5, 5);
   });
 
-  it("負値・不明な項目・未入力は0", () => {
+  it("自動判定の項目は手入力を無視する", () => {
+    const base = computeScore([], "stick");
+    const r = computeScore([], "stick", { artDeductions: { handVariety: 1.0 } });
+    expect(r.artRows.find((x) => x.id === "handVariety")?.value).toBeCloseTo(
+      base.artRows.find((x) => x.id === "handVariety")!.value,
+      5,
+    );
+    expect(r.artDeduction).toBeCloseTo(base.artDeduction, 5);
+  });
+
+  it("負値・不明な項目・未入力は手入力側に加算されない", () => {
+    const base = computeScore([], "stick");
     const r = computeScore([], "stick", { artDeductions: { rhythm: -1, unknownItem: 0.3 } });
-    expect(r.artDeduction).toBe(0);
-    expect(r.artRows.every((x) => x.value === 0)).toBe(true);
+    expect(r.artDeduction).toBeCloseTo(base.artDeduction, 5);
+    expect(r.artRows.filter((x) => !x.auto).every((x) => x.value === 0)).toBe(true);
   });
 
   it("全項目を内訳として返す（未入力も含む）", () => {
     const r = computeScore([], "stick");
     expect(r.artRows).toHaveLength(ART_DEDUCTION_ITEMS.length);
-    expect(r.artRows.map((x) => x.id)).toContain("appInTumbling");
+    // 自動判定の項目は判定内訳を持ち、手入力の項目は持たない
+    expect(r.artRows.filter((x) => x.auto).every((x) => x.notes.length > 0)).toBe(true);
+    expect(r.artRows.filter((x) => !x.auto).every((x) => x.notes.length === 0)).toBe(true);
   });
 });
 

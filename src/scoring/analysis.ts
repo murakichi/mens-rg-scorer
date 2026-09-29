@@ -182,6 +182,11 @@ export function motionTimes(count: number | undefined): number {
   return Math.max(0, n);
 }
 
+/** タンブリング塊（投げタンを含む）か。難度・A側の判定で転回系として扱う単位 */
+export const isTumblingUnit = (u: Unit) => u.type === "tumbling" || (u.type === "throw" && !!u.isThrowTumbling);
+/** 徒手系ユニット（投げ受けの間の徒手・ロープ跳び）。投げタンは転回系なので含まない */
+export const isHandUnit = (u: Unit) => u.type === "throw" && !u.isThrowTumbling;
+
 /** skillIds 内の最大連続宙返り数 */
 export function maxSaltoChain(skillIds: string[]): number {
   const flags = saltoFlags(skillIds);

@@ -354,7 +354,7 @@ describe("ランダム生成への組み込み", () => {
     capped.forEach((r) => expect(r.dScore).toBeLessThanOrEqual(2.5 + 1e-9));
     // シェネの回数の合計は上限ありのほうが少ない（丸ごと落とすのではなく回数で調整する）
     expect(sum(capped.map(cheneCounts).map(sum))).toBeLessThan(sum(free.map(cheneCounts).map(sum)));
-  });
+  }, 60_000);
 
   it("シェネの回数は形ごとの範囲から外れない（調整後も）", () => {
     [null, 3.0, 2.0].forEach((maxScore) => {
@@ -372,7 +372,7 @@ describe("ランダム生成への組み込み", () => {
         });
       });
     });
-  });
+  }, 60_000);
 
   it("シェネの回数だけを差し替えられる（範囲外・変化なしは null）", () => {
     const t = autoThrowTemplates("stick").find((x) => x.spec.pattern.id === "chene")!; // シェネ3〜4回

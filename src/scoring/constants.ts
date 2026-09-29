@@ -187,17 +187,23 @@ export interface ArtDeductionItem {
   name: string;
   max: number;
   note: string;
+  /**
+   * 構成から機械的に判定する項目か（`art.ts` の `artAutoDeductions`）。
+   * false の項目は演技全体を見ないと判断できないので手入力のまま残す
+   * （リズム変化・空間使用・独創性・運動量）。
+   */
+  auto?: boolean;
 }
 export const ART_DEDUCTION_STEP = 0.1;
 export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
-  { id: "handVariety", group: "多様性と技術価値", name: "徒手系の種類・組み合わせの多様性", max: 1.0, note: "0.1 / 0.2" },
-  { id: "tumVariety", group: "多様性と技術価値", name: "転回系の種類・組み合わせの多様性", max: 0.5, note: "0.1 / 0.2" },
-  { id: "appVariety", group: "多様性と技術価値", name: "さまざまな操作", max: 1.0, note: "0.1 / 0.2" },
-  { id: "appInTumbling", group: "手具操作の多様性", name: "転回中の操作", max: 0.5, note: "0〜0.4" },
+  { id: "handVariety", group: "多様性と技術価値", name: "徒手系の種類・組み合わせの多様性", max: 1.0, note: "0.1 / 0.2", auto: true },
+  { id: "tumVariety", group: "多様性と技術価値", name: "転回系の種類・組み合わせの多様性", max: 0.5, note: "0.1 / 0.2", auto: true },
+  { id: "appVariety", group: "多様性と技術価値", name: "さまざまな操作", max: 1.0, note: "0.1 / 0.2", auto: true },
+  { id: "appInTumbling", group: "手具操作の多様性", name: "転回中の操作", max: 0.5, note: "0〜0.4", auto: true },
   { id: "rhythm", group: "芸術性と技術価値", name: "リズム変化・ダイナミズムによる表現", max: 0.5, note: "0.1 / 0.2" },
   { id: "space", group: "芸術性と技術価値", name: "空間使用による表現", max: 0.5, note: "0.1 / 0.2" },
   { id: "originality", group: "芸術性と技術価値", name: "独創性の高い内容と表現", max: 0.5, note: "0.1 / 0.2" },
-  { id: "handRatio", group: "その他の技術的価値", name: "徒手の割合", max: 0.5, note: "0〜0.5" },
+  { id: "handRatio", group: "その他の技術的価値", name: "徒手の割合", max: 0.5, note: "0〜0.5", auto: true },
   { id: "volume", group: "その他の技術的価値", name: "運動量", max: 0.5, note: "0.1 / 0.2" },
 ];
 
@@ -206,6 +212,42 @@ export function artDeductionItem(id: string): ArtDeductionItem | undefined {
 }
 
 /** 欠点テーブル1項目の減点を 0〜上限 に丸める（未知のidは0） */
+/**
+ * 「多いほど良い」指標を減点に変換する。`steps` は減点0になる境界から降順に並べ、
+ * 満たした境界の数だけ `ART_DEDUCTION_STEP` ずつ減点する
+ *  （例：steps=[5,3] なら 5以上=0／3〜4=−0.1／3未満=−0.2）。
+ */
+export function stepDeduction(value: number, steps: number[]): number {
+  const hit = steps.findIndex((s) => value >= s);
+  const n = hit === -1 ? steps.length : hit;
+  return Math.round(n * ART_DEDUCTION_STEP * 10) / 10;
+}
+
+// ---- 欠点テーブルの自動判定のしきい値（§3.5.6.4。art.ts が使う）----
+// 数値は実際の構成の分布（生成器で測定）から、上位構成が減点0、内容の乏しい構成が
+// 満額に近い減点になるように置いた。規則に明確な基準がないので、ここが唯一の調整点。
+
+/** 転回系：宙返りの技の種類数（A難度技・側転は数えない） */
+export const ART_TUM_KIND_STEPS = [5, 3];
+/** 転回系：姿勢×ひねり有無の種類数 */
+export const ART_TUM_POSTURE_STEPS = [2];
+/** 転回系：タンブリングの形（宙返り本数・つなぎ・投げタン）の種類数 */
+export const ART_TUM_SHAPE_STEPS = [3, 2];
+/** 徒手系：徒手動作の種類数（シェネの腕の使い方違いは別種類） */
+export const ART_HAND_KIND_STEPS = [4, 2];
+/** 徒手系：回転軸（縦回転・横回転）の種類数 */
+export const ART_HAND_AXIS_STEPS = [2, 1];
+/** 徒手系：徒手ユニットの内容（動作の組み合わせ）の種類数 */
+export const ART_HAND_COMBO_STEPS = [4, 2];
+/** 操作：投げ方の種類数＋受け方の種類数 */
+export const ART_APP_KIND_STEPS = [7, 5];
+/** 操作：投げ方→受け方の組み合わせの種類数 */
+export const ART_APP_PAIR_STEPS = [5, 3];
+/** 転回中の操作：手具を保持できる転回技のうち操作した割合 */
+export const ART_APP_IN_TUM_STEPS = [0.8, 0.6, 0.4, 0.2];
+/** 徒手の割合：徒手系ユニット数／全ユニット数 */
+export const ART_HAND_RATIO_STEPS = [0.5, 0.4, 0.3, 0.2];
+
 export function clampArtDeduction(id: string, value: unknown): number {
   const item = artDeductionItem(id);
   if (!item) return 0;

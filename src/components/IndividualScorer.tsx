@@ -45,11 +45,15 @@ interface Props {
 
 const asStringArray = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
-/** 保存データの欠点テーブルを項目ごとに丸めて取り込む */
+/**
+ * 保存データの欠点テーブルを項目ごとに丸めて取り込む。
+ * 構成から自動判定する項目（`ArtDeductionItem.auto`）は手入力を持たないので捨てる。
+ */
 const normalizeArt = (v: unknown): Record<string, number> => {
   const src = (v ?? {}) as Record<string, unknown>;
   const out: Record<string, number> = {};
   ART_DEDUCTION_ITEMS.forEach((item) => {
+    if (item.auto) return;
     const n = clampArtDeduction(item.id, src[item.id]);
     if (n > 0) out[item.id] = n;
   });
@@ -452,49 +456,54 @@ export function IndividualScorer({ initialData }: Props = {}) {
 
       <section className="card">
         <div className="line-head">芸術と多様性の欠点（§3.5.6.4）</div>
-        {ART_DEDUCTION_ITEMS.map((item, i) => {
-          const prev = ART_DEDUCTION_ITEMS[i - 1];
-          const value = artDeductions[item.id] ?? 0;
+        {result.artRows.map((r, i) => {
+          const prev = result.artRows[i - 1];
           return (
-            <div key={item.id}>
-              {item.group !== prev?.group && <div className="art-group">{item.group}</div>}
+            <div key={r.id}>
+              {r.group !== prev?.group && <div className="art-group">{r.group}</div>}
               <label className="art-row">
                 <span className="art-row-name">
-                  {item.name}
+                  {r.name}
                   <span className="art-row-note">
-                    上限 {item.max.toFixed(2)}／減点幅 {item.note}
+                    上限 {r.max.toFixed(2)}／減点幅 {r.note}
+                    {r.auto && r.notes.length > 0 && `／${r.notes.join("・")}`}
                   </span>
                 </span>
-                <select
-                  className="select art-select"
-                  value={value}
-                  onChange={(e) =>
-                    setArtDeductions((p) => {
-                      const n = { ...p };
-                      const v = clampArtDeduction(item.id, e.target.value);
-                      if (v > 0) n[item.id] = v;
-                      else delete n[item.id];
-                      return n;
-                    })
-                  }
-                >
-                  <option value={0}>—</option>
-                  {Array.from({ length: Math.round(item.max / ART_DEDUCTION_STEP) }, (_, k) => {
-                    const v = Math.round((k + 1) * ART_DEDUCTION_STEP * 10) / 10;
-                    return (
-                      <option key={v} value={v}>
-                        -{v.toFixed(1)}
-                      </option>
-                    );
-                  })}
-                </select>
+                {r.auto ? (
+                  <span className="art-auto">{r.value > 0 ? `-${r.value.toFixed(1)}` : "—"}</span>
+                ) : (
+                  <select
+                    className="select art-select"
+                    value={artDeductions[r.id] ?? 0}
+                    onChange={(e) =>
+                      setArtDeductions((p) => {
+                        const n = { ...p };
+                        const v = clampArtDeduction(r.id, e.target.value);
+                        if (v > 0) n[r.id] = v;
+                        else delete n[r.id];
+                        return n;
+                      })
+                    }
+                  >
+                    <option value={0}>—</option>
+                    {Array.from({ length: Math.round(r.max / ART_DEDUCTION_STEP) }, (_, k) => {
+                      const v = Math.round((k + 1) * ART_DEDUCTION_STEP * 10) / 10;
+                      return (
+                        <option key={v} value={v}>
+                          -{v.toFixed(1)}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
               </label>
             </div>
           );
         })}
         <p className="hint">
-          審判の主観評価にあたる項目です。該当する減点を選びます（A減点に加算）。
-          「投げ受けの操作（上限0.50）」はシリーズ入力から自動判定するため、ここには出しません。
+          種類の数や操作の割合で決まる項目はシリーズ入力から自動判定します（値のみ表示）。
+          演技全体を見ないと判断できない項目だけ、該当する減点を選びます（A減点に加算）。
+          「投げ受けの操作（上限0.50）」は投げ方・受け方の種類不足として別に自動判定するため、ここには出しません。
         </p>
       </section>
 

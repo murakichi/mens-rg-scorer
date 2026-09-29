@@ -44,6 +44,8 @@ import {
 } from "./constants";
 import {
   analyzeSeries,
+  isHandUnit,
+  isTumblingUnit,
   seriesSignature,
   maxSaltoChain,
   saltoFlags,
@@ -53,6 +55,7 @@ import {
   hasConnectWithoutApparatus,
   stripForApparatus,
 } from "./analysis";
+import { artAutoDeductions } from "./art";
 import type { ApparatusKey, Difficulty, Series, SeriesAnalysis, Unit } from "./types";
 
 /** シリーズ内のユニット1つ分の難度点の内訳（表示用） */
@@ -126,7 +129,18 @@ export interface ScoreResult {
   /** §3.5.6.4 欠点テーブルの合計減点 */
   artDeduction: number;
   /** 欠点テーブルの内訳（入力があった項目だけでなく全項目を返す） */
-  artRows: { id: string; name: string; group: string; max: number; note: string; value: number }[];
+  artRows: {
+    id: string;
+    name: string;
+    group: string;
+    max: number;
+    note: string;
+    value: number;
+    /** 構成から自動判定した項目か（false は審判の主観評価＝手入力） */
+    auto: boolean;
+    /** 自動判定の内訳（手入力の項目は空） */
+    notes: string[];
+  }[];
   noApparatusDeduction: number;
   connectNoApparatus: boolean;
   missingDirCount: number;
@@ -167,8 +181,6 @@ export interface ScoreResult {
   nonDupTumblingCount: number;
 }
 
-const isTumblingUnit = (u: Unit) => u.type === "tumbling" || (u.type === "throw" && u.isThrowTumbling);
-const isHandUnit = (u: Unit) => u.type === "throw" && !u.isThrowTumbling;
 /** そのユニットが難度点に寄与する点数。採用の優劣比較に使う。 */
 const unitScore = (u: Unit) => DIFF_SCORE[u.finalDiff];
 
@@ -180,7 +192,11 @@ export interface ComputeOptions {
   violations?: string[];
   /** ジュニア適用規則（変更規則1）で採点するか */
   junior?: boolean;
-  /** §3.5.6.4 芸術と多様性の欠点テーブル（項目id → 減点）。審判の主観評価。 */
+  /**
+   * §3.5.6.4 芸術と多様性の欠点テーブルのうち**手入力の項目**（項目id → 減点）。
+   * 構成から判定できる項目（`ArtDeductionItem.auto`）は `art.ts` が自動で決めるので、
+   * ここに値を入れても無視する。
+   */
   artDeductions?: Record<string, number>;
 }
 
@@ -671,15 +687,31 @@ export function computeScore(
   const executionDeduction = seriesExecutionDeduction + overallExec;
   const dScore =
     tumblingScore + handScore + seriesBonus + techniqueBonus + apparatusOpBonus + twoThrowMotionBonus + jumpVarietyBonus;
-  // §3.5.6.4 欠点テーブル（主観評価の手入力）
-  const artRows = ART_DEDUCTION_ITEMS.map((item) => ({
-    id: item.id,
-    name: item.name,
-    group: item.group,
-    max: item.max,
-    note: item.note,
-    value: clampArtDeduction(item.id, artDeductions[item.id]),
-  }));
+  // §3.5.6.4 欠点テーブル。構成から数えられる項目は自動判定し、
+  // 演技全体を見ないと判断できない項目（リズム・空間・独創性・運動量）だけ手入力を使う。
+  const artAuto = new Map(
+    artAutoDeductions({
+      series,
+      analysis,
+      apparatus,
+      junior,
+      throwKindCount,
+      catchKindCount,
+    }).map((r) => [r.id, r]),
+  );
+  const artRows = ART_DEDUCTION_ITEMS.map((item) => {
+    const auto = item.auto ? artAuto.get(item.id) : undefined;
+    return {
+      id: item.id,
+      name: item.name,
+      group: item.group,
+      max: item.max,
+      note: item.note,
+      value: auto ? auto.value : clampArtDeduction(item.id, artDeductions[item.id]),
+      auto: !!auto,
+      notes: auto ? auto.notes : [],
+    };
+  });
   const artDeduction = artRows.reduce((s, r) => s + r.value, 0);
 
   const aDeduction =

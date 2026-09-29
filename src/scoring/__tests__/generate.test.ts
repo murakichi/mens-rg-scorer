@@ -266,8 +266,9 @@ describe("実施が少ない技（ハンドスプリング・転宙）", () => {
   });
 
   it("同じ点数なら使わない構成を選ぶ", () => {
-    // 前宙2連続（D 0.3）と 転宙→前宙（同じくD 0.3）なら、転宙を使わないほうを採る
-    const plain = tpl("前宙2連続", "common", S(skill("b_front"), skill("b_front")));
+    // 側宙→前宙（D 0.3）と 転宙→前宙（同じくD 0.3）なら、転宙を使わないほうを採る。
+    // 技の数・姿勢の種類も揃えてあるので、§3.5.6.4 の多様性の自動判定でも差が付かない
+    const plain = tpl("側宙入り", "common", S(skill("b_sidesalto"), skill("b_front")));
     const limited = tpl("転宙入り", "common", S(skill("b_tenchu"), skill("b_front")));
     [3, 7, 11].forEach((seed) => {
       const r = generateRoutine([plain, limited], {
@@ -276,7 +277,7 @@ describe("実施が少ない技（ハンドスプリング・転宙）", () => {
         ...noAuto,
         random: seeded(seed),
       })!;
-      expect(r.used.map((t) => t.name)).toEqual(["前宙2連続"]);
+      expect(r.used.map((t) => t.name)).toEqual(["側宙入り"]);
     });
   });
 });
