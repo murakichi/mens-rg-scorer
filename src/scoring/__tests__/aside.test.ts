@@ -69,6 +69,19 @@ describe("基本徒手 — 深い運動の充足", () => {
     expect(base.aDeduction - r.aDeduction).toBeCloseTo(DEEP_MOTION_DEDUCTION * 2, 5);
   });
 
+  it("その他の運動は選んだ部位を満たす（全身は両方）", () => {
+    expect([...deepMotionParts(["other_upper"])]).toEqual(["upper"]);
+    expect([...deepMotionParts(["other_lower"])]).toEqual(["lower"]);
+    expect([...deepMotionParts(["other_whole"])].sort()).toEqual(["lower", "upper"]);
+    expect(computeScore([], "stick", { basicHands: ["other_whole"] }).deepMotionDeduction).toBe(0);
+    expect(
+      computeScore([], "stick", { basicHands: ["other_upper", "other_lower"] }).deepMotionDeduction,
+    ).toBe(0);
+    expect(
+      computeScore([], "stick", { basicHands: ["other_upper"] }).deepMotionDeduction,
+    ).toBeCloseTo(DEEP_MOTION_DEDUCTION, 5);
+  });
+
   it("胸後反＋前屈でも両方満たす／知らないidは数えない", () => {
     expect(computeScore([], "stick", { basicHands: ["chestback", "forwardbend"] }).deepMotionDeduction).toBe(0);
     expect(computeScore([], "stick", { basicHands: ["", "nope"] }).deepMotionDeduction).toBeCloseTo(
