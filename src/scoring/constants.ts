@@ -305,9 +305,10 @@ export function clampArtDeduction(id: string, value: unknown): number {
 
 /** 深い運動の部位。演技にはどちらも入れる。 */
 export type DeepMotionPart = "upper" | "lower";
-export const DEEP_MOTION_PARTS: { id: DeepMotionPart; name: string }[] = [
-  { id: "upper", name: "上半身の深い運動" },
-  { id: "lower", name: "下半身の深い運動" },
+/** `tip` は画面の注記・ツールチップに出す説明 */
+export const DEEP_MOTION_PARTS: { id: DeepMotionPart; name: string; tip: string }[] = [
+  { id: "upper", name: "上半身の深い運動", tip: "上半身を大きく上下左右に動かすこと" },
+  { id: "lower", name: "下半身の深い運動", tip: "前倒、側倒、斜前屈など、下半身を大きく動かすこと" },
 ];
 
 /**
@@ -341,11 +342,21 @@ export function deepMotionParts(ids: string[]): Set<DeepMotionPart> {
 
 // ---- 手具操作の多様性（§3.5.6.4 さまざまな操作）----
 
-/** 実施していれば減点なしのチェック項目 */
-export const HAND_OP_CHECKS: { id: string; name: string }[] = [
-  { id: "twoParts", name: "2部位以上を通る手具操作" },
-  { id: "character", name: "手具の特性を生かした手具操作" },
+/** 実施していれば減点なしのチェック項目（`tip` は画面の注記・ツールチップ） */
+export const HAND_OP_CHECKS: { id: string; name: string; tip: string }[] = [
+  { id: "twoParts", name: "2部位以上を通る手具操作", tip: "手→腕→体幹のように、身体の2つ以上の部位を通して操作すること" },
+  { id: "character", name: "手具の特性を生かした手具操作", tip: "その手具にしかできない操作をすること" },
 ];
+/** 「手具の特性を生かした手具操作」の項目id（手具ごとの例を出すため） */
+export const HAND_OP_CHARACTER_ID = "character";
+
+/** 手具ごとの「特性」の例。チェック項目の横とツールチップに出す。 */
+export const APPARATUS_CHARACTER_HINTS: Record<ApparatusKey, string[]> = {
+  stick: ["様々な位置を持てる"],
+  clubs: ["二つある"],
+  ring: ["二つある", "体にはめられる", "回せる"],
+  rope: ["体に巻き付けられる", "変形できる"],
+};
 /** チェック項目1つにつきのA減点 */
 export const HAND_OP_CHECK_DEDUCTION = 0.1;
 
@@ -353,6 +364,8 @@ export const HAND_OP_CHECK_DEDUCTION = 0.1;
 export const OFF_BODY_REQUIRED_COUNT = 4;
 /** 身体を離れる手具操作が1回不足するごとのA減点 */
 export const OFF_BODY_DEDUCTION_STEP = 0.1;
+/** 「身体を離れる手具操作」の説明（画面の注記・ツールチップ） */
+export const OFF_BODY_TIP = "プロペラ回旋・まわしなど、手具が身体から離れて動く操作";
 
 /** 身体を離れる手具操作の不足回数（0〜必要回数） */
 export function offBodyShortage(count: unknown): number {
@@ -428,6 +441,35 @@ export const HAND_ELEMENTS: HandElement[] = [
   { id: "f6", group: "flex", name: "左右／前後開脚座（180度未満）仰臥位", solo: "A", team: "B" },
   { id: "f7", group: "flex", name: "左右／前後開脚座（一直線・180度）仰臥位", solo: "B", team: "C" },
 ];
+
+// ---- 個人が単独で実施する徒手系要素（§3.5.5.3(1)）----
+/**
+ * §3.5.5.3(1)「手具操作を伴って難度のある徒手系を実施した場合に、その難度を採用する」。
+ * 跳躍は §3.6.1 の表そのもの（難度は**個人列**）、柔軟は現場の呼び方で3つ持つ。
+ * ブリッジは §3.6.1 の表に無いので、柔軟の基礎難度に合わせて暫定でAとしている。
+ * 団体の選択肢（`HAND_ELEMENTS`）とは別の表にして、団体側の入力を変えないようにしている。
+ */
+export const SOLO_FLEX_ELEMENTS: HandElement[] = [
+  { id: "sf_split_fb", group: "flex", name: "前後開脚", solo: "A", team: "B" },
+  { id: "sf_split_lr", group: "flex", name: "左右開脚", solo: "A", team: "B" },
+  { id: "sf_bridge", group: "flex", name: "ブリッジ", solo: "A", team: "B" },
+];
+
+/** 個人の徒手系要素の選択肢（跳躍＝§3.6.1 の表／柔軟＝上の3つ） */
+export const SOLO_HAND_ELEMENT_GROUPS: { id: HandElementGroup; name: string; items: HandElement[] }[] = [
+  { id: "jump", name: "跳躍", items: HAND_ELEMENTS.filter((h) => h.group === "jump") },
+  { id: "flex", name: "柔軟", items: SOLO_FLEX_ELEMENTS },
+];
+export const SOLO_HAND_ELEMENTS: HandElement[] = SOLO_HAND_ELEMENT_GROUPS.flatMap((g) => g.items);
+export const soloHandElementDef = (id: string): HandElement | undefined =>
+  SOLO_HAND_ELEMENTS.find((x) => x.id === id);
+/** 補足のある徒手系要素だけの説明（ツールチップ） */
+export const SOLO_ELEMENT_TIPS: Record<string, string> = {
+  sf_bridge: "§3.6.1 の表に無いため、柔軟の基礎難度に合わせて暫定でA",
+};
+
+/** 個人での難度（表の個人列） */
+export const soloHandDifficulty = (id: string): Difficulty | undefined => soloHandElementDef(id)?.solo;
 
 export function handElementDef(id: string): HandElement | undefined {
   return HAND_ELEMENTS.find((x) => x.id === id);

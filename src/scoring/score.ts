@@ -46,10 +46,14 @@ import {
   DEEP_MOTION_DEDUCTION,
   deepMotionParts,
   HAND_OP_CHECKS,
+  HAND_OP_CHARACTER_ID,
   HAND_OP_CHECK_DEDUCTION,
+  APPARATUS_CHARACTER_HINTS,
+  OFF_BODY_TIP,
   OFF_BODY_REQUIRED_COUNT,
   OFF_BODY_DEDUCTION_STEP,
   offBodyShortage,
+  soloHandElementDef,
 } from "./constants";
 import {
   analyzeSeries,
@@ -64,7 +68,15 @@ import {
   tumblingVariety,
   type TumblingVariety,
 } from "./analysis";
-import type { ApparatusKey, Difficulty, FutureLevel, Series, SeriesAnalysis, Unit } from "./types";
+import type {
+  ApparatusKey,
+  Difficulty,
+  FutureLevel,
+  HandElementEntry,
+  Series,
+  SeriesAnalysis,
+  Unit,
+} from "./types";
 
 /** シリーズ内のユニット1つ分の難度点の内訳（表示用） */
 export interface DiffRow {
@@ -98,12 +110,35 @@ export interface SeriesBreakdown {
   aPart: number;
 }
 
+/** 単独で実施した徒手系要素（跳躍・柔軟）1件の内訳 */
+export interface HandElementRow {
+  /** 入力配列での位置（UIの行と対応づける） */
+  index: number;
+  id: string;
+  name: string;
+  /** §3.6.1 の分類（jump / flex） */
+  group: string;
+  /** 個人での難度 */
+  difficulty: Difficulty;
+  score: number;
+  /** 手具操作を伴って実施したか */
+  withApparatus: boolean;
+  /** 同じ要素をすでに数えているか（§3.4.4 同じ技は1回だけ） */
+  duplicate: boolean;
+  /** 難度の候補になったか（手具操作あり＆重複でない） */
+  adopted: boolean;
+  /** 徒手系の上位3つに入ったか */
+  inTop: boolean;
+}
+
 export interface RequiredCheck {
   key: string;
   label: string;
   passed: boolean | null;
   /** 不足しているときのA減点（表示用。合計は各減点項目として aDeduction に入る） */
   deduction?: number;
+  /** 画面のツールチップに出す説明 */
+  tip?: string;
 }
 
 export interface ScoreResult {
@@ -128,6 +163,11 @@ export interface ScoreResult {
   twoThrowMotionBonus: number;
   jumpVarietyBonus: number;
   dScore: number;
+
+  /** 単独で実施した徒手系要素（跳躍・柔軟）の内訳 */
+  handElementRows: HandElementRow[];
+  /** そのうち徒手系難度点に入った合計（handScore の一部） */
+  handElementScore: number;
 
   // A
   /** 基本徒手から判定した深い運動の充足（上半身・下半身） */
@@ -221,6 +261,8 @@ export interface ComputeOptions {
   handOps?: string[];
   /** 身体を離れる手具操作の回数。 */
   offBodyCount?: number;
+  /** 単独で実施した徒手系要素（跳躍・柔軟）。手具操作を伴うものだけ徒手系難度に採用する。 */
+  handElements?: HandElementEntry[];
 }
 
 export function computeScore(
@@ -242,6 +284,7 @@ export function computeScore(
     basicHands = [],
     handOps = [],
     offBodyCount = 0,
+    handElements = [],
   } = opts;
   const analysis = series.map((ser) => analyzeSeries(ser, junior, future));
   const requiredThrowCount = throwCountRequired(junior);
@@ -341,11 +384,51 @@ export function computeScore(
     return a.units.map((u) => adopted.has(u));
   });
 
+  // ---- 単独で実施した徒手系要素（跳躍・柔軟）----
+  // §3.5.5.3(1)：手具操作を伴って実施したものだけ、その難度（§3.6.1 個人列）を徒手系難度に採用する。
+  // 同じ要素を何度実施しても難度は1回だけ数える（§3.4.4）。
+  const seenElementIds = new Set<string>();
+  const handElementRows: HandElementRow[] = handElements.flatMap((e, index) => {
+    const def = soloHandElementDef(e.id);
+    if (!def) return [];
+    const duplicate = seenElementIds.has(e.id);
+    const withApparatus = !!e.withApparatus;
+    if (!duplicate && withApparatus) seenElementIds.add(e.id);
+    return [
+      {
+        index,
+        id: e.id,
+        name: def.name,
+        group: def.group,
+        difficulty: def.solo,
+        score: DIFF_SCORE[def.solo],
+        withApparatus,
+        duplicate,
+        adopted: withApparatus && !duplicate,
+        inTop: false,
+      },
+    ];
+  });
+
   // ---- 難度点の採用は上位3つまで。内訳表示でも使うのでここで確定する ----
   const adoptUnits = adoptedUnits.flat();
   const sortByDiff = (arr: Unit[]) => [...arr].sort((a, b) => DIFF_VALUE[b.finalDiff] - DIFF_VALUE[a.finalDiff]);
   const topTumbling = sortByDiff(adoptUnits.filter(isTumblingUnit)).slice(0, ADOPT_COUNT);
-  const topHand = sortByDiff(adoptUnits.filter(isHandUnit)).slice(0, ADOPT_COUNT);
+  // 徒手系は「投げ受けのユニット」と「単独の徒手系要素」が同じ枠を争う
+  const handCandidates: { value: number; score: number; unit?: Unit; row?: HandElementRow }[] = [
+    ...adoptUnits
+      .filter(isHandUnit)
+      .map((u) => ({ value: DIFF_VALUE[u.finalDiff], score: DIFF_SCORE[u.finalDiff], unit: u })),
+    ...handElementRows
+      .filter((r) => r.adopted)
+      .map((r) => ({ value: DIFF_VALUE[r.difficulty], score: r.score, row: r })),
+  ];
+  // 同点はユニットを先に置いている（並べ替えは安定なので従来の採用が変わらない）
+  const topHandAll = [...handCandidates].sort((a, b) => b.value - a.value).slice(0, ADOPT_COUNT);
+  topHandAll.forEach((c) => {
+    if (c.row) c.row.inTop = true;
+  });
+  const topHand = topHandAll.flatMap((c) => (c.unit ? [c.unit] : []));
   const inTop = new Set<Unit>([...topTumbling, ...topHand]);
   const unitInTop = analysis.map((a) => a.units.map((u) => inTop.has(u)));
 
@@ -483,7 +566,9 @@ export function computeScore(
   const tumblingUnits = allUnits.filter(isTumblingUnit);
 
   const tumblingScore = topTumbling.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
-  const handScore = topHand.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
+  // 徒手系難度点＝上位3つ（投げ受けのユニット＋単独の徒手系要素）
+  const handScore = topHandAll.reduce((s, c) => s + c.score, 0);
+  const handElementScore = topHandAll.reduce((s, c) => s + (c.row ? c.score : 0), 0);
   // シリーズ内訳（sBonus）と同じ条件。上限超過の投げ・ユニットは数えない
   const seriesBonus = seriesBreakdowns.some((b) => b.sBonus > 0) ? SERIES_BONUS : 0;
 
@@ -715,6 +800,7 @@ export function computeScore(
     label: part.name,
     passed: coveredParts.has(part.id),
     deduction: DEEP_MOTION_DEDUCTION,
+    tip: part.tip,
   }));
   const deepMotionDeduction = deepMotionChecks.filter((c) => !c.passed).length * DEEP_MOTION_DEDUCTION;
 
@@ -726,12 +812,14 @@ export function computeScore(
       label: c.name,
       passed: handOps.includes(c.id),
       deduction: HAND_OP_CHECK_DEDUCTION,
+      tip: c.id === HAND_OP_CHARACTER_ID ? `${c.tip}（例：${APPARATUS_CHARACTER_HINTS[apparatus].join("／")}）` : c.tip,
     })),
     {
       key: "handOp_offBody",
       label: `身体を離れる手具操作${OFF_BODY_REQUIRED_COUNT}回以上（${Math.max(0, Math.floor(Number(offBodyCount) || 0))}回）`,
       passed: offBodyShort === 0,
       deduction: offBodyDeduction,
+      tip: OFF_BODY_TIP,
     },
   ];
   const handOpDeduction =
@@ -792,6 +880,8 @@ export function computeScore(
     seriesBreakdowns,
     tumblingScore,
     handScore,
+    handElementRows,
+    handElementScore,
     seriesBonus,
     techniqueCount,
     techniqueBonus,

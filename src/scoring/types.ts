@@ -191,6 +191,14 @@ export interface SeriesAnalysis {
 }
 
 /** 採点保存フォーマット */
+/** 単独で実施した徒手系要素（跳躍・柔軟）の入力1件 */
+export interface HandElementEntry {
+  /** SOLO_HAND_ELEMENTS のid */
+  id: string;
+  /** 手具操作を伴って実施したか（§3.5.5.3(1)：伴う場合だけ徒手系難度に採用する） */
+  withApparatus?: boolean;
+}
+
 export interface SaveData {
   version: number;
   apparatus: ApparatusKey;
@@ -210,5 +218,7 @@ export interface SaveData {
   handOps?: string[];
   /** 身体を離れる手具操作の回数。 */
   offBodyCount?: number;
+  /** 単独で実施した徒手系要素（跳躍・柔軟）。 */
+  handElements?: HandElementEntry[];
   series: Series[];
 }

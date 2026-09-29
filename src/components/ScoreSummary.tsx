@@ -20,6 +20,8 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
     connectNoApparatus,
     tumblingScore,
     handScore,
+    handElementRows,
+    handElementScore,
     seriesBonus,
     techniqueCount,
     techniqueBonus,
@@ -90,7 +92,7 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
         <div className="line-head" style={{ marginTop: 12 }}>基本徒手・手具操作の多様性</div>
         <ul className="check-list">
           {[...deepMotionChecks, ...handOpChecks].map((r) => (
-            <li key={r.key} className="check-item">
+            <li key={r.key} className="check-item" title={r.tip}>
               <span className={`mark ${r.passed ? "ok" : "ng"}`}>{r.passed ? "✓" : "×"}</span>
               <span className={r.passed ? "ok-text" : "ng-text"}>{r.label}</span>
               {!r.passed && !!r.deduction && <span className="ng-text">-{r.deduction.toFixed(1)}</span>}
@@ -122,7 +124,19 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
           <span>{tumblingScore.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
-          <span>徒手難度点（上位3つ）</span>
+          <span>
+            徒手難度点（上位3つ）
+            {handElementScore > 0 && (
+              <>
+                {" "}
+                ／うち単独の徒手系要素{" "}
+                {handElementRows
+                  .filter((r) => r.inTop)
+                  .map((r) => `${r.name}(${r.difficulty})`)
+                  .join("・")}
+              </>
+            )}
+          </span>
           <span>{handScore.toFixed(1)} 点</span>
         </div>
         <div className="total-row">

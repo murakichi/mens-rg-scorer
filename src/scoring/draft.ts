@@ -12,11 +12,12 @@ import {
   ART_DEDUCTION_ITEMS,
   BASIC_HAND_ELEMENTS,
   HAND_OP_CHECKS,
+  soloHandElementDef,
   clampArtDeduction,
   normalizeFutureLevel,
 } from "./constants";
 import { initialTeamState, normalizeTeamState, type TeamState } from "./team";
-import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
+import type { ApparatusKey, FutureLevel, HandElementEntry, Item, Series } from "./types";
 
 export const DRAFT_KEY_INDIVIDUAL = "mens-rg-scorer:draft:individual:v1";
 export const DRAFT_KEY_TEAM = "mens-rg-scorer:draft:team:v1";
@@ -45,6 +46,8 @@ export interface IndividualDraft {
   handOps: string[];
   /** 身体を離れる手具操作の回数 */
   offBodyCount: number;
+  /** 単独で実施した徒手系要素（跳躍・柔軟） */
+  handElements: HandElementEntry[];
 }
 
 export const asStringArray = (v: unknown): string[] =>
@@ -66,6 +69,16 @@ const knownIds = (v: unknown, known: { id: string }[]): string[] => {
   const ids = new Set(known.map((x) => x.id));
   return asStringArray(v).filter((id) => ids.has(id));
 };
+
+/** 徒手系要素の入力を取り込む（知らないidは落とす） */
+export function normalizeHandElements(v: unknown): HandElementEntry[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((x) => {
+    const id = (x as { id?: unknown })?.id;
+    if (typeof id !== "string" || !soloHandElementDef(id)) return [];
+    return [{ id, withApparatus: !!(x as { withApparatus?: unknown }).withApparatus }];
+  });
+}
 
 /** 身体を離れる手具操作の回数（0以上の整数に丸める） */
 export const normalizeOffBodyCount = (v: unknown): number => Math.max(0, Math.floor(Number(v) || 0));
@@ -112,6 +125,7 @@ export function normalizeIndividualDraft(data: unknown): IndividualDraft | null 
     basicHands: knownIds(d.basicHands, BASIC_HAND_ELEMENTS),
     handOps: knownIds(d.handOps, HAND_OP_CHECKS),
     offBodyCount: normalizeOffBodyCount(d.offBodyCount),
+    handElements: normalizeHandElements(d.handElements),
   };
 }
 
@@ -141,7 +155,8 @@ export function isBlankIndividualDraft(d: IndividualDraft): boolean {
     Object.keys(d.artDeductions).length === 0 &&
     !d.basicHands?.length &&
     !d.handOps?.length &&
-    !d.offBodyCount
+    !d.offBodyCount &&
+    !d.handElements?.length
   );
 }
 

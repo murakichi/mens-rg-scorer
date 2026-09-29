@@ -8,9 +8,14 @@ import {
   DEEP_MOTION_DEDUCTION,
   DEEP_MOTION_PARTS,
   HAND_OP_CHECKS,
+  HAND_OP_CHARACTER_ID,
   HAND_OP_CHECK_DEDUCTION,
   OFF_BODY_REQUIRED_COUNT,
   OFF_BODY_DEDUCTION_STEP,
+  SOLO_HAND_ELEMENT_GROUPS,
+  SOLO_ELEMENT_TIPS,
+  APPARATUS_CHARACTER_HINTS,
+  OFF_BODY_TIP,
   TUM_VARIETY_ITEM_ID,
   ART_DEDUCTION_STEP,
   DEFAULT_FUTURE_LEVEL,
@@ -21,7 +26,7 @@ import {
 } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
 import { apparatusBlockers, stripForApparatus } from "../scoring/analysis";
-import type { ApparatusKey, FutureLevel, Series } from "../scoring/types";
+import type { ApparatusKey, FutureLevel, HandElementEntry, Series } from "../scoring/types";
 import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
 import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
@@ -38,6 +43,7 @@ import {
   normalizeArtDeductions,
   normalizeIndividualDraft,
   normalizeOffBodyCount,
+  normalizeHandElements,
   saveIndividualDraft,
   type IndividualDraft,
 } from "../scoring/draft";
@@ -67,6 +73,7 @@ interface Props {
     basicHands?: unknown;
     handOps?: unknown;
     offBodyCount?: unknown;
+    handElements?: unknown;
     series?: unknown;
   };
 }
@@ -99,6 +106,8 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [basicHands, setBasicHands] = useState<string[]>(() => init?.basicHands ?? []);
   const [handOps, setHandOps] = useState<string[]>(() => init?.handOps ?? []);
   const [offBodyCount, setOffBodyCount] = useState<number>(() => init?.offBodyCount ?? 0);
+  // 単独で実施した徒手系要素（跳躍・柔軟）。手具操作を伴うものが徒手系難度に入る（§3.5.5.3(1)）
+  const [handElements, setHandElements] = useState<HandElementEntry[]>(() => init?.handElements ?? []);
   /** 画面のタブ（D＝構成の入力、A＝芸術と多様性の入力） */
   const [tab, setTab] = useState<"d" | "a">("d");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -127,6 +136,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         basicHands,
         handOps,
         offBodyCount,
+        handElements,
       }),
     [
       series,
@@ -140,6 +150,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
       basicHands,
       handOps,
       offBodyCount,
+      handElements,
     ],
   );
 
@@ -177,6 +188,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     basicHands,
     handOps,
     offBodyCount,
+    handElements,
   ]);
 
   /** 復元した内容を破棄して最初からにする */
@@ -192,6 +204,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setBasicHands([]);
     setHandOps([]);
     setOffBodyCount(0);
+    setHandElements([]);
     clearDraft(DRAFT_KEY_INDIVIDUAL);
     setDraftNotice(false);
   };
@@ -217,6 +230,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     basicHands,
     handOps,
     offBodyCount,
+    handElements,
     series,
   });
   const handleExport = () => {
@@ -245,6 +259,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setBasicHands(asStringArray(data.basicHands).filter((id) => BASIC_HAND_ELEMENTS.some((x) => x.id === id)));
     setHandOps(asStringArray(data.handOps).filter((id) => HAND_OP_CHECKS.some((x) => x.id === id)));
     setOffBodyCount(normalizeOffBodyCount(data.offBodyCount));
+    setHandElements(normalizeHandElements(data.handElements));
     if (Array.isArray(data.series) && data.series.length > 0) {
       // 読み込んだ内容のうち、その手具で入力できないものは落とす
       setSeries(stripForApparatus(data.series, ap));
@@ -603,6 +618,75 @@ export function IndividualScorer({ initialData }: Props = {}) {
       />
 
       <section className="card">
+        <div className="line-head">徒手系要素（跳躍・柔軟）</div>
+        {handElements.map((e, i) => {
+          const row = result.handElementRows.find((r) => r.index === i);
+          return (
+            <div key={i} className="basic-hand-row">
+              <select
+                className="select"
+                value={e.id}
+                aria-label={`徒手系要素 ${i + 1}`}
+                onChange={(ev) =>
+                  setHandElements((p) => p.map((x, k) => (k === i ? { ...x, id: ev.target.value } : x)))
+                }
+              >
+                <option value="">徒手系要素</option>
+                {SOLO_HAND_ELEMENT_GROUPS.map((g) => (
+                  <optgroup key={g.id} label={g.name}>
+                    {g.items.map((h) => (
+                      <option key={h.id} value={h.id} title={SOLO_ELEMENT_TIPS[h.id]}>
+                        {h.name}（{h.solo}）
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={!!e.withApparatus}
+                  onChange={(ev) =>
+                    setHandElements((p) =>
+                      p.map((x, k) => (k === i ? { ...x, withApparatus: ev.target.checked } : x)),
+                    )
+                  }
+                />
+                手具操作
+              </label>
+              {row && (
+                <span className={row.inTop ? "check-ok" : "check-ng"}>
+                  {row.inTop
+                    ? `難度${row.difficulty}（+${row.score.toFixed(1)}）`
+                    : row.duplicate
+                      ? "同じ要素は1回のみ"
+                      : !row.withApparatus
+                        ? "手具操作なしは不算入"
+                        : "上位3つ外"}
+                </span>
+              )}
+              <button
+                className="remove-btn-xs"
+                aria-label="削除"
+                onClick={() => setHandElements((p) => p.filter((_, k) => k !== i))}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          );
+        })}
+        <button className="add-btn" onClick={() => setHandElements((p) => [...p, { id: "", withApparatus: true }])}>
+          <Plus size={14} /> 徒手系要素を追加
+        </button>
+        <p className="hint">
+          単独で実施した跳躍・柔軟を入力します。§3.5.5.3(1) により**手具操作を伴って実施したもの**だけ、
+          §3.6.1 の個人難度を徒手系難度として採用します（投げ受けの徒手と合わせて上位3つ）。
+          同じ要素は何度実施しても1回しか数えません（§3.4.4）。
+          跳躍は規則の表そのまま、柔軟は前後開脚・左右開脚・ブリッジの3つです（ブリッジは規則の表に無いため暫定でA）。
+        </p>
+      </section>
+
+      <section className="card">
         <div className="line-head">実施減点（演技全体）</div>
         <label className="exec-label">
           演技全体の実施減点(E)：
@@ -656,8 +740,12 @@ export function IndividualScorer({ initialData }: Props = {}) {
           <Plus size={14} /> 基本徒手を追加
         </button>
         <div className="check-result-row">
-          {result.deepMotionChecks.map((c) => (
-            <span key={c.key} className={c.passed ? "check-ok" : "check-ng"}>
+          {result.deepMotionChecks.map((c, i) => (
+            <span
+              key={c.key}
+              className={c.passed ? "check-ok" : "check-ng"}
+              title={DEEP_MOTION_PARTS[i]?.tip}
+            >
               {c.passed ? "✓" : "×"} {c.label}
             </span>
           ))}
@@ -666,21 +754,35 @@ export function IndividualScorer({ initialData }: Props = {}) {
           実施した基本徒手を選ぶと、上半身・下半身の深い運動を満たしているかを判定します。
           不足1つにつき −{DEEP_MOTION_DEDUCTION.toFixed(1)}点（A減点）。
         </p>
+        <ul className="tip-list">
+          {DEEP_MOTION_PARTS.map((part) => (
+            <li key={part.id}>
+              <b>{part.name}</b>：{part.tip}
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="card">
         <div className="line-head">手具操作の多様性</div>
-        {HAND_OP_CHECKS.map((c) => (
-          <label key={c.id} className="check">
-            <input
-              type="checkbox"
-              checked={handOps.includes(c.id)}
-              onChange={(e) => setHandOps((p) => toggleId(p, c.id, e.target.checked))}
-            />
-            {c.name}
-          </label>
-        ))}
-        <label className="exec-label">
+        {HAND_OP_CHECKS.map((c) => {
+          const examples = c.id === HAND_OP_CHARACTER_ID ? APPARATUS_CHARACTER_HINTS[apparatus] : null;
+          const note = examples ? `${c.tip}（例：${examples.join("／")}）` : c.tip;
+          return (
+            <div key={c.id}>
+              <label className="check" title={note}>
+                <input
+                  type="checkbox"
+                  checked={handOps.includes(c.id)}
+                  onChange={(e) => setHandOps((p) => toggleId(p, c.id, e.target.checked))}
+                />
+                {c.name}
+                <span className="check-note">{note}</span>
+              </label>
+            </div>
+          );
+        })}
+        <label className="exec-label" title={OFF_BODY_TIP}>
           身体を離れる手具操作：
           <input
             className="exec-input"
@@ -697,7 +799,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         </label>
         <p className="hint">
           実施した操作にチェックします。未チェック1つにつき −{HAND_OP_CHECK_DEDUCTION.toFixed(1)}点（A減点）。
-          身体を離れる手具操作（プロペラ回旋・まわしなど）は{OFF_BODY_REQUIRED_COUNT}回必要で、
+          身体を離れる手具操作（{OFF_BODY_TIP}）は{OFF_BODY_REQUIRED_COUNT}回必要で、
           不足1回につき −{OFF_BODY_DEDUCTION_STEP.toFixed(1)}点。
         </p>
       </section>
