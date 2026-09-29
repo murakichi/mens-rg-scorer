@@ -42,6 +42,21 @@ import {
   ART_DEDUCTION_ITEMS,
   clampArtDeduction,
   canOperateApparatus,
+  DEEP_MOTION_PARTS,
+  DEEP_MOTION_DEDUCTION,
+  deepMotionParts,
+  HAND_OP_CHECKS,
+  HAND_OP_CHARACTER_ID,
+  HAND_OP_CHECK_DEDUCTION,
+  APPARATUS_CHARACTER_HINTS,
+  OFF_BODY_TIP,
+  OFF_BODY_REQUIRED_COUNT,
+  OFF_BODY_DEDUCTION_STEP,
+  offBodyShortage,
+  soloHandElementDef,
+  soloHandElementScored,
+  isFlexElement,
+  FLEX_ELEMENT_DEDUCTION,
 } from "./constants";
 import {
   analyzeSeries,
@@ -90,12 +105,35 @@ export interface SeriesBreakdown {
   aPart: number;
 }
 
+/** 単独で実施した徒手系要素（跳躍・柔軟）1件の内訳 */
+export interface HandElementRow {
+  /** 入力配列での位置（UIの行と対応づける） */
+  index: number;
+  id: string;
+  name: string;
+  /** §3.6.1 の分類（jump / flex） */
+  group: string;
+  /** 個人での難度 */
+  difficulty: Difficulty;
+  score: number;
+  /** 徒手系難度に算入する群か（跳躍＝する／柔軟＝しない） */
+  scored: boolean;
+  /** 同じ要素をすでに数えているか（§3.4.4 同じ技は1回だけ） */
+  duplicate: boolean;
+  /** 難度の候補になったか（算入する群＆重複でない） */
+  adopted: boolean;
+  /** 徒手系の上位3つに入ったか */
+  inTop: boolean;
+}
+
 export interface RequiredCheck {
   key: string;
   label: string;
   passed: boolean | null;
   /** 不足しているときのA減点（表示用。合計は各減点項目として aDeduction に入る） */
   deduction?: number;
+  /** 画面のツールチップに出す説明 */
+  tip?: string;
 }
 
 export interface ScoreResult {
@@ -121,7 +159,24 @@ export interface ScoreResult {
   jumpVarietyBonus: number;
   dScore: number;
 
+  /** 単独で実施した徒手系要素（跳躍・柔軟）の内訳 */
+  handElementRows: HandElementRow[];
+  /** そのうち徒手系難度点に入った合計（handScore の一部） */
+  handElementScore: number;
+
   // A
+  /** 基本徒手から判定した深い運動の充足（上半身・下半身） */
+  deepMotionChecks: RequiredCheck[];
+  deepMotionDeduction: number;
+  /** 柔軟の徒手を実施したか（難度には数えない） */
+  flexCheck: RequiredCheck;
+  flexDeduction: number;
+  /** 手具操作の多様性チェック（2部位以上・特性・身体を離れる操作） */
+  handOpChecks: RequiredCheck[];
+  handOpDeduction: number;
+  /** 身体を離れる手具操作の回数と不足回数 */
+  offBodyCount: number;
+  offBodyShort: number;
   apparatusElementChecks: RequiredCheck[];
   apparatusElementDeduction: number;
   violationChecks: RequiredCheck[];
@@ -198,6 +253,14 @@ export interface ComputeOptions {
   future?: FutureLevel;
   /** §3.5.6.4 芸術と多様性の欠点テーブル（項目id → 減点）。審判の主観評価。 */
   artDeductions?: Record<string, number>;
+  /** 実施した基本徒手のid（BASIC_HAND_ELEMENTS）。深い運動の充足を判定する。 */
+  basicHands?: string[];
+  /** 実施した手具操作のチェック項目id（HAND_OP_CHECKS）。 */
+  handOps?: string[];
+  /** 身体を離れる手具操作の回数。 */
+  offBodyCount?: number;
+  /** 単独で実施した徒手系要素（跳躍・柔軟）のid。跳躍は徒手系難度、柔軟は実施の有無だけを見る。 */
+  handElements?: string[];
 }
 
 export function computeScore(
@@ -216,6 +279,10 @@ export function computeScore(
     junior = false,
     future = null,
     artDeductions = {},
+    basicHands = [],
+    handOps = [],
+    offBodyCount = 0,
+    handElements = [],
   } = opts;
   const analysis = series.map((ser) => analyzeSeries(ser, junior, future));
   const requiredThrowCount = throwCountRequired(junior);
@@ -315,11 +382,52 @@ export function computeScore(
     return a.units.map((u) => adopted.has(u));
   });
 
+  // ---- 単独で実施した徒手系要素（跳躍・柔軟）----
+  // 跳躍は §3.6.1 の個人難度を徒手系難度として採用する（§3.5.5.3(1)）。
+  // 同じ要素を何度実施しても難度は1回だけ数える（§3.4.4）。
+  // 柔軟は難度に数えず、実施したかどうかだけをA側で見る。
+  const seenElementIds = new Set<string>();
+  const handElementRows: HandElementRow[] = handElements.flatMap((id, index) => {
+    const def = soloHandElementDef(id);
+    if (!def) return [];
+    const scored = soloHandElementScored(id);
+    const duplicate = seenElementIds.has(id);
+    if (!duplicate && scored) seenElementIds.add(id);
+    return [
+      {
+        index,
+        id,
+        name: def.name,
+        group: def.group,
+        difficulty: def.solo,
+        score: DIFF_SCORE[def.solo],
+        scored,
+        duplicate,
+        adopted: scored && !duplicate,
+        inTop: false,
+      },
+    ];
+  });
+
   // ---- 難度点の採用は上位3つまで。内訳表示でも使うのでここで確定する ----
   const adoptUnits = adoptedUnits.flat();
   const sortByDiff = (arr: Unit[]) => [...arr].sort((a, b) => DIFF_VALUE[b.finalDiff] - DIFF_VALUE[a.finalDiff]);
   const topTumbling = sortByDiff(adoptUnits.filter(isTumblingUnit)).slice(0, ADOPT_COUNT);
-  const topHand = sortByDiff(adoptUnits.filter(isHandUnit)).slice(0, ADOPT_COUNT);
+  // 徒手系は「投げ受けのユニット」と「単独の徒手系要素」が同じ枠を争う
+  const handCandidates: { value: number; score: number; unit?: Unit; row?: HandElementRow }[] = [
+    ...adoptUnits
+      .filter(isHandUnit)
+      .map((u) => ({ value: DIFF_VALUE[u.finalDiff], score: DIFF_SCORE[u.finalDiff], unit: u })),
+    ...handElementRows
+      .filter((r) => r.adopted)
+      .map((r) => ({ value: DIFF_VALUE[r.difficulty], score: r.score, row: r })),
+  ];
+  // 同点はユニットを先に置いている（並べ替えは安定なので従来の採用が変わらない）
+  const topHandAll = [...handCandidates].sort((a, b) => b.value - a.value).slice(0, ADOPT_COUNT);
+  topHandAll.forEach((c) => {
+    if (c.row) c.row.inTop = true;
+  });
+  const topHand = topHandAll.flatMap((c) => (c.unit ? [c.unit] : []));
   const inTop = new Set<Unit>([...topTumbling, ...topHand]);
   const unitInTop = analysis.map((a) => a.units.map((u) => inTop.has(u)));
 
@@ -457,7 +565,9 @@ export function computeScore(
   const tumblingUnits = allUnits.filter(isTumblingUnit);
 
   const tumblingScore = topTumbling.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
-  const handScore = topHand.reduce((s, u) => s + DIFF_SCORE[u.finalDiff], 0);
+  // 徒手系難度点＝上位3つ（投げ受けのユニット＋単独の徒手系要素）
+  const handScore = topHandAll.reduce((s, c) => s + c.score, 0);
+  const handElementScore = topHandAll.reduce((s, c) => s + (c.row ? c.score : 0), 0);
   // シリーズ内訳（sBonus）と同じ条件。上限超過の投げ・ユニットは数えない
   const seriesBonus = seriesBreakdowns.some((b) => b.sBonus > 0) ? SERIES_BONUS : 0;
 
@@ -578,30 +688,35 @@ export function computeScore(
       label: "前方系・側方系・後方系をすべて含む",
       passed: cats.has(CATEGORY.FORWARD) && cats.has(CATEGORY.SIDE) && cats.has(CATEGORY.BACKWARD),
       deduction: directionDeduction,
+      tip: "タンブリング技の系統で数える。側転は徒手扱いなので、側方系はロンダート・側宙で満たす。1系統不足につき −0.3",
     },
     {
       key: "throwTum",
       label: "1本以上が投げタン",
       passed: hasThrowTumbling,
       deduction: MISSING_ELEMENT_DEDUCTION,
+      tip: "投げ受けの間に転回系を実施する、または転回系の最中に投げる。1本あればよい（その転回系は難度が1ランク上がる）",
     },
     {
       key: "triple",
       label: "1本以上が宙返り3回以上連続",
       passed: hasTriple,
       deduction: saltoChainDeduction,
+      tip: "宙返り系が途切れず続いた回数。A難度技（ロンダート・バク転・ハンドスプリング等）は連鎖を切る。きりもみ系は宙返りの連続の中でだけ宙返りとして数える。2連続で −0.1、無しで −0.2",
     },
     {
       key: "connect",
       label: "1本以上がつなぎ技（宙返り間にA難度を挟む）",
       passed: hasConn,
       deduction: MISSING_ELEMENT_DEDUCTION,
+      tip: "宙返りと宙返りの間にA難度技を挟む。側転は徒手扱いなのでつなぎ技にならない。手具操作は不要だが、操作が無いと別に −0.2",
     },
     {
       key: "count3",
       label: `投げを${requiredThrowCount}回以上実施`,
       passed: totalThrowCount >= requiredThrowCount,
       deduction: THROW_COUNT_DEDUCTION,
+      tip: `技の最中の投げも1回として数える。ジュニアは2回以上（現在の必要回数 ${requiredThrowCount}回）`,
     },
     ...(maxThrowCount !== null
       ? [
@@ -610,6 +725,7 @@ export function computeScore(
             label: `投げは${maxThrowCount}回以内`,
             passed: performedThrowCount <= maxThrowCount,
             deduction: throwCountOverDeduction,
+            tip: `ジュニア適用規則。${maxThrowCount}回を超えた投げは難度・加点・必須要素のどれにも数えず、1回につき −0.3`,
           },
         ]
       : []),
@@ -618,6 +734,7 @@ export function computeScore(
       label: "タンブリング3本以上",
       passed: nonDupTumblingCount >= 3,
       deduction: MISSING_ELEMENT_DEDUCTION,
+      tip: "投げを挟まない連続したタンブリングが1本。投げタンは投げ側に数える。内容が同じ重複シリーズは数えない",
     },
     // 手具別の必須投げ（左手投げ／二つ同時投げ）は §3.2 手具別必須要素として自動判定する
   ];
@@ -682,6 +799,49 @@ export function computeScore(
   const apparatusElementDeduction =
     apparatusElementChecks.filter((c) => !c.passed).length * REQUIRED_ELEMENT_DEDUCTION;
 
+  // ---- 基本徒手（深い運動の充足）と手具操作の多様性 ----
+  const coveredParts = deepMotionParts(basicHands);
+  const deepMotionChecks: RequiredCheck[] = DEEP_MOTION_PARTS.map((part) => ({
+    key: `deep_${part.id}`,
+    label: part.name,
+    passed: coveredParts.has(part.id),
+    deduction: DEEP_MOTION_DEDUCTION,
+    tip: part.tip,
+  }));
+  const deepMotionDeduction = deepMotionChecks.filter((c) => !c.passed).length * DEEP_MOTION_DEDUCTION;
+
+  // 柔軟は難度に数えないので、実施したかどうかだけを見る
+  const flexCheck: RequiredCheck = {
+    key: "flexElement",
+    label: "柔軟の徒手を実施",
+    passed: handElements.some((id) => isFlexElement(id)),
+    deduction: FLEX_ELEMENT_DEDUCTION,
+    tip: "前後開脚・左右開脚・ブリッジのいずれか",
+  };
+  const flexDeduction = flexCheck.passed ? 0 : FLEX_ELEMENT_DEDUCTION;
+
+  const offBodyShort = offBodyShortage(offBodyCount);
+  const offBodyDeduction = offBodyShort * OFF_BODY_DEDUCTION_STEP;
+  const handOpChecks: RequiredCheck[] = [
+    ...HAND_OP_CHECKS.map((c) => ({
+      key: `handOp_${c.id}`,
+      label: c.name,
+      passed: handOps.includes(c.id),
+      deduction: HAND_OP_CHECK_DEDUCTION,
+      tip: c.id === HAND_OP_CHARACTER_ID ? `${c.tip}（例：${APPARATUS_CHARACTER_HINTS[apparatus].join("／")}）` : c.tip,
+    })),
+    {
+      key: "handOp_offBody",
+      label: `身体を離れる手具操作${OFF_BODY_REQUIRED_COUNT}回以上（${Math.max(0, Math.floor(Number(offBodyCount) || 0))}回）`,
+      passed: offBodyShort === 0,
+      deduction: offBodyDeduction,
+      tip: OFF_BODY_TIP,
+    },
+  ];
+  const handOpDeduction =
+    handOpChecks.filter((c) => c.key !== "handOp_offBody" && !c.passed).length * HAND_OP_CHECK_DEDUCTION +
+    offBodyDeduction;
+
   // passed = 違反・欠如が「ない」状態
   const violationChecks: RequiredCheck[] = VIOLATION_OPTIONS.map((v) => ({
     key: `viol_${v.id}`,
@@ -719,6 +879,9 @@ export function computeScore(
     saltoChainDeduction +
     varietyDeduction +
     missingElementDeduction +
+    deepMotionDeduction +
+    flexDeduction +
+    handOpDeduction +
     apparatusElementDeduction +
     violationDeduction;
   const aScore = Math.max(0, AE_FULL - aDeduction);
@@ -734,6 +897,8 @@ export function computeScore(
     seriesBreakdowns,
     tumblingScore,
     handScore,
+    handElementRows,
+    handElementScore,
     seriesBonus,
     techniqueCount,
     techniqueBonus,
@@ -767,6 +932,14 @@ export function computeScore(
     catchOtherCount,
     varietyDeduction,
     missingElementDeduction,
+    deepMotionChecks,
+    deepMotionDeduction,
+    flexCheck,
+    flexDeduction,
+    handOpChecks,
+    handOpDeduction,
+    offBodyCount: Math.max(0, Math.floor(Number(offBodyCount) || 0)),
+    offBodyShort,
     aDeduction,
     aScore,
     seriesExecutionDeduction,

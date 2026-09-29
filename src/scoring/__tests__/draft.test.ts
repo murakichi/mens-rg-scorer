@@ -62,6 +62,9 @@ const draft = (over: Partial<IndividualDraft> = {}): IndividualDraft => ({
   apparatusElements: [],
   violations: [],
   artDeductions: {},
+  basicHands: [],
+  handOps: [],
+  offBodyCount: 0,
   ...over,
 });
 
