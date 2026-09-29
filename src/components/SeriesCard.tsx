@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
+  THROW_OPTIONS_SIDE,
+  canUseSideThrow,
   SKILL_THROW_OPTIONS_COMMON,
   CATCH_OPTIONS_COMMON,
   CATCH_OPTIONS_APPARATUS,
@@ -166,7 +168,11 @@ function ItemEditor({
     return (
       <>
         <div className="throw-tag">投げ</div>
-        {[...THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map((opt) => {
+        {[
+          ...THROW_OPTIONS_COMMON,
+          ...(!common && canUseSideThrow(apparatus) ? THROW_OPTIONS_SIDE : []),
+          ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
+        ].map((opt) => {
           const on = (item.throwTypes || []).includes(opt.id);
           // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
           const blocked = opt.id === USE_APPARATUS_TAG && !on && twoThrow;
@@ -358,7 +364,11 @@ function ItemEditor({
           この技の最中に投げ
         </label>
         {item.isThrow &&
-          [...SKILL_THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map(
+          [
+            ...SKILL_THROW_OPTIONS_COMMON,
+            ...(!common && canUseSideThrow(apparatus) ? THROW_OPTIONS_SIDE : []),
+            ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
+          ].map(
             (opt) => {
               const on = (item.throwTypes || []).includes(opt.id);
               // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）

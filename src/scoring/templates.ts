@@ -41,6 +41,8 @@ export function commonBlockers(list: Series[]): string[] {
           else if (t === "twothrow") reasons.add("二つ投げ");
           else reasons.add(t);
         });
+      if ((item.kind === "throw" || item.kind === "skill") && (item.throwTypes || []).includes("side"))
+        reasons.add("横投げ");
       if (item.kind === "throw" && (item.throwTypes || []).includes("useapp"))
         reasons.add("手具を使った投げ");
       if (item.kind === "skill" && (item.throwTypes || []).includes("useapp")) reasons.add("手具を使った投げ");

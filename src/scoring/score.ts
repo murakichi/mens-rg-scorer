@@ -11,6 +11,7 @@ import {
   DIFF_VALUE,
   DIFF_SCORE,
   SERIES_BONUS,
+  SIDE_THROW_TAG,
   TECHNIQUE_BONUS,
   APPARATUS_OP_BONUS,
   ropeJumpDef,
@@ -483,9 +484,12 @@ export function computeScore(
     if (!isDup) {
       ser.items.forEach((item, j) => {
         if (itemOver[i][j]) return; // 上限超過の投げ受けは加点も数えない
-        if (item.kind === "throw") techCount += (item.throwTypes || []).length;
+        // 横投げは投げ方の種類として数えるだけで、技術加点にはしない
+        const bonusThrowTypes = (item: { throwTypes?: string[] }) =>
+          (item.throwTypes || []).filter((t) => t !== SIDE_THROW_TAG).length;
+        if (item.kind === "throw") techCount += bonusThrowTypes(item);
         else if (item.kind === "catch") techCount += (item.catchTypes || []).length;
-        else if (item.kind === "skill" && item.isThrow) techCount += (item.throwTypes || []).length;
+        else if (item.kind === "skill" && item.isThrow) techCount += bonusThrowTypes(item);
       });
     }
     const tech = techCount * TECHNIQUE_BONUS;
@@ -644,6 +648,7 @@ export function computeScore(
         if (types.includes("noview")) throwKinds.add("noview");
         if (types.includes("nonhand")) throwKinds.add("nonhand");
         if (types.includes("useapp")) throwKinds.add("useapp");
+        if (types.includes(SIDE_THROW_TAG)) throwKinds.add("side");
         if (reqs.includes("lefthand")) {
           throwKinds.add("lefthand");
           catchKinds.add("lefthand"); // 左手投げは左手キャッチも同時カウント
@@ -655,6 +660,7 @@ export function computeScore(
         if (types.includes("noview")) throwKinds.add("noview");
         if (types.includes("nonhand")) throwKinds.add("nonhand");
         if (types.includes("useapp")) throwKinds.add("useapp");
+        if (types.includes(SIDE_THROW_TAG)) throwKinds.add("side");
       } else if (item.kind === "catch") {
         const types = item.catchTypes || [];
         if (types.includes("other")) catchOtherCount += 1;

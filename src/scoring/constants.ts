@@ -49,6 +49,15 @@ export const CATCH_OPTIONS_COMMON = [
 ];
 export const CATCH_OPTIONS_APPARATUS = [{ id: USE_APPARATUS_TAG, name: "手具を使ったキャッチ" }];
 
+/**
+ * 横投げの技術タグ。投げ方の一種類として数える（多様な投げ受けの種類数）。
+ * ロープでは実施しないので、それ以外の手具だけに出す（`canUseSideThrow`）。
+ * 技術加点（0.1）は付けない — 投げ方の種類としてだけ数える。
+ */
+export const SIDE_THROW_TAG = "side";
+export const THROW_OPTIONS_SIDE = [{ id: SIDE_THROW_TAG, name: "横投げ" }];
+export const canUseSideThrow = (apparatus: ApparatusKey): boolean => apparatus !== "rope";
+
 export const APPARATUS_USE: Record<ApparatusKey, boolean> = {
   stick: false,
   clubs: true,
