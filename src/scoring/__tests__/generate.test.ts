@@ -27,6 +27,13 @@ import {
   THROW_ORDER_WEIGHT,
   reversedThrowOrderCount,
   preferredThrowCount,
+  preferenceWeights,
+  COMPETITION_LEVELS,
+  competitionLevelGroups,
+  DEFAULT_TUMBLING_BALANCE,
+  TUMBLING_BALANCE_MIN,
+  TUMBLING_BALANCE_MAX,
+  TUMBLING_PREFERENCE_WEIGHT,
   throwCountPenalty,
   extraThrowOperation,
   verticalThreeThrowCount,
@@ -36,7 +43,7 @@ import {
   shortfallPenalty,
   usableTemplates,
 } from "../generate";
-import { ADOPT_COUNT, DIFF_SCORE, TECHNIQUE_BONUS } from "../constants";
+import { ADOPT_COUNT, DIFF_SCORE, DIFF_VALUE, TECHNIQUE_BONUS, skillDifficulty } from "../constants";
 import { analyzeSeries, seriesSignature } from "../analysis";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
@@ -117,6 +124,133 @@ describe("使えるテンプレートの絞り込み", () => {
 });
 
 describe("ランダム生成", () => {
+  it("大会レベルのDスコアの目安から範囲を選べる", () => {
+    // 表そのもの（配布資料の値をそのまま持つ）
+    expect(COMPETITION_LEVELS.length).toBeGreaterThan(0);
+    COMPETITION_LEVELS.forEach((lv) => {
+      expect(lv.min).toBeLessThan(lv.max);
+      expect(lv.min).toBeGreaterThan(0);
+      expect(lv.max).toBeLessThanOrEqual(DIFF_SCORE.E * 10);
+    });
+    // 大会名＋順位帯で一意（プルダウンの value に使う）
+    const keys = COMPETITION_LEVELS.map((lv) => `${lv.meet}:${lv.rank}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    // ジュニア大会だけ `junior` が付く
+    COMPETITION_LEVELS.forEach((lv) => {
+      expect(!!lv.junior).toBe(lv.meet.includes("ジュニア"));
+    });
+    // 大会ごとにまとまり、表の並びが保たれる
+    const groups = competitionLevelGroups();
+    expect(groups.map((g) => g.meet)).toEqual([...new Set(COMPETITION_LEVELS.map((lv) => lv.meet))]);
+    expect(groups.reduce((n, g) => n + g.levels.length, 0)).toBe(COMPETITION_LEVELS.length);
+
+    // どのレベルでも、その範囲に収まる構成が組める（実測：どれも20/20）
+    COMPETITION_LEVELS.forEach((lv) => {
+      const r = generateRoutine([], {
+        apparatus: "stick",
+        junior: !!lv.junior,
+        minScore: lv.min,
+        maxScore: lv.max,
+        random: seeded(7),
+      });
+      expect(r).not.toBeNull();
+      const d = computeScore(r!.series, "stick", { junior: !!lv.junior }).dScore;
+      expect(d).toBeGreaterThanOrEqual(lv.min - 1e-9);
+      expect(d).toBeLessThanOrEqual(lv.max + 1e-9);
+    });
+  }, 120_000);
+
+  it("難度をタンブリングと徒手のどちらで取るかの比重はユーザーが選ぶ", () => {
+    // 既定（50）は今までどおり：タンブリングにだけ `TUMBLING_PREFERENCE_WEIGHT` が乗る
+    expect(preferenceWeights(DEFAULT_TUMBLING_BALANCE)).toEqual({
+      tumbling: TUMBLING_PREFERENCE_WEIGHT,
+      hand: 0,
+    });
+    expect(preferenceWeights()).toEqual(preferenceWeights(DEFAULT_TUMBLING_BALANCE));
+    // 0 は徒手寄り、100 はタンブリング寄り
+    expect(preferenceWeights(TUMBLING_BALANCE_MIN)).toEqual({
+      tumbling: 0,
+      hand: TUMBLING_PREFERENCE_WEIGHT,
+    });
+    expect(preferenceWeights(TUMBLING_BALANCE_MAX)).toEqual({
+      tumbling: TUMBLING_PREFERENCE_WEIGHT * 2,
+      hand: 0,
+    });
+    // 片寄り（タンブリング − 徒手）は単調に増える
+    const lean = [0, 25, 50, 75, 100].map((b) => {
+      const w = preferenceWeights(b);
+      return w.tumbling - w.hand;
+    });
+    lean.forEach((v, i) => i > 0 && expect(v).toBeGreaterThan(lean[i - 1]));
+    // 範囲外・壊れた値は丸める（古い保存データやURLから来ても落ちない）
+    expect(preferenceWeights(-50)).toEqual(preferenceWeights(TUMBLING_BALANCE_MIN));
+    expect(preferenceWeights(500)).toEqual(preferenceWeights(TUMBLING_BALANCE_MAX));
+    expect(preferenceWeights(NaN)).toEqual(preferenceWeights(DEFAULT_TUMBLING_BALANCE));
+
+    // 生成に通る：徒手寄りにすると徒手の難度が上がり、Dスコアは変わらない。
+    // 必須要素（三宙・つなぎ・投げタン）が別々のシリーズを要求するので
+    // タンブリングは3本で固定され、**効き幅は小さい**（実測0.07前後）
+    const run = (tumblingBalance: number) => {
+      let tum = 0, hand = 0, d = 0, n = 0;
+      for (let seed = 1; seed <= 10; seed++) {
+        const r = generateRoutine([], {
+          apparatus: "stick",
+          tumblingBalance,
+          minScore: 2.5,
+          maxScore: 3.0,
+          random: seeded(seed * 7919 + 13),
+        });
+        if (!r) continue;
+        const sc = computeScore(r.series, "stick");
+        tum += sc.tumblingScore;
+        hand += sc.handScore;
+        d += sc.dScore;
+        n += 1;
+      }
+      return { tum: tum / n, hand: hand / n, d: d / n };
+    };
+    const handLean = run(TUMBLING_BALANCE_MIN);
+    const base = run(DEFAULT_TUMBLING_BALANCE);
+    expect(handLean.hand).toBeGreaterThanOrEqual(base.hand);
+    expect(handLean.tum).toBeLessThanOrEqual(base.tum);
+    // Dスコアは比重で動かない（点の取り方を選ぶだけで、点数そのものは変えない）
+    expect(handLean.d).toBeCloseTo(base.d, 1);
+  }, 120_000);
+
+  it("上限3.0点の構成は単発D難度を実施せず、投げの本数で満たす", () => {
+    // 上限は上から抑える値なので、3.0点を指定した構成が実際に取るのは2.9点台＝2点台の選手。
+    // 以前はこの位置でD難度が解禁されていて、「投げを最低限にして高難度タンブリングで
+    // 効率よく満たす」構成になっていた（実測：D難度以上の技 0.57個・投げ3本が15%）
+    let hard = 0;
+    const throwCounts: number[] = [];
+    for (let seed = 1; seed <= 12; seed++) {
+      const r = generateRoutine([], {
+        apparatus: "stick",
+        minScore: 2.5,
+        maxScore: 3.0,
+        random: seeded(seed * 7919 + 13),
+      });
+      if (!r) continue;
+      const score = computeScore(r.series, "stick");
+      throwCounts.push(score.totalThrowCount);
+      r.series.forEach((ser) =>
+        ser.items.forEach((it) => {
+          if (it.kind !== "skill") return;
+          const d = skillDifficulty(it.skillId);
+          if (d && DIFF_VALUE[d] >= DIFF_VALUE.D) hard += 1;
+        }),
+      );
+    }
+    expect(throwCounts.length).toBeGreaterThan(0);
+    // 2点台の選手は単発でD難度を実施しない（段の判定は決定的なので必ず0）
+    expect(hard).toBe(0);
+    // 投げは規則の最低限（3回）で済ませず、その水準の最頻値まで出す。
+    // 貪欲法は乱択なので本数は分布で見る（実測：4本85% / 5本10%）
+    expect(preferredThrowCount(2.9)).toBe(4);
+    const atMode = throwCounts.filter((n) => n >= 4).length;
+    expect(atMode / throwCounts.length).toBeGreaterThan(0.7);
+  }, 60_000);
+
   it("必須要素をできるだけ満たす（投げ3回・投げタン・三宙・つなぎ・方向系）", () => {
     const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(7) })!;
     expect(r).not.toBeNull();

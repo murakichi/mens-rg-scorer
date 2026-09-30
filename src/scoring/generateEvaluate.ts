@@ -55,7 +55,7 @@ import {
   SALTO_VARIETY_WEIGHT,
   SHAPE_PRIORITY_WEIGHT,
   THROW_ORDER_WEIGHT,
-  TUMBLING_PREFERENCE_WEIGHT,
+  preferenceWeights,
   VERTICAL_THREE_MOTIONS,
   VERTICAL_THREE_THROW_WEIGHT,
   requiresAllElements,
@@ -434,6 +434,8 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
     : 0;
   // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
+  // タンブリングと徒手のどちらで難度を取るかの比重（ユーザーが選ぶ）
+  const lean = preferenceWeights(opts.tumblingBalance);
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
   const auto = autoCount * AUTO_SERIES_WEIGHT;
   return {
@@ -441,9 +443,11 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
       -(penalty + overThrowTum + overTumbling + overLimited) * 100 -
       shortfall +
       r.dScore +
-      // 加点よりも高難度の実施を優先する（タンブリングの難度はさらに優先する）
+      // 加点よりも高難度の実施を優先する。タンブリングと徒手のどちらに寄せるかは
+      // ユーザーの比重（`tumblingBalance`。既定50＝タンブリング寄り＝実測どおり）
       (r.tumblingScore + r.handScore) * DIFFICULTY_PREFERENCE_WEIGHT +
-      r.tumblingScore * TUMBLING_PREFERENCE_WEIGHT +
+      r.tumblingScore * lean.tumbling +
+      r.handScore * lean.hand +
       r.aScore -
       variety -
       tumVariety -

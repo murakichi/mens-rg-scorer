@@ -42,6 +42,13 @@ export interface GenerateOptions {
    */
   rarity?: number;
   /**
+   * 難度点を**タンブリングと徒手のどちらで取るか**の比重（0〜100。既定
+   * `DEFAULT_TUMBLING_BALANCE`＝50）。0＝徒手・投げ寄り、50＝実測どおり（タンブリング寄り）、
+   * 100＝さらにタンブリング寄り。評価式の上乗せだけを動かすので、
+   * 必須要素やDスコアの範囲は変わらない（`preferenceWeights`）。
+   */
+  tumblingBalance?: number;
+  /**
    * ユーザーが設定した**技ごとの倍率**（`skillWeights.ts`。既定から変えた技だけ）。
    * 実測の重みの上に掛かるだけなので、既定値は書き換わらない（リセット＝これを渡さない）。
    * 0 にした技は自動生成に出てこない。

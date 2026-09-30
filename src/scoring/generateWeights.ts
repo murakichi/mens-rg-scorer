@@ -353,6 +353,102 @@ export const DIFFICULTY_PREFERENCE_WEIGHT = 0.3;
  */
 export const TUMBLING_PREFERENCE_WEIGHT = 0.3;
 
+/**
+ * **実際の大会でのDスコアの目安**（2025年度・個人）。オーナー提供の配布資料そのまま。
+ * 生成の目標範囲をこの表から選べるようにするためだけのもので、**採点には一切使わない**。
+ *
+ * 数字は資料の値をそのまま持つ（丸めたり足したりしない）。表が更新されたらここを差し替える。
+ * `junior` は**その大会がジュニア適用規則で採点されるか**。採点画面のジュニア設定は
+ * ここからは変えられない（`GenerateModal` の `junior` は props）ので、食い違ったら注意だけ出す。
+ */
+export interface CompetitionLevel {
+  /** 大会名 */
+  meet: string;
+  /** その大会での順位帯 */
+  rank: string;
+  min: number;
+  max: number;
+  /** ジュニア適用規則で採点される大会か */
+  junior?: boolean;
+}
+
+export const COMPETITION_LEVELS: CompetitionLevel[] = [
+  { meet: "全日本", rank: "1〜5位", min: 4.5, max: 5.0 },
+  { meet: "全日本", rank: "15位", min: 3.8, max: 4.7 },
+  { meet: "全日本", rank: "30位", min: 3.7, max: 4.4 },
+  { meet: "インターハイ", rank: "1〜5位", min: 3.8, max: 4.7 },
+  { meet: "インターハイ", rank: "15位", min: 2.8, max: 3.9 },
+  { meet: "インターハイ", rank: "30位", min: 1.9, max: 2.9 },
+  { meet: "全日本ジュニア", rank: "1〜2位", min: 4.0, max: 4.2, junior: true },
+  { meet: "全日本ジュニア", rank: "3〜5位", min: 3.7, max: 4.0, junior: true },
+  { meet: "全日本ジュニア", rank: "20位", min: 2.7, max: 3.5, junior: true },
+  { meet: "全日本ジュニア", rank: "下位", min: 1.7, max: 2.2, junior: true },
+];
+
+/** 大会ごとにまとめた目安（プルダウンの `optgroup` 用。表の並びを保つ） */
+export function competitionLevelGroups(): { meet: string; levels: CompetitionLevel[] }[] {
+  const groups: { meet: string; levels: CompetitionLevel[] }[] = [];
+  COMPETITION_LEVELS.forEach((lv) => {
+    const hit = groups.find((g) => g.meet === lv.meet);
+    if (hit) hit.levels.push(lv);
+    else groups.push({ meet: lv.meet, levels: [lv] });
+  });
+  return groups;
+}
+
+/**
+ * **難度点をタンブリングと徒手のどちらで取るかの比重はユーザーが決める**（0〜100、既定50）。
+ * 上限の低い構成ほどタンブリング寄りになる（実測：上限3.0点でタンブリング1.68 対 徒手0.85、
+ * 上限なしで 2.07 対 2.05）ので、どちらに寄せるかを選べるようにした。
+ *
+ * 上乗せは `DIFFICULTY_PREFERENCE_WEIGHT`（タンブリング・徒手の両方に0.3）に、
+ * この比重ぶんを足したもの：
+ *  - 0 … 徒手に `TUMBLING_PREFERENCE_WEIGHT` を足す（徒手・投げ寄り）
+ *  - 50 … タンブリングに `TUMBLING_PREFERENCE_WEIGHT` を足す（**既定＝実測どおり**）
+ *  - 100 … タンブリングに `TUMBLING_PREFERENCE_WEIGHT` の2倍を足す（タンブリング寄り）
+ *
+ * 片寄り（タンブリング − 徒手）は 0/25/50/75/100 で −0.3 / 0 / +0.3 / +0.45 / +0.6 と単調に動く。
+ * 両者を等しく扱う点が25にあるのは、50が「今までどおり」でなければならないため。
+ * `upgradeTumblings`（タンブリング候補だけの入れ替え）は評価が上がるときしか採らないので、
+ * 比重を下げればそのパスも自然に効かなくなる。
+ *
+ * **効き幅は小さい**（実測、上限3.0点・30構成：比重0で タンブリング1.65／徒手0.92、
+ * 比重50で 1.72／0.86、比重100で 1.73／0.86。上限4.5点でも 1.93／1.75 → 1.96／1.71）。
+ * 理由は2つあり、どちらも構造の話なので重みでは越えられない：
+ *  - 難度点そのものは評価に重み1で入るので、**Dスコアが上限に張り付いていない限り**
+ *    「難度を上げる」が常に勝つ。上乗せが効くのは上限ぎりぎりの比較だけ
+ *  - 必須要素（三宙・つなぎ・投げタン）がそれぞれ別のシリーズを要求するので、
+ *    タンブリングのシリーズ数は実質3本で固定される
+ * 実際に大きく動くのは**シリーズ数**のほう（`maxTumblings`）だが、3→2で必須要素が
+ * ちょうど1つ未達になる（実測：未達0.03 → 1.00、A減点 0.61 → 0.90、上限3.0点で
+ * タンブリング1.72／徒手0.86 → 1.25／1.37）。規則を落とす選択なのでつまみには繋いでいない。
+ * 重みを3倍・6倍にしても 1.65／0.94・1.62／1.00 までしか動かず、6倍では投げの本数まで
+ * 歪み始める（4.0本 → 4.4本）ので、素直な2倍幅のままにしてある。
+ */
+export const DEFAULT_TUMBLING_BALANCE = 50;
+
+export const TUMBLING_BALANCE_MIN = 0;
+
+export const TUMBLING_BALANCE_MAX = 100;
+
+export const TUMBLING_BALANCE_STEP = 25;
+
+/** その比重での「タンブリング難度1点」「徒手難度1点」への上乗せ（共通ぶんとは別） */
+export function preferenceWeights(balance: number = DEFAULT_TUMBLING_BALANCE): {
+  tumbling: number;
+  hand: number;
+} {
+  const b = Math.min(
+    TUMBLING_BALANCE_MAX,
+    Math.max(TUMBLING_BALANCE_MIN, Number.isFinite(balance) ? balance : DEFAULT_TUMBLING_BALANCE),
+  );
+  const t = b / DEFAULT_TUMBLING_BALANCE; // 0〜2（1が既定）
+  return {
+    tumbling: TUMBLING_PREFERENCE_WEIGHT * t,
+    hand: TUMBLING_PREFERENCE_WEIGHT * Math.max(0, 1 - t),
+  };
+}
+
 /** 不足を満たす候補を必ず入れて組み直す回数（足す順番で結果が変わるため） */
 export const REBUILD_ATTEMPTS = 5;
 

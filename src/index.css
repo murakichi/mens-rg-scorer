@@ -1490,6 +1490,13 @@ input[type="checkbox"] {
   flex-wrap: wrap;
   margin: 2px 0 4px;
 }
+/* 大会レベルからDスコアの範囲を選ぶプルダウン */
+.gen-level {
+  margin: 2px 0 6px;
+}
+.gen-level .skill-select {
+  width: 100%;
+}
 .gen-ratio-range {
   flex: 1;
   min-width: 140px;
