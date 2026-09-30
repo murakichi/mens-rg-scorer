@@ -117,7 +117,7 @@ describe("自動入力", () => {
     ]);
     // 0.5超〜0.7未満 → 前方1回ひねり→前転→キャッチ
     const hard2 = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"));
-    expect(labels([hard, hard2, mid, ser(th, mo("mv3"), ct), ser(th)], 4)).toEqual([
+    expect(labels([hard, hard2, ser(th, mo("chene", 2), ct), ser(th)], 3)).toEqual([
       "前方宙返り1回ひねり→前転→キャッチ",
     ]);
   });
@@ -189,7 +189,8 @@ describe("自動入力", () => {
     const avg = (l: Series[]) => averageDifficulty(l, l.length - 1, false, "clubs");
     // 重複シリーズは数えない
     expect(avg([hard, hard, cur])).toBeCloseTo(0.7);
-    // タンブリングは上位3つだけ（0.2 は外れる）
+    // 難度の高い上位3つの平均（0.2 の低難度は外れる）。低難度の投げを足しても下がらない
+    expect(avg([hard, hard2, mid, ser(th, mo("chene"), ct), cur])).toBeCloseTo((0.7 + 0.7 + 0.5) / 3);
     expect(avg([hard, hard2, mid, low, cur])).toBeCloseTo((0.7 + 0.7 + 0.5) / 3);
     // 同じシリーズの2つ目の投げは数えない（1つ目 縦3動作E 0.7 だけ）
     expect(avg([ser(th, mo("mv3"), ct, th, mo("chene"), ct), cur])).toBeCloseTo(0.7);

@@ -339,19 +339,22 @@ function coreSuggestions(
   return [];
 }
 
+/** 平均に使う上位ユニットの数（難度点で採られる数 `ADOPT_COUNT` に合わせる） */
+export const AVERAGE_TOP_COUNT = 3;
+
 /**
- * 候補を選ぶための、構成の平均難度点。入力中のシリーズは含めず、**難度として有効なものだけ**を平均する：
- * 採用された（重複でない）うえで上位3つに入ったタンブリングと徒手系のユニット。
+ * 難度として有効なユニットの難度点。入力中のシリーズは含めず、採用された（重複でない）うえで
+ * 上位3つに入ったタンブリングと徒手系のユニットだけを拾う。
  * 連続投げの2回目（同じシリーズの2つ目以降の投げ）は数えない。
  */
-export function averageDifficulty(
+export function effectiveScores(
   list: Series[],
   sIdx: number,
   junior: boolean,
   apparatus: ApparatusKey,
-): number {
+): number[] {
   const others = list.filter((_, i) => i !== sIdx);
-  if (others.length === 0) return 0;
+  if (others.length === 0) return [];
   const result = computeScore(others, apparatus, { junior });
   const scores: number[] = [];
   result.seriesBreakdowns.forEach((b) => {
@@ -365,7 +368,24 @@ export function averageDifficulty(
       if (r.adopted && r.inTop) scores.push(r.score);
     });
   });
-  return scores.length ? scores.reduce((x, y) => x + y, 0) / scores.length : 0;
+  return scores;
+}
+
+/**
+ * 候補を選ぶための、構成の難度の目安。有効なユニット（`effectiveScores`）のうち
+ * **難度の高い上位3つの平均**。加点や必須要素を満たすためだけの低難度の投げは
+ * 上位に入らないので、狙っている難度のレベルがそのまま出る（ユニットが3つ未満ならある分だけ）。
+ */
+export function averageDifficulty(
+  list: Series[],
+  sIdx: number,
+  junior: boolean,
+  apparatus: ApparatusKey,
+): number {
+  const top = effectiveScores(list, sIdx, junior, apparatus)
+    .sort((x, y) => y - x)
+    .slice(0, AVERAGE_TOP_COUNT);
+  return top.length ? top.reduce((x, y) => x + y, 0) / top.length : 0;
 }
 
 /** 転がりに切り替えて受けにいく、動作数とシリーズ平均の下限 */
