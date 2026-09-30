@@ -28,6 +28,7 @@ import {
   tumblingShapeRank,
 } from "./autoTumblings";
 import {
+  ADOPT_COUNT,
   APPARATUS_REQUIRED_ELEMENTS,
   DIFF_VALUE,
   USE_APPARATUS_TAG,
@@ -56,6 +57,9 @@ import {
   SHAPE_PRIORITY_WEIGHT,
   THROW_ORDER_WEIGHT,
   preferenceWeights,
+  ALL_E_SHORTFALL_WEIGHT,
+  aimsAllE,
+  topDifficulty,
   VERTICAL_THREE_MOTIONS,
   VERTICAL_THREE_THROW_WEIGHT,
   requiresAllElements,
@@ -380,6 +384,22 @@ export interface Evaluation {
  * 必須要素の不足・ジュニアの投げ超過はA減点として効くので、これだけで
  * 「必須要素を満たしつつ難度を上げる」方向に進む。
  */
+/**
+ * **採点される6ユニット（上位3タンブリング＋上位3徒手）のうち、E難度に届いていない数**。
+ * Dスコア 4.2 は E×6 ちょうど（`allEScore`）なので、それ以上を狙うならここが0でなければ
+ * 加点をいくら積んでも届かない。ユニットの本数自体が足りない場合も同じだけ不足として数える。
+ */
+export function allEShortfall(r: ScoreResult, future: FutureLevel = null): number {
+  const top = topDifficulty(future);
+  let atTop = 0;
+  r.seriesBreakdowns.forEach((b) => {
+    [...b.tumRows, ...b.handRows].forEach((row) => {
+      if (row.adopted && row.inTop && row.diff === top) atTop += 1;
+    });
+  });
+  return Math.max(0, ADOPT_COUNT * 2 - atTop);
+}
+
 export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evaluation {
   const r = computeScore(series, opts.apparatus, { junior: !!opts.junior, future: opts.future ?? null });
   const penalty = rangePenalty(r.dScore, opts.minScore, opts.maxScore);
@@ -436,6 +456,8 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
   const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
   // タンブリングと徒手のどちらで難度を取るかの比重（ユーザーが選ぶ）
   const lean = preferenceWeights(opts.tumblingBalance);
+  // 4.2以上を狙うときは、6ユニットを全部E難度にするのが加点より先
+  const allE = aimsAllE(opts) ? allEShortfall(r, opts.future ?? null) * ALL_E_SHORTFALL_WEIGHT : 0;
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
   const auto = autoCount * AUTO_SERIES_WEIGHT;
   return {
@@ -447,7 +469,8 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
       // ユーザーの比重（`tumblingBalance`。既定50＝タンブリング寄り＝実測どおり）
       (r.tumblingScore + r.handScore) * DIFFICULTY_PREFERENCE_WEIGHT +
       r.tumblingScore * lean.tumbling +
-      r.handScore * lean.hand +
+      r.handScore * lean.hand -
+      allE +
       r.aScore -
       variety -
       tumVariety -

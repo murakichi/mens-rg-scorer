@@ -29,8 +29,10 @@ import {
   DEFAULT_MAX_AUTO_THROWS,
   DEFAULT_MAX_AUTO_TUMBLINGS,
   FINISH_CATCH_TAG,
+  HAND_UPGRADE_ROUNDS,
   THROW_REBUILD_CANDIDATES,
   TUMBLING_UPGRADE_ROUNDS,
+  aimsAllE,
   autoLimitOf,
   autoSeriesMax,
 } from "./generateWeights";
@@ -292,6 +294,43 @@ export function upgradeTumblings(
   const tumblings = pool.filter((t) => isTumblingSeries(t.series, junior, opts.future ?? null));
   if (tumblings.length === 0) return best;
   const swapped = swapIn(best.used, best.ev, tumblings, opts, TUMBLING_UPGRADE_ROUNDS);
+  if (swapped.ev.value <= best.ev.value + 1e-9) return best;
+  const ordered = orderSeries(swapped.used, swapped.ev, opts);
+  return { used: ordered.used, ev: ordered.ev };
+}
+
+/** 投げの徒手ユニット（投げタンを除く）を含むシリーズか。徒手側の入れ替えの対象 */
+export function isHandThrowSeries(
+  series: Series,
+  junior: boolean,
+  future: FutureLevel = null,
+): boolean {
+  return analyzeSeries(series, junior, future).units.some(
+    (u) => u.type === "throw" && !u.isThrowTumbling,
+  );
+}
+
+/**
+ * **Dスコア 4.2 以上を狙うときは、まず採点される6ユニットを全部E難度にしてから加点を積む**
+ * （4.2 ＝ E 0.7 × 上位3タンブリング＋上位3徒手。`allEScore`）。
+ * タンブリング側は `upgradeTumblings` でほぼEになっていたが、**徒手側が届いていなかった**
+ * （実測：下限4.2で6つ全部Eは 9〜14/25 構成、採用徒手ユニットのE率 60〜67/75）。
+ * 原因は同じで、貪欲法は投げの枠が埋まったあとの候補を見られず、`tuneAutoThrows` は
+ * 選ばれた形のシェネ回数しか動かせない（最小形は伸ばせない）。なので候補を投げに絞って入れ替える。
+ */
+export function upgradeHandUnits(
+  best: { used: SeriesTemplate[]; ev: Evaluation },
+  pool: SeriesTemplate[],
+  opts: GenerateOptions,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  if (!aimsAllE(opts)) return best;
+  const junior = !!opts.junior;
+  const future = opts.future ?? null;
+  const throws = pool.filter(
+    (t) => isHandThrowSeries(t.series, junior, future) && !isTumblingSeries(t.series, junior, future),
+  );
+  if (throws.length === 0) return best;
+  const swapped = swapIn(best.used, best.ev, throws, opts, HAND_UPGRADE_ROUNDS);
   if (swapped.ev.value <= best.ev.value + 1e-9) return best;
   const ordered = orderSeries(swapped.used, swapped.ev, opts);
   return { used: ordered.used, ev: ordered.ev };

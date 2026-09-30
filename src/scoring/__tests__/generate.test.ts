@@ -28,6 +28,12 @@ import {
   reversedThrowOrderCount,
   preferredThrowCount,
   preferenceWeights,
+  allEScore,
+  allEShortfall,
+  aimsAllE,
+  topDifficulty,
+  ALL_E_SHORTFALL_WEIGHT,
+  THROW_COUNT_FAR_OVER_WEIGHT,
   COMPETITION_LEVELS,
   competitionLevelGroups,
   DEFAULT_TUMBLING_BALANCE,
@@ -158,6 +164,50 @@ describe("ランダム生成", () => {
       expect(d).toBeGreaterThanOrEqual(lv.min - 1e-9);
       expect(d).toBeLessThanOrEqual(lv.max + 1e-9);
     });
+  }, 120_000);
+
+  it("Dスコア4.2以上を狙うときは、採点される6ユニットを全部E難度にしてから加点を積む", () => {
+    // 4.2 は「E難度 × 上位3タンブリング＋上位3徒手」ちょうど。定数から導いている
+    expect(allEScore()).toBeCloseTo(DIFF_SCORE.E * ADOPT_COUNT * 2, 10);
+    expect(allEScore()).toBeCloseTo(4.2, 10);
+    expect(topDifficulty()).toBe("E");
+    // 十年後モードでは「その時代の最高難度 × 6」に上がる
+    expect(topDifficulty("G")).toBe("G");
+    expect(allEScore("G")).toBeCloseTo(DIFF_SCORE.G * ADOPT_COUNT * 2, 10);
+
+    // 狙う水準かどうかは**要求した下限**で決める（上限だけの指定では狙わない）
+    expect(aimsAllE({ minScore: allEScore() })).toBe(true);
+    expect(aimsAllE({ minScore: allEScore() + 0.5 })).toBe(true);
+    expect(aimsAllE({ minScore: allEScore() - 0.1 })).toBe(false);
+    expect(aimsAllE({ maxScore: 5.0 })).toBe(false);
+    expect(aimsAllE({})).toBe(false);
+    // 加点1つ（技術加点0.1）より重く、投げ本数の重みも上回る
+    expect(ALL_E_SHORTFALL_WEIGHT).toBeGreaterThan(TECHNIQUE_BONUS);
+    expect(ALL_E_SHORTFALL_WEIGHT).toBeGreaterThan(THROW_COUNT_FAR_OVER_WEIGHT);
+
+    // 生成に通る：下限4.2で、ほとんどの構成が6つ全部E難度になる
+    // （実測：スティック20/25・クラブ24/25・リング18/25・ロープ22/25。
+    //   直す前は 14/12/10/9）
+    let allSix = 0, n = 0, shortfall = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const r = generateRoutine([], {
+        apparatus: "clubs",
+        minScore: allEScore(),
+        random: seeded(seed * 7919 + 13),
+      });
+      if (!r) continue;
+      n += 1;
+      const sc = computeScore(r.series, "clubs");
+      const miss = allEShortfall(sc);
+      shortfall += miss;
+      if (miss === 0) allSix += 1;
+      // 6つ全部Eなら難度点だけで 4.2 に届いている
+      if (miss === 0) expect(sc.tumblingScore + sc.handScore).toBeGreaterThanOrEqual(allEScore() - 1e-9);
+    }
+    expect(n).toBeGreaterThan(0);
+    expect(allSix / n).toBeGreaterThan(0.7);
+    // 届かない構成でも、足りないのはせいぜい1〜2ユニット
+    expect(shortfall / n).toBeLessThan(1);
   }, 120_000);
 
   it("難度をタンブリングと徒手のどちらで取るかの比重はユーザーが選ぶ", () => {

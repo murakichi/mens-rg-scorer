@@ -45,7 +45,11 @@ import {
   trimSpareOtherStyles,
   type Evaluation,
 } from "./generateEvaluate";
-import { DEFAULT_MAX_SERIES, REBUILD_ATTEMPTS, requiresAllElements } from "./generateWeights";
+import {
+  DEFAULT_MAX_SERIES,
+  REBUILD_ATTEMPTS,
+  requiresAllElements,
+} from "./generateWeights";
 import {
   autoPool,
   greedyAttempt,
@@ -53,6 +57,7 @@ import {
   satisfying,
   swapIn,
   upgradeTumblings,
+  upgradeHandUnits,
   usableTemplates,
 } from "./generateSearch";
 import type { GenerateOptions, GenerateResult } from "./generateOptions";
@@ -131,6 +136,11 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   //    貪欲法は3本（`DEFAULT_MAX_TUMBLINGS`）埋まったあとに後から出てきた高難度の
   //    候補を見られないので、最後にタンブリングだけを入れ替えて評価が上がるなら採る。
   best = upgradeTumblings(best, pool, opts);
+
+  // ⑦' Dスコア 4.2 以上（＝E難度6ユニットぶん、`allEScore`）を要求されたときは、
+  //    加点を積む前に**採点される6つを全部E難度にする**のが先。タンブリングは⑦でほぼE
+  //    になるが徒手側が届かないので、候補を投げに絞って同じように入れ替える。
+  best = upgradeHandUnits(best, pool, opts);
 
   // ⑧ 種類を埋めていない「その他の投げ受け」のタグを外す。その他は**実態が違うものを
   //    別の種類として数えてもらう**ための入力なので、種類に効いていないものは意味がない。
