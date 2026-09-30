@@ -175,9 +175,36 @@ export function orderSeries(
     ordered =
       tumbling.length >= throws.length ? interleave(tumbling, throws) : interleave(throws, tumbling);
   ordered = finishCatchLast(ordered, opts.apparatus);
+  ordered = throwTumblingToFront(ordered, opts.apparatus, junior, future);
   if (ordered === used) return { used, ev: cur };
   const ev = evaluateUsed(ordered, opts);
   return ev.value >= cur.value - 1e-9 ? { used: ordered, ev } : { used, ev: cur };
+}
+
+/** 投げタンを置きたい位置（0始まり。3つ目のシリーズ） */
+export const THROW_TUMBLING_POSITION = 2;
+
+/**
+ * 投げタンは演技の前半（3〜4つ目のシリーズ）で実施することが多いので、
+ * 投げタンのシリーズを3つ目に寄せる（並びで点数は変わらない）。
+ * 締めのキャッチで終わるシリーズを最後に置いているときは、その位置を空けたままにする。
+ */
+export function throwTumblingToFront(
+  list: SeriesTemplate[],
+  apparatus: ApparatusKey,
+  junior: boolean,
+  future: FutureLevel = null,
+): SeriesTemplate[] {
+  const idx = list.findIndex((t) => analyzeSeries(t.series, junior, future).units.some((u) => u.isThrowTumbling));
+  if (idx < 0) return list;
+  const lastFinish = !!FINISH_CATCH_TAG[apparatus] && endsWithFinishCatch(list[list.length - 1].series, apparatus);
+  // 締めのシリーズ自身が投げタンなら、そのまま最後に置いておく
+  if (lastFinish && idx === list.length - 1) return list;
+  const movable = lastFinish ? list.length - 1 : list.length;
+  const target = Math.min(THROW_TUMBLING_POSITION, movable - 1);
+  if (idx === target) return list;
+  const rest = list.filter((_, i) => i !== idx);
+  return [...rest.slice(0, target), list[idx], ...rest.slice(target)];
 }
 
 /**
