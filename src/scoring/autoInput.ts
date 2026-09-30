@@ -9,6 +9,7 @@ import {
   DIFF_VALUE,
   LEFT_HAND_THROW_TAG,
   ROUNDOFF_SKILL_ID,
+  buildTwistSkillId,
   SIDE_THROW_TAG,
   USE_APPARATUS_TAG,
   skillDef,
@@ -23,13 +24,14 @@ import {
 } from "./analysis";
 import {
   CHAIN_END_SKILLS,
+  isTempoSalto,
   endsFacingBackward,
   THROW_ROLL_MOTION,
 } from "./tumblingChain";
 import { itemLabel } from "./templates";
 import { NO_VIEW_TAG } from "./autoThrows";
 import { computeScore } from "./score";
-import type { ApparatusKey, Item, Series } from "./types";
+import type { ApparatusKey, Item, Series, TwistParams } from "./types";
 
 /** 「投げ→伸身前方宙返り1回ひねり」のあとに前転→キャッチが続く、その技 */
 export const FRONT_LAYOUT_TWIST_ID = "d_frontlay1";
@@ -38,6 +40,13 @@ const FRONT_ID = "b_front";
 const FRONT_LAYOUT_ID_TWIST = FRONT_LAYOUT_TWIST_ID;
 const FRONT_TWIST_ID = "c_front1full";
 const KIRIMOMI_TEN_ID = "c_kirimomiten";
+const FLICFLAC_ID = "a_flicflac";
+/** テンポのあとの「宙返り→前宙」の宙返り（前向きに降りる後方の半ひねり系）を選ぶ、他のシリーズの平均難度の境目 */
+export const TEMPO_AVG_LOW_MAX = 0.3;
+export const TEMPO_AVG_MID_MAX = 0.5;
+const TEMPO_LOW: TwistParams = { base: "back", twist: 0.5, posture: "tuck" };
+const TEMPO_MID: TwistParams = { base: "back", twist: 1.5, posture: "tuck" };
+const TEMPO_HIGH: TwistParams = { base: "back", twist: 2.5, posture: "layout" };
 const DIVING_FRONT_ID = "b_divefront";
 const SIDE_SALTO_ID = "b_sidesalto";
 /** 投げている間の徒手が、この動作数に達したら「キャッチ→背面投げ→背面キャッチ」を勧める */
@@ -329,6 +338,15 @@ function coreSuggestions(
 
   const lastId = skillAt(n - 1);
   if (!lastId) return [];
+
+  // テンポのあと：①平均難度に応じた宙返り→前宙 ②三宙を実施済みならバク転
+  if (isTempoSalto(lastId)) {
+    const avg = averageDifficulty(list, sIdx, junior, apparatus);
+    const twist = avg <= TEMPO_AVG_LOW_MAX + eps ? TEMPO_LOW : avg <= TEMPO_AVG_MID_MAX + eps ? TEMPO_MID : TEMPO_HIGH;
+    const out = [suggestion("tempo-salto-front", [skillItem(buildTwistSkillId(twist)), skillItem(FRONT_ID)])];
+    if (hasSalto3) out.push(suggestion("tempo-flicflac", [skillItem(FLICFLAC_ID)]));
+    return out;
+  }
 
   // ダイビング前宙以外の宙返りからロンダートでつないだら、ダイビング前宙
   const beforeId = skillAt(n - 2);
