@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useAutoInputSetting } from "./useAutoInputSetting";
 import { Download, Upload, Link2, BookMarked, Save, Shuffle, Lightbulb, Plus, X } from "lucide-react";
 import {
   APPARATUS,
@@ -88,6 +89,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
   // 共有URLで開いたときは、他人の構成で自分のドラフトを踏まないよう復元しない。
   const [restored] = useState(() => (initialData ? null : loadIndividualDraft()));
   const [init] = useState<IndividualDraft | null>(() => restored ?? normalizeIndividualDraft(initialData));
+  const [autoInput, setAutoInput] = useAutoInputSetting();
   const [draftNotice, setDraftNotice] = useState(!!restored);
 
   const [apparatus, setApparatus] = useState<ApparatusKey>(init?.apparatus ?? "stick");
@@ -556,6 +558,21 @@ export function IndividualScorer({ initialData }: Props = {}) {
           ジュニア適用規則（§10 変更規則1）で採点します。ダイビング前宙・後方宙返り半ひねりをC難度で認定し、
           投げ上げの最低回数を2回とします。
         </p>
+        <div className="switch-row">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoInput}
+            className={autoInput ? "switch is-on" : "switch"}
+            onClick={() => setAutoInput(!autoInput)}
+          >
+            <span className="switch-knob" />
+          </button>
+          <span className="switch-label">おすすめ表示（自動入力）{autoInput ? "：ON" : "：OFF"}</span>
+        </div>
+        <p className="hint">
+          入力の続きを半透明で提案します。確定ボタン・Enter・Tab で追加、却下ボタンや手入力で消えます。
+        </p>
         {futureUnlock.unlocked && (
           <>
             <div className="switch-row">
@@ -620,6 +637,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         apparatus={apparatus}
         junior={junior}
         future={future}
+        autoInputEnabled={autoInput}
         result={result}
         onChange={setSeries}
         templateOptions={seriesTemplateOptions}
