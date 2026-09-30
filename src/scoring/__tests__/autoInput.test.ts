@@ -290,4 +290,43 @@ describe("自動入力", () => {
       "後方伸身宙返り2回半ひねり",
     ]);
   });
+
+  it("つなぎの二回目の宙返りのあとは、三宙にならないように打ち切る", () => {
+    const withConnect = (...tail: Item[]) => ser(sk("a_roundoff"), sk("b_backhalf"), sk("a_roundoff"), ...tail);
+    // つなぎのあとの宙返り(Y)：前宙→側宙 だと Y→前宙→側宙 で三宙になるので 前宙 で止める
+    const other = ser(sk("a_roundoff"), sk("b_backhalf")); // 三宙は未実施のまま
+    const s = withConnect(sk("b_backhalf"));
+    const got = autoInputSuggestions([other, s], 1).map((g) => g.label);
+    expect(got).not.toContain("前宙→側宙");
+    expect(got).toContain("前宙");
+    expect(got).not.toContain("前方宙返り1回ひねり→側宙");
+    // ロンダート→宙返り→前宙 でつなぎの二回目なら、側宙（三宙になる）は出さない
+    const t = withConnect(sk("b_backhalf"), sk("b_front"));
+    expect(autoInputSuggestions([other, t], 1).map((g) => g.label)).not.toContain("側宙");
+    // つなぎの前（一回目）の宙返りでは従来どおり 前宙→側宙 も出る
+    expect(labels([ser(sk("a_roundoff"), sk("b_backhalf"))], 0)).toContain("前宙→側宙");
+  });
+
+  it("後ろ向きで終わる宙返りのあと：他シリーズの平均難度に応じた候補", () => {
+    const cur = ser(sk("a_roundoff"), sk("b_backsalto")); // 後方宙返り＝後ろ向きで終わる
+    const low = ser(th, mo("chene"), ct); // 0.2以下
+    const c1 = ser(sk("a_roundoff"), sk("b_backhalf"), sk("b_front")); // 難度 0.3 台
+    const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto")); // 0.5
+    const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto")); // 0.7
+    const L = (l: Series[]) => labels(l, l.length - 1);
+    // 平均0.2以下 → 無し
+    expect(L([low, cur])).toEqual([]);
+    const e = ser(th, mo("mv3"), ct); // 徒手 E = 0.7（三宙にはならない）
+    expect(L([mid, cur])).toEqual(["前宙", "きりもみ"]); // 0.5 ちょうどは きりもみ まで
+    // 0.5超〜0.7未満（三宙未達・つなぎでない）→ 前宙、きりもみ、前宙→側宙
+    expect(L([mid, e, cur])).toEqual(["前宙", "きりもみ", "前宙→側宙"]);
+    // 0.7 以上 → さらに きりもみ転回
+    expect(L([e, cur])).toEqual(["前宙", "きりもみ", "前宙→側宙", "きりもみ転回"]);
+    // 三宙を実施済みなら 前宙→側宙 は出さない
+    expect(L([hard, cur])).toEqual(["前宙", "きりもみ", "きりもみ転回"]);
+    // 平均0.3超〜0.5 未満 は 前宙 のみ（0.3 ちょうどは 前宙 まで）
+    expect(L([c1, cur])).toEqual(["前宙"]);
+    // 前向きに降りる宙返り（半ひねり）では出ない
+    expect(L([mid, ser(sk("a_roundoff"), sk("b_backhalf"))])).not.toContain("きりもみ");
+  });
 });

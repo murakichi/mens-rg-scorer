@@ -20,6 +20,7 @@ import {
   prevSkillId,
   seriesTags,
   analyzeSeries,
+  saltoFlags,
   thrownCount,
 } from "./analysis";
 import {
@@ -44,6 +45,11 @@ const FRONT_TWIST_ID = "c_front1full";
 const KIRIMOMI_TEN_ID = "c_kirimomiten";
 /** テンポひねりの次に出す技：テンポ／ハーフ（後方宙返り半ひねり）／後方伸身宙返り2回半ひねり */
 const TEMPO_TWIST_NEXT = [TEMPO_SKILL_ID, "b_backhalf", "d_backlay25"];
+const KIRIMOMI_ID = "b_kirimomi";
+/** 後ろ向きで終わる宙返りのあと、他のシリーズの平均難度の境目（以下／超）。0.7以上できりもみ転回も出す */
+export const AFTER_BACK_NONE_MAX = 0.2;
+export const AFTER_BACK_FRONT_MAX = 0.3;
+export const AFTER_BACK_KIRIMOMI_MAX = 0.5;
 const FLICFLAC_ID = "a_flicflac";
 /** テンポのあとの「宙返り→前宙」の宙返り（前向きに降りる後方の半ひねり系）を選ぶ、他のシリーズの平均難度の境目 */
 export const TEMPO_AVG_LOW_MAX = 0.3;
@@ -364,6 +370,23 @@ function coreSuggestions(
     return out;
   }
 
+  // 後ろ向きで終わる宙返りのあと：他のシリーズの平均難度に応じて 前宙／きりもみ／前宙→側宙／きりもみ転回
+  if (skillDef(lastId)?.isSalto && endsFacingBackward(lastId)) {
+    const avg = averageDifficulty(list, sIdx, junior, apparatus);
+    if (avg <= AFTER_BACK_NONE_MAX + eps) return [];
+    const out = [suggestion("afterBack-front", [skillItem(FRONT_ID)])];
+    if (avg > AFTER_BACK_FRONT_MAX + eps) out.push(suggestion("afterBack-kirimomi", [skillItem(KIRIMOMI_ID)]));
+    if (avg > AFTER_BACK_KIRIMOMI_MAX + eps) {
+      // 三宙が未達成で、このシリーズがつなぎでないときだけ 前宙→側宙
+      const seriesIsConnect = seriesTags(series, junior).includes("connect");
+      if (!hasSalto3 && !seriesIsConnect) {
+        out.push(suggestion("afterBack-front-side", [skillItem(FRONT_ID), skillItem(SIDE_SALTO_ID)]));
+      }
+    }
+    if (avg >= THROW_TUM_AVG_LAYOUT_MIN - eps) out.push(suggestion("afterBack-kirimomiten", [skillItem(KIRIMOMI_TEN_ID)]));
+    return out;
+  }
+
   // ダイビング前宙以外の宙返りからロンダートでつないだら、ダイビング前宙
   const beforeId = skillAt(n - 2);
   if (
@@ -592,7 +615,7 @@ function openThrowIsSide(items: Item[]): boolean {
  * 続きの候補を返す。クラブ・リングで横投げのあとにキャッチが候補に挙がるときは、
  * そのキャッチを手具を使ったキャッチ（もう一方の手具で押さえる）にする。
  */
-export function autoInputSuggestions(
+function withSideThrowCatch(
   list: Series[],
   sIdx: number,
   junior = false,
@@ -631,4 +654,54 @@ export function autoInputSuggestions(
     };
     return { ...sg, items: next };
   });
+}
+
+/** つなぎのあとの宙返りの連続は、この本数までにする（3本になると三宙になる） */
+export const POST_CONNECT_SALTO_MAX = 2;
+
+/**
+ * つなぎ（宙返り→A難度のつなぎ技→宙返り）の**二回目の宙返り**のあとに宙返りを足す候補は、
+ * つなぎのあとの連続が三宙にならないところで打ち切る（打ち切って何も残らない候補は出さない）。
+ */
+function capPostConnectSaltos(series: Series | undefined, suggestions: AutoInputSuggestion[]): AutoInputSuggestion[] {
+  const items = series?.items ?? [];
+  const ids = items.map((it) => (it.kind === "skill" ? it.skillId : ""));
+  // 末尾の宙返りの連続の始まり
+  const flags = saltoFlags(ids);
+  let start = items.length;
+  while (start > 0 && flags[start - 1]) start--;
+  if (start === items.length) return suggestions;
+  // その連続の手前が「つなぎ技」で、さらにその手前が宙返りなら、つなぎのあとの連続
+  const connect = skillDef(ids[start - 1] ?? "");
+  const beforeConnect = start >= 2 && flags[start - 2];
+  if (!connect?.isConnectA || !beforeConnect) return suggestions;
+  const already = items.length - start;
+  return suggestions.flatMap((sg) => {
+    const seq = [...ids, ...sg.items.map((it) => (it.kind === "skill" ? it.skillId : ""))];
+    const f = saltoFlags(seq);
+    let run = already;
+    let keep = sg.items.length;
+    for (let k = 0; k < sg.items.length; k++) {
+      // 宙返りでないアイテム（つなぎ・キャッチなど）で連続は途切れる
+      run = f[items.length + k] ? run + 1 : 0;
+      if (run > POST_CONNECT_SALTO_MAX) {
+        keep = k;
+        break;
+      }
+    }
+    if (keep === sg.items.length) return [sg];
+    if (keep === 0) return [];
+    const kept = sg.items.slice(0, keep);
+    return [{ ...sg, items: kept, label: kept.map(itemLabel).join("→") }];
+  });
+}
+
+/** 続きの候補を返す（入力中のシリーズの末尾から。先頭が既定の候補） */
+export function autoInputSuggestions(
+  list: Series[],
+  sIdx: number,
+  junior = false,
+  apparatus: ApparatusKey = "stick",
+): AutoInputSuggestion[] {
+  return capPostConnectSaltos(list[sIdx], withSideThrowCatch(list, sIdx, junior, apparatus));
 }
