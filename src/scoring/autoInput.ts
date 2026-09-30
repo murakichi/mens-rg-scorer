@@ -6,7 +6,6 @@
 // =====================================================================
 
 import {
-  DIFF_SCORE,
   DIFF_VALUE,
   ROUNDOFF_SKILL_ID,
   SIDE_THROW_TAG,
@@ -119,17 +118,8 @@ function coreSuggestions(
   const last = items[n - 1];
   if (!last) return [];
 
-  /** 入力中のシリーズを除いた、構成全体のユニットの平均難度点 */
-  const routineAverage = (): number => {
-    const scores = list
-      .filter((_, i) => i !== sIdx)
-      .flatMap((s2) =>
-        analyzeSeries(s2, junior).units.map((u) => DIFF_SCORE[u.finalDiff]),
-      );
-    return scores.length
-      ? scores.reduce((a, b) => a + b, 0) / scores.length
-      : 0;
-  };
+  const routineAverage = (): number =>
+    averageDifficulty(list, sIdx, junior, apparatus);
   const eps = 1e-9;
 
   // ---- クラブ・リングの横投げ：もう一方の手具で押さえて受ける ----
@@ -349,6 +339,35 @@ function coreSuggestions(
   return [];
 }
 
+/**
+ * 候補を選ぶための、構成の平均難度点。入力中のシリーズは含めず、**難度として有効なものだけ**を平均する：
+ * 採用された（重複でない）うえで上位3つに入ったタンブリングと徒手系のユニット。
+ * 連続投げの2回目（同じシリーズの2つ目以降の投げ）は数えない。
+ */
+export function averageDifficulty(
+  list: Series[],
+  sIdx: number,
+  junior: boolean,
+  apparatus: ApparatusKey,
+): number {
+  const others = list.filter((_, i) => i !== sIdx);
+  if (others.length === 0) return 0;
+  const result = computeScore(others, apparatus, { junior });
+  const scores: number[] = [];
+  result.seriesBreakdowns.forEach((b) => {
+    b.tumRows.forEach((r) => {
+      if (r.adopted && r.inTop) scores.push(r.score);
+    });
+    b.handRows.forEach((r) => {
+      // ラベルは 投げ1・投げ2…（同じシリーズ内の順）。2つ目以降は連続投げの2回目
+      const nth = /^投げ(\d+)$/.exec(r.label);
+      if (nth && Number(nth[1]) >= 2) return;
+      if (r.adopted && r.inTop) scores.push(r.score);
+    });
+  });
+  return scores.length ? scores.reduce((x, y) => x + y, 0) / scores.length : 0;
+}
+
 /** 転がりに切り替えて受けにいく、動作数とシリーズ平均の下限 */
 export const ROLL_CATCH_MIN_MOTIONS = 3;
 export const ROLL_CATCH_MIN_AVG = 0.5;
@@ -392,21 +411,15 @@ function baseSuggestions(
   };
   const out: AutoInputSuggestion[] = [];
   if (total >= ROLL_CATCH_MIN_MOTIONS) {
-    const scores = list
-      .filter((_, i) => i !== sIdx)
-      .flatMap((s2) =>
-        analyzeSeries(s2, junior).units.map((u) => DIFF_SCORE[u.finalDiff]),
-      );
-    const avg = scores.length
-      ? scores.reduce((a, b) => a + b, 0) / scores.length
-      : 0;
+    const avg = averageDifficulty(list, sIdx, junior, apparatus);
     if (avg >= ROLL_CATCH_MIN_AVG - 1e-9)
       out.push(
         suggestion("roll-catch", [motionItem(ROLL_MOTION_ID), catchItem]),
       );
   }
   // 第一候補（または転がりの次）はキャッチ。候補がすでにキャッチ1つだけならそれを使う
-  if (core[0]?.items.length === 1 && core[0].items[0].kind === "catch") out.push(...core);
+  if (core[0]?.items.length === 1 && core[0].items[0].kind === "catch")
+    out.push(...core);
   else out.push(suggestion("catch", [catchItem]), ...core);
   return out;
 }

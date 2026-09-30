@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoInputSuggestions } from "../autoInput";
+import { autoInputSuggestions, averageDifficulty } from "../autoInput";
 import type { Item, Series } from "../types";
 
 const sk = (skillId: string, extra: Partial<Item> = {}): Item =>
@@ -116,7 +116,10 @@ describe("自動入力", () => {
       "前方宙返り1回ひねり→側宙→キャッチ",
     ]);
     // 0.5超〜0.7未満 → 前方1回ひねり→前転→キャッチ
-    expect(labels([hard, hard, hard, mid, prev, ser(th)], 5)).toEqual(["前方宙返り1回ひねり→前転→キャッチ"]);
+    const hard2 = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"));
+    expect(labels([hard, hard2, mid, ser(th, mo("mv3"), ct), ser(th)], 4)).toEqual([
+      "前方宙返り1回ひねり→前転→キャッチ",
+    ]);
   });
 
   it("投げタン達成済み・最初の投げ・シリーズの途中の投げでは勧めない", () => {
@@ -175,5 +178,20 @@ describe("自動入力", () => {
     expect(labels([mid, s], 1)).toEqual(["転がり→キャッチ", "キャッチ", "キャッチ→投げ→キャッチ"]);
     // 動作が足りなければ平均が高くても 転がり は出ない
     expect(labels([mid, ser(th, mo("fwd_roll"))], 1)).toEqual(["キャッチ"]);
+  });
+
+  it("平均難度は有効なユニットだけ：重複・上位3つ外・連続投げの2回目は数えない", () => {
+    const cur = ser(th);
+    const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto"));
+    const hard2 = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"));
+    const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
+    const low = ser(sk("a_roundoff"), sk("b_backsalto"));
+    const avg = (l: Series[]) => averageDifficulty(l, l.length - 1, false, "clubs");
+    // 重複シリーズは数えない
+    expect(avg([hard, hard, cur])).toBeCloseTo(0.7);
+    // タンブリングは上位3つだけ（0.2 は外れる）
+    expect(avg([hard, hard2, mid, low, cur])).toBeCloseTo((0.7 + 0.7 + 0.5) / 3);
+    // 同じシリーズの2つ目の投げは数えない（1つ目 縦3動作E 0.7 だけ）
+    expect(avg([ser(th, mo("mv3"), ct, th, mo("chene"), ct), cur])).toBeCloseTo(0.7);
   });
 });
