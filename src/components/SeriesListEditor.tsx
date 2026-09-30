@@ -1,6 +1,7 @@
 import { Plus } from "lucide-react";
 import { SeriesCard } from "./SeriesCard";
 import { needsRoundoffBefore, roundoffItem } from "../scoring/analysis";
+import { autoInputSuggestions } from "../scoring/autoInput";
 import { computeScore } from "../scoring/score";
 import type { ApparatusKey, FutureLevel, Item, Series } from "../scoring/types";
 
@@ -86,6 +87,10 @@ export function SeriesListEditor({
       const item = newItem(kind);
       n[sIdx].items = isPristine(n[sIdx].items) ? [item] : [...n[sIdx].items, item];
     });
+  const addItems = (sIdx: number, items: Item[]) =>
+    edit((n) => {
+      n[sIdx].items = [...(isPristine(n[sIdx].items) ? [] : n[sIdx].items), ...structuredClone(items)];
+    });
   const updateItem = (sIdx: number, iIdx: number, patch: Partial<Item>) =>
     edit((n) => {
       const items = n[sIdx].items;
@@ -138,6 +143,8 @@ export function SeriesListEditor({
           onSaveTemplate={onSaveTemplate && (() => onSaveTemplate(sIdx))}
           onUpdateField={(patch) => updateSeriesField(sIdx, patch)}
           onAddItem={(kind) => addItem(sIdx, kind)}
+          autoInput={autoInputSuggestions(series, sIdx, junior, apparatus)}
+          onAddItems={(items) => addItems(sIdx, items)}
           onUpdateItem={(iIdx, patch) => updateItem(sIdx, iIdx, patch)}
           onRemoveItem={(iIdx) => removeItem(sIdx, iIdx)}
           onMoveItem={(iIdx, dir) => moveItem(sIdx, iIdx, dir)}
