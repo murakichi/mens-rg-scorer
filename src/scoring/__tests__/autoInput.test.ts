@@ -271,6 +271,14 @@ describe("自動入力", () => {
     expect(labels([hard, cur], 1)[0]).toBe("後方伸身宙返り2回半ひねり→前宙");
     // 三宙を実施済み（ほかのシリーズ）→ バク転も候補に
     expect(labels([hard, cur], 1)).toEqual(["後方伸身宙返り2回半ひねり→前宙", "バク転"]);
+    // 二回半をほかのタンブリングで実施済みなら、一回半にする
+    const done = ser(sk("a_roundoff"), sk("d_backlay25"), sk("b_front"));
+    expect(labels([hard, done, cur], 2)[0]).toBe("後方宙返り1回半ひねり→前宙");
+    // 一回半も実施済みならハーフ、ハーフも実施済みなら伸身宙返り（段を順に下げる）
+    const done15 = ser(sk("a_roundoff"), sk("c_back15"), sk("b_front"));
+    expect(labels([hard, done, done15, cur], 3)[0]).toBe("後方宙返り半ひねり→前宙");
+    const doneHalf = ser(sk("a_roundoff"), sk("b_backhalf"), sk("b_front"));
+    expect(labels([hard, done, done15, doneHalf, cur], 4)[0]).toBe("後方伸身宙返り→前宙");
     // テンポ以外の技では出ない
     expect(ids([ser(sk("a_roundoff"), sk("b_backsalto"))], 0)).toEqual([]);
   });

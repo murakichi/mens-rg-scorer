@@ -46,6 +46,7 @@ export const TEMPO_AVG_LOW_MAX = 0.3;
 export const TEMPO_AVG_MID_MAX = 0.5;
 const TEMPO_LOW: TwistParams = { base: "back", twist: 0.5, posture: "tuck" };
 const TEMPO_MID: TwistParams = { base: "back", twist: 1.5, posture: "tuck" };
+const TEMPO_LAYOUT: TwistParams = { base: "back", twist: 0, posture: "layout" };
 const TEMPO_HIGH: TwistParams = { base: "back", twist: 2.5, posture: "layout" };
 const DIVING_FRONT_ID = "b_divefront";
 const SIDE_SALTO_ID = "b_sidesalto";
@@ -342,7 +343,14 @@ function coreSuggestions(
   // テンポのあと：①平均難度に応じた宙返り→前宙 ②三宙を実施済みならバク転
   if (isTempoSalto(lastId)) {
     const avg = averageDifficulty(list, sIdx, junior, apparatus);
-    const twist = avg <= TEMPO_AVG_LOW_MAX + eps ? TEMPO_LOW : avg <= TEMPO_AVG_MID_MAX + eps ? TEMPO_MID : TEMPO_HIGH;
+    // 平均難度で段を決め、ほかのタンブリングで実施済み（同じ技は難度に数えない）なら一段下げる：
+    // 二回半 → 一回半 → ハーフ → 伸身宙返り
+    const ladder = [TEMPO_HIGH, TEMPO_MID, TEMPO_LOW, TEMPO_LAYOUT];
+    let step = avg <= TEMPO_AVG_LOW_MAX + eps ? 2 : avg <= TEMPO_AVG_MID_MAX + eps ? 1 : 0;
+    const doneElsewhere = (id: string) =>
+      list.some((s2, i) => i !== sIdx && s2.items.some((it) => it.kind === "skill" && it.skillId === id));
+    while (step < ladder.length - 1 && doneElsewhere(buildTwistSkillId(ladder[step]))) step++;
+    const twist = ladder[step];
     const out = [suggestion("tempo-salto-front", [skillItem(buildTwistSkillId(twist)), skillItem(FRONT_ID)])];
     if (hasSalto3) out.push(suggestion("tempo-flicflac", [skillItem(FLICFLAC_ID)]));
     return out;
