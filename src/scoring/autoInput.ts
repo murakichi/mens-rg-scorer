@@ -6,7 +6,6 @@
 // =====================================================================
 
 import {
-  DIFF_SCORE,
   DIFF_VALUE,
   ROUNDOFF_SKILL_ID,
   SIDE_THROW_TAG,
@@ -53,7 +52,8 @@ const TUMBLING_REQUIRED_KEYS = [
   "tumCount",
 ];
 const CHENE_ID = "chene";
-const ROLL_MOTION_IDS = [THROW_ROLL_MOTION, "roll"];
+const ROLL_MOTION_ID = "roll";
+const ROLL_MOTION_IDS = [THROW_ROLL_MOTION, ROLL_MOTION_ID];
 
 /** 投げタンをおすすめするときの、構成全体の平均難度点の境目（この値以下ならその段） */
 export const THROW_TUM_AVG_FRONT_ROLL_MAX = 0.3;
@@ -105,7 +105,7 @@ function openThrowIndex(items: Item[]): number {
  * @param list 構成全体（つなぎ・三宙が「未達成」かはルーティン全体で見る）
  * @param sIdx いま入力しているシリーズ
  */
-function baseSuggestions(
+function coreSuggestions(
   list: Series[],
   sIdx: number,
   junior = false,
@@ -118,17 +118,8 @@ function baseSuggestions(
   const last = items[n - 1];
   if (!last) return [];
 
-  /** 入力中のシリーズを除いた、構成全体のユニットの平均難度点 */
-  const routineAverage = (): number => {
-    const scores = list
-      .filter((_, i) => i !== sIdx)
-      .flatMap((s2) =>
-        analyzeSeries(s2, junior).units.map((u) => DIFF_SCORE[u.finalDiff]),
-      );
-    return scores.length
-      ? scores.reduce((a, b) => a + b, 0) / scores.length
-      : 0;
-  };
+  const routineAverage = (): number =>
+    averageDifficulty(list, sIdx, junior, apparatus);
   const eps = 1e-9;
 
   // ---- クラブ・リングの横投げ：もう一方の手具で押さえて受ける ----
@@ -145,15 +136,20 @@ function baseSuggestions(
     ];
   }
 
-  // ---- 投げのシリーズのあとに投げを足したとき：投げタン未達成なら平均難度に合わせて勧める ----
+  // ---- 投げを足したとき：投げタン未実施・投げ実施済み・タンブリング実施済みなら平均難度に合わせて勧める ----
   if (
     n === 1 &&
     last.kind === "throw" &&
-    list
-      .slice(0, sIdx)
-      .some((s2) => s2.items.some((it) => it.kind === "throw")) &&
     !list.some((s2) =>
       analyzeSeries(s2, junior).units.some((u) => u.isThrowTumbling),
+    ) &&
+    list.some(
+      (s2, i) => i !== sIdx && s2.items.some((it) => it.kind === "throw"),
+    ) &&
+    list.some(
+      (s2, i) =>
+        i !== sIdx &&
+        analyzeSeries(s2, junior).units.some((u) => u.type === "tumbling"),
     )
   ) {
     const avg = routineAverage();
@@ -341,6 +337,111 @@ function baseSuggestions(
     }
   }
   return [];
+}
+
+/** 平均に使う上位ユニットの数（難度点で採られる数 `ADOPT_COUNT` に合わせる） */
+export const AVERAGE_TOP_COUNT = 3;
+
+/**
+ * 難度として有効なユニットの難度点。入力中のシリーズは含めず、採用された（重複でない）うえで
+ * 上位3つに入ったタンブリングと徒手系のユニットだけを拾う。
+ * 連続投げの2回目（同じシリーズの2つ目以降の投げ）は数えない。
+ */
+export function effectiveScores(
+  list: Series[],
+  sIdx: number,
+  junior: boolean,
+  apparatus: ApparatusKey,
+): number[] {
+  const others = list.filter((_, i) => i !== sIdx);
+  if (others.length === 0) return [];
+  const result = computeScore(others, apparatus, { junior });
+  const scores: number[] = [];
+  result.seriesBreakdowns.forEach((b) => {
+    b.tumRows.forEach((r) => {
+      if (r.adopted && r.inTop) scores.push(r.score);
+    });
+    b.handRows.forEach((r) => {
+      // ラベルは 投げ1・投げ2…（同じシリーズ内の順）。2つ目以降は連続投げの2回目
+      const nth = /^投げ(\d+)$/.exec(r.label);
+      if (nth && Number(nth[1]) >= 2) return;
+      if (r.adopted && r.inTop) scores.push(r.score);
+    });
+  });
+  return scores;
+}
+
+/**
+ * 候補を選ぶための、構成の難度の目安。有効なユニット（`effectiveScores`）のうち
+ * **難度の高い上位3つの平均**。加点や必須要素を満たすためだけの低難度の投げは
+ * 上位に入らないので、狙っている難度のレベルがそのまま出る（ユニットが3つ未満ならある分だけ）。
+ */
+export function averageDifficulty(
+  list: Series[],
+  sIdx: number,
+  junior: boolean,
+  apparatus: ApparatusKey,
+): number {
+  const top = effectiveScores(list, sIdx, junior, apparatus)
+    .sort((x, y) => y - x)
+    .slice(0, AVERAGE_TOP_COUNT);
+  return top.length ? top.reduce((x, y) => x + y, 0) / top.length : 0;
+}
+
+/** 転がりに切り替えて受けにいく、動作数とシリーズ平均の下限 */
+export const ROLL_CATCH_MIN_MOTIONS = 3;
+export const ROLL_CATCH_MIN_AVG = 0.5;
+
+/**
+ * 投げている間に前転を入れたとき：第一候補はキャッチ。動作が3以上で構成の平均難度が0.5以上なら
+ * 前転の代わりに 転がり→キャッチ を第一候補にする（そのほかの候補は別案に残す）。
+ */
+function baseSuggestions(
+  list: Series[],
+  sIdx: number,
+  junior: boolean,
+  apparatus: ApparatusKey,
+): AutoInputSuggestion[] {
+  const core = coreSuggestions(list, sIdx, junior, apparatus);
+  const items = list[sIdx]?.items ?? [];
+  const last = items[items.length - 1];
+  const t = openThrowIndex(items);
+  if (
+    !last ||
+    last.kind !== "motion" ||
+    last.motionId !== THROW_ROLL_MOTION ||
+    t < 0
+  )
+    return core;
+  if (!items.slice(t + 1).every((it) => it.kind === "motion")) return core;
+  const total = items
+    .slice(t + 1)
+    .reduce(
+      (sum, it) =>
+        sum +
+        (it.kind === "motion"
+          ? (motionDef(it.motionId)?.motions ?? 0) * motionTimes(it.count)
+          : 0),
+      0,
+    );
+  const catchItem: Item = {
+    kind: "catch",
+    catchTypes: [],
+    catchTwo: thrownCount(items[t]) === 2,
+  };
+  const out: AutoInputSuggestion[] = [];
+  if (total >= ROLL_CATCH_MIN_MOTIONS) {
+    const avg = averageDifficulty(list, sIdx, junior, apparatus);
+    if (avg >= ROLL_CATCH_MIN_AVG - 1e-9)
+      out.push(
+        suggestion("roll-catch", [motionItem(ROLL_MOTION_ID), catchItem]),
+      );
+  }
+  // 第一候補（または転がりの次）はキャッチ。候補がすでにキャッチ1つだけならそれを使う
+  if (core[0]?.items.length === 1 && core[0].items[0].kind === "catch")
+    out.push(...core);
+  else out.push(suggestion("catch", [catchItem]), ...core);
+  return out;
 }
 
 /** 直近の（まだキャッチされていない）投げが横投げか。投げアイテムも技の最中の投げも見る */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoInputSuggestions } from "../autoInput";
+import { autoInputSuggestions, averageDifficulty } from "../autoInput";
 import type { Item, Series } from "../types";
 
 const sk = (skillId: string, extra: Partial<Item> = {}): Item =>
@@ -24,7 +24,8 @@ describe("自動入力", () => {
 
   it("投げ→徒手3動作以上 → キャッチ→背面投げ→背面キャッチ（シェネ×2→前転でも）", () => {
     const s = ser(th, mo("chene", 2), mo("fwd_roll"));
-    const [g] = autoInputSuggestions([s], 0);
+    // 前転で終わる場合は第一候補が単独のキャッチで、キャッチ→投げ→キャッチは別案
+    const g = autoInputSuggestions([s], 0)[1];
     expect(g.label).toBe("キャッチ→投げ→キャッチ");
     expect(g.items[1]).toMatchObject({ kind: "throw", throwTypes: ["noview"] });
     expect(g.items[2]).toMatchObject({ kind: "catch", catchTypes: ["noview"] });
@@ -103,7 +104,8 @@ describe("自動入力", () => {
   it("投げのシリーズのあとに投げを足す：投げタン未達成なら平均難度に応じて勧める", () => {
     // 平均 B(0.2) → 前宙→前転→キャッチ
     const prev = ser(th, mo("chene"), ct);
-    expect(labels([prev, ser(th)], 1)).toEqual(["前宙→前転→キャッチ", "側宙→キャッチ"]);
+    const tumB = ser(sk("a_roundoff"), sk("b_backsalto"));
+    expect(labels([prev, tumB, ser(th)], 2)).toEqual(["前宙→前転→キャッチ", "側宙→キャッチ"]);
     // 平均 0.3超〜0.5→ 前宙→側宙→キャッチ
     const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
     expect(labels([prev, mid, mid, ser(th)], 3)).toEqual(["前宙→側宙→キャッチ"]);
@@ -114,13 +116,20 @@ describe("自動入力", () => {
       "前方宙返り1回ひねり→側宙→キャッチ",
     ]);
     // 0.5超〜0.7未満 → 前方1回ひねり→前転→キャッチ
-    expect(labels([hard, hard, hard, mid, prev, ser(th)], 5)).toEqual(["前方宙返り1回ひねり→前転→キャッチ"]);
+    const hard2 = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"));
+    expect(labels([hard, hard2, ser(th, mo("chene", 2), ct), ser(th)], 3)).toEqual([
+      "前方宙返り1回ひねり→前転→キャッチ",
+    ]);
   });
 
   it("投げタン達成済み・最初の投げ・シリーズの途中の投げでは勧めない", () => {
     const tum = ser(th, sk("b_front"), ct);
     expect(ids([tum, ser(th)], 1).some((i) => i.startsWith("throwTumbling"))).toBe(false);
     expect(ids([ser(th)], 0)).toEqual([]);
+    // 投げ未実施（タンブリングだけ）／タンブリング未実施（投げだけ）でも勧めない
+    const tumB = ser(sk("a_roundoff"), sk("b_backsalto"));
+    expect(ids([tumB, ser(th)], 1)).toEqual([]);
+    expect(ids([ser(th, mo("chene"), ct), ser(th)], 1)).toEqual([]);
     expect(ids([ser(sk("a_roundoff")), ser(th)], 1)).toEqual([]);
   });
 
@@ -156,5 +165,34 @@ describe("自動入力", () => {
     expect(n.items[0]).toMatchObject({ kind: "catch", catchTypes: [] });
     const [st] = autoInputSuggestions([ser(side, mo("chene", 3))], 0, false, "stick");
     expect(st.items[0]).toMatchObject({ kind: "catch", catchTypes: [] });
+  });
+
+  it("投げている間に前転：第一候補はキャッチ。3動作以上かつ平均0.5以上なら 転がり→キャッチ", () => {
+    // 2動作（シェネ→前転）：キャッチだけ
+    expect(labels([ser(th, mo("chene"), mo("fwd_roll"))], 0)).toEqual(["キャッチ"]);
+    // 3動作でも平均が低い（構成が空）→ キャッチ が先、続けて従来の キャッチ→投げ→キャッチ
+    expect(labels([ser(th, mo("chene", 2), mo("fwd_roll"))], 0)).toEqual(["キャッチ", "キャッチ→投げ→キャッチ"]);
+    // 平均0.5以上（D難度のタンブリング）→ 転がり→キャッチ が第一候補
+    const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
+    const s = ser(th, mo("chene", 2), mo("fwd_roll"));
+    expect(labels([mid, s], 1)).toEqual(["転がり→キャッチ", "キャッチ", "キャッチ→投げ→キャッチ"]);
+    // 動作が足りなければ平均が高くても 転がり は出ない
+    expect(labels([mid, ser(th, mo("fwd_roll"))], 1)).toEqual(["キャッチ"]);
+  });
+
+  it("平均難度は有効なユニットだけ：重複・上位3つ外・連続投げの2回目は数えない", () => {
+    const cur = ser(th);
+    const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto"));
+    const hard2 = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"));
+    const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
+    const low = ser(sk("a_roundoff"), sk("b_backsalto"));
+    const avg = (l: Series[]) => averageDifficulty(l, l.length - 1, false, "clubs");
+    // 重複シリーズは数えない
+    expect(avg([hard, hard, cur])).toBeCloseTo(0.7);
+    // 難度の高い上位3つの平均（0.2 の低難度は外れる）。低難度の投げを足しても下がらない
+    expect(avg([hard, hard2, mid, ser(th, mo("chene"), ct), cur])).toBeCloseTo((0.7 + 0.7 + 0.5) / 3);
+    expect(avg([hard, hard2, mid, low, cur])).toBeCloseTo((0.7 + 0.7 + 0.5) / 3);
+    // 同じシリーズの2つ目の投げは数えない（1つ目 縦3動作E 0.7 だけ）
+    expect(avg([ser(th, mo("mv3"), ct, th, mo("chene"), ct), cur])).toBeCloseTo(0.7);
   });
 });
