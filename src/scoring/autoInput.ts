@@ -342,7 +342,11 @@ function coreSuggestions(
   // テンポのあと：①平均難度に応じた宙返り→前宙 ②三宙を実施済みならバク転
   if (isTempoSalto(lastId)) {
     const avg = averageDifficulty(list, sIdx, junior, apparatus);
-    const twist = avg <= TEMPO_AVG_LOW_MAX + eps ? TEMPO_LOW : avg <= TEMPO_AVG_MID_MAX + eps ? TEMPO_MID : TEMPO_HIGH;
+    let twist = avg <= TEMPO_AVG_LOW_MAX + eps ? TEMPO_LOW : avg <= TEMPO_AVG_MID_MAX + eps ? TEMPO_MID : TEMPO_HIGH;
+    // 二回半は、ほかのタンブリングですでに実施していたら（同じ技は難度に数えない）一回半にする
+    const doneElsewhere = (id: string) =>
+      list.some((s2, i) => i !== sIdx && s2.items.some((it) => it.kind === "skill" && it.skillId === id));
+    if (twist === TEMPO_HIGH && doneElsewhere(buildTwistSkillId(TEMPO_HIGH))) twist = TEMPO_MID;
     const out = [suggestion("tempo-salto-front", [skillItem(buildTwistSkillId(twist)), skillItem(FRONT_ID)])];
     if (hasSalto3) out.push(suggestion("tempo-flicflac", [skillItem(FLICFLAC_ID)]));
     return out;
