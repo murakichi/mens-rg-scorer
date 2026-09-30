@@ -5,7 +5,7 @@
 // 採点には一切触れず、つなぎ・三宙の達成状況だけ `seriesTags` から読む。
 // =====================================================================
 
-import { DIFF_VALUE, ROUNDOFF_SKILL_ID, USE_APPARATUS_TAG, skillDef } from "./constants";
+import { DIFF_SCORE, DIFF_VALUE, ROUNDOFF_SKILL_ID, USE_APPARATUS_TAG, buildTwistSkillId, skillDef } from "./constants";
 import { motionDef, motionTimes, prevSkillId, seriesTags, analyzeSeries, thrownCount } from "./analysis";
 import { CHAIN_END_SKILLS, endsFacingBackward, THROW_ROLL_MOTION } from "./tumblingChain";
 import { itemLabel } from "./templates";
@@ -27,6 +27,13 @@ export const PRESS_CATCH_FROM_THROW = 5;
 const TUMBLING_REQUIRED_KEYS = ["dir", "throwTum", "triple", "connect", "tumCount"];
 const CHENE_ID = "chene";
 const ROLL_MOTION_IDS = [THROW_ROLL_MOTION, "roll"];
+
+/** 投げタンをおすすめするときの、構成全体の平均難度点の境目（この値以下ならその段） */
+export const THROW_TUM_AVG_FRONT_ROLL_MAX = 0.3;
+export const THROW_TUM_AVG_FRONT_SIDE_MAX = 0.4;
+/** この値以上なら伸身前宙。間（0.4超〜0.7未満）は前宙→側宙 */
+export const THROW_TUM_AVG_LAYOUT_MIN = 0.7;
+const FRONT_LAYOUT_ID = buildTwistSkillId({ base: "front", twist: 0, posture: "layout" });
 
 export interface AutoInputSuggestion {
   /** 候補の識別子（同じ候補が続けて出ているかの判定・テスト用） */
@@ -76,6 +83,26 @@ export function autoInputSuggestions(
   const n = items.length;
   const last = items[n - 1];
   if (!last) return [];
+
+  // ---- 投げのシリーズのあとに投げを足したとき：投げタン未達成なら平均難度に合わせて勧める ----
+  if (
+    n === 1 &&
+    last.kind === "throw" &&
+    list.slice(0, sIdx).some((s2) => s2.items.some((it) => it.kind === "throw")) &&
+    !list.some((s2) => analyzeSeries(s2, junior).units.some((u) => u.isThrowTumbling))
+  ) {
+    const scores = list.filter((_, i) => i !== sIdx).flatMap((s2) => analyzeSeries(s2, junior).units.map((u) => DIFF_SCORE[u.finalDiff]));
+    const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+    const catchItem: Item = { kind: "catch", catchTypes: [], catchTwo: false };
+    const eps = 1e-9;
+    const tail =
+      avg <= THROW_TUM_AVG_FRONT_ROLL_MAX + eps
+        ? [skillItem(FRONT_ID), motionItem(THROW_ROLL_MOTION)]
+        : avg >= THROW_TUM_AVG_LAYOUT_MIN - eps
+          ? [skillItem(FRONT_LAYOUT_ID), motionItem(THROW_ROLL_MOTION)]
+          : [skillItem(FRONT_ID), skillItem(SIDE_SALTO_ID)];
+    return [suggestion("throwTumbling", [...tail, catchItem])];
+  }
 
   // ---- 投げまわり ----
   if (last.kind === "skill" && last.skillId) {

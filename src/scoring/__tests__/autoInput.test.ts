@@ -99,4 +99,23 @@ describe("自動入力", () => {
     expect(autoInputSuggestions([chene], 0, false, "rope")).toEqual([]);
     expect(autoInputSuggestions([...tumbling, chene], 4, false, "stick").map((s) => s.id)).not.toContain("ropeNonHandCatch");
   });
+
+  it("投げのシリーズのあとに投げを足す：投げタン未達成なら平均難度に応じて勧める", () => {
+    // 平均 B(0.2) → 前宙→前転→キャッチ
+    const prev = ser(th, mo("chene"), ct);
+    expect(labels([prev, ser(th)], 1)).toEqual(["前宙→前転→キャッチ"]);
+    // C の側宙終わりの塊（平均 0.4 台）→ 前宙→側宙→キャッチ
+    const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
+    expect(labels([prev, mid, mid, ser(th)], 3)).toEqual(["前宙→側宙→キャッチ"]);
+    // 平均 0.7 以上 → 伸身前宙→前転→キャッチ
+    const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto"));
+    expect(labels([hard, ser(th, mo("mv3"), ct), ser(th)], 2)[0]).toBe("伸身前宙→前転→キャッチ");
+  });
+
+  it("投げタン達成済み・最初の投げ・シリーズの途中の投げでは勧めない", () => {
+    const tum = ser(th, sk("b_front"), ct);
+    expect(ids([tum, ser(th)], 1)).not.toContain("throwTumbling");
+    expect(ids([ser(th)], 0)).toEqual([]);
+    expect(ids([ser(sk("a_roundoff")), ser(th)], 1)).toEqual([]);
+  });
 });
