@@ -141,4 +141,20 @@ describe("自動入力", () => {
     expect(autoInputSuggestions([ser(side)], 0, false, "stick")).toEqual([]);
     expect(autoInputSuggestions([ser(th)], 0, false, "clubs")).toEqual([]);
   });
+
+  it("クラブ・リングの横投げでキャッチが候補に挙がるとき、そのキャッチは手具を使ったキャッチ", () => {
+    const side: Item = { kind: "throw", throwTypes: ["side"], reqTypes: [] };
+    // 徒手3動作以上 → キャッチ→投げ→キャッチ の最初のキャッチ
+    const [g] = autoInputSuggestions([ser(side, mo("chene", 3))], 0, false, "clubs");
+    expect(g.items[0]).toMatchObject({ kind: "catch", catchTypes: ["useapp"] });
+    // 技の最中の横投げ → 前転→手具を使ったキャッチ
+    const inSkill = sk("b_front", { isThrow: true, throwTypes: ["side"] });
+    const [h] = autoInputSuggestions([ser(inSkill)], 0, false, "ring");
+    expect(h.items[1]).toMatchObject({ kind: "catch", catchTypes: ["useapp"] });
+    // 横投げでなければ通常のキャッチ／スティックは対象外
+    const [n] = autoInputSuggestions([ser(th, mo("chene", 3))], 0, false, "clubs");
+    expect(n.items[0]).toMatchObject({ kind: "catch", catchTypes: [] });
+    const [st] = autoInputSuggestions([ser(side, mo("chene", 3))], 0, false, "stick");
+    expect(st.items[0]).toMatchObject({ kind: "catch", catchTypes: [] });
+  });
 });

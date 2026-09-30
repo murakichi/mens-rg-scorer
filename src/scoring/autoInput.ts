@@ -5,9 +5,27 @@
 // 採点には一切触れず、つなぎ・三宙の達成状況だけ `seriesTags` から読む。
 // =====================================================================
 
-import { DIFF_SCORE, DIFF_VALUE, ROUNDOFF_SKILL_ID, SIDE_THROW_TAG, USE_APPARATUS_TAG, skillDef } from "./constants";
-import { motionDef, motionTimes, prevSkillId, seriesTags, analyzeSeries, thrownCount } from "./analysis";
-import { CHAIN_END_SKILLS, endsFacingBackward, THROW_ROLL_MOTION } from "./tumblingChain";
+import {
+  DIFF_SCORE,
+  DIFF_VALUE,
+  ROUNDOFF_SKILL_ID,
+  SIDE_THROW_TAG,
+  USE_APPARATUS_TAG,
+  skillDef,
+} from "./constants";
+import {
+  motionDef,
+  motionTimes,
+  prevSkillId,
+  seriesTags,
+  analyzeSeries,
+  thrownCount,
+} from "./analysis";
+import {
+  CHAIN_END_SKILLS,
+  endsFacingBackward,
+  THROW_ROLL_MOTION,
+} from "./tumblingChain";
 import { itemLabel } from "./templates";
 import { NO_VIEW_TAG } from "./autoThrows";
 import { computeScore } from "./score";
@@ -27,7 +45,13 @@ export const HAND_MOTIONS_FOR_REPEAT_THROW = 3;
 /** この本数目以降の投げは、前転・転がりで終わったら手具を使ったキャッチ（クラブ・リング） */
 export const PRESS_CATCH_FROM_THROW = 5;
 /** 「タンブリングをすべて満たしている」とみなす必須要素のキー（score.ts の `required`） */
-const TUMBLING_REQUIRED_KEYS = ["dir", "throwTum", "triple", "connect", "tumCount"];
+const TUMBLING_REQUIRED_KEYS = [
+  "dir",
+  "throwTum",
+  "triple",
+  "connect",
+  "tumCount",
+];
 const CHENE_ID = "chene";
 const ROLL_MOTION_IDS = [THROW_ROLL_MOTION, "roll"];
 
@@ -46,7 +70,12 @@ export interface AutoInputSuggestion {
   items: Item[];
 }
 
-const skillItem = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: false, isThrow: false });
+const skillItem = (skillId: string): Item => ({
+  kind: "skill",
+  skillId,
+  hasApparatus: false,
+  isThrow: false,
+});
 const motionItem = (motionId: string): Item => ({ kind: "motion", motionId });
 const suggestion = (id: string, items: Item[]): AutoInputSuggestion => ({
   id,
@@ -56,7 +85,10 @@ const suggestion = (id: string, items: Item[]): AutoInputSuggestion => ({
 
 /** 投げ→(徒手)→キャッチの後に、前転で受けにいく決まりの続き */
 const rollThenCatch = (id: string): AutoInputSuggestion =>
-  suggestion(id, [motionItem(THROW_ROLL_MOTION), { kind: "catch", catchTypes: [], catchTwo: false }]);
+  suggestion(id, [
+    motionItem(THROW_ROLL_MOTION),
+    { kind: "catch", catchTypes: [], catchTwo: false },
+  ]);
 
 /** 直近の投げ（まだキャッチされていない）の位置。無ければ -1 */
 function openThrowIndex(items: Item[]): number {
@@ -73,7 +105,7 @@ function openThrowIndex(items: Item[]): number {
  * @param list 構成全体（つなぎ・三宙が「未達成」かはルーティン全体で見る）
  * @param sIdx いま入力しているシリーズ
  */
-export function autoInputSuggestions(
+function baseSuggestions(
   list: Series[],
   sIdx: number,
   junior = false,
@@ -90,8 +122,12 @@ export function autoInputSuggestions(
   const routineAverage = (): number => {
     const scores = list
       .filter((_, i) => i !== sIdx)
-      .flatMap((s2) => analyzeSeries(s2, junior).units.map((u) => DIFF_SCORE[u.finalDiff]));
-    return scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+      .flatMap((s2) =>
+        analyzeSeries(s2, junior).units.map((u) => DIFF_SCORE[u.finalDiff]),
+      );
+    return scores.length
+      ? scores.reduce((a, b) => a + b, 0) / scores.length
+      : 0;
   };
   const eps = 1e-9;
 
@@ -102,20 +138,36 @@ export function autoInputSuggestions(
     (last.throwTypes || []).includes(SIDE_THROW_TAG) &&
     thrownCount(last) === 1
   ) {
-    return [suggestion("sideThrow-pressCatch", [{ kind: "catch", catchTypes: [USE_APPARATUS_TAG], catchTwo: false }])];
+    return [
+      suggestion("sideThrow-pressCatch", [
+        { kind: "catch", catchTypes: [USE_APPARATUS_TAG], catchTwo: false },
+      ]),
+    ];
   }
 
   // ---- 投げのシリーズのあとに投げを足したとき：投げタン未達成なら平均難度に合わせて勧める ----
   if (
     n === 1 &&
     last.kind === "throw" &&
-    list.slice(0, sIdx).some((s2) => s2.items.some((it) => it.kind === "throw")) &&
-    !list.some((s2) => analyzeSeries(s2, junior).units.some((u) => u.isThrowTumbling))
+    list
+      .slice(0, sIdx)
+      .some((s2) => s2.items.some((it) => it.kind === "throw")) &&
+    !list.some((s2) =>
+      analyzeSeries(s2, junior).units.some((u) => u.isThrowTumbling),
+    )
   ) {
     const avg = routineAverage();
     const catchItem: Item = { kind: "catch", catchTypes: [], catchTwo: false };
-    const rollTail = (first: string) => [skillItem(first), motionItem(THROW_ROLL_MOTION), catchItem];
-    const twistSide = [skillItem(FRONT_TWIST_ID), skillItem(SIDE_SALTO_ID), catchItem];
+    const rollTail = (first: string) => [
+      skillItem(first),
+      motionItem(THROW_ROLL_MOTION),
+      catchItem,
+    ];
+    const twistSide = [
+      skillItem(FRONT_TWIST_ID),
+      skillItem(SIDE_SALTO_ID),
+      catchItem,
+    ];
     const options: [string, Item[]][] =
       avg <= THROW_TUM_AVG_FRONT_ROLL_MAX + eps
         ? [
@@ -123,14 +175,21 @@ export function autoInputSuggestions(
             ["side", [skillItem(SIDE_SALTO_ID), catchItem]],
           ]
         : avg <= THROW_TUM_AVG_FRONT_SIDE_MAX + eps
-          ? [["front-side", [skillItem(FRONT_ID), skillItem(SIDE_SALTO_ID), catchItem]]]
+          ? [
+              [
+                "front-side",
+                [skillItem(FRONT_ID), skillItem(SIDE_SALTO_ID), catchItem],
+              ],
+            ]
           : avg < THROW_TUM_AVG_LAYOUT_MIN - eps
             ? [["front1twist-roll", rollTail(FRONT_TWIST_ID)]]
             : [
                 ["frontLayout1twist-roll", rollTail(FRONT_LAYOUT_ID_TWIST)],
                 ["front1twist-side", twistSide],
               ];
-    return options.map(([id, items2]) => suggestion(`throwTumbling-${id}`, items2));
+    return options.map(([id, items2]) =>
+      suggestion(`throwTumbling-${id}`, items2),
+    );
   }
 
   // ---- 平均難度が高いときの 投げ→前宙 → きりもみ転回→キャッチ ----
@@ -140,14 +199,22 @@ export function autoInputSuggestions(
     items[n - 2]?.kind === "throw" &&
     routineAverage() >= THROW_TUM_AVG_LAYOUT_MIN - eps
   ) {
-    return [suggestion("throwFront-kirimomiten", [skillItem(KIRIMOMI_TEN_ID), { kind: "catch", catchTypes: [], catchTwo: false }])];
+    return [
+      suggestion("throwFront-kirimomiten", [
+        skillItem(KIRIMOMI_TEN_ID),
+        { kind: "catch", catchTypes: [], catchTwo: false },
+      ]),
+    ];
   }
 
   // ---- 投げまわり ----
   if (last.kind === "skill" && last.skillId) {
     // 宙返り中に投げを選んだ／投げ→伸身前方宙返り1回ひねり → 前転→キャッチ
     if (last.isThrow) return [rollThenCatch("throwInSkill-roll")];
-    if (last.skillId === FRONT_LAYOUT_TWIST_ID && items[n - 2]?.kind === "throw") {
+    if (
+      last.skillId === FRONT_LAYOUT_TWIST_ID &&
+      items[n - 2]?.kind === "throw"
+    ) {
       return [rollThenCatch("throwFrontLayoutTwist-roll")];
     }
   }
@@ -161,7 +228,11 @@ export function autoInputSuggestions(
     // ロープ：タンブリングの必須要素が揃っていれば、シェネのあとは手以外のキャッチ（足で受ける）
     if (apparatus === "rope" && t >= 0 && last.motionId === CHENE_ID) {
       if (tumblingComplete()) {
-        return [suggestion("ropeNonHandCatch", [{ kind: "catch", catchTypes: ["nonhand"], catchTwo: false }])];
+        return [
+          suggestion("ropeNonHandCatch", [
+            { kind: "catch", catchTypes: ["nonhand"], catchTwo: false },
+          ]),
+        ];
       }
     }
     // クラブ・リングの5本目以降の投げが前転・転がりで終わるなら、もう一方の手具で押さえて受ける
@@ -172,21 +243,39 @@ export function autoInputSuggestions(
       thrownCount(items[t]) === 1 &&
       tumblingComplete()
     ) {
-      const isThrowItem = (it: Item) => it.kind === "throw" || (it.kind === "skill" && it.isThrow);
-      const before = list.slice(0, sIdx).reduce((n2, s2) => n2 + s2.items.filter(isThrowItem).length, 0);
+      const isThrowItem = (it: Item) =>
+        it.kind === "throw" || (it.kind === "skill" && it.isThrow);
+      const before = list
+        .slice(0, sIdx)
+        .reduce((n2, s2) => n2 + s2.items.filter(isThrowItem).length, 0);
       const nth = before + items.slice(0, t + 1).filter(isThrowItem).length;
       if (nth >= PRESS_CATCH_FROM_THROW) {
-        return [suggestion("pressCatch", [{ kind: "catch", catchTypes: [USE_APPARATUS_TAG], catchTwo: false }])];
+        return [
+          suggestion("pressCatch", [
+            { kind: "catch", catchTypes: [USE_APPARATUS_TAG], catchTwo: false },
+          ]),
+        ];
       }
     }
     if (t >= 0 && items.slice(t + 1).every((it) => it.kind === "motion")) {
       const total = items
         .slice(t + 1)
-        .reduce((sum, it) => sum + (it.kind === "motion" ? (motionDef(it.motionId)?.motions ?? 0) * motionTimes(it.count) : 0), 0);
+        .reduce(
+          (sum, it) =>
+            sum +
+            (it.kind === "motion"
+              ? (motionDef(it.motionId)?.motions ?? 0) * motionTimes(it.count)
+              : 0),
+          0,
+        );
       if (total >= HAND_MOTIONS_FOR_REPEAT_THROW) {
         return [
           suggestion("throwHand-catchThrowBack", [
-            { kind: "catch", catchTypes: [], catchTwo: thrownCount(items[t]) === 2 },
+            {
+              kind: "catch",
+              catchTypes: [],
+              catchTwo: thrownCount(items[t]) === 2,
+            },
             { kind: "throw", throwTypes: [NO_VIEW_TAG], reqTypes: [] },
             { kind: "catch", catchTypes: [NO_VIEW_TAG], catchTwo: false },
           ]),
@@ -202,7 +291,9 @@ export function autoInputSuggestions(
   const hasSalto3 = tags.some((t) => t.includes("salto3"));
   const isForwardLanding = (id: string) => {
     const sk = skillDef(id);
-    return !!sk?.isSalto && !endsFacingBackward(id) && !CHAIN_END_SKILLS.includes(id);
+    return (
+      !!sk?.isSalto && !endsFacingBackward(id) && !CHAIN_END_SKILLS.includes(id)
+    );
   };
   const skillAt = (i: number) => {
     const it = items[i];
@@ -218,8 +309,18 @@ export function autoInputSuggestions(
     const out: AutoInputSuggestion[] = [];
     if (!hasConnect) out.push(roundoff());
     if (!hasSalto3) {
-      out.push(suggestion("front-side", [skillItem(FRONT_ID), skillItem(SIDE_SALTO_ID)]));
-      out.push(suggestion("front1twist-side", [skillItem(FRONT_TWIST_ID), skillItem(SIDE_SALTO_ID)]));
+      out.push(
+        suggestion("front-side", [
+          skillItem(FRONT_ID),
+          skillItem(SIDE_SALTO_ID),
+        ]),
+      );
+      out.push(
+        suggestion("front1twist-side", [
+          skillItem(FRONT_TWIST_ID),
+          skillItem(SIDE_SALTO_ID),
+        ]),
+      );
     }
     return out;
   }
@@ -228,11 +329,78 @@ export function autoInputSuggestions(
     const mid = skillAt(n - 2);
     if (mid && isForwardLanding(mid) && prevSkillId(items, n - 1) === mid) {
       const out: AutoInputSuggestion[] = [];
-      const maxDiff = Math.max(0, ...analyzeSeries(series, junior).units.map((u) => DIFF_VALUE[u.finalDiff]));
+      const maxDiff = Math.max(
+        0,
+        ...analyzeSeries(series, junior).units.map(
+          (u) => DIFF_VALUE[u.finalDiff],
+        ),
+      );
       if (!hasConnect && maxDiff < DIFF_VALUE.E) out.push(roundoff());
       if (!hasSalto3) out.push(suggestion("side", [skillItem(SIDE_SALTO_ID)]));
       return out;
     }
   }
   return [];
+}
+
+/** 直近の（まだキャッチされていない）投げが横投げか。投げアイテムも技の最中の投げも見る */
+function openThrowIsSide(items: Item[]): boolean {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === "catch") return false;
+    if (
+      (it.kind === "throw" || (it.kind === "skill" && it.isThrow)) &&
+      it.throwTypes?.includes(SIDE_THROW_TAG)
+    ) {
+      return true;
+    }
+    if (it.kind === "throw" || (it.kind === "skill" && it.isThrow))
+      return false;
+  }
+  return false;
+}
+
+/**
+ * 続きの候補を返す。クラブ・リングで横投げのあとにキャッチが候補に挙がるときは、
+ * そのキャッチを手具を使ったキャッチ（もう一方の手具で押さえる）にする。
+ */
+export function autoInputSuggestions(
+  list: Series[],
+  sIdx: number,
+  junior = false,
+  apparatus: ApparatusKey = "stick",
+): AutoInputSuggestion[] {
+  const base = baseSuggestions(list, sIdx, junior, apparatus);
+  const items = list[sIdx]?.items ?? [];
+  if (
+    (apparatus !== "clubs" && apparatus !== "ring") ||
+    !openThrowIsSide(items)
+  )
+    return base;
+  const last = items[items.length - 1];
+  // 二つ投げは、もう一方の手具も空中にあるので押さえられない
+  if (
+    last &&
+    thrownCount(
+      items
+        .slice()
+        .reverse()
+        .find(
+          (it) => it.kind === "throw" || (it.kind === "skill" && it.isThrow),
+        ) ?? last,
+    ) === 2
+  ) {
+    return base;
+  }
+  return base.map((sg) => {
+    const k = sg.items.findIndex((it) => it.kind === "catch");
+    if (k < 0) return sg;
+    const next = sg.items.slice();
+    next[k] = {
+      kind: "catch",
+      catchTypes: [USE_APPARATUS_TAG],
+      catchTwo: false,
+    };
+    return { ...sg, items: next };
+  });
 }
