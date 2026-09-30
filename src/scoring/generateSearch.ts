@@ -175,36 +175,45 @@ export function orderSeries(
     ordered =
       tumbling.length >= throws.length ? interleave(tumbling, throws) : interleave(throws, tumbling);
   ordered = finishCatchLast(ordered, opts.apparatus);
-  ordered = throwTumblingToFront(ordered, opts.apparatus, junior, future);
+  ordered = throwTumblingToFront(ordered, opts.apparatus, junior, future, opts.random ?? Math.random);
   if (ordered === used) return { used, ev: cur };
   const ev = evaluateUsed(ordered, opts);
   return ev.value >= cur.value - 1e-9 ? { used: ordered, ev } : { used, ev: cur };
 }
 
-/** 投げタンを置きたい位置（0始まり。3つ目のシリーズ） */
-export const THROW_TUMBLING_POSITION = 2;
+/** 投げタンを置く位置の候補（0始まり。3つ目と4つ目のシリーズ） */
+export const THROW_TUMBLING_POSITIONS = [2, 3];
 
 /**
  * 投げタンは演技の前半（3〜4つ目のシリーズ）で実施することが多いので、
- * 投げタンのシリーズを3つ目に寄せる（並びで点数は変わらない）。
- * 締めのキャッチで終わるシリーズを最後に置いているときは、その位置を空けたままにする。
+ * 投げタンのシリーズを3つ目か4つ目に寄せる（どちらかは乱数で決める。並びで点数は変わらない）。
+ * 宙返りの最中に投げる投げタンは、最初のタンブリングで実施することもあるので、
+ * 最初のタンブリングの位置も置き場所の候補に入れる。
+ * 投げとタンブリングの交互の並びを崩さないよう、そこにある**タンブリングのシリーズと入れ替える**
+ * （投げのシリーズは動かさない）。すでに3〜4つ目にあるときや、入れ替え先が無いときはそのまま。
+ * 締めのキャッチで終わるシリーズを最後に置いているときは、その位置には触れない。
  */
 export function throwTumblingToFront(
   list: SeriesTemplate[],
   apparatus: ApparatusKey,
   junior: boolean,
   future: FutureLevel = null,
+  random: () => number = Math.random,
 ): SeriesTemplate[] {
   const idx = list.findIndex((t) => analyzeSeries(t.series, junior, future).units.some((u) => u.isThrowTumbling));
   if (idx < 0) return list;
   const lastFinish = !!FINISH_CATCH_TAG[apparatus] && endsWithFinishCatch(list[list.length - 1].series, apparatus);
-  // 締めのシリーズ自身が投げタンなら、そのまま最後に置いておく
-  if (lastFinish && idx === list.length - 1) return list;
   const movable = lastFinish ? list.length - 1 : list.length;
-  const target = Math.min(THROW_TUMBLING_POSITION, movable - 1);
-  if (idx === target) return list;
-  const rest = list.filter((_, i) => i !== idx);
-  return [...rest.slice(0, target), list[idx], ...rest.slice(target)];
+  const throwsInSkill = list[idx].series.items.some((it) => it.kind === "skill" && it.isThrow);
+  const firstTumbling = list.findIndex((t) => isTumblingSeries(t.series, junior, future));
+  const places = [...THROW_TUMBLING_POSITIONS, ...(throwsInSkill ? [firstTumbling] : [])];
+  if (idx >= movable || places.includes(idx)) return list;
+  const targets = [...new Set(places)].filter((p) => p < movable && isTumblingSeries(list[p].series, junior, future));
+  if (targets.length === 0) return list;
+  const target = targets[Math.floor(random() * targets.length)];
+  const out = [...list];
+  [out[idx], out[target]] = [out[target], out[idx]];
+  return out;
 }
 
 /**
