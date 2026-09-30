@@ -23,7 +23,6 @@ import {
   legacyMotionDef,
   HANDS_TYPES,
   DEFAULT_HANDS_TYPE,
-  ROPE_JUMPS,
   POSTURE_OPTIONS,
   TWIST_BASES,
   twistOptions,
@@ -415,28 +414,8 @@ function ItemEditor({
       </>
     );
   }
-  if (item.kind === "ropeJump") {
-    return (
-      <>
-        <select className="select" value={item.jumpId} onChange={(e) => onUpdate({ jumpId: e.target.value })}>
-          <option value="">ロープ跳び</option>
-          {ROPE_JUMPS.map((j) => (
-            <option key={j.id} value={j.id}>
-              {j.name}（{j.difficulty}）
-            </option>
-          ))}
-        </select>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={item.isMoving6m || false}
-            onChange={(e) => onUpdate({ isMoving6m: e.target.checked })}
-          />
-          6m以上移動
-        </label>
-      </>
-    );
-  }
+  // ロープ跳びは徒手・構成タブの跳びリストで入力する（旧データは読み込み時にそちらへ移す）
+  if (item.kind === "ropeJump") return null;
   // motion
   const options = motionOptionsFor(prevMotionId);
   const motionOpt = options.find((m) => m.id === item.motionId);
@@ -805,11 +784,6 @@ export function SeriesCard({
         <button className="add-btn-sm" onClick={() => onAddItem("motion")}>
           ＋ 徒手動作
         </button>
-        {!common && apparatus === "rope" && (
-          <button className="add-btn-sm" onClick={() => onAddItem("ropeJump")}>
-            ＋ ロープ跳び
-          </button>
-        )}
         <button className="add-btn-sm" onClick={() => onAddItem("catch")}>
           ＋ キャッチ
         </button>

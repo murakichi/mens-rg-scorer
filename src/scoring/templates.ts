@@ -5,7 +5,7 @@
 // 保持するのは入力データ（Series / Series[] と手具）だけ。
 // =====================================================================
 
-import { APPARATUS, DIFF_VALUE, HAND_MOTIONS, MOTION_OPTIONS, VALUE_DIFF, ropeJumpDef, skillDef } from "./constants";
+import { APPARATUS, DIFF_VALUE, HAND_MOTIONS, MOTION_OPTIONS, VALUE_DIFF, resolveRopeJump, skillDef } from "./constants";
 import { computeScore } from "./score";
 import type { ApparatusKey, Difficulty, FutureLevel, Item, Series } from "./types";
 
@@ -233,7 +233,11 @@ export function itemLabel(item: Item): string {
   if (item.kind === "throw") return "投げ";
   if (item.kind === "catch") return "キャッチ";
   if (item.kind === "skill") return skillDef(item.skillId)?.name ?? "技";
-  if (item.kind === "ropeJump") return ropeJumpDef(item.jumpId)?.name ?? "ロープ跳び";
+  if (item.kind === "ropeJump") {
+    const r = resolveRopeJump(item);
+    if (!r) return "ロープ跳び";
+    return `${r.def.name}${r.cross ? "・クロス" : ""}${r.count > 1 ? `×${r.count}` : ""}`;
+  }
   const m = MOTION_OPTIONS.find((o) => o.id === item.motionId) ?? HAND_MOTIONS.find((x) => x.id === item.motionId);
   const name = m?.name ?? skillDef(item.motionId)?.name ?? "徒手";
   const n = Number(item.count);

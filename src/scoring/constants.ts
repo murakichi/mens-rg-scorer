@@ -633,38 +633,96 @@ export const TEAM_SAMEDIFF_BONUS = { d: 0.1, e: 0.2 } as const;
 export interface RopeJump {
   id: string;
   name: string;
-  difficulty: Difficulty;
   rotations: number;
   direction: "front" | "back";
 }
 
+/**
+ * ロープ跳びの選択肢は「何重跳びか × 前／後ろ」だけ。クロスの有無と跳んだ回数は
+ * `RopeJumpItem` の `cross` / `count` で入力し、難度は `ropeJumpDifficulty` が §3.5.5.3 の表から引く
+ * （3重跳び2回・連続3回以上・4重跳び連続2回以上は「回数」として表せるので選択肢に持たない）。
+ */
 export const ROPE_JUMPS: RopeJump[] = [
-  { id: "1f", name: "1重跳び（前）", difficulty: "A", rotations: 1, direction: "front" },
-  { id: "1b", name: "1重跳び（後ろ）", difficulty: "A", rotations: 1, direction: "back" },
-  { id: "2f", name: "2重跳び（前）", difficulty: "A", rotations: 2, direction: "front" },
-  { id: "2fc", name: "2重跳び（前・クロス）", difficulty: "B", rotations: 2, direction: "front" },
-  { id: "2b", name: "2重跳び（後ろ）", difficulty: "B", rotations: 2, direction: "back" },
-  { id: "2bc", name: "2重跳び（後ろ・クロス）", difficulty: "C", rotations: 2, direction: "back" },
-  { id: "3f", name: "3重跳び（前）", difficulty: "B", rotations: 3, direction: "front" },
-  { id: "3fc", name: "3重跳び（前・クロス）", difficulty: "C", rotations: 3, direction: "front" },
-  { id: "3b", name: "3重跳び（後ろ）", difficulty: "C", rotations: 3, direction: "back" },
-  { id: "3bc", name: "3重跳び（後ろ・クロス）", difficulty: "D", rotations: 3, direction: "back" },
-  { id: "3x2f", name: "3重跳び2回（前）", difficulty: "C", rotations: 3, direction: "front" },
-  { id: "3x2fc", name: "3重跳び2回（前・クロス）", difficulty: "C", rotations: 3, direction: "front" },
-  { id: "3x2b", name: "3重跳び2回（後ろ）", difficulty: "D", rotations: 3, direction: "back" },
-  { id: "3x2bc", name: "3重跳び2回（後ろ・クロス）", difficulty: "D", rotations: 3, direction: "back" },
-  // 以下3種は難度判定で前後を区別しない（規則表では後ろの列にのみ記載）。
-  // 前後の別は §3.2(3) の前回し／後ろ回し跳びの要求要素判定にのみ使う。
-  { id: "3x3f", name: "3重跳び連続3回以上（前）", difficulty: "D", rotations: 3, direction: "front" },
-  { id: "3x3b", name: "3重跳び連続3回以上（後ろ）", difficulty: "D", rotations: 3, direction: "back" },
-  { id: "4f", name: "4重跳び（前）", difficulty: "D", rotations: 4, direction: "front" },
-  { id: "4b", name: "4重跳び（後ろ）", difficulty: "D", rotations: 4, direction: "back" },
-  { id: "4x2f", name: "4重跳び連続2回以上（前）", difficulty: "E", rotations: 4, direction: "front" },
-  { id: "4x2b", name: "4重跳び連続2回以上（後ろ）", difficulty: "E", rotations: 4, direction: "back" },
+  { id: "1f", name: "1重跳び（前）", rotations: 1, direction: "front" },
+  { id: "1b", name: "1重跳び（後ろ）", rotations: 1, direction: "back" },
+  { id: "2f", name: "2重跳び（前）", rotations: 2, direction: "front" },
+  { id: "2b", name: "2重跳び（後ろ）", rotations: 2, direction: "back" },
+  { id: "3f", name: "3重跳び（前）", rotations: 3, direction: "front" },
+  { id: "3b", name: "3重跳び（後ろ）", rotations: 3, direction: "back" },
+  { id: "4f", name: "4重跳び（前）", rotations: 4, direction: "front" },
+  { id: "4b", name: "4重跳び（後ろ）", rotations: 4, direction: "back" },
 ];
+
+/** 旧データの id（クロス・回数を id に含んでいた選択肢）→ 今の表現 */
+const LEGACY_ROPE_JUMPS: Record<string, { base: string; cross: boolean; count: number }> = {
+  "2fc": { base: "2f", cross: true, count: 1 },
+  "2bc": { base: "2b", cross: true, count: 1 },
+  "3fc": { base: "3f", cross: true, count: 1 },
+  "3bc": { base: "3b", cross: true, count: 1 },
+  "3x2f": { base: "3f", cross: false, count: 2 },
+  "3x2fc": { base: "3f", cross: true, count: 2 },
+  "3x2b": { base: "3b", cross: false, count: 2 },
+  "3x2bc": { base: "3b", cross: true, count: 2 },
+  "3x3f": { base: "3f", cross: false, count: 3 },
+  "3x3b": { base: "3b", cross: false, count: 3 },
+  "4x2f": { base: "4f", cross: false, count: 2 },
+  "4x2b": { base: "4b", cross: false, count: 2 },
+};
 
 export function ropeJumpDef(id: string): RopeJump | undefined {
   return ROPE_JUMPS.find((x) => x.id === id);
+}
+
+/** クロスの有無が難度に効く跳びか（表でクロス列を持つのは2重・3重だけ） */
+export const ropeJumpHasCross = (rotations: number): boolean => rotations === 2 || rotations === 3;
+
+/** 跳んだ回数（未指定は1回、0以上の整数に丸める。0回は採点に数えない） */
+export const ropeJumpTimes = (count?: number): number =>
+  count === undefined ? 1 : Math.max(0, Math.floor(Number(count) || 0));
+
+export interface ResolvedRopeJump {
+  def: RopeJump;
+  cross: boolean;
+  count: number;
+}
+
+/** 入力（旧 id を含む）を、跳びの定義・クロス・回数に解決する。id が空・未知なら undefined */
+export function resolveRopeJump(item: { jumpId: string; cross?: boolean; count?: number }): ResolvedRopeJump | undefined {
+  const legacy = LEGACY_ROPE_JUMPS[item.jumpId];
+  const def = ropeJumpDef(legacy ? legacy.base : item.jumpId);
+  if (!def) return undefined;
+  if (legacy) return { def, cross: legacy.cross, count: legacy.count };
+  return { def, cross: !!item.cross && ropeJumpHasCross(def.rotations), count: ropeJumpTimes(item.count) };
+}
+
+/**
+ * §3.5.5.3 の跳びの難度表。前後・クロス・回数から引く。
+ * 表の「3回以上の連続した3重跳び」「4重跳び」「2回以上の連続した4重跳び」は前後・クロスを区別しない。
+ */
+export function ropeJumpDifficulty({ def, cross, count }: ResolvedRopeJump): Difficulty {
+  const back = def.direction === "back";
+  switch (def.rotations) {
+    case 1:
+      return "A";
+    case 2:
+      return back ? (cross ? "C" : "B") : cross ? "B" : "A";
+    case 3:
+      if (count >= 3) return "D";
+      if (count === 2) return back ? "D" : "C";
+      return back ? (cross ? "D" : "C") : cross ? "C" : "B";
+    default:
+      return count >= 2 ? "E" : "D";
+  }
+}
+
+/**
+ * 同じ跳びかどうかを決めるキー（§3.4.4：全く同じ技は難度として数えない）。
+ * 難度表の行が違えば別の技なので、回数は表の行（3重は1/2/3以上、4重は1/2以上）に丸めて入れる。
+ */
+export function ropeJumpKey(r: ResolvedRopeJump): string {
+  const row = r.def.rotations === 3 ? Math.min(r.count, 3) : r.def.rotations === 4 ? Math.min(r.count, 2) : 1;
+  const cross = r.cross && !(r.def.rotations === 3 && r.count >= 3);
+  return `${r.def.id}:${cross ? "c" : ""}:${row}`;
 }
 
 export const HAND_MOTIONS: HandMotion[] = [

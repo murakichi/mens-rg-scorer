@@ -31,8 +31,8 @@ import {
   normalizeFutureLevel,
 } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
-import { apparatusBlockers, stripForApparatus } from "../scoring/analysis";
-import type { ApparatusKey, FutureLevel, Series } from "../scoring/types";
+import { apparatusBlockers, hoistRopeJumps, stripForApparatus } from "../scoring/analysis";
+import type { ApparatusKey, FutureLevel, RopeJumpItem, Series } from "../scoring/types";
 import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
 import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
@@ -40,6 +40,7 @@ import { TemplateModal } from "./TemplateModal";
 import { GenerateModal } from "./GenerateModal";
 import { SuggestModal } from "./SuggestModal";
 import { ScoreSummary } from "./ScoreSummary";
+import { RopeJumpList } from "./RopeJumpList";
 import { useFutureUnlock } from "./useFutureUnlock";
 import {
   DRAFT_KEY_INDIVIDUAL,
@@ -50,6 +51,7 @@ import {
   normalizeIndividualDraft,
   normalizeOffBodyCount,
   normalizeHandElements,
+  normalizeRopeJumps,
   saveIndividualDraft,
   type IndividualDraft,
 } from "../scoring/draft";
@@ -80,6 +82,7 @@ interface Props {
     handOps?: unknown;
     offBodyCount?: unknown;
     handElements?: unknown;
+    ropeJumps?: unknown;
     series?: unknown;
   };
 }
@@ -120,6 +123,8 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [offBodyCount, setOffBodyCount] = useState<number>(() => init?.offBodyCount ?? 0);
   // 単独で実施した徒手系要素（跳躍・柔軟）。手具操作を伴うものが徒手系難度に入る（§3.5.5.3(1)）
   const [handElements, setHandElements] = useState<string[]>(() => init?.handElements ?? []);
+  // ロープの跳び（構成全体のリスト）。続けて並べたものが連続した跳び
+  const [ropeJumps, setRopeJumps] = useState<RopeJumpItem[]>(() => init?.ropeJumps ?? []);
   /** 画面のタブ（D＝構成の入力、A＝芸術と多様性の入力） */
   const [tab, setTab] = useState<"d" | "a">("d");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -149,6 +154,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         handOps,
         offBodyCount,
         handElements,
+        ropeJumps,
       }),
     [
       series,
@@ -163,6 +169,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
       handOps,
       offBodyCount,
       handElements,
+      ropeJumps,
     ],
   );
 
@@ -201,6 +208,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     handOps,
     offBodyCount,
     handElements,
+    ropeJumps,
   ]);
 
   /** 復元した内容を破棄して最初からにする */
@@ -217,6 +225,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setHandOps([]);
     setOffBodyCount(0);
     setHandElements([]);
+    setRopeJumps([]);
     clearDraft(DRAFT_KEY_INDIVIDUAL);
     setDraftNotice(false);
   };
@@ -243,6 +252,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     handOps,
     offBodyCount,
     handElements,
+    ropeJumps,
     series,
   });
   const handleExport = () => {
@@ -272,9 +282,12 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setHandOps(asStringArray(data.handOps).filter((id) => HAND_OP_CHECKS.some((x) => x.id === id)));
     setOffBodyCount(normalizeOffBodyCount(data.offBodyCount));
     setHandElements(normalizeHandElements(data.handElements));
+    // 旧データでシリーズの中にあったロープ跳びは、跳びリストへ移す
+    const hoisted = hoistRopeJumps(Array.isArray(data.series) ? data.series : []);
+    setRopeJumps(ap === "rope" ? normalizeRopeJumps([...(data.ropeJumps ?? []), ...hoisted.jumps]) : []);
     if (Array.isArray(data.series) && data.series.length > 0) {
       // 読み込んだ内容のうち、その手具で入力できないものは落とす
-      setSeries(stripForApparatus(data.series, ap));
+      setSeries(stripForApparatus(hoisted.series, ap));
       return true;
     }
     return false;
@@ -334,10 +347,13 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const changeApparatus = (k: ApparatusKey) => {
     if (k === apparatus) return;
     const blockers = apparatusBlockers(series, k);
+    const dropJumps = k !== "rope" && ropeJumps.length > 0;
+    if (dropJumps) blockers.push("ロープ跳び");
     if (blockers.length > 0) {
       const msg = `${APPARATUS[k].name}では入力できない内容（${blockers.join("・")}）があります。外して切り替えますか？`;
       if (!window.confirm(msg)) return;
       setSeries((p) => stripForApparatus(p, k));
+      if (dropJumps) setRopeJumps([]);
     }
     setApparatus(k);
   };
@@ -357,11 +373,17 @@ export function IndividualScorer({ initialData }: Props = {}) {
       addSeriesTemplate(templates, name, defaultTemplateApparatus([series[sIdx]], apparatus), series[sIdx]),
     );
   };
+  /** 旧テンプレートのシリーズに入っていたロープ跳びを、跳びリストの後ろへ足す（ロープのときだけ） */
+  const addHoistedJumps = (jumps: RopeJumpItem[]) => {
+    if (apparatus === "rope" && jumps.length > 0) setRopeJumps((p) => [...p, ...normalizeRopeJumps(jumps)]);
+  };
   const loadSeriesTemplate = (sIdx: number, id: string) => {
     const t = templates.series.find((x) => x.id === id);
     if (!t) return;
     // 他の手具のテンプレートを読み込んだときは、今の手具で入力できない内容を落とす
-    const [loaded] = stripForApparatus([structuredClone(t.series)], apparatus);
+    const hoisted = hoistRopeJumps([structuredClone(t.series)]);
+    addHoistedJumps(hoisted.jumps);
+    const [loaded] = stripForApparatus(hoisted.series, apparatus);
     // 実施減点は採点ごとの入力なので、読み込んでも今の値を残す
     setSeries((p) =>
       p.map((ser, i) => (i === sIdx ? { ...loaded, executionDeduction: ser.executionDeduction } : ser)),
@@ -379,13 +401,17 @@ export function IndividualScorer({ initialData }: Props = {}) {
     // 共通テンプレートは手具を選ばないので、今の手具のまま読み込む
     const ap = isCommonApparatus(t.apparatus) ? apparatus : t.apparatus;
     if (ap !== apparatus) setApparatus(ap);
-    setSeries(stripForApparatus(structuredClone(t.series), ap));
+    const hoisted = hoistRopeJumps(structuredClone(t.series));
+    setRopeJumps(ap === "rope" ? normalizeRopeJumps(hoisted.jumps) : []);
+    setSeries(stripForApparatus(hoisted.series, ap));
     setTemplateOpen(false);
   };
   const appendSeriesTemplate = (id: string) => {
     const t = templates.series.find((x) => x.id === id);
     if (!t) return;
-    setSeries((p) => [...p, ...stripForApparatus([structuredClone(t.series)], apparatus)]);
+    const hoisted = hoistRopeJumps([structuredClone(t.series)]);
+    addHoistedJumps(hoisted.jumps);
+    setSeries((p) => [...p, ...stripForApparatus(hoisted.series, apparatus)]);
     setTemplateOpen(false);
   };
   const exportTemplates = () => {
@@ -782,6 +808,10 @@ export function IndividualScorer({ initialData }: Props = {}) {
           </span>
         </div>
       </section>
+
+      {apparatus === "rope" && (
+        <RopeJumpList jumps={ropeJumps} rows={result.ropeJumpRows} onChange={setRopeJumps} />
+      )}
 
       <section className="card">
         <div className="line-head">手具操作の多様性</div>

@@ -67,12 +67,21 @@ export interface MotionItem {
   count?: number;
 }
 
+/**
+ * ロープの跳び。構成全体の跳びリスト（`SaveData.ropeJumps`、徒手・構成タブで入力）の1行で、
+ * 続けて並べたものが連続した跳びになる。旧データではシリーズの中にも入っており、
+ * 読み込み時に `hoistRopeJumps` がリストへ移す。
+ */
 export interface RopeJumpItem {
   kind: "ropeJump";
   /** ROPE_JUMPS の id */
   jumpId: string;
   /** 6m以上の移動を伴う跳びか */
   isMoving6m?: boolean;
+  /** クロスで跳んだか（2重・3重だけ難度に効く） */
+  cross?: boolean;
+  /** 跳んだ回数（未指定は1回）。3重の2回・3回以上、4重の2回以上は回数で難度が変わる。 */
+  count?: number;
 }
 
 export interface Series {
@@ -160,13 +169,11 @@ export interface HandMotion {
 export interface Unit {
   type: "tumbling" | "throw";
   isThrow: boolean;
-  /** このユニットに含まれる投げ上げの回数（タンブリング塊・ロープ跳びは0） */
+  /** このユニットに含まれる投げ上げの回数（タンブリング塊は0） */
   throwCount: number;
   skillThrow: boolean;
   /** 投げ単位かつ技を含む＝投げタン */
   isThrowTumbling?: boolean;
-  /** ロープ跳びから生成した徒手系ユニット（実際の投げ受けではない） */
-  fromRopeJump?: boolean;
   /**
    * 難度の内容を表す正規化キー。§3.4.4「全く同じ技は難度として数えない」の判定に使う。
    * 技術タグ（視野外・手以外など）は難度の内容ではないため含めない。
