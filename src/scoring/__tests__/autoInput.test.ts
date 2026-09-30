@@ -250,4 +250,28 @@ describe("自動入力", () => {
     expect(labels([ser(mo("fwd_roll"))], 0)).toEqual([]);
     expect(labels([ser(th, ct, mo("fwd_roll"))], 0)).toEqual([]);
   });
+
+  it("ダイビング前宙以外の宙返りからロンダートでつないだら、ダイビング前宙", () => {
+    expect(labels([ser(sk("a_roundoff"), sk("b_backhalf"), sk("a_roundoff"))], 0)).toEqual(["ダイビング前宙"]);
+    expect(labels([ser(sk("a_roundoff"), sk("b_backhalf"), sk("b_front"), sk("a_roundoff"))], 0)).toEqual(["ダイビング前宙"]);
+    // 宙返りの前のロンダート（入り）／ダイビング前宙からのロンダートでは出さない
+    expect(labels([ser(sk("a_roundoff"))], 0)).toEqual([]);
+    expect(labels([ser(sk("b_divefront"), sk("a_roundoff"))], 0)).toEqual([]);
+  });
+
+  it("テンポのあと：平均難度に応じた宙返り→前宙。三宙を実施済みならバク転も", () => {
+    const cur = ser(sk("a_roundoff"), sk("b_tempo"));
+    // 他のシリーズが無い（平均0）→ 低い段
+    expect(labels([cur], 0)).toEqual(["後方宙返り半ひねり→前宙"]);
+    const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
+    const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto"));
+    // 平均 0.3超〜0.5 → 後方宙返り1回半ひねり
+    expect(labels([mid, cur], 1)[0]).toBe("後方宙返り1回半ひねり→前宙");
+    // 平均 0.5超 → 後方伸身宙返り2回半ひねり
+    expect(labels([hard, cur], 1)[0]).toBe("後方伸身宙返り2回半ひねり→前宙");
+    // 三宙を実施済み（ほかのシリーズ）→ バク転も候補に
+    expect(labels([hard, cur], 1)).toEqual(["後方伸身宙返り2回半ひねり→前宙", "バク転"]);
+    // テンポ以外の技では出ない
+    expect(ids([ser(sk("a_roundoff"), sk("b_backsalto"))], 0)).toEqual([]);
+  });
 });
