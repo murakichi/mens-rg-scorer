@@ -87,10 +87,14 @@ export function autoInputSuggestions(
   }
   if (last.kind === "motion" && last.motionId) {
     const t = openThrowIndex(items);
+    /** タンブリングの必須要素がすべて揃っているか（入力し終わったとみなす） */
+    const tumblingComplete = () =>
+      computeScore(list, apparatus, { junior })
+        .required.filter((c) => TUMBLING_REQUIRED_KEYS.includes(c.key))
+        .every((c) => c.passed !== false);
     // ロープ：タンブリングの必須要素が揃っていれば、シェネのあとは手以外のキャッチ（足で受ける）
     if (apparatus === "rope" && t >= 0 && last.motionId === CHENE_ID) {
-      const r = computeScore(list, apparatus, { junior });
-      if (r.required.filter((c) => TUMBLING_REQUIRED_KEYS.includes(c.key)).every((c) => c.passed !== false)) {
+      if (tumblingComplete()) {
         return [suggestion("ropeNonHandCatch", [{ kind: "catch", catchTypes: ["nonhand"], catchTwo: false }])];
       }
     }
@@ -99,7 +103,8 @@ export function autoInputSuggestions(
       t >= 0 &&
       (apparatus === "clubs" || apparatus === "ring") &&
       ROLL_MOTION_IDS.includes(last.motionId) &&
-      thrownCount(items[t]) === 1
+      thrownCount(items[t]) === 1 &&
+      tumblingComplete()
     ) {
       const isThrowItem = (it: Item) => it.kind === "throw" || (it.kind === "skill" && it.isThrow);
       const before = list.slice(0, sIdx).reduce((n2, s2) => n2 + s2.items.filter(isThrowItem).length, 0);

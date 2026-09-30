@@ -63,16 +63,26 @@ describe("自動入力", () => {
     expect(labels([s])).toEqual(["側宙"]);
   });
 
-  it("クラブ・リングの5本目以降の投げが前転／転がりで終わる → 手具を使ったキャッチ", () => {
-    const four = ser(th, ct, th, ct, th, ct, th, ct);
+  it("クラブ・リングの5本目以降の投げが前転／転がりで終わる → 手具を使ったキャッチ（タンブリング入力済みのとき）", () => {
+    const four = ser(
+      th, ct, th, ct, th, ct, th, ct,
+      sk("a_roundoff"), sk("b_backhalf"), sk("a_roundoff"), sk("b_backhalf"),
+    );
+    const more = [
+      ser(sk("a_roundoff"), sk("b_backhalf"), sk("b_front"), sk("b_sidesalto")),
+      ser(sk("a_roundoff"), sk("b_backhalf")),
+      ser(th, sk("b_front"), ct),
+    ];
     const fifth = ser(th, mo("fwd_roll"));
-    const [g] = autoInputSuggestions([four, fifth], 1, false, "clubs");
+    const [g] = autoInputSuggestions([four, ...more, fifth], 4, false, "clubs");
     expect(g.items[0]).toMatchObject({ kind: "catch", catchTypes: ["useapp"] });
-    expect(autoInputSuggestions([four, ser(th, mo("roll"))], 1, false, "ring")[0].id).toBe("pressCatch");
+    expect(autoInputSuggestions([four, ...more, ser(th, mo("roll"))], 4, false, "ring")[0].id).toBe("pressCatch");
     // 4本目まで／スティック／他の動作では出ない
-    expect(autoInputSuggestions([ser(th, ct, th, ct, th, ct), fifth], 1, false, "clubs").map((s) => s.id)).not.toContain("pressCatch");
-    expect(autoInputSuggestions([four, fifth], 1, false, "stick").map((s) => s.id)).not.toContain("pressCatch");
-    expect(autoInputSuggestions([four, ser(th, mo("chene"))], 1, false, "clubs")).toEqual([]);
+    expect(autoInputSuggestions([ser(th, ct, th, ct, th, ct), ...more, fifth], 4, false, "clubs").map((s) => s.id)).not.toContain("pressCatch");
+    expect(autoInputSuggestions([four, ...more, fifth], 4, false, "stick").map((s) => s.id)).not.toContain("pressCatch");
+    expect(autoInputSuggestions([four, ...more, ser(th, mo("chene"))], 4, false, "clubs")).toEqual([]);
+    // タンブリングが揃っていなければ出ない
+    expect(autoInputSuggestions([four, fifth], 1, false, "clubs").map((s) => s.id)).not.toContain("pressCatch");
   });
 
   it("ロープ：タンブリングの必須要素が揃った状態でシェネ → 手以外のキャッチ", () => {
