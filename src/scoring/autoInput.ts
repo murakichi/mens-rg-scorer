@@ -45,6 +45,11 @@ const FRONT_TWIST_ID = "c_front1full";
 const KIRIMOMI_TEN_ID = "c_kirimomiten";
 /** テンポひねりの次に出す技：テンポ／ハーフ（後方宙返り半ひねり）／後方伸身宙返り2回半ひねり */
 const TEMPO_TWIST_NEXT = [TEMPO_SKILL_ID, "b_backhalf", "d_backlay25"];
+const KIRIMOMI_ID = "b_kirimomi";
+/** 後ろ向きで終わる宙返りのあと、他のシリーズの平均難度の境目（以下／超）。0.7以上できりもみ転回も出す */
+export const AFTER_BACK_NONE_MAX = 0.2;
+export const AFTER_BACK_FRONT_MAX = 0.3;
+export const AFTER_BACK_KIRIMOMI_MAX = 0.5;
 const FLICFLAC_ID = "a_flicflac";
 /** テンポのあとの「宙返り→前宙」の宙返り（前向きに降りる後方の半ひねり系）を選ぶ、他のシリーズの平均難度の境目 */
 export const TEMPO_AVG_LOW_MAX = 0.3;
@@ -362,6 +367,23 @@ function coreSuggestions(
     const twist = ladder[step];
     const out = [suggestion("tempo-salto-front", [skillItem(buildTwistSkillId(twist)), skillItem(FRONT_ID)])];
     if (hasSalto3) out.push(suggestion("tempo-flicflac", [skillItem(FLICFLAC_ID)]));
+    return out;
+  }
+
+  // 後ろ向きで終わる宙返りのあと：他のシリーズの平均難度に応じて 前宙／きりもみ／前宙→側宙／きりもみ転回
+  if (skillDef(lastId)?.isSalto && endsFacingBackward(lastId)) {
+    const avg = averageDifficulty(list, sIdx, junior, apparatus);
+    if (avg <= AFTER_BACK_NONE_MAX + eps) return [];
+    const out = [suggestion("afterBack-front", [skillItem(FRONT_ID)])];
+    if (avg > AFTER_BACK_FRONT_MAX + eps) out.push(suggestion("afterBack-kirimomi", [skillItem(KIRIMOMI_ID)]));
+    if (avg > AFTER_BACK_KIRIMOMI_MAX + eps) {
+      // 三宙が未達成で、このシリーズがつなぎでないときだけ 前宙→側宙
+      const seriesIsConnect = seriesTags(series, junior).includes("connect");
+      if (!hasSalto3 && !seriesIsConnect) {
+        out.push(suggestion("afterBack-front-side", [skillItem(FRONT_ID), skillItem(SIDE_SALTO_ID)]));
+      }
+    }
+    if (avg >= THROW_TUM_AVG_LAYOUT_MIN - eps) out.push(suggestion("afterBack-kirimomiten", [skillItem(KIRIMOMI_TEN_ID)]));
     return out;
   }
 
