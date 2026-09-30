@@ -7,6 +7,7 @@
 
 import {
   DIFF_VALUE,
+  LEFT_HAND_THROW_TAG,
   ROUNDOFF_SKILL_ID,
   SIDE_THROW_TAG,
   USE_APPARATUS_TAG,
@@ -102,6 +103,16 @@ function openThrowIndex(items: Item[]): number {
   return -1;
 }
 
+/** 手具が空中にある（投げてまだキャッチしていない）ときの、その投げの位置。技の最中の投げも含む。無ければ -1 */
+function airborneIndex(items: Item[]): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === "catch") return -1;
+    if (it.kind === "throw" || (it.kind === "skill" && it.isThrow)) return i;
+  }
+  return -1;
+}
+
 /**
  * 末尾の入力から続きの候補を返す。先頭が既定の候補で、複数あるときは「別案」で切り替える。
  * @param list 構成全体（つなぎ・三宙が「未達成」かはルーティン全体で見る）
@@ -123,6 +134,22 @@ function coreSuggestions(
   const routineAverage = (): number =>
     averageDifficulty(list, sIdx, junior, apparatus);
   const eps = 1e-9;
+
+  // ---- スティックの左手投げ×横投げ：1シェネ→キャッチ ----
+  if (
+    apparatus === "stick" &&
+    n === 1 &&
+    last.kind === "throw" &&
+    (last.reqTypes || []).includes(LEFT_HAND_THROW_TAG) &&
+    (last.throwTypes || []).includes(SIDE_THROW_TAG)
+  ) {
+    return [
+      suggestion("leftHandSide-chene-catch", [
+        { kind: "motion", motionId: CHENE_ID, count: 1 },
+        { kind: "catch", catchTypes: [], catchTwo: false },
+      ]),
+    ];
+  }
 
   // ---- クラブ・リングの横投げ：もう一方の手具で押さえて受ける ----
   if (
@@ -440,14 +467,25 @@ function baseSuggestions(
       return out;
     }
   }
-  if (
-    !last ||
-    last.kind !== "motion" ||
-    last.motionId !== THROW_ROLL_MOTION ||
-    t < 0
-  )
+  if (!last || last.kind !== "motion" || last.motionId !== THROW_ROLL_MOTION)
     return core;
-  if (!items.slice(t + 1).every((it) => it.kind === "motion")) return core;
+  // 手具が空中にある間（投げアイテムも技の最中の投げも）の前転は、どんな状況でもキャッチを勧める
+  const air = airborneIndex(items);
+  if (air < 0) return core;
+  if (t < 0 || !items.slice(t + 1).every((it) => it.kind === "motion")) {
+    if (core[0]?.items.length === 1 && core[0].items[0].kind === "catch")
+      return core;
+    return [
+      suggestion("air-roll-catch", [
+        {
+          kind: "catch",
+          catchTypes: [],
+          catchTwo: thrownCount(items[air]) === 2,
+        },
+      ]),
+      ...core,
+    ];
+  }
   const total = items
     .slice(t + 1)
     .reduce(

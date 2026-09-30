@@ -221,4 +221,33 @@ describe("自動入力", () => {
     // 入力中のシリーズ自身は対象外（連続投げの途中で出す）
     expect(ids([cur, ser(th, ct)], 0)).toContain("throwHand-catchThrowBack");
   });
+
+  it("スティックの左手投げ×横投げ → 1シェネ→キャッチ", () => {
+    const leftSide: Item = { kind: "throw", throwTypes: ["side"], reqTypes: ["lefthand"] };
+    const [g] = autoInputSuggestions([ser(leftSide)], 0, false, "stick");
+    expect(g.label).toBe("シェネ→キャッチ");
+    expect(g.items[0]).toMatchObject({ kind: "motion", motionId: "chene", count: 1 });
+    // 左手投げだけ・横投げだけ・他の手具では出ない
+    const left: Item = { kind: "throw", throwTypes: [], reqTypes: ["lefthand"] };
+    const side: Item = { kind: "throw", throwTypes: ["side"], reqTypes: [] };
+    expect(autoInputSuggestions([ser(left)], 0, false, "stick")).toEqual([]);
+    expect(autoInputSuggestions([ser(side)], 0, false, "stick")).toEqual([]);
+    expect(autoInputSuggestions([ser(leftSide)], 0, false, "rope")).toEqual([]);
+  });
+
+  it("手具が空中にある間の前転は、どんな状況でもキャッチを候補に出す", () => {
+    // 投げ→宙返り→前転（間に技が入っている）
+    expect(labels([ser(th, sk("b_front"), mo("fwd_roll"))], 0)[0]).toBe("キャッチ");
+    // 技の最中の投げ→前転
+    expect(labels([ser(sk("b_front", { isThrow: true }), mo("fwd_roll"))], 0)[0]).toBe("キャッチ");
+    // 二つ投げなら2つ同時キャッチ
+    const two: Item = { kind: "throw", throwTypes: [], reqTypes: ["twothrow"] };
+    expect(autoInputSuggestions([ser(two, sk("b_front"), mo("fwd_roll"))], 0, false, "clubs")[0].items[0]).toMatchObject({
+      kind: "catch",
+      catchTwo: true,
+    });
+    // 手具が手元にある（投げていない／キャッチ済み）前転では出ない
+    expect(labels([ser(mo("fwd_roll"))], 0)).toEqual([]);
+    expect(labels([ser(th, ct, mo("fwd_roll"))], 0)).toEqual([]);
+  });
 });
