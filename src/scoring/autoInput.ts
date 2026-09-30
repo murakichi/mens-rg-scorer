@@ -441,9 +441,9 @@ function coreSuggestions(
 export const AVERAGE_TOP_COUNT = 3;
 
 /**
- * 難度として有効なユニットの難度点。入力中のシリーズは含めず、採用された（重複でない）うえで
- * 上位3つに入ったタンブリングと徒手系のユニットだけを拾う。
- * 連続投げの2回目（同じシリーズの2つ目以降の投げ）は数えない。
+ * シリーズごとの難度点。入力中のシリーズは含めず、採用された（重複でない）うえで
+ * 上位3つに入ったタンブリング・徒手系のユニットのうち、シリーズ内で最も高いものを1つずつ返す
+ * （有効なユニットが無いシリーズは含めない）。
  */
 export function effectiveScores(
   list: Series[],
@@ -456,25 +456,20 @@ export function effectiveScores(
   // 目安の計算だけは十年後モードの F（0.9）まで内部で数える。E（0.7）で頭打ちにすると、
   // 実際には F 相当の徒手（シェネ×5 など）が E と区別できなくなる。画面の採点には影響しない
   const result = computeScore(others, apparatus, { junior, future: "F" });
+  // シリーズごとに、有効な（採用され上位3つに入った）ユニットの最高の難度点を1つだけ拾う。
+  // 連続投げの2回目も、いったんそのシリーズの候補に入れる（低ければ最高に負けて数えられない）
   const scores: number[] = [];
   result.seriesBreakdowns.forEach((b) => {
-    b.tumRows.forEach((r) => {
-      if (r.adopted && r.inTop) scores.push(r.score);
-    });
-    b.handRows.forEach((r) => {
-      // ラベルは 投げ1・投げ2…（同じシリーズ内の順）。2つ目以降は連続投げの2回目
-      const nth = /^投げ(\d+)$/.exec(r.label);
-      if (nth && Number(nth[1]) >= 2) return;
-      if (r.adopted && r.inTop) scores.push(r.score);
-    });
+    const valid = [...b.tumRows, ...b.handRows].filter((r) => r.adopted && r.inTop);
+    if (valid.length > 0) scores.push(Math.max(...valid.map((r) => r.score)));
   });
   return scores;
 }
 
 /**
- * 候補を選ぶための、構成の難度の目安。有効なユニット（`effectiveScores`）のうち
- * **難度の高い上位3つの平均**。加点や必須要素を満たすためだけの低難度の投げは
- * 上位に入らないので、狙っている難度のレベルがそのまま出る（ユニットが3つ未満ならある分だけ）。
+ * 候補を選ぶための、構成の難度の目安。シリーズごとの難度点（`effectiveScores`）のうち
+ * **難度の高い上位3シリーズの平均**。加点や必須要素を満たすためだけの低難度のシリーズは
+ * 上位に入らないので、狙っている難度のレベルがそのまま出る（シリーズが3つ未満ならある分だけ）。
  */
 export function averageDifficulty(
   list: Series[],

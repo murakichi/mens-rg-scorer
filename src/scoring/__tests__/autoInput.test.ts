@@ -193,8 +193,17 @@ describe("自動入力", () => {
     // 難度の高い上位3つの平均（0.2 の低難度は外れる）。低難度の投げを足しても下がらない
     expect(avg([hard, hard2, mid, ser(th, mo("chene"), ct), cur])).toBeCloseTo((0.9 + 0.7 + 0.5) / 3);
     expect(avg([hard, hard2, mid, low, cur])).toBeCloseTo((0.9 + 0.7 + 0.5) / 3);
-    // 同じシリーズの2つ目の投げは数えない（1つ目 縦3動作E 0.7 だけ）
-    expect(avg([ser(th, mo("mv3"), ct, th, mo("chene"), ct), cur])).toBeCloseTo(0.7);
+    // シリーズごとに最も高いユニットを1つだけ数える（連続投げの2回目も候補には入る）
+    const both = ser(th, mo("mv3"), ct, th, mo("chene"), ct); // 1つ目 E 0.7、2つ目は低い → 0.7
+    expect(avg([both, cur])).toBeCloseTo(0.7);
+    // 2つ目の投げのほうが高ければ、そちらを採る（1つ目 シェネ、2つ目 縦3動作）
+    const second = ser(th, mo("chene"), ct, th, mo("mv3"), ct);
+    expect(avg([second, cur])).toBeCloseTo(0.7);
+    // 1つのシリーズに強いユニットが2つあっても1シリーズとして数える
+    const twoStrong = ser(th, mo("mv3"), ct, sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto"));
+    const lowSeries = ser(th, mo("chene"), ct);
+    const lowVal = avg([lowSeries, cur]);
+    expect(avg([twoStrong, mid, lowSeries, cur])).toBeCloseTo((0.9 + 0.5 + lowVal) / 3);
   });
 
   it("投げ→シェネ（3回以下）：キャッチ／前転→キャッチ", () => {
