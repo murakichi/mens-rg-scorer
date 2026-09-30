@@ -53,7 +53,8 @@ const TUMBLING_REQUIRED_KEYS = [
   "tumCount",
 ];
 const CHENE_ID = "chene";
-const ROLL_MOTION_IDS = [THROW_ROLL_MOTION, "roll"];
+const ROLL_MOTION_ID = "roll";
+const ROLL_MOTION_IDS = [THROW_ROLL_MOTION, ROLL_MOTION_ID];
 
 /** 投げタンをおすすめするときの、構成全体の平均難度点の境目（この値以下ならその段） */
 export const THROW_TUM_AVG_FRONT_ROLL_MAX = 0.3;
@@ -105,7 +106,7 @@ function openThrowIndex(items: Item[]): number {
  * @param list 構成全体（つなぎ・三宙が「未達成」かはルーティン全体で見る）
  * @param sIdx いま入力しているシリーズ
  */
-function baseSuggestions(
+function coreSuggestions(
   list: Series[],
   sIdx: number,
   junior = false,
@@ -346,6 +347,68 @@ function baseSuggestions(
     }
   }
   return [];
+}
+
+/** 転がりに切り替えて受けにいく、動作数とシリーズ平均の下限 */
+export const ROLL_CATCH_MIN_MOTIONS = 3;
+export const ROLL_CATCH_MIN_AVG = 0.5;
+
+/**
+ * 投げている間に前転を入れたとき：第一候補はキャッチ。動作が3以上で構成の平均難度が0.5以上なら
+ * 前転の代わりに 転がり→キャッチ を第一候補にする（そのほかの候補は別案に残す）。
+ */
+function baseSuggestions(
+  list: Series[],
+  sIdx: number,
+  junior: boolean,
+  apparatus: ApparatusKey,
+): AutoInputSuggestion[] {
+  const core = coreSuggestions(list, sIdx, junior, apparatus);
+  const items = list[sIdx]?.items ?? [];
+  const last = items[items.length - 1];
+  const t = openThrowIndex(items);
+  if (
+    !last ||
+    last.kind !== "motion" ||
+    last.motionId !== THROW_ROLL_MOTION ||
+    t < 0
+  )
+    return core;
+  if (!items.slice(t + 1).every((it) => it.kind === "motion")) return core;
+  const total = items
+    .slice(t + 1)
+    .reduce(
+      (sum, it) =>
+        sum +
+        (it.kind === "motion"
+          ? (motionDef(it.motionId)?.motions ?? 0) * motionTimes(it.count)
+          : 0),
+      0,
+    );
+  const catchItem: Item = {
+    kind: "catch",
+    catchTypes: [],
+    catchTwo: thrownCount(items[t]) === 2,
+  };
+  const out: AutoInputSuggestion[] = [];
+  if (total >= ROLL_CATCH_MIN_MOTIONS) {
+    const scores = list
+      .filter((_, i) => i !== sIdx)
+      .flatMap((s2) =>
+        analyzeSeries(s2, junior).units.map((u) => DIFF_SCORE[u.finalDiff]),
+      );
+    const avg = scores.length
+      ? scores.reduce((a, b) => a + b, 0) / scores.length
+      : 0;
+    if (avg >= ROLL_CATCH_MIN_AVG - 1e-9)
+      out.push(
+        suggestion("roll-catch", [motionItem(ROLL_MOTION_ID), catchItem]),
+      );
+  }
+  // 第一候補（または転がりの次）はキャッチ。候補がすでにキャッチ1つだけならそれを使う
+  if (core[0]?.items.length === 1 && core[0].items[0].kind === "catch") out.push(...core);
+  else out.push(suggestion("catch", [catchItem]), ...core);
+  return out;
 }
 
 /** 直近の（まだキャッチされていない）投げが横投げか。投げアイテムも技の最中の投げも見る */

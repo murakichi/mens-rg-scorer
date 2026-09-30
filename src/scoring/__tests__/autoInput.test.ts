@@ -24,7 +24,8 @@ describe("自動入力", () => {
 
   it("投げ→徒手3動作以上 → キャッチ→背面投げ→背面キャッチ（シェネ×2→前転でも）", () => {
     const s = ser(th, mo("chene", 2), mo("fwd_roll"));
-    const [g] = autoInputSuggestions([s], 0);
+    // 前転で終わる場合は第一候補が単独のキャッチで、キャッチ→投げ→キャッチは別案
+    const g = autoInputSuggestions([s], 0)[1];
     expect(g.label).toBe("キャッチ→投げ→キャッチ");
     expect(g.items[1]).toMatchObject({ kind: "throw", throwTypes: ["noview"] });
     expect(g.items[2]).toMatchObject({ kind: "catch", catchTypes: ["noview"] });
@@ -161,5 +162,18 @@ describe("自動入力", () => {
     expect(n.items[0]).toMatchObject({ kind: "catch", catchTypes: [] });
     const [st] = autoInputSuggestions([ser(side, mo("chene", 3))], 0, false, "stick");
     expect(st.items[0]).toMatchObject({ kind: "catch", catchTypes: [] });
+  });
+
+  it("投げている間に前転：第一候補はキャッチ。3動作以上かつ平均0.5以上なら 転がり→キャッチ", () => {
+    // 2動作（シェネ→前転）：キャッチだけ
+    expect(labels([ser(th, mo("chene"), mo("fwd_roll"))], 0)).toEqual(["キャッチ"]);
+    // 3動作でも平均が低い（構成が空）→ キャッチ が先、続けて従来の キャッチ→投げ→キャッチ
+    expect(labels([ser(th, mo("chene", 2), mo("fwd_roll"))], 0)).toEqual(["キャッチ", "キャッチ→投げ→キャッチ"]);
+    // 平均0.5以上（D難度のタンブリング）→ 転がり→キャッチ が第一候補
+    const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
+    const s = ser(th, mo("chene", 2), mo("fwd_roll"));
+    expect(labels([mid, s], 1)).toEqual(["転がり→キャッチ", "キャッチ", "キャッチ→投げ→キャッチ"]);
+    // 動作が足りなければ平均が高くても 転がり は出ない
+    expect(labels([mid, ser(th, mo("fwd_roll"))], 1)).toEqual(["キャッチ"]);
   });
 });
