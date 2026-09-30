@@ -19,7 +19,10 @@ import {
   tumblingVariety,
 } from "../analysis";
 import {
+  ROPE_JUMPS,
+  resolveRopeJump,
   ropeJumpDef,
+  ropeJumpDifficulty,
   DIVING_SKILL_ID,
   DIVING_UPGRADED_DIFFICULTY,
   MOTION_OPTIONS,
@@ -126,12 +129,6 @@ describe("analyzeSeries", () => {
     expect(a.units[0].isThrowTumbling).toBe(true);
     expect(a.throwCount).toBe(1);
   });
-  it("ロープ跳びは最高難度の独立ユニットを追加する", () => {
-    const a = analyzeSeries(S({ kind: "ropeJump", jumpId: "3bc" }, { kind: "ropeJump", jumpId: "1f" }));
-    // 3bc = D, 1f = A → 最高の D が採用
-    expect(a.units).toHaveLength(1);
-    expect(a.units[0].finalDiff).toBe("D");
-  });
 });
 
 describe("seriesSignature", () => {
@@ -147,19 +144,39 @@ describe("seriesSignature", () => {
   });
 });
 
-describe("ロープ跳び — 3重連続3回以上・4重跳びは前後で難度が同じ", () => {
-  const diff = (id: string) => ropeJumpDef(id)?.difficulty;
+describe("ロープ跳び — 難度は前後・クロス・回数から表（§3.5.5.3）どおりに引く", () => {
+  const diff = (jumpId: string, cross = false, count = 1) =>
+    ropeJumpDifficulty(resolveRopeJump({ jumpId, cross, count })!);
 
-  it("3重跳び連続3回以上は前後ともD", () => {
-    expect(diff("3x3f")).toBe("D");
-    expect(diff("3x3b")).toBe("D");
+  it("1重跳びはすべてA", () => {
+    expect(["1f", "1b"].map((id) => diff(id))).toEqual(["A", "A"]);
+    expect(diff("1b", true, 5)).toBe("A");
   });
 
-  it("4重跳びは前後ともD、連続2回以上は前後ともE", () => {
-    expect(diff("4f")).toBe("D");
-    expect(diff("4b")).toBe("D");
-    expect(diff("4x2f")).toBe("E");
-    expect(diff("4x2b")).toBe("E");
+  it("2重跳び：前A／前クロスB／後ろB／後ろクロスC", () => {
+    expect([diff("2f"), diff("2f", true), diff("2b"), diff("2b", true)]).toEqual(["A", "B", "B", "C"]);
+  });
+
+  it("3重跳び：前B／前クロスC／後ろC／後ろクロスD", () => {
+    expect([diff("3f"), diff("3f", true), diff("3b"), diff("3b", true)]).toEqual(["B", "C", "C", "D"]);
+  });
+
+  it("3重跳び2回：前C／前クロスC／後ろD／後ろクロスD", () => {
+    expect([diff("3f", false, 2), diff("3f", true, 2), diff("3b", false, 2), diff("3b", true, 2)]).toEqual([
+      "C",
+      "C",
+      "D",
+      "D",
+    ]);
+  });
+
+  it("3重跳び連続3回以上は前後・クロスを区別せずD", () => {
+    expect([diff("3f", false, 3), diff("3f", true, 3), diff("3b", false, 9)]).toEqual(["D", "D", "D"]);
+  });
+
+  it("4重跳びは前後ともD、連続2回以上は前後ともE（クロスは効かない）", () => {
+    expect([diff("4f"), diff("4b"), diff("4f", true)]).toEqual(["D", "D", "D"]);
+    expect([diff("4f", false, 2), diff("4b", false, 3)]).toEqual(["E", "E"]);
   });
 
   it("前後の別は要求要素（前回し／後ろ回し）の判定用に保持される", () => {
@@ -167,10 +184,32 @@ describe("ロープ跳び — 3重連続3回以上・4重跳びは前後で難�
     expect(ropeJumpDef("4b")?.direction).toBe("back");
   });
 
-  it("前の4重跳びも徒手系難度Dのユニットになる", () => {
-    const a = analyzeSeries(S({ kind: "ropeJump", jumpId: "4f" }));
-    expect(a.units).toHaveLength(1);
-    expect(a.units[0].finalDiff).toBe("D");
+  it("クロスは2重・3重にだけ効く（1重・4重ではフラグを立てても無視する）", () => {
+    expect(resolveRopeJump({ jumpId: "1f", cross: true })?.cross).toBe(false);
+    expect(resolveRopeJump({ jumpId: "4b", cross: true })?.cross).toBe(false);
+    expect(resolveRopeJump({ jumpId: "2b", cross: true })?.cross).toBe(true);
+  });
+
+  it("回数は未指定なら1回、負数や小数は丸める", () => {
+    expect(resolveRopeJump({ jumpId: "2f" })?.count).toBe(1);
+    expect(resolveRopeJump({ jumpId: "2f", count: -3 })?.count).toBe(0);
+    expect(resolveRopeJump({ jumpId: "2f", count: 2.9 })?.count).toBe(2);
+  });
+
+  it("旧データの id（クロス・回数を含んでいたもの）は今の表現に解決される", () => {
+    const legacy = (id: string) => {
+      const r = resolveRopeJump({ jumpId: id })!;
+      return [r.def.id, r.cross, r.count, ropeJumpDifficulty(r)];
+    };
+    expect(legacy("3bc")).toEqual(["3b", true, 1, "D"]);
+    expect(legacy("2fc")).toEqual(["2f", true, 1, "B"]);
+    expect(legacy("3x2f")).toEqual(["3f", false, 2, "C"]);
+    expect(legacy("3x3b")).toEqual(["3b", false, 3, "D"]);
+    expect(legacy("4x2f")).toEqual(["4f", false, 2, "E"]);
+  });
+
+  it("選択肢にクロス・回数を含む跳びは残っていない", () => {
+    expect(ROPE_JUMPS.map((j) => j.id)).toEqual(["1f", "1b", "2f", "2b", "3f", "3b", "4f", "4b"]);
   });
 });
 

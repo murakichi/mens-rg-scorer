@@ -338,6 +338,64 @@ describe("computeScore — 同じ内容の難度は演技全体で1回しか数�
   });
 });
 
+describe("computeScore — ロープ跳びリスト（構成全体・徒手・構成タブ）", () => {
+  const J = (jumpId: string, extra: Partial<Extract<Item, { kind: "ropeJump" }>> = {}) =>
+    ({ kind: "ropeJump", jumpId, ...extra }) as Extract<Item, { kind: "ropeJump" }>;
+  const score = (jumps: ReturnType<typeof J>[]) => computeScore([], "rope", { ropeJumps: jumps });
+
+  it("複数種類の跳びをそれぞれ評価する", () => {
+    const r = score([J("3b", { cross: true }), J("1f"), J("2b")]);
+    expect(r.ropeJumpRows.map((x) => x.difficulty)).toEqual(["D", "A", "B"]);
+    expect(r.ropeJumpRows.every((x) => x.inTop)).toBe(true);
+    expect(r.handScore).toBeCloseTo(0.5 + 0.1 + 0.2, 5);
+    expect(r.ropeJumpScore).toBeCloseTo(r.handScore, 5);
+  });
+
+  it("徒手系難度は上位3つまで（投げ受けの徒手と同じ枠を争う）", () => {
+    const r = score([J("1f"), J("2b"), J("3b"), J("4b")]);
+    expect(r.ropeJumpRows.map((x) => x.inTop)).toEqual([false, true, true, true]);
+    expect(r.handScore).toBeCloseTo(0.2 + 0.3 + 0.5, 5);
+  });
+
+  it("同じ跳びは1回だけ数える（回数の行が違えば別の技）", () => {
+    const same = score([J("3b"), J("3b", { count: 1 })]);
+    expect(same.ropeJumpRows.map((x) => x.duplicate)).toEqual([false, true]);
+    expect(same.handScore).toBeCloseTo(0.3, 5);
+    const other = score([J("3b"), J("3b", { count: 2 })]);
+    expect(other.ropeJumpRows.map((x) => x.duplicate)).toEqual([false, false]);
+    expect(other.handScore).toBeCloseTo(0.3 + 0.5, 5);
+  });
+
+  it("回数0の跳びは数えない", () => {
+    const r = score([J("4b", { count: 0 })]);
+    expect(r.ropeJumpRows[0].adopted).toBe(false);
+    expect(r.handScore).toBe(0);
+  });
+
+  it("行ラベルはクロスと回数を含む", () => {
+    expect(score([J("3b", { cross: true, count: 2 })]).ropeJumpRows[0].label).toBe("3重跳び（後ろ）・クロス×2");
+  });
+
+  it("ロープ以外ではリストがあっても数えない", () => {
+    expect(computeScore([], "stick", { ropeJumps: [J("4b")] }).handScore).toBe(0);
+  });
+
+  it("前2重→前3重を続けて跳ぶと、その場前回し2回以上連続を満たす", () => {
+    const front = (jumps: ReturnType<typeof J>[]) =>
+      computeScore([], "rope", { ropeJumps: jumps }).apparatusElementChecks.find(
+        (c) => c.key === "appEl_rope_front",
+      )?.passed;
+    expect(front([J("2f"), J("3f")])).toBe(true);
+    expect(front([J("2f"), J("1b"), J("3f")])).toBe(false);
+    expect(front([J("2f")])).toBe(false);
+  });
+
+  it("旧データのシリーズ内ロープ跳びも跳びリストとして数える", () => {
+    const r = computeScore([S(J("3bc"))], "rope");
+    expect(r.ropeJumpRows.map((x) => x.difficulty)).toEqual(["D"]);
+  });
+});
+
 describe("computeScore — つなぎ技のA難度に手具操作なし（Q10）", () => {
   it("後方一回半ひねり(操作なし)〜ロンダート(操作なし)〜ダイビング前宙(操作あり)で −0.2", () => {
     const r = computeScore(
@@ -459,11 +517,6 @@ describe("computeScore — 徒手難度点の投げごとの内訳（handRows）
     const sumTum = r.seriesBreakdowns.reduce((s, b) => s + b.tumDiff, 0);
     expect(sumHand).toBeCloseTo(r.handScore, 5);
     expect(sumTum).toBeCloseTo(r.tumblingScore, 5);
-  });
-
-  it("ロープ跳び由来の行はラベルが「ロープ跳び」", () => {
-    const r = computeScore([S({ kind: "ropeJump", jumpId: "3b" })], "rope");
-    expect(r.seriesBreakdowns[0].handRows.map((x) => x.label)).toEqual(["ロープ跳び"]);
   });
 });
 
@@ -899,11 +952,21 @@ describe("computeScore — ロープの跳び要求要素は手具別必須要�
     expect(el(r, "triple")?.label).toBe("3重跳び（自動判定）");
   });
 
-  it("6m移動の跳びが3回以上で満たす", () => {
+  it("6m移動の跳びが3回以上続けば満たす（種類が違っても、回数入力でも）", () => {
     const two = computeScore([S(jump("2f", true), jump("2b", true))], "rope");
     expect(el(two, "moving")?.passed).toBe(false);
     const three = computeScore([S(jump("2f", true), jump("2b", true), jump("3f", true))], "rope");
     expect(el(three, "moving")?.passed).toBe(true);
+    const counted = computeScore([S({ ...jump("2f", true), count: 3 })], "rope");
+    expect(el(counted, "moving")?.passed).toBe(true);
+  });
+
+  it("6m移動の連続は間に移動しない跳びが入ると切れる", () => {
+    const split = computeScore(
+      [S(jump("2f", true), jump("2b", true), jump("1f"), jump("3f", true))],
+      "rope",
+    );
+    expect(el(split, "moving")?.passed).toBe(false);
   });
 
   it("その場の前回し／後ろ回しは2回以上連続で満たす", () => {
@@ -912,6 +975,33 @@ describe("computeScore — ロープの跳び要求要素は手具別必須要�
     expect(el(r, "back")?.passed).toBe(false);
     const r2 = computeScore([S(jump("1b"), jump("2b"))], "rope");
     expect(el(r2, "back")?.passed).toBe(true);
+  });
+
+  it("その場の連続は、1つの跳びに回数2以上を入れても満たす", () => {
+    const r = computeScore([S({ ...jump("2b"), count: 2 })], "rope");
+    expect(el(r, "back")?.passed).toBe(true);
+    const once = computeScore([S(jump("2b"))], "rope");
+    expect(el(once, "back")?.passed).toBe(false);
+  });
+
+  it("6m移動の跳びはその場の前回し／後ろ回しには数えない", () => {
+    const r = computeScore([S({ ...jump("2f", true), count: 3 })], "rope");
+    expect(el(r, "front")?.passed).toBe(false);
+  });
+
+  it("回数0の跳びはどの要求要素にも数えない", () => {
+    const r = computeScore([S({ ...jump("3b"), count: 0 })], "rope");
+    expect(el(r, "triple")?.passed).toBe(false);
+  });
+
+  it("様々な跳び加点：6m移動の3回以上の連続に2重跳び以上が3回以上", () => {
+    const bonus = (items: Item[]) => computeScore([S(...items)], "rope").jumpVarietyBonus;
+    expect(bonus([{ ...jump("2f", true), count: 3 }])).toBeGreaterThan(0);
+    expect(bonus([jump("2f", true), jump("2b", true), jump("3f", true)])).toBeGreaterThan(0);
+    // 1重が混ざって2重以上が2回だけ
+    expect(bonus([jump("1f", true), jump("2b", true), jump("3f", true)])).toBe(0);
+    // 2重以上は3回だが、移動しない跳びで連続が切れている
+    expect(bonus([jump("2f", true), jump("2b", true), jump("2b"), jump("3f", true)])).toBe(0);
   });
 
   it("必須要素チェックからは外れている", () => {

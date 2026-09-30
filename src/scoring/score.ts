@@ -14,7 +14,9 @@ import {
   SIDE_THROW_TAG,
   TECHNIQUE_BONUS,
   APPARATUS_OP_BONUS,
-  ropeJumpDef,
+  resolveRopeJump,
+  ropeJumpDifficulty,
+  ropeJumpKey,
   TWOTHROW_MOTION_BONUS,
   JUMP_VARIETY_BONUS,
   NO_APP_SALTO_DEDUCTION,
@@ -73,8 +75,9 @@ import {
   tumblingOperation,
   type TumblingVariety,
   type TumblingOperation,
+  hoistRopeJumps,
 } from "./analysis";
-import type { ApparatusKey, Difficulty, FutureLevel, Series, SeriesAnalysis, Unit } from "./types";
+import type { ApparatusKey, Difficulty, FutureLevel, RopeJumpItem, Series, SeriesAnalysis, Unit } from "./types";
 
 /** シリーズ内のユニット1つ分の難度点の内訳（表示用） */
 export interface DiffRow {
@@ -109,6 +112,23 @@ export interface SeriesBreakdown {
 }
 
 /** 単独で実施した徒手系要素（跳躍・柔軟）1件の内訳 */
+/** 構成全体の跳びリスト（ロープ）の1行ぶんの評価 */
+export interface RopeJumpRow {
+  /** 入力配列での位置（UIの行と対応づける） */
+  index: number;
+  name: string;
+  /** クロス・回数を反映した表示名（例：3重跳び（後ろ）・クロス×2） */
+  label: string;
+  difficulty: Difficulty;
+  score: number;
+  /** 同じ跳びをすでに数えているか（§3.4.4 同じ技は1回だけ） */
+  duplicate: boolean;
+  /** 難度の候補になったか（回数が1以上＆重複でない） */
+  adopted: boolean;
+  /** 上位3つに入って徒手系難度点に数えたか */
+  inTop: boolean;
+}
+
 export interface HandElementRow {
   /** 入力配列での位置（UIの行と対応づける） */
   index: number;
@@ -164,6 +184,10 @@ export interface ScoreResult {
 
   /** 単独で実施した徒手系要素（跳躍・柔軟）の内訳 */
   handElementRows: HandElementRow[];
+  /** ロープの跳び（構成全体のリスト）の評価。難度は徒手系難度の候補として上位3つを争う */
+  ropeJumpRows: RopeJumpRow[];
+  /** そのうち徒手系難度点に入った合計（handScore の一部） */
+  ropeJumpScore: number;
   /** そのうち徒手系難度点に入った合計（handScore の一部） */
   handElementScore: number;
 
@@ -269,6 +293,8 @@ export interface ComputeOptions {
   offBodyCount?: number;
   /** 単独で実施した徒手系要素（跳躍・柔軟）のid。跳躍は徒手系難度、柔軟は実施の有無だけを見る。 */
   handElements?: string[];
+  /** ロープの跳び（構成全体のリスト）。続けて並べたものが連続した跳び。ロープ以外では無視する。 */
+  ropeJumps?: RopeJumpItem[];
 }
 
 export function computeScore(
@@ -279,7 +305,9 @@ export function computeScore(
   // 手具を切り替えても他の手具のテンプレートを読み込んでもシリーズの中身は残るが、
   // その手具で入力できない内容（スティックの「手具を使ったキャッチ」・ロープ以外の
   // ロープ跳びなど）は入力画面に出ないので、採点にも効かせない
-  const series = stripForApparatus(rawSeries, apparatus);
+  // 旧データでシリーズの中に入っていたロープ跳びは、構成全体の跳びリストへ移して数える
+  const hoisted = hoistRopeJumps(rawSeries);
+  const series = stripForApparatus(hoisted.series, apparatus);
   const {
     overallExecutionDeduction = 0,
     apparatusElements = [],
@@ -291,7 +319,9 @@ export function computeScore(
     handOps = [],
     offBodyCount = 0,
     handElements = [],
+    ropeJumps: ropeJumpInput = [],
   } = opts;
+  const ropeJumps = apparatus === "rope" ? [...ropeJumpInput, ...hoisted.jumps] : [];
   const analysis = series.map((ser) => analyzeSeries(ser, junior, future));
   const requiredThrowCount = throwCountRequired(junior);
   const maxThrowCount = throwCountMax(junior);
@@ -417,23 +447,52 @@ export function computeScore(
     ];
   });
 
+  // ---- ロープの跳び（構成全体のリスト）----
+  // 跳び1つごとに §3.5.5.3 の表から難度を引く。回数0の跳びは数えず、同じ跳びは1回だけ数える（§3.4.4）。
+  const seenJumpKeys = new Set<string>();
+  const ropeJumpRows: RopeJumpRow[] = ropeJumps.flatMap((item, index) => {
+    const r = resolveRopeJump(item);
+    if (!r) return [];
+    const key = ropeJumpKey(r);
+    const counted = r.count > 0;
+    const duplicate = counted && seenJumpKeys.has(key);
+    if (counted) seenJumpKeys.add(key);
+    const diff = ropeJumpDifficulty(r);
+    return [
+      {
+        index,
+        name: r.def.name,
+        label: `${r.def.name}${r.cross ? "・クロス" : ""}${r.count > 1 ? `×${r.count}` : ""}`,
+        difficulty: diff,
+        score: DIFF_SCORE[diff],
+        duplicate,
+        adopted: counted && !duplicate,
+        inTop: false,
+      },
+    ];
+  });
+
   // ---- 難度点の採用は上位3つまで。内訳表示でも使うのでここで確定する ----
   const adoptUnits = adoptedUnits.flat();
   const sortByDiff = (arr: Unit[]) => [...arr].sort((a, b) => DIFF_VALUE[b.finalDiff] - DIFF_VALUE[a.finalDiff]);
   const topTumbling = sortByDiff(adoptUnits.filter(isTumblingUnit)).slice(0, ADOPT_COUNT);
   // 徒手系は「投げ受けのユニット」と「単独の徒手系要素」が同じ枠を争う
-  const handCandidates: { value: number; score: number; unit?: Unit; row?: HandElementRow }[] = [
+  const handCandidates: { value: number; score: number; unit?: Unit; row?: HandElementRow; jump?: RopeJumpRow }[] = [
     ...adoptUnits
       .filter(isHandUnit)
       .map((u) => ({ value: DIFF_VALUE[u.finalDiff], score: DIFF_SCORE[u.finalDiff], unit: u })),
     ...handElementRows
       .filter((r) => r.adopted)
       .map((r) => ({ value: DIFF_VALUE[r.difficulty], score: r.score, row: r })),
+    ...ropeJumpRows
+      .filter((r) => r.adopted)
+      .map((r) => ({ value: DIFF_VALUE[r.difficulty], score: r.score, jump: r })),
   ];
   // 同点はユニットを先に置いている（並べ替えは安定なので従来の採用が変わらない）
   const topHandAll = [...handCandidates].sort((a, b) => b.value - a.value).slice(0, ADOPT_COUNT);
   topHandAll.forEach((c) => {
     if (c.row) c.row.inTop = true;
+    if (c.jump) c.jump.inTop = true;
   });
   const topHand = topHandAll.flatMap((c) => (c.unit ? [c.unit] : []));
   const inTop = new Set<Unit>([...topTumbling, ...topHand]);
@@ -461,7 +520,7 @@ export function computeScore(
     let handNo = 0;
     const handRows: DiffRow[] = a.units.filter(isHandUnit).map((u) => {
       // 投げを含まない徒手系ユニット（タンブリングの合間の徒手など）は「徒手n」と表示する
-      const label = u.fromRopeJump ? "ロープ跳び" : u.isThrow ? `投げ${++throwNo}` : `徒手${++handNo}`;
+      const label = u.isThrow ? `投げ${++throwNo}` : `徒手${++handNo}`;
       return {
         label,
         diff: u.finalDiff,
@@ -579,6 +638,7 @@ export function computeScore(
   // 徒手系難度点＝上位3つ（投げ受けのユニット＋単独の徒手系要素）
   const handScore = topHandAll.reduce((s, c) => s + c.score, 0);
   const handElementScore = topHandAll.reduce((s, c) => s + (c.row ? c.score : 0), 0);
+  const ropeJumpScore = topHandAll.reduce((s, c) => s + (c.jump ? c.score : 0), 0);
   // シリーズ内訳（sBonus）と同じ条件。上限超過の投げ・ユニットは数えない
   const seriesBonus = seriesBreakdowns.some((b) => b.sBonus > 0) ? SERIES_BONUS : 0;
 
@@ -756,25 +816,58 @@ export function computeScore(
   let jumpVarietyBonus = 0;
   const ropeAuto = { ropeTriple: false, ropeMoving: false, ropeFront: false, ropeBack: false };
   if (apparatus === "rope") {
-    const allJumps = series.flatMap((ser) =>
-      ser.items.filter((item): item is Extract<typeof item, { kind: "ropeJump" }> => item.kind === "ropeJump" && !!item.jumpId)
-        .map((item) => ({ def: ropeJumpDef(item.jumpId)!, moving: !!item.isMoving6m }))
-        .filter((j) => !!j.def),
-    );
-    const hasTripleJump = allJumps.some((j) => j.def.rotations >= 3);
-    const movingCount = allJumps.filter((j) => j.moving).length;
-    const frontInPlace = allJumps.filter((j) => !j.moving && j.def.direction === "front").length;
-    const backInPlace = allJumps.filter((j) => !j.moving && j.def.direction === "back").length;
+    // 「連続」は跳びリストで続けて並べた跳びで見る。回数入力があるので、1つの跳びに回数を入れても、
+    // 種類の違う跳びを続けても数えられる。回数0の跳びは並びを切らずに数えない。
+    type Jump = { rotations: number; direction: "front" | "back"; moving: boolean; count: number };
+    const list: Jump[] = ropeJumps.flatMap((item) => {
+      const r = resolveRopeJump(item);
+      return r && r.count > 0
+        ? [{ rotations: r.def.rotations, direction: r.def.direction, moving: !!item.isMoving6m, count: r.count }]
+        : [];
+    });
+    const runs: Jump[][] = [list];
+    const allJumps = runs.flat();
+    // 条件に合う跳びが途切れずに続いた回数の最大値
+    const longestRun = (fits: (j: Jump) => boolean): number =>
+      Math.max(
+        0,
+        ...runs.map((run) => {
+          let best = 0;
+          let cur = 0;
+          run.forEach((j) => {
+            cur = fits(j) ? cur + j.count : 0;
+            best = Math.max(best, cur);
+          });
+          return best;
+        }),
+      );
 
-    ropeAuto.ropeTriple = hasTripleJump;
-    ropeAuto.ropeMoving = movingCount >= 3;
-    ropeAuto.ropeFront = frontInPlace >= 2;
-    ropeAuto.ropeBack = backInPlace >= 2;
+    ropeAuto.ropeTriple = allJumps.some((j) => j.rotations >= 3);
+    ropeAuto.ropeMoving = longestRun((j) => j.moving) >= 3;
+    ropeAuto.ropeFront = longestRun((j) => !j.moving && j.direction === "front") >= 2;
+    ropeAuto.ropeBack = longestRun((j) => !j.moving && j.direction === "back") >= 2;
 
     // §3.5.5.5(4)① 6m以上移動の連続跳びに2重跳び（rotations≧2）が3回以上 → 加点
     // ②③（跳びの形の多様性 / その場回転跳び2回転）は入力未対応のため今後対応。
-    const movingDoubles = allJumps.filter((j) => j.moving && j.def.rotations >= 2).length;
-    if (movingDoubles >= 3) jumpVarietyBonus = JUMP_VARIETY_BONUS;
+    // 3回以上続く6m移動の跳びの並びの中に、2重跳び以上が3回以上ある。
+    const movingRunHasDoubles = runs.some((run) => {
+      let total = 0;
+      let doubles = 0;
+      let hit = false;
+      const close = () => {
+        if (total >= 3 && doubles >= 3) hit = true;
+        total = 0;
+        doubles = 0;
+      };
+      run.forEach((j) => {
+        if (!j.moving) return close();
+        total += j.count;
+        if (j.rotations >= 2) doubles += j.count;
+      });
+      close();
+      return hit;
+    });
+    if (movingRunHasDoubles) jumpVarietyBonus = JUMP_VARIETY_BONUS;
   }
 
   const missing = required.filter((r) => r.passed === false);
@@ -913,6 +1006,8 @@ export function computeScore(
     handScore,
     handElementRows,
     handElementScore,
+    ropeJumpRows,
+    ropeJumpScore,
     seriesBonus,
     techniqueCount,
     techniqueBonus,

@@ -4,8 +4,6 @@
 
 import {
   DIFF_VALUE,
-  VALUE_DIFF,
-  MAX_DIFF,
   clampDifficulty,
   futureHandValue,
   HAND_MOTIONS,
@@ -21,7 +19,8 @@ import {
   skillDef,
   skillDifficulty,
   skillDifficultyAt,
-  ropeJumpDef,
+  resolveRopeJump,
+  ropeJumpKey,
   isBackwardSalto,
   isBackwardSkill,
   leadsBackward,
@@ -38,6 +37,7 @@ import type {
   Difficulty,
   FutureLevel,
   Item,
+  RopeJumpItem,
   Series,
   SeriesAnalysis,
   Unit,
@@ -533,38 +533,6 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
   });
   flush();
 
-  // ロープ跳び：シリーズ内の最高難度の跳びを独立した徒手系難度ユニットとして追加
-  let ropeMax = 0;
-  let ropeMaxId = "";
-  series.items.forEach((item) => {
-    if (item.kind === "ropeJump") {
-      const j = ropeJumpDef(item.jumpId);
-      if (j && DIFF_VALUE[j.difficulty] > ropeMax) {
-        ropeMax = DIFF_VALUE[j.difficulty];
-        ropeMaxId = j.id;
-      }
-    }
-  });
-  if (ropeMax > 0) {
-    const diff = VALUE_DIFF[Math.min(ropeMax, MAX_DIFF)];
-    units.push({
-      type: "throw",
-      isThrow: true,
-      throwCount: 0,
-      skillThrow: false,
-      isThrowTumbling: false,
-      fromRopeJump: true,
-      signatures: [`rope:${ropeMaxId}`],
-      skills: [],
-      handDiff: diff,
-      tumblingDiff: null,
-      finalDiff: diff,
-      diffFromHand: true,
-      hasApparatus: true,
-      hasDPlus: ropeMax >= DIFF_VALUE.D,
-    });
-  }
-
   return { units, throwCount };
 }
 
@@ -574,6 +542,25 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
 // そのまま残る。入力画面はその手具で入力できるものしか出さないので、残った内容は
 // **画面に出ないまま採点に効いてしまう**（スティックに残った「手具を使ったキャッチ」で
 // 技術加点＋0.1、ロープ跳びで難度＋0.3 など）。採点も編集もここを通して弾く。
+
+/**
+ * 旧データでシリーズの中に入っていたロープ跳びを取り出す。
+ * ロープ跳びは構成全体のリスト（徒手・構成タブ）で入力するようになったので、
+ * 読み込み時にシリーズから外してリストの後ろへ足す。取り出すものが無ければ同じ配列を返す。
+ */
+export function hoistRopeJumps(list: Series[]): { series: Series[]; jumps: RopeJumpItem[] } {
+  if (!list.some((ser) => ser.items.some((item) => item.kind === "ropeJump"))) return { series: list, jumps: [] };
+  const jumps: RopeJumpItem[] = [];
+  const series = list.map((ser) => ({
+    ...ser,
+    items: ser.items.filter((item) => {
+      if (item.kind !== "ropeJump") return true;
+      jumps.push(item);
+      return false;
+    }),
+  }));
+  return { series, jumps };
+}
 
 /** 手具固有の入力（その手具で入力できるものだけを true にする） */
 const canUseApparatusTag = (apparatus: ApparatusKey): boolean => APPARATUS_USE[apparatus];
@@ -859,7 +846,10 @@ export function seriesSignature(series: Series): string {
           ht: item.hands ? item.handsType || DEFAULT_HANDS_TYPE : "",
           n: motionTimes(item.count),
         };
-      if (item.kind === "ropeJump") return { k: "ropeJump", id: item.jumpId };
+      if (item.kind === "ropeJump") {
+        const r = resolveRopeJump(item);
+        return { k: "ropeJump", id: r ? ropeJumpKey(r) : item.jumpId, n: r ? r.count : 0 };
+      }
       return { k: "?" };
     }),
   );

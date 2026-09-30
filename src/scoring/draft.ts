@@ -6,7 +6,7 @@
 // 壊れたデータ・localStorage が使えない環境でも起動が止まらないこと。
 // =====================================================================
 
-import { stripForApparatus } from "./analysis";
+import { hoistRopeJumps, stripForApparatus } from "./analysis";
 import {
   APPARATUS,
   ART_DEDUCTION_ITEMS,
@@ -15,9 +15,10 @@ import {
   soloHandElementDef,
   clampArtDeduction,
   normalizeFutureLevel,
+  ropeJumpTimes,
 } from "./constants";
 import { initialTeamState, normalizeTeamState, type TeamState } from "./team";
-import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
+import type { ApparatusKey, FutureLevel, Item, RopeJumpItem, Series } from "./types";
 
 export const DRAFT_KEY_INDIVIDUAL = "mens-rg-scorer:draft:individual:v1";
 export const DRAFT_KEY_TEAM = "mens-rg-scorer:draft:team:v1";
@@ -48,6 +49,8 @@ export interface IndividualDraft {
   offBodyCount: number;
   /** 単独で実施した徒手系要素（跳躍・柔軟）のid */
   handElements: string[];
+  /** ロープの跳び（構成全体のリスト）。続けて並べたものが連続した跳び */
+  ropeJumps: RopeJumpItem[];
 }
 
 export const asStringArray = (v: unknown): string[] =>
@@ -82,6 +85,22 @@ export function normalizeHandElements(v: unknown): string[] {
   });
 }
 
+/** ロープの跳びリストを取り込む（壊れた行は落とす。旧 id はそのまま持ち、採点時に解決する） */
+export function normalizeRopeJumps(v: unknown): RopeJumpItem[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((x): RopeJumpItem[] => {
+    if (!x || typeof x !== "object") return [];
+    const o = x as Record<string, unknown>;
+    if (typeof o.jumpId !== "string") return [];
+    const item: RopeJumpItem = { kind: "ropeJump", jumpId: o.jumpId };
+    if (o.cross === true) item.cross = true;
+    if (o.isMoving6m === true) item.isMoving6m = true;
+    if (o.count !== undefined) item.count = ropeJumpTimes(Number(o.count));
+    return [item];
+  });
+}
+
+
 /** 身体を離れる手具操作の回数（0以上の整数に丸める） */
 export const normalizeOffBodyCount = (v: unknown): number => Math.max(0, Math.floor(Number(v) || 0));
 
@@ -114,12 +133,16 @@ export function normalizeIndividualDraft(data: unknown): IndividualDraft | null 
   const apparatus: ApparatusKey =
     typeof d.apparatus === "string" && d.apparatus in APPARATUS ? (d.apparatus as ApparatusKey) : "stick";
   const raw = Array.isArray(d.series) ? d.series.flatMap((x) => normalizeSeries(x) ?? []) : [];
+  // 旧データでシリーズの中にあったロープ跳びは、跳びリストの後ろへ移す
+  const hoisted = hoistRopeJumps(raw);
+  const ropeJumps =
+    apparatus === "rope" ? [...normalizeRopeJumps(d.ropeJumps), ...normalizeRopeJumps(hoisted.jumps)] : [];
   return {
     version: 1,
     apparatus,
     junior: !!d.junior,
     future: normalizeFutureLevel(d.future),
-    series: raw.length > 0 ? stripForApparatus(raw, apparatus) : [],
+    series: raw.length > 0 ? stripForApparatus(hoisted.series, apparatus) : [],
     executionDeduction: Number(d.executionDeduction) || 0,
     apparatusElements: asStringArray(d.apparatusElements),
     violations: asStringArray(d.violations),
@@ -128,6 +151,7 @@ export function normalizeIndividualDraft(data: unknown): IndividualDraft | null 
     handOps: knownIds(d.handOps, HAND_OP_CHECKS),
     offBodyCount: normalizeOffBodyCount(d.offBodyCount),
     handElements: normalizeHandElements(d.handElements),
+    ropeJumps,
   };
 }
 
@@ -158,7 +182,8 @@ export function isBlankIndividualDraft(d: IndividualDraft): boolean {
     !d.basicHands?.length &&
     !d.handOps?.length &&
     !d.offBodyCount &&
-    !d.handElements?.length
+    !d.handElements?.length &&
+    !d.ropeJumps?.length
   );
 }
 

@@ -24,6 +24,8 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
     handScore,
     handElementRows,
     handElementScore,
+    ropeJumpRows,
+    ropeJumpScore,
     seriesBonus,
     techniqueCount,
     techniqueBonus,
@@ -128,6 +130,16 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
         <div className="total-row">
           <span>
             徒手難度点（上位3つ）
+            {ropeJumpScore > 0 && (
+              <>
+                {" "}
+                ／うちロープ跳び{" "}
+                {ropeJumpRows
+                  .filter((r) => r.inTop)
+                  .map((r) => `${r.label}(${r.difficulty})`)
+                  .join("・")}
+              </>
+            )}
             {handElementScore > 0 && (
               <>
                 {" "}
