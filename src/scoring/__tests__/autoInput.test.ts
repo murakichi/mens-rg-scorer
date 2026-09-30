@@ -221,4 +221,17 @@ describe("自動入力", () => {
     // 入力中のシリーズ自身は対象外（連続投げの途中で出す）
     expect(ids([cur, ser(th, ct)], 0)).toContain("throwHand-catchThrowBack");
   });
+
+  it("スティックの左手投げ×横投げ → 1シェネ→キャッチ", () => {
+    const leftSide: Item = { kind: "throw", throwTypes: ["side"], reqTypes: ["lefthand"] };
+    const [g] = autoInputSuggestions([ser(leftSide)], 0, false, "stick");
+    expect(g.label).toBe("シェネ→キャッチ");
+    expect(g.items[0]).toMatchObject({ kind: "motion", motionId: "chene", count: 1 });
+    // 左手投げだけ・横投げだけ・他の手具では出ない
+    const left: Item = { kind: "throw", throwTypes: [], reqTypes: ["lefthand"] };
+    const side: Item = { kind: "throw", throwTypes: ["side"], reqTypes: [] };
+    expect(autoInputSuggestions([ser(left)], 0, false, "stick")).toEqual([]);
+    expect(autoInputSuggestions([ser(side)], 0, false, "stick")).toEqual([]);
+    expect(autoInputSuggestions([ser(leftSide)], 0, false, "rope")).toEqual([]);
+  });
 });

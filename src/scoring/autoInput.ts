@@ -7,6 +7,7 @@
 
 import {
   DIFF_VALUE,
+  LEFT_HAND_THROW_TAG,
   ROUNDOFF_SKILL_ID,
   SIDE_THROW_TAG,
   USE_APPARATUS_TAG,
@@ -123,6 +124,22 @@ function coreSuggestions(
   const routineAverage = (): number =>
     averageDifficulty(list, sIdx, junior, apparatus);
   const eps = 1e-9;
+
+  // ---- スティックの左手投げ×横投げ：1シェネ→キャッチ ----
+  if (
+    apparatus === "stick" &&
+    n === 1 &&
+    last.kind === "throw" &&
+    (last.reqTypes || []).includes(LEFT_HAND_THROW_TAG) &&
+    (last.throwTypes || []).includes(SIDE_THROW_TAG)
+  ) {
+    return [
+      suggestion("leftHandSide-chene-catch", [
+        { kind: "motion", motionId: CHENE_ID, count: 1 },
+        { kind: "catch", catchTypes: [], catchTwo: false },
+      ]),
+    ];
+  }
 
   // ---- クラブ・リングの横投げ：もう一方の手具で押さえて受ける ----
   if (
