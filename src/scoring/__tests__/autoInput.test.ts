@@ -123,4 +123,22 @@ describe("自動入力", () => {
     expect(ids([ser(th)], 0)).toEqual([]);
     expect(ids([ser(sk("a_roundoff")), ser(th)], 1)).toEqual([]);
   });
+
+  it("平均難度0.7以上で 投げ→前宙 → きりもみ転回→キャッチ", () => {
+    const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto"));
+    expect(labels([hard, ser(th, sk("b_front"))], 1)).toEqual(["きりもみ転回→キャッチ"]);
+    // 平均が低ければ出ない
+    const prev = ser(th, mo("chene"), ct);
+    expect(labels([prev, ser(th, sk("b_front"))], 1)).toEqual([]);
+  });
+
+  it("クラブ・リングの横投げ → 手具を使ったキャッチ", () => {
+    const side: Item = { kind: "throw", throwTypes: ["side"], reqTypes: [] };
+    for (const app of ["clubs", "ring"] as const) {
+      const [g] = autoInputSuggestions([ser(side)], 0, false, app);
+      expect(g.items[0]).toMatchObject({ kind: "catch", catchTypes: ["useapp"] });
+    }
+    expect(autoInputSuggestions([ser(side)], 0, false, "stick")).toEqual([]);
+    expect(autoInputSuggestions([ser(th)], 0, false, "clubs")).toEqual([]);
+  });
 });

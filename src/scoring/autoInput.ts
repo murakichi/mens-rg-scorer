@@ -5,7 +5,7 @@
 // 採点には一切触れず、つなぎ・三宙の達成状況だけ `seriesTags` から読む。
 // =====================================================================
 
-import { DIFF_SCORE, DIFF_VALUE, ROUNDOFF_SKILL_ID, USE_APPARATUS_TAG, skillDef } from "./constants";
+import { DIFF_SCORE, DIFF_VALUE, ROUNDOFF_SKILL_ID, SIDE_THROW_TAG, USE_APPARATUS_TAG, skillDef } from "./constants";
 import { motionDef, motionTimes, prevSkillId, seriesTags, analyzeSeries, thrownCount } from "./analysis";
 import { CHAIN_END_SKILLS, endsFacingBackward, THROW_ROLL_MOTION } from "./tumblingChain";
 import { itemLabel } from "./templates";
@@ -19,6 +19,7 @@ const FRONT_ID = "b_front";
 /** 伸身前宙1回ひねり（`FRONT_LAYOUT_TWIST_ID` と同じ技） */
 const FRONT_LAYOUT_ID_TWIST = FRONT_LAYOUT_TWIST_ID;
 const FRONT_TWIST_ID = "c_front1full";
+const KIRIMOMI_TEN_ID = "c_kirimomiten";
 const SIDE_SALTO_ID = "b_sidesalto";
 /** 投げている間の徒手が、この動作数に達したら「キャッチ→背面投げ→背面キャッチ」を勧める */
 export const HAND_MOTIONS_FOR_REPEAT_THROW = 3;
@@ -85,6 +86,25 @@ export function autoInputSuggestions(
   const last = items[n - 1];
   if (!last) return [];
 
+  /** 入力中のシリーズを除いた、構成全体のユニットの平均難度点 */
+  const routineAverage = (): number => {
+    const scores = list
+      .filter((_, i) => i !== sIdx)
+      .flatMap((s2) => analyzeSeries(s2, junior).units.map((u) => DIFF_SCORE[u.finalDiff]));
+    return scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+  };
+  const eps = 1e-9;
+
+  // ---- クラブ・リングの横投げ：もう一方の手具で押さえて受ける ----
+  if (
+    (apparatus === "clubs" || apparatus === "ring") &&
+    last.kind === "throw" &&
+    (last.throwTypes || []).includes(SIDE_THROW_TAG) &&
+    thrownCount(last) === 1
+  ) {
+    return [suggestion("sideThrow-pressCatch", [{ kind: "catch", catchTypes: [USE_APPARATUS_TAG], catchTwo: false }])];
+  }
+
   // ---- 投げのシリーズのあとに投げを足したとき：投げタン未達成なら平均難度に合わせて勧める ----
   if (
     n === 1 &&
@@ -92,10 +112,8 @@ export function autoInputSuggestions(
     list.slice(0, sIdx).some((s2) => s2.items.some((it) => it.kind === "throw")) &&
     !list.some((s2) => analyzeSeries(s2, junior).units.some((u) => u.isThrowTumbling))
   ) {
-    const scores = list.filter((_, i) => i !== sIdx).flatMap((s2) => analyzeSeries(s2, junior).units.map((u) => DIFF_SCORE[u.finalDiff]));
-    const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+    const avg = routineAverage();
     const catchItem: Item = { kind: "catch", catchTypes: [], catchTwo: false };
-    const eps = 1e-9;
     const rollTail = (first: string) => [skillItem(first), motionItem(THROW_ROLL_MOTION), catchItem];
     const twistSide = [skillItem(FRONT_TWIST_ID), skillItem(SIDE_SALTO_ID), catchItem];
     const options: [string, Item[]][] =
@@ -113,6 +131,16 @@ export function autoInputSuggestions(
                 ["front1twist-side", twistSide],
               ];
     return options.map(([id, items2]) => suggestion(`throwTumbling-${id}`, items2));
+  }
+
+  // ---- 平均難度が高いときの 投げ→前宙 → きりもみ転回→キャッチ ----
+  if (
+    last.kind === "skill" &&
+    last.skillId === FRONT_ID &&
+    items[n - 2]?.kind === "throw" &&
+    routineAverage() >= THROW_TUM_AVG_LAYOUT_MIN - eps
+  ) {
+    return [suggestion("throwFront-kirimomiten", [skillItem(KIRIMOMI_TEN_ID), { kind: "catch", catchTypes: [], catchTwo: false }])];
   }
 
   // ---- 投げまわり ----
