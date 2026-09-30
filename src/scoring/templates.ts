@@ -229,7 +229,7 @@ export const apparatusName = (key: TemplateApparatus): string =>
 
 
 /** カード表示用：アイテム1つの短い名前 */
-function itemLabel(item: Item): string {
+export function itemLabel(item: Item): string {
   if (item.kind === "throw") return "投げ";
   if (item.kind === "catch") return "キャッチ";
   if (item.kind === "skill") return skillDef(item.skillId)?.name ?? "技";
