@@ -188,10 +188,11 @@ describe("自動入力", () => {
     const low = ser(sk("a_roundoff"), sk("b_backsalto"));
     const avg = (l: Series[]) => averageDifficulty(l, l.length - 1, false, "clubs");
     // 重複シリーズは数えない
-    expect(avg([hard, hard, cur])).toBeCloseTo(0.7);
+    // hard は内部では F（0.9）まで数える
+    expect(avg([hard, hard, cur])).toBeCloseTo(0.9);
     // 難度の高い上位3つの平均（0.2 の低難度は外れる）。低難度の投げを足しても下がらない
-    expect(avg([hard, hard2, mid, ser(th, mo("chene"), ct), cur])).toBeCloseTo((0.7 + 0.7 + 0.5) / 3);
-    expect(avg([hard, hard2, mid, low, cur])).toBeCloseTo((0.7 + 0.7 + 0.5) / 3);
+    expect(avg([hard, hard2, mid, ser(th, mo("chene"), ct), cur])).toBeCloseTo((0.9 + 0.7 + 0.5) / 3);
+    expect(avg([hard, hard2, mid, low, cur])).toBeCloseTo((0.9 + 0.7 + 0.5) / 3);
     // 同じシリーズの2つ目の投げは数えない（1つ目 縦3動作E 0.7 だけ）
     expect(avg([ser(th, mo("mv3"), ct, th, mo("chene"), ct), cur])).toBeCloseTo(0.7);
   });

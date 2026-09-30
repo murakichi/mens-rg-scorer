@@ -453,7 +453,9 @@ export function effectiveScores(
 ): number[] {
   const others = list.filter((_, i) => i !== sIdx);
   if (others.length === 0) return [];
-  const result = computeScore(others, apparatus, { junior });
+  // 目安の計算だけは十年後モードの F（0.9）まで内部で数える。E（0.7）で頭打ちにすると、
+  // 実際には F 相当の徒手（シェネ×5 など）が E と区別できなくなる。画面の採点には影響しない
+  const result = computeScore(others, apparatus, { junior, future: "F" });
   const scores: number[] = [];
   result.seriesBreakdowns.forEach((b) => {
     b.tumRows.forEach((r) => {
