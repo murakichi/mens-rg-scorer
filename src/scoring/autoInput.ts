@@ -31,7 +31,7 @@ const ROLL_MOTION_IDS = [THROW_ROLL_MOTION, "roll"];
 /** 投げタンをおすすめするときの、構成全体の平均難度点の境目（この値以下ならその段） */
 export const THROW_TUM_AVG_FRONT_ROLL_MAX = 0.3;
 export const THROW_TUM_AVG_FRONT_SIDE_MAX = 0.4;
-/** この値以上なら伸身前宙。間（0.4超〜0.7未満）は前宙→側宙 */
+/** 0.4超〜0.7未満は前方1回ひねり→側宙。この値以上は伸身前宙→前転／前方1回ひねり→側宙 */
 export const THROW_TUM_AVG_LAYOUT_MIN = 0.7;
 const FRONT_LAYOUT_ID = buildTwistSkillId({ base: "front", twist: 0, posture: "layout" });
 
@@ -95,13 +95,23 @@ export function autoInputSuggestions(
     const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
     const catchItem: Item = { kind: "catch", catchTypes: [], catchTwo: false };
     const eps = 1e-9;
-    const tail =
+    const rollTail = (first: string) => [skillItem(first), motionItem(THROW_ROLL_MOTION), catchItem];
+    const twistSide = [skillItem(FRONT_TWIST_ID), skillItem(SIDE_SALTO_ID), catchItem];
+    const options: [string, Item[]][] =
       avg <= THROW_TUM_AVG_FRONT_ROLL_MAX + eps
-        ? [skillItem(FRONT_ID), motionItem(THROW_ROLL_MOTION)]
-        : avg >= THROW_TUM_AVG_LAYOUT_MIN - eps
-          ? [skillItem(FRONT_LAYOUT_ID), motionItem(THROW_ROLL_MOTION)]
-          : [skillItem(FRONT_ID), skillItem(SIDE_SALTO_ID)];
-    return [suggestion("throwTumbling", [...tail, catchItem])];
+        ? [
+            ["front-roll", rollTail(FRONT_ID)],
+            ["side", [skillItem(SIDE_SALTO_ID), catchItem]],
+          ]
+        : avg <= THROW_TUM_AVG_FRONT_SIDE_MAX + eps
+          ? [["front-side", [skillItem(FRONT_ID), skillItem(SIDE_SALTO_ID), catchItem]]]
+          : avg < THROW_TUM_AVG_LAYOUT_MIN - eps
+            ? [["front1twist-side", twistSide]]
+            : [
+                ["frontLayout-roll", rollTail(FRONT_LAYOUT_ID)],
+                ["front1twist-side", twistSide],
+              ];
+    return options.map(([id, items2]) => suggestion(`throwTumbling-${id}`, items2));
   }
 
   // ---- 投げまわり ----
