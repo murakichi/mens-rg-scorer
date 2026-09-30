@@ -52,6 +52,8 @@ const TUMBLING_REQUIRED_KEYS = [
   "tumCount",
 ];
 const CHENE_ID = "chene";
+/** 投げ→シェネがこの回数以下なら、キャッチ／前転→キャッチを勧める */
+export const CHENE_CATCH_MAX_COUNT = 3;
 const ROLL_MOTION_ID = "roll";
 const ROLL_MOTION_IDS = [THROW_ROLL_MOTION, ROLL_MOTION_ID];
 
@@ -406,6 +408,38 @@ function baseSuggestions(
   const items = list[sIdx]?.items ?? [];
   const last = items[items.length - 1];
   const t = openThrowIndex(items);
+  // 投げ→シェネ（合計3回以下）：キャッチ、もしくは前転→キャッチ
+  if (
+    last &&
+    last.kind === "motion" &&
+    last.motionId === CHENE_ID &&
+    t >= 0 &&
+    items.slice(t + 1).every((it) => it.kind === "motion")
+  ) {
+    const cheneTotal = items
+      .slice(t + 1)
+      .reduce(
+        (sum, it) =>
+          sum + (it.kind === "motion" && it.motionId === CHENE_ID ? motionTimes(it.count) : 0),
+        0,
+      );
+    if (cheneTotal >= 1 && cheneTotal <= CHENE_CATCH_MAX_COUNT) {
+      const catchItem: Item = {
+        kind: "catch",
+        catchTypes: [],
+        catchTwo: thrownCount(items[t]) === 2,
+      };
+      const out: AutoInputSuggestion[] = [];
+      // すでにキャッチ1つだけの候補（ロープの手以外のキャッチなど）があれば先に置く
+      if (core[0]?.items.length === 1 && core[0].items[0].kind === "catch") out.push(core[0]);
+      out.push(
+        suggestion("chene-catch", [catchItem]),
+        suggestion("chene-roll-catch", [motionItem(THROW_ROLL_MOTION), catchItem]),
+        ...core.slice(out.length),
+      );
+      return out;
+    }
+  }
   if (
     !last ||
     last.kind !== "motion" ||

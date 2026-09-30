@@ -29,8 +29,8 @@ describe("自動入力", () => {
     expect(g.label).toBe("キャッチ→投げ→キャッチ");
     expect(g.items[1]).toMatchObject({ kind: "throw", throwTypes: ["noview"] });
     expect(g.items[2]).toMatchObject({ kind: "catch", catchTypes: ["noview"] });
-    expect(ids([ser(th, mo("chene", 2))])).toEqual([]);
-    expect(ids([ser(th, mo("chene", 3))])).toEqual(["throwHand-catchThrowBack"]);
+    expect(ids([ser(th, mo("chene", 2))])).not.toContain("throwHand-catchThrowBack");
+    expect(ids([ser(th, mo("chene", 3))])).toContain("throwHand-catchThrowBack");
   });
 
   it("二つ投げの徒手3動作は2つ同時キャッチで受ける", () => {
@@ -81,7 +81,7 @@ describe("自動入力", () => {
     // 4本目まで／スティック／他の動作では出ない
     expect(autoInputSuggestions([ser(th, ct, th, ct, th, ct), ...more, fifth], 4, false, "clubs").map((s) => s.id)).not.toContain("pressCatch");
     expect(autoInputSuggestions([four, ...more, fifth], 4, false, "stick").map((s) => s.id)).not.toContain("pressCatch");
-    expect(autoInputSuggestions([four, ...more, ser(th, mo("chene"))], 4, false, "clubs")).toEqual([]);
+    expect(autoInputSuggestions([four, ...more, ser(th, mo("chene"))], 4, false, "clubs").map((s) => s.id)).not.toContain("pressCatch");
     // タンブリングが揃っていなければ出ない
     expect(autoInputSuggestions([four, fifth], 1, false, "clubs").map((s) => s.id)).not.toContain("pressCatch");
   });
@@ -97,7 +97,7 @@ describe("自動入力", () => {
     const [g] = autoInputSuggestions([...tumbling, chene], 4, false, "rope");
     expect(g.items[0]).toMatchObject({ kind: "catch", catchTypes: ["nonhand"] });
     // 必須要素が足りなければ出ない／他の手具でも出ない
-    expect(autoInputSuggestions([chene], 0, false, "rope")).toEqual([]);
+    expect(autoInputSuggestions([chene], 0, false, "rope").map((s) => s.id)).not.toContain("ropeNonHandCatch");
     expect(autoInputSuggestions([...tumbling, chene], 4, false, "stick").map((s) => s.id)).not.toContain("ropeNonHandCatch");
   });
 
@@ -194,5 +194,21 @@ describe("自動入力", () => {
     expect(avg([hard, hard2, mid, low, cur])).toBeCloseTo((0.7 + 0.7 + 0.5) / 3);
     // 同じシリーズの2つ目の投げは数えない（1つ目 縦3動作E 0.7 だけ）
     expect(avg([ser(th, mo("mv3"), ct, th, mo("chene"), ct), cur])).toBeCloseTo(0.7);
+  });
+
+  it("投げ→シェネ（3回以下）：キャッチ／前転→キャッチ", () => {
+    expect(labels([ser(th, mo("chene"))], 0)).toEqual(["キャッチ", "前転→キャッチ"]);
+    expect(labels([ser(th, mo("chene", 2))], 0)).toEqual(["キャッチ", "前転→キャッチ"]);
+    // 3回は3動作なので、従来の キャッチ→投げ→キャッチ も別案に残る
+    expect(labels([ser(th, mo("chene", 3))], 0)).toEqual(["キャッチ", "前転→キャッチ", "キャッチ→投げ→キャッチ"]);
+    // 4回以上は出さない（従来の候補のみ）
+    expect(labels([ser(th, mo("chene", 4))], 0)).toEqual(["キャッチ→投げ→キャッチ"]);
+    // 投げが無い／キャッチ済みなら出ない
+    expect(labels([ser(mo("chene"))], 0)).toEqual([]);
+    expect(labels([ser(th, ct, mo("chene"))], 0)).toEqual([]);
+  });
+
+  it("投げ→前転を入力した時点でキャッチが候補に出る", () => {
+    expect(labels([ser(th, mo("fwd_roll"))], 0)).toEqual(["キャッチ"]);
   });
 });
