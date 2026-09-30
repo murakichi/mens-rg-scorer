@@ -32,8 +32,8 @@ const ROLL_MOTION_IDS = [THROW_ROLL_MOTION, "roll"];
 
 /** 投げタンをおすすめするときの、構成全体の平均難度点の境目（この値以下ならその段） */
 export const THROW_TUM_AVG_FRONT_ROLL_MAX = 0.3;
-export const THROW_TUM_AVG_FRONT_SIDE_MAX = 0.4;
-/** 0.4超〜0.7未満は前方1回ひねり→側宙。この値以上は伸身前宙→前転／前方1回ひねり→側宙 */
+export const THROW_TUM_AVG_FRONT_SIDE_MAX = 0.5;
+/** 0.5超〜0.7未満は前方1回ひねり→側宙。この値以上は伸身前宙→前転／前方1回ひねり→側宙 */
 export const THROW_TUM_AVG_LAYOUT_MIN = 0.7;
 const FRONT_LAYOUT_ID = buildTwistSkillId({ base: "front", twist: 0, posture: "layout" });
 

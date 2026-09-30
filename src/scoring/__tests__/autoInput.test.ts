@@ -104,7 +104,7 @@ describe("自動入力", () => {
     // 平均 B(0.2) → 前宙→前転→キャッチ
     const prev = ser(th, mo("chene"), ct);
     expect(labels([prev, ser(th)], 1)).toEqual(["前宙→前転→キャッチ", "側宙→キャッチ"]);
-    // C の側宙終わりの塊（平均 0.4 台）→ 前宙→側宙→キャッチ
+    // 平均 0.3超〜0.5→ 前宙→側宙→キャッチ
     const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
     expect(labels([prev, mid, mid, ser(th)], 3)).toEqual(["前宙→側宙→キャッチ"]);
     // 平均 0.7 以上 → 伸身前宙→前転→キャッチ
@@ -114,8 +114,8 @@ describe("自動入力", () => {
       "伸身前宙1回ひねり→前転→キャッチ",
       "前方宙返り1回ひねり→側宙→キャッチ",
     ]);
-    // 0.4超〜0.7未満 → 前方1回ひねり→側宙→キャッチ
-    expect(labels([mid, mid, mid, mid, prev, ser(th)], 5)).toEqual(["前方宙返り1回ひねり→側宙→キャッチ"]);
+    // 0.5超〜0.7未満 → 前方1回ひねり→側宙→キャッチ
+    expect(labels([hard, hard, hard, mid, prev, ser(th)], 5)).toEqual(["前方宙返り1回ひねり→側宙→キャッチ"]);
   });
 
   it("投げタン達成済み・最初の投げ・シリーズの途中の投げでは勧めない", () => {
