@@ -24,6 +24,8 @@ import {
   DIFF_VALUE,
   HANDS_TYPES,
   NO_VIEW_TAG,
+  SIDE_THROW_TAG,
+  canUseSideThrow,
   REQUIRED_THROW_OPTIONS,
   hasLeftHandThrow,
 } from "./constants";
@@ -311,6 +313,47 @@ export const verticalThreeChance = (demandScore?: number | null): number =>
  * 前転3回から受けるのは手具で押さえつけるのが主流。
  */
 export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
+
+/**
+ * **横投げ**（`SIDE_THROW_TAG`）を付ける確率。技術加点にはならず、投げ方の種類として
+ * 数えるだけなので、実際に実施しやすい形だけに寄せる（ロープは横投げをしない）。
+ *  - 手具を使ったキャッチ（押さえつけ）で受ける投げ：もう一方の手具を体側に構えて受けるので
+ *    横に投げるのが定番。特にクラブ
+ *  - スティックの**低難度の左手投げ**（徒手が `SIDE_LEFT_HAND_MAX_MOTIONS` 動作以下）
+ */
+export const SIDE_THROW_PRESS_CHANCE: Partial<Record<ApparatusKey, number>> = { clubs: 0.9, ring: 0.6 };
+export const SIDE_LEFT_HAND_CHANCE = 0.8;
+export const SIDE_LEFT_HAND_MAX_MOTIONS = 1;
+
+/** その投げ方が横投げを付けられるか（二つ投げ・手以外の投げには付けない） */
+const canAddSideThrow = (style: AutoThrowStyle): boolean =>
+  !style.two && !(style.throwTypes || []).includes(SIDE_THROW_TAG) && !(style.throwTypes || []).includes(NON_HAND_TAG);
+
+/** 横投げを付けた投げ方（idは変えない。すでに付いている・付けられないときはそのまま） */
+export const withSideThrow = (style: AutoThrowStyle): AutoThrowStyle =>
+  canAddSideThrow(style) ? { ...style, throwTypes: [...(style.throwTypes || []), SIDE_THROW_TAG] } : style;
+
+/**
+ * 受け方・徒手の量が決まった投げに、横投げを付けるか引く。
+ * `chance` は珍しさの変形を通した確率変換（`rarityChance`）。
+ */
+export function maybeSideThrow(
+  apparatus: ApparatusKey,
+  throwStyle: AutoThrowStyle,
+  catchStyle: AutoCatchStyle,
+  motions: number,
+  rand: () => number,
+  chance: (p: number) => number = (p) => p,
+): AutoThrowStyle {
+  if (!canUseSideThrow(apparatus) || !canAddSideThrow(throwStyle)) return throwStyle;
+  const press = catchHasTag(catchStyle, CATCH_USE_APPARATUS);
+  const p = press
+    ? (SIDE_THROW_PRESS_CHANCE[apparatus] ?? 0)
+    : (throwStyle.reqTypes || []).includes(LEFT_HAND_TAG) && motions <= SIDE_LEFT_HAND_MAX_MOTIONS
+      ? SIDE_LEFT_HAND_CHANCE
+      : 0;
+  return p > 0 && rand() < chance(p) ? withSideThrow(throwStyle) : throwStyle;
+}
 
 /** 左手投げの必須投げのid */
 export const LEFT_HAND_TAG = "lefthand";
@@ -681,13 +724,15 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       nextCount.set(pattern.id, counts);
     }
     const cheneCount = counts();
-    const catchStyle = nextCatchFor(pattern, throwStyle, patternMotions(pattern, cheneCount));
+    const motions = patternMotions(pattern, cheneCount);
+    const catchStyle = nextCatchFor(pattern, throwStyle, motions);
     return {
       pattern,
       cheneCount,
       // シェネが無い形では手の種類は使わない
       hands: cheneCount > 0 ? nextHands(cheneCount) : null,
-      throwStyle,
+      // 押さえつけキャッチ・低難度の左手投げは横投げにする（`maybeSideThrow`）
+      throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, motions, rand, chance),
       catchStyle,
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
       ...(pattern.trailPair
@@ -695,9 +740,10 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
             const trailThrowStyle = nextTrailThrow(catchStyle);
             // 受け方は「徒手なしの投げ受け」として引く（手具ごとの規則だけが効く）。
             // クラブの押さえつけ・ロープの足に絡めた受けが出るので、演技の締めにもなる
+            const trailCatchStyle = nextCatchFor(MINIMAL_PATTERN, trailThrowStyle, 0);
             return {
-              trailThrowStyle,
-              trailCatchStyle: nextCatchFor(MINIMAL_PATTERN, trailThrowStyle, 0),
+              trailThrowStyle: maybeSideThrow(apparatus, trailThrowStyle, trailCatchStyle, 0, rand, chance),
+              trailCatchStyle,
             };
           })()
         : {}),

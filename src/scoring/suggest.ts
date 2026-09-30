@@ -13,6 +13,7 @@ import {
   CATCH_OPTIONS_COMMON,
   SKILL_THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
+  THROW_OPTIONS_SIDE,
   ROUNDOFF_SKILL_ID,
   THROW_OPTIONS_COMMON,
   skillDef,
@@ -232,7 +233,7 @@ function styleTags(list: Series[], apparatus: ApparatusKey): Candidate[] {
   list.forEach((ser, sIdx) => {
     ser.items.forEach((item, iIdx) => {
       if (item.kind === "throw")
-        add("throwType", sIdx, iIdx, "throwTypes", [...THROW_OPTIONS_COMMON, ...THROW_OPTIONS_APPARATUS], ser, "投げ");
+        add("throwType", sIdx, iIdx, "throwTypes", [...THROW_OPTIONS_COMMON, ...THROW_OPTIONS_SIDE, ...THROW_OPTIONS_APPARATUS], ser, "投げ");
       else if (item.kind === "catch")
         add("catchType", sIdx, iIdx, "catchTypes", [...CATCH_OPTIONS_COMMON, ...CATCH_OPTIONS_APPARATUS], ser, "キャッチ");
       else if (item.kind === "skill" && item.isThrow)

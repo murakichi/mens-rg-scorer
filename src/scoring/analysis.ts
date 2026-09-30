@@ -15,6 +15,8 @@ import {
   APPARATUS_USE,
   REQUIRED_THROW_OPTIONS,
   USE_APPARATUS_TAG,
+  SIDE_THROW_TAG,
+  canUseSideThrow,
   requiredThrowName,
   skillDef,
   skillDifficulty,
@@ -642,18 +644,22 @@ export const APPARATUS_INPUT_NAMES = {
   catchTwo: "2つ同時キャッチ",
   ropeJump: "ロープ跳び",
   handsEmptyOp: "投げている間の手具操作",
+  side: "横投げ",
 } as const;
 
 /** その手具では入力できない内容の一覧（無ければ空。確認ダイアログの文面に使う） */
 export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): string[] {
   const reasons = new Set<string>();
   const tags = canUseApparatusTag(apparatus);
+  const side = canUseSideThrow(apparatus);
   list.forEach((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);
     ser.items.forEach((item, i) => {
       // 投げている間（手元に手具が無い間）は手具操作ができない
       if (item.kind === "skill" && item.hasApparatus && empty[i])
         reasons.add(APPARATUS_INPUT_NAMES.handsEmptyOp);
+      if ((item.kind === "throw" || item.kind === "skill") && !side && (item.throwTypes || []).includes(SIDE_THROW_TAG))
+        reasons.add(APPARATUS_INPUT_NAMES.side);
       if (item.kind === "throw") {
         if (!tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
           reasons.add(APPARATUS_INPUT_NAMES.useapp);
@@ -689,7 +695,9 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
 export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Series[] {
   if (apparatusBlockers(list, apparatus).length === 0) return list;
   const tags = canUseApparatusTag(apparatus);
-  const withoutTag = (ids?: string[]) => (ids || []).filter((id) => tags || id !== USE_APPARATUS_TAG);
+  const side = canUseSideThrow(apparatus);
+  const withoutTag = (ids?: string[]) =>
+    (ids || []).filter((id) => (tags || id !== USE_APPARATUS_TAG) && (side || id !== SIDE_THROW_TAG));
   const withoutReq = (ids?: string[]) => (ids || []).filter((id) => canUseReqType(apparatus, id));
   return list.map((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);

@@ -28,6 +28,7 @@ import { calcTumblingDifficulty, needsRoundoffBefore, prevSkillId, stripForAppar
 import {
   CATCH_USE_APPARATUS,
   NO_VIEW_TAG,
+  SIDE_THROW_PRESS_CHANCE,
   canThrowAfterCatch,
   type AutoThrowStyle,
 } from "./autoThrows";
@@ -73,7 +74,7 @@ import {
   usableSkills,
 } from "./tumblingTransitions";
 import { newTemplateId, type SeriesTemplate } from "./templates";
-import { CATEGORY } from "./constants";
+import { CATEGORY, SIDE_THROW_TAG } from "./constants";
 import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
 // 入力画面・生成側から今までどおり `autoTumblings` 1か所で参照できるようにしておく
@@ -100,6 +101,11 @@ export interface TumblingDraws {
   roll: number;
   /** 前転でつないだ着地を手具を使ったキャッチ（押さえつけ）で受けるか */
   pressCatch: boolean;
+  /**
+   * 押さえつけキャッチで受ける投げタンの投げを**横投げ**にするか
+   * （`SIDE_THROW_PRESS_CHANCE`。ロープ・スティックは持たない）。未指定は通常の投げ。
+   */
+  sideThrow?: boolean;
   /** 投げタンの投げを二つ投げにするか（クラブ・リングで、投げてから跳ぶ形だけ） */
   twoThrow: boolean;
   /**
@@ -198,7 +204,16 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       : draws.leftHandThrow
         ? [LEFT_HAND_THROW_TAG]
         : [];
-    items.push({ kind: "throw", ...(reqTypes.length > 0 ? { reqTypes } : {}) });
+    // 押さえつけキャッチで受ける形（転がり・前転で終わる）のときだけ横投げにする
+    const lastId = spec.saltoIds.slice(0, spec.saltoCount).slice(-1)[0];
+    const pressed =
+      !!pattern.rollFinish && !noRollAfter(lastId) && draws.pressCatch && !draws.twoThrow && !draws.secondThrow;
+    const side = !!draws.sideThrow && pressed;
+    items.push({
+      kind: "throw",
+      ...(reqTypes.length > 0 ? { reqTypes } : {}),
+      ...(side ? { throwTypes: [SIDE_THROW_TAG] } : {}),
+    });
   }
   spec.entry.forEach((id) => items.push(skillItem(id)));
   const saltos = spec.saltoIds.slice(0, spec.saltoCount);
@@ -467,6 +482,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         draws: {
           ...ends,
           pressCatch: rand() < chance(ROLL_FINISH_PRESS_CATCH_CHANCE),
+          ...(apparatus && rand() < chance(SIDE_THROW_PRESS_CHANCE[apparatus] ?? 0) ? { sideThrow: true } : {}),
           twoThrow,
           leftHandThrow,
           backCatch,
