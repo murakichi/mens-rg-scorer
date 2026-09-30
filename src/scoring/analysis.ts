@@ -15,6 +15,8 @@ import {
   APPARATUS_USE,
   REQUIRED_THROW_OPTIONS,
   USE_APPARATUS_TAG,
+  SIDE_THROW_TAG,
+  canUseSideThrow,
   requiredThrowName,
   skillDef,
   skillDifficulty,
@@ -29,6 +31,7 @@ import {
   TUM_VARIETY_ITEM_ID,
   TUM_VARIETY_DEDUCTION_STEP,
   canOperateApparatus,
+  appInTumblingDeduction,
 } from "./constants";
 import type {
   ApparatusKey,
@@ -641,18 +644,22 @@ export const APPARATUS_INPUT_NAMES = {
   catchTwo: "2つ同時キャッチ",
   ropeJump: "ロープ跳び",
   handsEmptyOp: "投げている間の手具操作",
+  side: "横投げ",
 } as const;
 
 /** その手具では入力できない内容の一覧（無ければ空。確認ダイアログの文面に使う） */
 export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): string[] {
   const reasons = new Set<string>();
   const tags = canUseApparatusTag(apparatus);
+  const side = canUseSideThrow(apparatus);
   list.forEach((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);
     ser.items.forEach((item, i) => {
       // 投げている間（手元に手具が無い間）は手具操作ができない
       if (item.kind === "skill" && item.hasApparatus && empty[i])
         reasons.add(APPARATUS_INPUT_NAMES.handsEmptyOp);
+      if ((item.kind === "throw" || item.kind === "skill") && !side && (item.throwTypes || []).includes(SIDE_THROW_TAG))
+        reasons.add(APPARATUS_INPUT_NAMES.side);
       if (item.kind === "throw") {
         if (!tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
           reasons.add(APPARATUS_INPUT_NAMES.useapp);
@@ -688,7 +695,9 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
 export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Series[] {
   if (apparatusBlockers(list, apparatus).length === 0) return list;
   const tags = canUseApparatusTag(apparatus);
-  const withoutTag = (ids?: string[]) => (ids || []).filter((id) => tags || id !== USE_APPARATUS_TAG);
+  const side = canUseSideThrow(apparatus);
+  const withoutTag = (ids?: string[]) =>
+    (ids || []).filter((id) => (tags || id !== USE_APPARATUS_TAG) && (side || id !== SIDE_THROW_TAG));
   const withoutReq = (ids?: string[]) => (ids || []).filter((id) => canUseReqType(apparatus, id));
   return list.map((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);
@@ -795,6 +804,37 @@ export function tumblingVariety(list: Series[], junior = false): TumblingVariety
   const max = artDeductionItem(TUM_VARIETY_ITEM_ID)?.max ?? 0;
   const deduction = Math.min(max, Math.round(repeats * TUM_VARIETY_DEDUCTION_STEP * 10) / 10);
   return { total, distinct, repeats, deduction };
+}
+
+/**
+ * **転回中の操作**（§3.5.6.4 の欠点テーブル）の自動判定。
+ * 数えるのは「手具操作を付けられる技」＝入力欄にチェックが出る技だけ
+ * （きりもみ系のように操作できない技、投げている間で手元に手具が無い技は数えない）。
+ * そのうち実際に操作した割合から `appInTumblingDeduction` で減点を引く。
+ */
+export interface TumblingOperation {
+  /** 手具操作を付けられる技の数 */
+  total: number;
+  /** そのうち操作を伴ったもの */
+  withOp: number;
+  /** 自動計算した減点（0〜0.4） */
+  deduction: number;
+}
+
+export function tumblingOperation(list: Series[], apparatus: ApparatusKey): TumblingOperation {
+  let total = 0;
+  let withOp = 0;
+  list.forEach((ser) => {
+    const empty = handsEmptyFlags(ser.items, apparatus);
+    ser.items.forEach((item, i) => {
+      if (item.kind !== "skill" || !item.skillId) return;
+      // 手元に手具が無い間・操作できない技は「操作しなかった」ではなく最初から数えない
+      if (empty[i] || !canOperateApparatus(item.skillId)) return;
+      total += 1;
+      if (item.hasApparatus) withOp += 1;
+    });
+  });
+  return { total, withOp, deduction: appInTumblingDeduction(withOp, total) };
 }
 
 export function seriesSignature(series: Series): string {

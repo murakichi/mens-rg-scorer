@@ -1,6 +1,7 @@
 import { Plus } from "lucide-react";
 import { SeriesCard } from "./SeriesCard";
 import { needsRoundoffBefore, roundoffItem } from "../scoring/analysis";
+import { autoInputSuggestions } from "../scoring/autoInput";
 import { computeScore } from "../scoring/score";
 import type { ApparatusKey, FutureLevel, Item, Series } from "../scoring/types";
 
@@ -39,6 +40,8 @@ interface Props {
   /** 十年後モードの上限難度（null＝OFF）。技の選択肢と難度表示に反映する。 */
   future?: FutureLevel;
   onChange: (next: Series[]) => void;
+  /** 自動入力（おすすめ表示）を出すか。既定は出す */
+  autoInputEnabled?: boolean;
   /** 採点結果。省略時はこのコンポーネント内で計算する（テンプレート編集用） */
   result?: ReturnType<typeof computeScore>;
   /** シリーズカードに出すテンプレート読み込みプルダウンの選択肢 */
@@ -64,6 +67,7 @@ export function SeriesListEditor({
   apparatus,
   junior,
   future = null,
+  autoInputEnabled = true,
   onChange,
   result,
   templateOptions,
@@ -85,6 +89,10 @@ export function SeriesListEditor({
     edit((n) => {
       const item = newItem(kind);
       n[sIdx].items = isPristine(n[sIdx].items) ? [item] : [...n[sIdx].items, item];
+    });
+  const addItems = (sIdx: number, items: Item[]) =>
+    edit((n) => {
+      n[sIdx].items = [...(isPristine(n[sIdx].items) ? [] : n[sIdx].items), ...structuredClone(items)];
     });
   const updateItem = (sIdx: number, iIdx: number, patch: Partial<Item>) =>
     edit((n) => {
@@ -138,6 +146,8 @@ export function SeriesListEditor({
           onSaveTemplate={onSaveTemplate && (() => onSaveTemplate(sIdx))}
           onUpdateField={(patch) => updateSeriesField(sIdx, patch)}
           onAddItem={(kind) => addItem(sIdx, kind)}
+          autoInput={autoInputEnabled ? autoInputSuggestions(series, sIdx, junior, apparatus) : undefined}
+          onAddItems={(items) => addItems(sIdx, items)}
           onUpdateItem={(iIdx, patch) => updateItem(sIdx, iIdx, patch)}
           onRemoveItem={(iIdx) => removeItem(sIdx, iIdx)}
           onMoveItem={(iIdx, dir) => moveItem(sIdx, iIdx, dir)}

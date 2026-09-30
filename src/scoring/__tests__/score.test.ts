@@ -17,14 +17,17 @@ describe("computeScore — 空の演技（回帰アンカー）", () => {
     expect(r.eScore).toBe(10);
     // 方向系3不足(0.9) + 投げ不足(0.3) + 宙返り連続なし(0.2) + 多様性上限(0.5)
     //  + 必須要素の欠如3項目(投げタン・つなぎ技・タンブリング本数 3×0.3=0.9)
-    //  + スティック手具別必須要素5項目未実施(5×0.3=1.5) = 4.3
-    expect(r.aDeduction).toBeCloseTo(4.3, 5);
-    expect(r.aScore).toBeCloseTo(5.7, 5);
-    expect(r.grandTotal).toBeCloseTo(15.7, 5);
+    //  + 深い運動2部位不足(0.2) + 柔軟なし(0.1) + 手具操作チェック3件(スティックは左手の操作も／0.3)
+    //  + 身体を離れる操作4回不足(0.4) + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 5.0
+    expect(r.aDeduction).toBeCloseTo(5.0, 5);
+    expect(r.aScore).toBeCloseTo(5.0, 5);
+    expect(r.grandTotal).toBeCloseTo(15.0, 5);
     expect(r.missing.length).toBeGreaterThan(0);
     expect(r.missingElementDeduction).toBeCloseTo(0.9, 5);
-    // 手具別必須要素は未実施5項目で −1.5
-    expect(r.apparatusElementDeduction).toBeCloseTo(1.5, 5);
+    // 手具別必須要素は未実施4項目で −1.2
+    expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
+    expect(r.deepMotionDeduction).toBeCloseTo(0.2, 5);
+    expect(r.handOpDeduction).toBeCloseTo(0.7, 5);
   });
 });
 
@@ -68,14 +71,14 @@ describe("computeScore — 右投げ右受けの自動判定（§3.2 スティ�
   it("投げが無ければ不足のまま（−0.3）", () => {
     const r = computeScore([S({ kind: "skill", skillId: "b_backsalto" }, { kind: "catch" })], "stick");
     expect(check(r)?.passed).toBe(false);
-    expect(r.apparatusElementDeduction).toBeCloseTo(1.5, 5);
+    expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
   });
 
   it("通常の投げが1回でもあれば自動でOK", () => {
     const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "stick");
     expect(check(r)?.passed).toBe(true);
-    // 5項目中1つ自動OK → 残り4項目未実施で −1.2
-    expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
+    // 4項目中1つ自動OK → 残り3項目未実施で −0.9
+    expect(r.apparatusElementDeduction).toBeCloseTo(0.9, 5);
   });
 
   it("左手投げ・手以外の投げだけでは右投げとみなさない", () => {
@@ -847,7 +850,6 @@ describe("computeScore — 必須投げ（左手投げ／二つ同時投げ）�
       "右投げ右受け1回以上（自動判定）",
       "転回系の投げ受け（自動判定）",
       "1m以上のころがし",
-      "プロペラ回旋2回以上",
     ]);
     expect(el(r, "stick_left")?.passed).toBe(false);
   });
@@ -971,6 +973,9 @@ describe("computeScore — 必須要素チェックの不足も減点する", ()
       r.saltoChainDeduction +
       r.varietyDeduction +
       r.missingElementDeduction +
+      r.deepMotionDeduction +
+      r.flexDeduction +
+      r.handOpDeduction +
       r.apparatusElementDeduction +
       r.violationDeduction;
     expect(sum).toBeCloseTo(r.aDeduction, 5);

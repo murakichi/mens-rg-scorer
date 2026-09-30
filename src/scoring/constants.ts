@@ -49,6 +49,15 @@ export const CATCH_OPTIONS_COMMON = [
 ];
 export const CATCH_OPTIONS_APPARATUS = [{ id: USE_APPARATUS_TAG, name: "手具を使ったキャッチ" }];
 
+/**
+ * 横投げの技術タグ。投げ方の一種類として数える（多様な投げ受けの種類数）。
+ * ロープでは実施しないので、それ以外の手具だけに出す（`canUseSideThrow`）。
+ * 技術加点（0.1）は付けない — 投げ方の種類としてだけ数える。
+ */
+export const SIDE_THROW_TAG = "side";
+export const THROW_OPTIONS_SIDE = [{ id: SIDE_THROW_TAG, name: "横投げ" }];
+export const canUseSideThrow = (apparatus: ApparatusKey): boolean => apparatus !== "rope";
+
 export const APPARATUS_USE: Record<ApparatusKey, boolean> = {
   stick: false,
   clubs: true,
@@ -231,7 +240,6 @@ export const APPARATUS_REQUIRED_ELEMENTS: Record<
     { id: "stick_right", name: "右投げ右受け1回以上", auto: "rightThrow" },
     { id: "stick_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "stick_roll", name: "1m以上のころがし" },
-    { id: "stick_propeller", name: "プロペラ回旋2回以上" },
   ],
   ring: [
     { id: "ring_twothrow", name: "2つ同時投げ", auto: "twoThrow" },
@@ -250,7 +258,6 @@ export const APPARATUS_REQUIRED_ELEMENTS: Record<
     { id: "clubs_twothrow", name: "2つ同時投げ", auto: "twoThrow" },
     { id: "clubs_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "clubs_roll", name: "50cm以上のころがし" },
-    { id: "clubs_propeller", name: "プロペラ回旋2回以上" },
   ],
 };
 
@@ -266,13 +273,43 @@ export interface ArtDeductionItem {
   name: string;
   max: number;
   note: string;
+  /** 画面のツールチップ。自動判定している部分がある項目だけ、その中身を要約して持つ */
+  tip?: string;
 }
 export const ART_DEDUCTION_STEP = 0.1;
 export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
-  { id: "handVariety", group: "多様性と技術価値", name: "徒手系の種類・組み合わせの多様性", max: 1.0, note: "0.1 / 0.2" },
-  { id: "tumVariety", group: "多様性と技術価値", name: "転回系の種類・組み合わせの多様性", max: 0.5, note: "0.1 / 0.2" },
-  { id: "appVariety", group: "多様性と技術価値", name: "さまざまな操作", max: 1.0, note: "0.1 / 0.2" },
-  { id: "appInTumbling", group: "手具操作の多様性", name: "転回中の操作", max: 0.5, note: "0〜0.4" },
+  {
+    id: "handVariety",
+    group: "多様性と技術価値",
+    name: "徒手系の種類・組み合わせの多様性",
+    max: 1.0,
+    note: "0.1 / 0.2",
+    tip: "上半身・下半身の深い運動の不足は「基本徒手」カードで自動判定して別に引いている。ここはそれ以外の主観評価ぶん",
+  },
+  {
+    id: "tumVariety",
+    group: "多様性と技術価値",
+    name: "転回系の種類・組み合わせの多様性",
+    max: 0.5,
+    note: "0.1 / 0.2",
+    tip: "自動計算：A難度技と徒手扱いの転回を除いた宙返りについて、実施数−種類数ぶん1つにつき −0.1（上限0.50）。ひねり回数・姿勢が違えば別の技として数える",
+  },
+  {
+    id: "appVariety",
+    group: "多様性と技術価値",
+    name: "さまざまな操作",
+    max: 1.0,
+    note: "0.1 / 0.2",
+    tip: "投げ受けの種類の不足は「投げ方・受け方の種類不足」として自動で引いている（投げ方・受け方それぞれ3種類、1種類不足につき −0.1・合計上限0.5）。ここはそれ以外の操作の多様性",
+  },
+  {
+    id: "appInTumbling",
+    group: "手具操作の多様性",
+    name: "転回中の操作",
+    max: 0.5,
+    note: "0〜0.4",
+    tip: "自動計算：手具操作を付けられる技のうち操作した割合で 0〜0.4（8割以上で0／2割未満で0.4）。操作がまったく無いタンブリングは別に自動で引いている（宙返り系すべてで無操作 −0.1／シリーズ全体で無操作 −0.2・上限0.4）",
+  },
   { id: "rhythm", group: "芸術性と技術価値", name: "リズム変化・ダイナミズムによる表現", max: 0.5, note: "0.1 / 0.2" },
   { id: "space", group: "芸術性と技術価値", name: "空間使用による表現", max: 0.5, note: "0.1 / 0.2" },
   { id: "originality", group: "芸術性と技術価値", name: "独創性の高い内容と表現", max: 0.5, note: "0.1 / 0.2" },
@@ -290,6 +327,53 @@ export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
 export const TUM_VARIETY_ITEM_ID = "tumVariety";
 export const TUM_VARIETY_DEDUCTION_STEP = 0.1;
 
+/**
+ * 「転回中の操作」（§3.5.6.4）の自動計算。
+ * 手具操作を付けられる技（＝入力欄に「手具操作」チェックが出る技）のうち、
+ * 実際に操作した割合で減点幅 0〜0.4 を割り当てる。割合の区切りは規則には無いので
+ * **この表がアプリの判断**（自動計算ボタンで手入力欄に入れるだけなので、上書きできる）。
+ */
+export const APP_IN_TUM_ITEM_ID = "appInTumbling";
+export const APP_IN_TUM_STEPS: { minRatio: number; deduction: number }[] = [
+  { minRatio: 0.8, deduction: 0 },
+  { minRatio: 0.6, deduction: 0.1 },
+  { minRatio: 0.4, deduction: 0.2 },
+  { minRatio: 0.2, deduction: 0.3 },
+  { minRatio: 0, deduction: 0.4 },
+];
+/** 割合から減点を引く（操作できる技が無ければ減点なし） */
+export function appInTumblingDeduction(withOp: number, total: number): number {
+  if (total <= 0) return 0;
+  const ratio = withOp / total;
+  return APP_IN_TUM_STEPS.find((s) => ratio >= s.minRatio)?.deduction ?? 0;
+}
+
+/**
+ * ジュニアをONにしたとき、既定で**上限まで引く**欠点テーブルの項目。
+ * ジュニアの水準では一部のトップクラスしか達成できないため。
+ * あくまで既定値なので、入れたあとに手で下げられる。
+ */
+export const JUNIOR_MAX_ART_ITEMS: string[] = ["originality"];
+
+/**
+ * ジュニアの切り替えに合わせて欠点テーブルの既定値を入れ替える。
+ * ON …… 対象項目を上限まで引く（手入力を上書きする＝既定値なので）
+ * OFF …… 上限のままの項目だけ戻す（手で下げた値はそのまま残す）
+ */
+export function withJuniorArtDefaults(
+  current: Record<string, number>,
+  junior: boolean,
+): Record<string, number> {
+  const next = { ...current };
+  JUNIOR_MAX_ART_ITEMS.forEach((id) => {
+    const max = artDeductionItem(id)?.max ?? 0;
+    if (!max) return;
+    if (junior) next[id] = max;
+    else if (next[id] === max) delete next[id];
+  });
+  return next;
+}
+
 export function artDeductionItem(id: string): ArtDeductionItem | undefined {
   return ART_DEDUCTION_ITEMS.find((x) => x.id === id);
 }
@@ -301,6 +385,106 @@ export function clampArtDeduction(id: string, value: unknown): number {
   const v = Number(value);
   if (!Number.isFinite(v) || v <= 0) return 0;
   return Math.min(Math.round(v * 10) / 10, item.max);
+}
+
+// ---- 基本徒手（§3.5.2 徒手系基礎要素群1群「各種徒手」）----
+
+/** 深い運動の部位。演技にはどちらも入れる。 */
+export type DeepMotionPart = "upper" | "lower";
+/** `tip` は画面の注記・ツールチップに出す説明 */
+export const DEEP_MOTION_PARTS: { id: DeepMotionPart; name: string; tip: string }[] = [
+  { id: "upper", name: "上半身の深い運動", tip: "上半身を大きく上下左右に動かすこと" },
+  { id: "lower", name: "下半身の深い運動", tip: "前倒、側倒、斜前屈など、下半身を大きく動かすこと" },
+];
+
+/**
+ * 基本徒手の一覧。`parts` は、その動作が満たす深い運動（複数可）。
+ * 表を増やすときはここに1行足すだけでよい（採点側は `parts` しか見ない）。
+ */
+export interface BasicHandElement {
+  id: string;
+  name: string;
+  parts: DeepMotionPart[];
+}
+export const BASIC_HAND_ELEMENTS: BasicHandElement[] = [
+  { id: "slantfwd", name: "斜前屈", parts: ["upper", "lower"] },
+  { id: "chestback", name: "胸後反", parts: ["lower"] },
+  { id: "snake", name: "蛇動", parts: ["lower"] },
+  { id: "forwardbend", name: "前屈", parts: ["upper"] },
+  // 表に無い動作の受け皿。実施した部位を選んで深い運動の充足に数える
+  { id: "other_upper", name: "その他上半身の運動", parts: ["upper"] },
+  { id: "other_lower", name: "その他下半身の運動", parts: ["lower"] },
+  { id: "other_whole", name: "その他全身の運動", parts: ["upper", "lower"] },
+];
+
+export const basicHandDef = (id: string): BasicHandElement | undefined =>
+  BASIC_HAND_ELEMENTS.find((x) => x.id === id);
+
+/** 深い運動が1部位不足するごとのA減点（§3.5.6.4 徒手系の種類・組み合わせの多様性） */
+export const DEEP_MOTION_DEDUCTION = 0.1;
+
+/** 入力された基本徒手が満たす深い運動の部位 */
+export function deepMotionParts(ids: string[]): Set<DeepMotionPart> {
+  const set = new Set<DeepMotionPart>();
+  ids.forEach((id) => basicHandDef(id)?.parts.forEach((p) => set.add(p)));
+  return set;
+}
+
+// ---- 手具操作の多様性（§3.5.6.4 さまざまな操作）----
+
+/** 実施していれば減点なしのチェック項目（`tip` は画面の注記・ツールチップ） */
+export interface HandOpCheck {
+  id: string;
+  name: string;
+  tip: string;
+  /** この手具でだけ出す項目（未指定＝全手具） */
+  only?: ApparatusKey[];
+}
+export const HAND_OP_CHECKS: HandOpCheck[] = [
+  {
+    id: "twoParts",
+    name: "2部位以上を通る手具操作",
+    tip: "身体の部位は右腕・左腕・右足・左足・胴・首の6つ。そのうち2つ以上を通して操作すること",
+  },
+  { id: "character", name: "手具の特性を生かした手具操作", tip: "その手具にしかできない操作をすること" },
+  {
+    id: "leftHand",
+    name: "左手の手具操作",
+    tip: "左手で手具を操作すること。必須要素の左投げ左受けとは別軸の評価",
+    only: ["stick"],
+  },
+];
+
+/** その手具で出すチェック項目 */
+export const handOpChecksFor = (apparatus: ApparatusKey): HandOpCheck[] =>
+  HAND_OP_CHECKS.filter((c) => !c.only || c.only.includes(apparatus));
+/** 身体の部位（2部位以上を通る手具操作の判定に使う） */
+export const BODY_PARTS = ["右腕", "左腕", "右足", "左足", "胴", "首"];
+
+/** 「手具の特性を生かした手具操作」の項目id（手具ごとの例を出すため） */
+export const HAND_OP_CHARACTER_ID = "character";
+
+/** 手具ごとの「特性」の例。チェック項目の横とツールチップに出す。 */
+export const APPARATUS_CHARACTER_HINTS: Record<ApparatusKey, string[]> = {
+  stick: ["様々な位置を持てる"],
+  clubs: ["二つある"],
+  ring: ["二つある", "体にはめられる", "回せる"],
+  rope: ["体に巻き付けられる", "変形できる"],
+};
+/** チェック項目1つにつきのA減点 */
+export const HAND_OP_CHECK_DEDUCTION = 0.1;
+
+/** 身体を離れる手具操作（プロペラ回旋・まわしなど）に必要な回数 */
+export const OFF_BODY_REQUIRED_COUNT = 4;
+/** 身体を離れる手具操作が1回不足するごとのA減点 */
+export const OFF_BODY_DEDUCTION_STEP = 0.1;
+/** 「身体を離れる手具操作」の説明（画面の注記・ツールチップ） */
+export const OFF_BODY_TIP = "プロペラ回旋・まわしなど、手具が身体から離れて動く操作";
+
+/** 身体を離れる手具操作の不足回数（0〜必要回数） */
+export function offBodyShortage(count: unknown): number {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  return Math.max(0, OFF_BODY_REQUIRED_COUNT - n);
 }
 
 export const VIOLATION_OPTIONS = [
@@ -371,6 +555,59 @@ export const HAND_ELEMENTS: HandElement[] = [
   { id: "f6", group: "flex", name: "左右／前後開脚座（180度未満）仰臥位", solo: "A", team: "B" },
   { id: "f7", group: "flex", name: "左右／前後開脚座（一直線・180度）仰臥位", solo: "B", team: "C" },
 ];
+
+// ---- 個人が単独で実施する徒手系要素（§3.5.5.3(1)）----
+/**
+ * §3.5.5.3(1)「手具操作を伴って難度のある徒手系を実施した場合に、その難度を採用する」。
+ * 跳躍は §3.6.1 の表そのもの（難度は**個人列**）、柔軟は現場の呼び方で3つ持つ。
+ * ブリッジは §3.6.1 の表に無いので、柔軟の基礎難度に合わせて暫定でAとしている。
+ * 団体の選択肢（`HAND_ELEMENTS`）とは別の表にして、団体側の入力を変えないようにしている。
+ */
+export const SOLO_FLEX_ELEMENTS: HandElement[] = [
+  { id: "sf_split_fb", group: "flex", name: "前後開脚", solo: "A", team: "B" },
+  { id: "sf_split_lr", group: "flex", name: "左右開脚", solo: "A", team: "B" },
+  { id: "sf_bridge", group: "flex", name: "ブリッジ", solo: "A", team: "B" },
+];
+
+/**
+ * 個人の徒手系要素の選択肢（跳躍＝§3.6.1 の表／柔軟＝上の3つ）。
+ * `scored` … 徒手系難度（D）に算入するか。柔軟は難度に数えず、実施したかだけをA側で見る。
+ */
+export const SOLO_HAND_ELEMENT_GROUPS: {
+  id: HandElementGroup;
+  name: string;
+  items: HandElement[];
+  scored: boolean;
+}[] = [
+  { id: "jump", name: "跳躍", items: HAND_ELEMENTS.filter((h) => h.group === "jump"), scored: true },
+  { id: "flex", name: "柔軟", items: SOLO_FLEX_ELEMENTS, scored: false },
+];
+/** その要素を徒手系難度に算入するか */
+export const soloHandElementScored = (id: string): boolean =>
+  SOLO_HAND_ELEMENT_GROUPS.some((g) => g.scored && g.items.some((x) => x.id === id));
+/** 柔軟の要素か（実施の有無だけを見る） */
+export const isFlexElement = (id: string): boolean => SOLO_FLEX_ELEMENTS.some((x) => x.id === id);
+
+/**
+ * 跳躍だが柔軟性としても評価する技（反り身の跳躍）。
+ * 難度は跳躍として数えたうえで、柔軟の実施にも数える。
+ */
+export const FLEX_EQUIVALENT_JUMPS: string[] = ["j8", "j9"];
+
+/** 柔軟性の実施として数える要素か（柔軟の3つ＋反り身の跳躍） */
+export const countsAsFlex = (id: string): boolean => isFlexElement(id) || FLEX_EQUIVALENT_JUMPS.includes(id);
+/** 柔軟を1つも実施していないときのA減点 */
+export const FLEX_ELEMENT_DEDUCTION = 0.1;
+export const SOLO_HAND_ELEMENTS: HandElement[] = SOLO_HAND_ELEMENT_GROUPS.flatMap((g) => g.items);
+export const soloHandElementDef = (id: string): HandElement | undefined =>
+  SOLO_HAND_ELEMENTS.find((x) => x.id === id);
+/** 補足のある徒手系要素だけの説明（ツールチップ） */
+export const SOLO_ELEMENT_TIPS: Record<string, string> = {
+  sf_bridge: "§3.6.1 の表には無い項目",
+};
+
+/** 個人での難度（表の個人列） */
+export const soloHandDifficulty = (id: string): Difficulty | undefined => soloHandElementDef(id)?.solo;
 
 export function handElementDef(id: string): HandElement | undefined {
   return HAND_ELEMENTS.find((x) => x.id === id);

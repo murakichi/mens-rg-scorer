@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
+  THROW_OPTIONS_SIDE,
+  canUseSideThrow,
   SKILL_THROW_OPTIONS_COMMON,
   CATCH_OPTIONS_COMMON,
   CATCH_OPTIONS_APPARATUS,
@@ -42,6 +44,8 @@ import {
   seriesTags,
 } from "../scoring/analysis";
 import { tumblingChainEndErrors } from "../scoring/tumblingChain";
+import { itemLabel } from "../scoring/templates";
+import type { AutoInputSuggestion } from "../scoring/autoInput";
 import type { SkillFlow } from "../scoring/constants";
 import type { ApparatusKey, FutureLevel, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
 import type { DiffRow, SeriesBreakdown } from "../scoring/score";
@@ -89,6 +93,10 @@ interface Props {
   onSaveTemplate?: () => void;
   onUpdateField: (patch: Partial<Series>) => void;
   onAddItem: (kind: ItemKind) => void;
+  /** 自動入力の候補（先頭が既定。空なら出さない） */
+  autoInput?: AutoInputSuggestion[];
+  /** 自動入力を確定する（アイテムをシリーズ末尾に足す） */
+  onAddItems?: (items: Item[]) => void;
   onUpdateItem: (iIdx: number, patch: Partial<Item>) => void;
   onRemoveItem: (iIdx: number) => void;
   /** 技を隣の技と入れ替える（dir: -1 で前、+1 で後ろ） */
@@ -166,7 +174,11 @@ function ItemEditor({
     return (
       <>
         <div className="throw-tag">投げ</div>
-        {[...THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map((opt) => {
+        {[
+          ...THROW_OPTIONS_COMMON,
+          ...(!common && canUseSideThrow(apparatus) ? THROW_OPTIONS_SIDE : []),
+          ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
+        ].map((opt) => {
           const on = (item.throwTypes || []).includes(opt.id);
           // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
           const blocked = opt.id === USE_APPARATUS_TAG && !on && twoThrow;
@@ -358,7 +370,11 @@ function ItemEditor({
           この技の最中に投げ
         </label>
         {item.isThrow &&
-          [...SKILL_THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map(
+          [
+            ...SKILL_THROW_OPTIONS_COMMON,
+            ...(!common && canUseSideThrow(apparatus) ? THROW_OPTIONS_SIDE : []),
+            ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
+          ].map(
             (opt) => {
               const on = (item.throwTypes || []).includes(opt.id);
               // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
@@ -531,6 +547,8 @@ export function SeriesCard({
   onSaveTemplate,
   onUpdateField,
   onAddItem,
+  autoInput,
+  onAddItems,
   onUpdateItem,
   onRemoveItem,
   onMoveItem,
@@ -585,9 +603,44 @@ export function SeriesCard({
     onUpdateItem(iIdx, patch);
   };
 
+  // ---- 自動入力：末尾から予測した続きを半透明で見せる ----
+  // 候補が出るのは「その候補が新しく当てはまった編集」の直後だけ。次に何か手で入力したら
+  // （同じ候補が当てはまり続けていても）取り消す。却下・確定でも消える。
+  const itemsKey = JSON.stringify(ser.items);
+  const sugKey = autoInput?.[0]?.id ?? "";
+  const [shownFor, setShownFor] = useState<string | null>(null);
+  const [altIdx, setAltIdx] = useState(0);
+  const prevSug = useRef<string | null>(null);
+  useEffect(() => {
+    const first = prevSug.current === null;
+    if (!first && sugKey && prevSug.current !== sugKey) {
+      setShownFor(itemsKey);
+      setAltIdx(0);
+    } else {
+      setShownFor(null);
+    }
+    prevSug.current = sugKey;
+  }, [itemsKey, sugKey]);
+  const candidates = shownFor === itemsKey && autoInput ? autoInput : [];
+  const ghost = candidates[altIdx % Math.max(candidates.length, 1)];
+  const confirmGhost = () => {
+    if (!ghost || !onAddItems) return;
+    setShownFor(null);
+    onAddItems(ghost.items);
+  };
+  const onCardKeyDown = (e: React.KeyboardEvent) => {
+    if (!ghost || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key !== "Enter" && e.key !== "Tab") return;
+    // ボタン上の Enter は本来のクリックを優先。テキスト入力の中も邪魔しない
+    const t = e.target as HTMLElement;
+    if (t.tagName === "BUTTON" || t.tagName === "TEXTAREA" || t.tagName === "A") return;
+    e.preventDefault();
+    confirmGhost();
+  };
+
   return (
     // id は改善提案（SuggestModal）からのジャンプ先
-    <section className="card" id={`series-${sIdx}`}>
+    <section className="card" id={`series-${sIdx}`} onKeyDown={onCardKeyDown}>
       <div className="line-head">
         <span>
           シリーズ {sIdx + 1}
@@ -715,7 +768,33 @@ export function SeriesCard({
             {iIdx < ser.items.length - 1 && <div className="arrow">→</div>}
           </div>
         ))}
+        {ghost &&
+          ghost.items.map((gi, k) => (
+            <div key={`ghost-${k}`} className="skill-block is-ghost" aria-label="自動入力の候補">
+              {k === 0 && <div className="arrow">→</div>}
+              <span className="ghost-label">{itemLabel(gi)}</span>
+            </div>
+          ))}
       </div>
+      {ghost && (
+        <div className="auto-input-bar" role="status">
+          <span className="auto-input-text">
+            自動入力：<b>{ghost.label}</b>
+            <span className="hint-inline">（Enter / Tab で確定）</span>
+          </span>
+          <button className="io-btn" onClick={confirmGhost}>
+            確定
+          </button>
+          {candidates.length > 1 && (
+            <button className="io-btn" onClick={() => setAltIdx((i) => (i + 1) % candidates.length)}>
+              別案 {(altIdx % candidates.length) + 1}/{candidates.length}
+            </button>
+          )}
+          <button className="io-btn" onClick={() => setShownFor(null)}>
+            却下
+          </button>
+        </div>
+      )}
       <div className="add-row">
         <button className="add-btn-sm" onClick={() => onAddItem("throw")}>
           ＋ 投げ

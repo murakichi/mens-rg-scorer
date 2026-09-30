@@ -7,6 +7,12 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
   const {
     required,
     missing,
+    deepMotionChecks,
+    deepMotionDeduction,
+    flexCheck,
+    flexDeduction,
+    handOpChecks,
+    handOpDeduction,
     apparatusElementChecks,
     apparatusElementDeduction,
     violationChecks,
@@ -16,6 +22,8 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
     connectNoApparatus,
     tumblingScore,
     handScore,
+    handElementRows,
+    handElementScore,
     seriesBonus,
     techniqueCount,
     techniqueBonus,
@@ -54,7 +62,7 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
         <div className="line-head">必須要素チェック</div>
         <ul className="check-list">
           {required.map((r) => (
-            <li key={r.key} className="check-item">
+            <li key={r.key} className="check-item" title={r.tip}>
               <span className={`mark ${r.passed === false ? "ng" : r.passed === null ? "pending" : "ok"}`}>
                 {r.passed === false ? "×" : r.passed === null ? "?" : "✓"}
               </span>
@@ -83,6 +91,17 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
           </>
         )}
 
+        <div className="line-head" style={{ marginTop: 12 }}>基本徒手・柔軟・手具操作の多様性</div>
+        <ul className="check-list">
+          {[...deepMotionChecks, flexCheck, ...handOpChecks].map((r) => (
+            <li key={r.key} className="check-item" title={r.tip}>
+              <span className={`mark ${r.passed ? "ok" : "ng"}`}>{r.passed ? "✓" : "×"}</span>
+              <span className={r.passed ? "ok-text" : "ng-text"}>{r.label}</span>
+              {!r.passed && !!r.deduction && <span className="ng-text">-{r.deduction.toFixed(1)}</span>}
+            </li>
+          ))}
+        </ul>
+
         <div className="line-head" style={{ marginTop: 12 }}>違反・欠如（§3.5.6.3）</div>
         <ul className="check-list">
           {violationChecks.map((r) => (
@@ -107,7 +126,19 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
           <span>{tumblingScore.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
-          <span>徒手難度点（上位3つ）</span>
+          <span>
+            徒手難度点（上位3つ）
+            {handElementScore > 0 && (
+              <>
+                {" "}
+                ／うち単独の徒手系要素{" "}
+                {handElementRows
+                  .filter((r) => r.inTop)
+                  .map((r) => `${r.name}(${r.difficulty})`)
+                  .join("・")}
+              </>
+            )}
+          </span>
           <span>{handScore.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
@@ -163,11 +194,17 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
             <span>-{throwCountOverDeduction.toFixed(1)} 点</span>
           </div>
         )}
-        <div className="total-row">
+        <div
+          className="total-row"
+          title="宙返り系が途切れず続いた最大の回数。A難度技（ロンダート・バク転等）は連鎖を切り、きりもみ系は宙返りの連続の中でだけ宙返りとして数える。2連続で −0.1、無しで −0.2"
+        >
           <span>連続宙返り減点（最大 {maxChainAll} 回連続）</span>
           <span>-{saltoChainDeduction.toFixed(1)} 点</span>
         </div>
-        <div className="total-row">
+        <div
+          className="total-row"
+          title="投げ方・受け方それぞれ3種類必要（通常・左手投げ／二つ投げ・視野外・手以外・手具を使った・その他など）。1種類不足につき −0.1、合計の上限0.5。「その他」は別の種類として数える"
+        >
           <span>
             投げ方・受け方の種類不足減点（投げ{throwKindCount}/3・受け{catchKindCount}/3｜上限0.5）
           </span>
@@ -176,6 +213,36 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
         <div className="total-row">
           <span>必須要素の欠如減点（投げタン・つなぎ技・タンブリング本数／1つにつき0.3）</span>
           <span>-{missingElementDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>
+            基本徒手の不足減点（深い運動／
+            {deepMotionChecks.filter((c) => !c.passed).length > 0
+              ? deepMotionChecks
+                  .filter((c) => !c.passed)
+                  .map((c) => c.label)
+                  .join("・")
+              : "不足なし"}
+            ）
+          </span>
+          <span>-{deepMotionDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>柔軟の徒手の不足減点（{flexCheck.passed ? "実施あり" : "実施なし"}）</span>
+          <span>-{flexDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>
+            手具操作の多様性減点（
+            {handOpChecks.filter((c) => !c.passed).length > 0
+              ? handOpChecks
+                  .filter((c) => !c.passed)
+                  .map((c) => c.label)
+                  .join("・")
+              : "不足なし"}
+            ）
+          </span>
+          <span>-{handOpDeduction.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
           <span>手具別必須要素の欠如減点（§3.2／1つにつき0.3）</span>

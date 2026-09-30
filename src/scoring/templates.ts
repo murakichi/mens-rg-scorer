@@ -41,6 +41,8 @@ export function commonBlockers(list: Series[]): string[] {
           else if (t === "twothrow") reasons.add("二つ投げ");
           else reasons.add(t);
         });
+      if ((item.kind === "throw" || item.kind === "skill") && (item.throwTypes || []).includes("side"))
+        reasons.add("横投げ");
       if (item.kind === "throw" && (item.throwTypes || []).includes("useapp"))
         reasons.add("手具を使った投げ");
       if (item.kind === "skill" && (item.throwTypes || []).includes("useapp")) reasons.add("手具を使った投げ");
@@ -227,7 +229,7 @@ export const apparatusName = (key: TemplateApparatus): string =>
 
 
 /** カード表示用：アイテム1つの短い名前 */
-function itemLabel(item: Item): string {
+export function itemLabel(item: Item): string {
   if (item.kind === "throw") return "投げ";
   if (item.kind === "catch") return "キャッチ";
   if (item.kind === "skill") return skillDef(item.skillId)?.name ?? "技";
