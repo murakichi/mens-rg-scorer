@@ -123,8 +123,8 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [offBodyCount, setOffBodyCount] = useState<number>(() => init?.offBodyCount ?? 0);
   // 単独で実施した徒手系要素（跳躍・柔軟）。手具操作を伴うものが徒手系難度に入る（§3.5.5.3(1)）
   const [handElements, setHandElements] = useState<string[]>(() => init?.handElements ?? []);
-  // ロープの跳び（構成全体のリスト）。続けて並べたものが連続した跳び
-  const [ropeJumps, setRopeJumps] = useState<RopeJumpItem[]>(() => init?.ropeJumps ?? []);
+  // ロープの跳びシリーズ。同じシリーズで隣り合う跳びが連続した跳び
+  const [ropeJumps, setRopeJumps] = useState<RopeJumpItem[][]>(() => init?.ropeJumps ?? []);
   /** 画面のタブ（D＝構成の入力、A＝芸術と多様性の入力） */
   const [tab, setTab] = useState<"d" | "a">("d");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -284,7 +284,11 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setHandElements(normalizeHandElements(data.handElements));
     // 旧データでシリーズの中にあったロープ跳びは、跳びリストへ移す
     const hoisted = hoistRopeJumps(Array.isArray(data.series) ? data.series : []);
-    setRopeJumps(ap === "rope" ? normalizeRopeJumps([...(data.ropeJumps ?? []), ...hoisted.jumps]) : []);
+    setRopeJumps(
+      ap === "rope"
+        ? [...normalizeRopeJumps(data.ropeJumps), ...hoisted.jumps.map((g) => normalizeRopeJumps(g)[0] ?? [])]
+        : [],
+    );
     if (Array.isArray(data.series) && data.series.length > 0) {
       // 読み込んだ内容のうち、その手具で入力できないものは落とす
       setSeries(stripForApparatus(hoisted.series, ap));
@@ -373,9 +377,10 @@ export function IndividualScorer({ initialData }: Props = {}) {
       addSeriesTemplate(templates, name, defaultTemplateApparatus([series[sIdx]], apparatus), series[sIdx]),
     );
   };
-  /** 旧テンプレートのシリーズに入っていたロープ跳びを、跳びリストの後ろへ足す（ロープのときだけ） */
-  const addHoistedJumps = (jumps: RopeJumpItem[]) => {
-    if (apparatus === "rope" && jumps.length > 0) setRopeJumps((p) => [...p, ...normalizeRopeJumps(jumps)]);
+  /** 旧テンプレートのシリーズに入っていたロープ跳びを、跳びシリーズとして後ろへ足す（ロープのときだけ） */
+  const addHoistedJumps = (jumps: RopeJumpItem[][]) => {
+    if (apparatus === "rope" && jumps.length > 0)
+      setRopeJumps((p) => [...p, ...jumps.map((g) => normalizeRopeJumps(g)[0] ?? [])]);
   };
   const loadSeriesTemplate = (sIdx: number, id: string) => {
     const t = templates.series.find((x) => x.id === id);
@@ -402,7 +407,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     const ap = isCommonApparatus(t.apparatus) ? apparatus : t.apparatus;
     if (ap !== apparatus) setApparatus(ap);
     const hoisted = hoistRopeJumps(structuredClone(t.series));
-    setRopeJumps(ap === "rope" ? normalizeRopeJumps(hoisted.jumps) : []);
+    setRopeJumps(ap === "rope" ? hoisted.jumps.map((g) => normalizeRopeJumps(g)[0] ?? []) : []);
     setSeries(stripForApparatus(hoisted.series, ap));
     setTemplateOpen(false);
   };
@@ -810,7 +815,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
       </section>
 
       {apparatus === "rope" && (
-        <RopeJumpList jumps={ropeJumps} rows={result.ropeJumpRows} onChange={setRopeJumps} />
+        <RopeJumpList series={ropeJumps} rows={result.ropeJumpRows} onChange={setRopeJumps} />
       )}
 
       <section className="card">

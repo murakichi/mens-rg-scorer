@@ -49,8 +49,8 @@ export interface IndividualDraft {
   offBodyCount: number;
   /** 単独で実施した徒手系要素（跳躍・柔軟）のid */
   handElements: string[];
-  /** ロープの跳び（構成全体のリスト）。続けて並べたものが連続した跳び */
-  ropeJumps: RopeJumpItem[];
+  /** ロープの跳びシリーズ。同じシリーズで隣り合う跳びが連続した跳び */
+  ropeJumps: RopeJumpItem[][];
 }
 
 export const asStringArray = (v: unknown): string[] =>
@@ -85,21 +85,29 @@ export function normalizeHandElements(v: unknown): string[] {
   });
 }
 
-/** ロープの跳びリストを取り込む（壊れた行は落とす。旧 id はそのまま持ち、採点時に解決する） */
-export function normalizeRopeJumps(v: unknown): RopeJumpItem[] {
-  if (!Array.isArray(v)) return [];
-  return v.flatMap((x): RopeJumpItem[] => {
-    if (!x || typeof x !== "object") return [];
-    const o = x as Record<string, unknown>;
-    if (typeof o.jumpId !== "string") return [];
-    const item: RopeJumpItem = { kind: "ropeJump", jumpId: o.jumpId };
-    if (o.cross === true) item.cross = true;
-    if (o.isMoving6m === true) item.isMoving6m = true;
-    if (o.count !== undefined) item.count = ropeJumpTimes(Number(o.count));
-    return [item];
-  });
-}
+const normalizeRopeJumpItem = (x: unknown): RopeJumpItem[] => {
+  if (!x || typeof x !== "object") return [];
+  const o = x as Record<string, unknown>;
+  if (typeof o.jumpId !== "string") return [];
+  const item: RopeJumpItem = { kind: "ropeJump", jumpId: o.jumpId };
+  if (o.cross === true) item.cross = true;
+  if (o.isMoving6m === true) item.isMoving6m = true;
+  if (o.count !== undefined) item.count = ropeJumpTimes(Number(o.count));
+  return [item];
+};
 
+/**
+ * ロープの跳びシリーズを取り込む（壊れた行は落とす。旧 id はそのまま持ち、採点時に解決する）。
+ * 跳びシリーズに分ける前の形（跳びを1本に並べた配列）は、1つの跳びシリーズとして読む。
+ */
+export function normalizeRopeJumps(v: unknown): RopeJumpItem[][] {
+  if (!Array.isArray(v)) return [];
+  if (v.length > 0 && v.every((x) => !Array.isArray(x))) {
+    const flat = v.flatMap(normalizeRopeJumpItem);
+    return flat.length > 0 ? [flat] : [];
+  }
+  return v.filter(Array.isArray).map((g) => (g as unknown[]).flatMap(normalizeRopeJumpItem));
+}
 
 /** 身体を離れる手具操作の回数（0以上の整数に丸める） */
 export const normalizeOffBodyCount = (v: unknown): number => Math.max(0, Math.floor(Number(v) || 0));
@@ -136,7 +144,7 @@ export function normalizeIndividualDraft(data: unknown): IndividualDraft | null 
   // 旧データでシリーズの中にあったロープ跳びは、跳びリストの後ろへ移す
   const hoisted = hoistRopeJumps(raw);
   const ropeJumps =
-    apparatus === "rope" ? [...normalizeRopeJumps(d.ropeJumps), ...normalizeRopeJumps(hoisted.jumps)] : [];
+    apparatus === "rope" ? [...normalizeRopeJumps(d.ropeJumps), ...hoisted.jumps.map((g) => normalizeRopeJumps(g)[0] ?? [])] : [];
   return {
     version: 1,
     apparatus,

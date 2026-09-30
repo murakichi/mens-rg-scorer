@@ -545,20 +545,23 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
 
 /**
  * 旧データでシリーズの中に入っていたロープ跳びを取り出す。
- * ロープ跳びは構成全体のリスト（徒手・構成タブ）で入力するようになったので、
- * 読み込み時にシリーズから外してリストの後ろへ足す。取り出すものが無ければ同じ配列を返す。
+ * ロープ跳びは跳びシリーズ（徒手・構成タブ）で入力するようになったので、読み込み時にシリーズから外し、
+ * 元のシリーズごとに1つの跳びシリーズにする（別のシリーズの跳びは別の実施）。
+ * 取り出すものが無ければ同じ配列を返す。
  */
-export function hoistRopeJumps(list: Series[]): { series: Series[]; jumps: RopeJumpItem[] } {
+export function hoistRopeJumps(list: Series[]): { series: Series[]; jumps: RopeJumpItem[][] } {
   if (!list.some((ser) => ser.items.some((item) => item.kind === "ropeJump"))) return { series: list, jumps: [] };
-  const jumps: RopeJumpItem[] = [];
-  const series = list.map((ser) => ({
-    ...ser,
-    items: ser.items.filter((item) => {
+  const jumps: RopeJumpItem[][] = [];
+  const series = list.map((ser) => {
+    const own: RopeJumpItem[] = [];
+    const items = ser.items.filter((item) => {
       if (item.kind !== "ropeJump") return true;
-      jumps.push(item);
+      own.push(item);
       return false;
-    }),
-  }));
+    });
+    if (own.length > 0) jumps.push(own);
+    return { ...ser, items };
+  });
   return { series, jumps };
 }
 
