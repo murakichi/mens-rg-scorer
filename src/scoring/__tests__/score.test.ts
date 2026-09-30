@@ -341,7 +341,7 @@ describe("computeScore — 同じ内容の難度は演技全体で1回しか数�
 describe("computeScore — ロープ跳びリスト（構成全体・徒手・構成タブ）", () => {
   const J = (jumpId: string, extra: Partial<Extract<Item, { kind: "ropeJump" }>> = {}) =>
     ({ kind: "ropeJump", jumpId, ...extra }) as Extract<Item, { kind: "ropeJump" }>;
-  const score = (jumps: ReturnType<typeof J>[]) => computeScore([], "rope", { ropeJumps: jumps });
+  const score = (jumps: ReturnType<typeof J>[]) => computeScore([], "rope", { ropeJumps: [jumps] });
 
   it("複数種類の跳びをそれぞれ評価する", () => {
     const r = score([J("3b", { cross: true }), J("1f"), J("2b")]);
@@ -377,12 +377,12 @@ describe("computeScore — ロープ跳びリスト（構成全体・徒手・�
   });
 
   it("ロープ以外ではリストがあっても数えない", () => {
-    expect(computeScore([], "stick", { ropeJumps: [J("4b")] }).handScore).toBe(0);
+    expect(computeScore([], "stick", { ropeJumps: [[J("4b")]] }).handScore).toBe(0);
   });
 
   it("前2重→前3重を続けて跳ぶと、その場前回し2回以上連続を満たす", () => {
     const front = (jumps: ReturnType<typeof J>[]) =>
-      computeScore([], "rope", { ropeJumps: jumps }).apparatusElementChecks.find(
+      computeScore([], "rope", { ropeJumps: [jumps] }).apparatusElementChecks.find(
         (c) => c.key === "appEl_rope_front",
       )?.passed;
     expect(front([J("2f"), J("3f")])).toBe(true);
@@ -390,7 +390,37 @@ describe("computeScore — ロープ跳びリスト（構成全体・徒手・�
     expect(front([J("2f")])).toBe(false);
   });
 
-  it("旧データのシリーズ内ロープ跳びも跳びリストとして数える", () => {
+  it("跳びシリーズが分かれていれば連続にならない（要所ごとの実施）", () => {
+    const el = (groups: ReturnType<typeof J>[][], id: string) =>
+      computeScore([], "rope", { ropeJumps: groups }).apparatusElementChecks.find((c) => c.key === `appEl_rope_${id}`)
+        ?.passed;
+    // 前跳び1回ずつを別々の要所で実施 → 連続2回にならない
+    expect(el([[J("2f")], [J("3f")]], "front")).toBe(false);
+    expect(el([[J("2f"), J("3f")]], "front")).toBe(true);
+    // 6m移動2回＋1回 → 3回連続にならない
+    const m = (n: number) => J("2b", { isMoving6m: true, count: n });
+    expect(el([[m(2)], [m(1)]], "moving")).toBe(false);
+    expect(el([[m(2), m(1)]], "moving")).toBe(true);
+  });
+
+  it("跳びシリーズをまたいでも、難度の重複と上位3つは全体で数える", () => {
+    const r = computeScore([], "rope", { ropeJumps: [[J("3b")], [J("3b")], [J("4b")]] });
+    expect(r.ropeJumpRows.map((x) => [x.group, x.index, x.duplicate])).toEqual([
+      [0, 0, false],
+      [1, 0, true],
+      [2, 0, false],
+    ]);
+    expect(r.handScore).toBeCloseTo(0.3 + 0.5, 5);
+  });
+
+  it("様々な跳び加点は同じ跳びシリーズの中の連続で判定する", () => {
+    const b = (groups: ReturnType<typeof J>[][]) => computeScore([], "rope", { ropeJumps: groups }).jumpVarietyBonus;
+    const m = (n: number) => J("2b", { isMoving6m: true, count: n });
+    expect(b([[m(3)]])).toBeGreaterThan(0);
+    expect(b([[m(2)], [m(1)]])).toBe(0);
+  });
+
+  it("旧データのシリーズ内ロープ跳びも跳びシリーズとして数える", () => {
     const r = computeScore([S(J("3bc"))], "rope");
     expect(r.ropeJumpRows.map((x) => x.difficulty)).toEqual(["D"]);
   });

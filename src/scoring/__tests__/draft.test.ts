@@ -333,10 +333,22 @@ describe("ロープ跳びリストの保存", () => {
         { kind: "ropeJump", jumpId: "2f", count: -1 },
       ],
     })!;
+    // 跳びシリーズに分ける前の形（跳びを1本に並べた配列）は1つの跳びシリーズとして読む
     expect(d.ropeJumps).toEqual([
-      { kind: "ropeJump", jumpId: "3b", cross: true, count: 2, isMoving6m: true },
-      { kind: "ropeJump", jumpId: "2f", count: 0 },
+      [
+        { kind: "ropeJump", jumpId: "3b", cross: true, count: 2, isMoving6m: true },
+        { kind: "ropeJump", jumpId: "2f", count: 0 },
+      ],
     ]);
+  });
+
+  it("跳びシリーズの分け方をそのまま保つ", () => {
+    const d = normalizeIndividualDraft({
+      apparatus: "rope",
+      series: [],
+      ropeJumps: [[{ kind: "ropeJump", jumpId: "2f" }], [], [{ kind: "ropeJump", jumpId: "3b" }, null]],
+    })!;
+    expect(d.ropeJumps.map((g) => g.map((j) => j.jumpId))).toEqual([["2f"], [], ["3b"]]);
   });
 
   it("旧データでシリーズの中にあった跳びは跳びリストへ移る", () => {
@@ -350,7 +362,13 @@ describe("ロープ跳びリストの保存", () => {
       ],
     })!;
     expect(d.series[0].items.map((i) => i.kind)).toEqual(["throw", "catch"]);
-    expect(d.ropeJumps.map((j) => j.jumpId)).toEqual(["2fc"]);
+    expect(d.ropeJumps.map((g) => g.map((j) => j.jumpId))).toEqual([["2fc"]]);
+  });
+
+  it("旧データのシリーズごとに別の跳びシリーズになる", () => {
+    const ser = (jumpId: string) => ({ executionDeduction: 0, items: [{ kind: "ropeJump", jumpId }, { kind: "throw" }, { kind: "catch" }] });
+    const d = normalizeIndividualDraft({ apparatus: "rope", series: [ser("2f"), ser("3b")] })!;
+    expect(d.ropeJumps.map((g) => g.map((j) => j.jumpId))).toEqual([["2f"], ["3b"]]);
   });
 
   it("ロープ以外では跳びリストを持たない", () => {

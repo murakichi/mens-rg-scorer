@@ -116,8 +116,9 @@ UIのプルダウンは見出し（`optgroup`）で分類する。タンブリ�
 3重跳び連続3回以上（回数3以上、前後・クロスを区別せずD）・4重跳び（D）・4重跳び連続2回以上（回数2以上、E）は
 選択肢ではなく回数で表す。旧 id（`3bc`・`3x2f`・`4x2b` など）は `LEGACY_ROPE_JUMPS` で解決する。
 `direction` は §3.2(3) の前回し／後ろ回し跳び2回以上連続の要求要素判定に使う。
-跳びは徒手・構成タブの跳びリスト（`SaveData.ropeJumps`）で入力し、1つごとに難度を評価して
-徒手系難度の上位3つの枠を争う。同じ跳び（`ropeJumpKey`）は1回だけ。
+跳びは徒手・構成タブの跳びシリーズ（`SaveData.ropeJumps: RopeJumpItem[][]`、要所ごとに分けて入力）で入力し、
+1つごとに難度を評価して徒手系難度の上位3つの枠を争う。同じ跳び（`ropeJumpKey`）は1回だけ（跳びシリーズをまたいで数える）。
+「連続」は同じ跳びシリーズの中で隣り合う跳びだけで判定する。
 
 ---
 
@@ -289,7 +290,7 @@ A難度の転回技（ロンダート・バク転・側転）は数えず、徒�
 | スティック `stick_right`（右投げ右受け1回以上） | `rightThrow` | 左手投げ（`reqTypes: lefthand`）でも手以外の投げ（`throwTypes: nonhand`）でもない投げが1回以上あるか。技の最中の投げ（投げタン）も対象 |
 | 各手具 `*_rotthrow`（転回系の投げ受け） | `throwTumbling` | 投げタン（`Unit.isThrowTumbling`）が1本以上あるか。必須要素チェックの `throwTum` と同じ判定 |
 | スティック `stick_left` / リング・クラブ `*_twothrow` | `leftThrow` / `twoThrow` | 投げアイテムの必須投げ（`reqTypes`）に左手投げ／二つ投げがあるか |
-| ロープ `rope_triple` / `rope_moving` / `rope_front` / `rope_back` | 同名の auto | ロープの跳びリストから判定（3重跳び／6m以上移動の3回以上連続跳び／その場前回し・後ろ回し2回以上。連続＝リストで隣り合う跳びの回数の合計） |
+| ロープ `rope_triple` / `rope_moving` / `rope_front` / `rope_back` | 同名の auto | ロープの跳びリストから判定（3重跳び／6m以上移動の3回以上連続跳び／その場前回し・後ろ回し2回以上。連続＝同じ跳びシリーズで隣り合う跳びの回数の合計） |
 
 `VIOLATION_DEDUCTION` の対象は `VIOLATION_OPTIONS`（審判判断による手動チェック）。
 
