@@ -290,4 +290,20 @@ describe("自動入力", () => {
       "後方伸身宙返り2回半ひねり",
     ]);
   });
+
+  it("つなぎの二回目の宙返りのあとは、三宙にならないように打ち切る", () => {
+    const withConnect = (...tail: Item[]) => ser(sk("a_roundoff"), sk("b_backhalf"), sk("a_roundoff"), ...tail);
+    // つなぎのあとの宙返り(Y)：前宙→側宙 だと Y→前宙→側宙 で三宙になるので 前宙 で止める
+    const other = ser(sk("a_roundoff"), sk("b_backhalf")); // 三宙は未実施のまま
+    const s = withConnect(sk("b_backhalf"));
+    const got = autoInputSuggestions([other, s], 1).map((g) => g.label);
+    expect(got).not.toContain("前宙→側宙");
+    expect(got).toContain("前宙");
+    expect(got).not.toContain("前方宙返り1回ひねり→側宙");
+    // ロンダート→宙返り→前宙 でつなぎの二回目なら、側宙（三宙になる）は出さない
+    const t = withConnect(sk("b_backhalf"), sk("b_front"));
+    expect(autoInputSuggestions([other, t], 1).map((g) => g.label)).not.toContain("側宙");
+    // つなぎの前（一回目）の宙返りでは従来どおり 前宙→側宙 も出る
+    expect(labels([ser(sk("a_roundoff"), sk("b_backhalf"))], 0)).toContain("前宙→側宙");
+  });
 });
