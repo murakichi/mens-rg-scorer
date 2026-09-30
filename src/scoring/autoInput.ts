@@ -266,7 +266,7 @@ function coreSuggestions(
               : 0),
           0,
         );
-      if (total >= HAND_MOTIONS_FOR_REPEAT_THROW) {
+      if (total >= HAND_MOTIONS_FOR_REPEAT_THROW && !hasConsecutiveThrowElsewhere(list, sIdx)) {
         return [
           suggestion("throwHand-catchThrowBack", [
             {
@@ -476,6 +476,15 @@ function baseSuggestions(
     out.push(...core);
   else out.push(suggestion("catch", [catchItem]), ...core);
   return out;
+}
+
+/** ほかのシリーズに連続投げ（1シリーズ内に投げが2回以上）があるか */
+export function hasConsecutiveThrowElsewhere(list: Series[], sIdx: number): boolean {
+  return list.some(
+    (s2, i) =>
+      i !== sIdx &&
+      s2.items.filter((it) => it.kind === "throw" || (it.kind === "skill" && it.isThrow)).length >= 2,
+  );
 }
 
 /** 直近の（まだキャッチされていない）投げが横投げか。投げアイテムも技の最中の投げも見る */

@@ -211,4 +211,14 @@ describe("自動入力", () => {
   it("投げ→前転を入力した時点でキャッチが候補に出る", () => {
     expect(labels([ser(th, mo("fwd_roll"))], 0)).toEqual(["キャッチ"]);
   });
+
+  it("キャッチ→視野外投げ→視野外キャッチは、ほかのシリーズに連続投げが無いときだけ", () => {
+    const cur = ser(th, mo("chene", 3));
+    const consecutive = ser(th, ct, th, ct);
+    expect(ids([cur], 0)).toContain("throwHand-catchThrowBack");
+    expect(ids([ser(th, ct), cur], 1)).toContain("throwHand-catchThrowBack");
+    expect(ids([consecutive, cur], 1)).not.toContain("throwHand-catchThrowBack");
+    // 入力中のシリーズ自身は対象外（連続投げの途中で出す）
+    expect(ids([cur, ser(th, ct)], 0)).toContain("throwHand-catchThrowBack");
+  });
 });
