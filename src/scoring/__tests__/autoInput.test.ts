@@ -111,6 +111,7 @@ describe("自動入力", () => {
     const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto"));
     expect(labels([hard, ser(th, mo("mv3"), ct), ser(th)], 2)).toEqual([
       "伸身前宙→前転→キャッチ",
+      "伸身前宙1回ひねり→前転→キャッチ",
       "前方宙返り1回ひねり→側宙→キャッチ",
     ]);
     // 0.4超〜0.7未満 → 前方1回ひねり→側宙→キャッチ

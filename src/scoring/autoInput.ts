@@ -16,6 +16,8 @@ import type { ApparatusKey, Item, Series } from "./types";
 /** 「投げ→伸身前方宙返り1回ひねり」のあとに前転→キャッチが続く、その技 */
 export const FRONT_LAYOUT_TWIST_ID = "d_frontlay1";
 const FRONT_ID = "b_front";
+/** 伸身前宙1回ひねり（`FRONT_LAYOUT_TWIST_ID` と同じ技） */
+const FRONT_LAYOUT_ID_TWIST = FRONT_LAYOUT_TWIST_ID;
 const FRONT_TWIST_ID = "c_front1full";
 const SIDE_SALTO_ID = "b_sidesalto";
 /** 投げている間の徒手が、この動作数に達したら「キャッチ→背面投げ→背面キャッチ」を勧める */
@@ -109,6 +111,7 @@ export function autoInputSuggestions(
             ? [["front1twist-side", twistSide]]
             : [
                 ["frontLayout-roll", rollTail(FRONT_LAYOUT_ID)],
+                ["frontLayout1twist-roll", rollTail(FRONT_LAYOUT_ID_TWIST)],
                 ["front1twist-side", twistSide],
               ];
     return options.map(([id, items2]) => suggestion(`throwTumbling-${id}`, items2));
