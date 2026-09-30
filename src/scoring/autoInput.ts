@@ -5,7 +5,7 @@
 // 採点には一切触れず、つなぎ・三宙の達成状況だけ `seriesTags` から読む。
 // =====================================================================
 
-import { DIFF_SCORE, DIFF_VALUE, ROUNDOFF_SKILL_ID, USE_APPARATUS_TAG, buildTwistSkillId, skillDef } from "./constants";
+import { DIFF_SCORE, DIFF_VALUE, ROUNDOFF_SKILL_ID, USE_APPARATUS_TAG, skillDef } from "./constants";
 import { motionDef, motionTimes, prevSkillId, seriesTags, analyzeSeries, thrownCount } from "./analysis";
 import { CHAIN_END_SKILLS, endsFacingBackward, THROW_ROLL_MOTION } from "./tumblingChain";
 import { itemLabel } from "./templates";
@@ -35,7 +35,6 @@ export const THROW_TUM_AVG_FRONT_ROLL_MAX = 0.3;
 export const THROW_TUM_AVG_FRONT_SIDE_MAX = 0.5;
 /** 0.5超〜0.7未満は前方1回ひねり→前転。この値以上は伸身前宙1回ひねり→前転／前方1回ひねり→側宙 */
 export const THROW_TUM_AVG_LAYOUT_MIN = 0.7;
-const FRONT_LAYOUT_ID = buildTwistSkillId({ base: "front", twist: 0, posture: "layout" });
 
 export interface AutoInputSuggestion {
   /** 候補の識別子（同じ候補が続けて出ているかの判定・テスト用） */
