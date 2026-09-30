@@ -106,19 +106,20 @@ describe("自動入力", () => {
     const prev = ser(th, mo("chene"), ct);
     const tumB = ser(sk("a_roundoff"), sk("b_backsalto"));
     expect(labels([prev, tumB, ser(th)], 2)).toEqual(["前宙→前転→キャッチ", "側宙→キャッチ"]);
-    // 平均 0.3超〜0.5→ 前宙→側宙→キャッチ
-    const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
-    expect(labels([prev, mid, mid, ser(th)], 3)).toEqual(["前宙→側宙→キャッチ"]);
-    // 平均 0.7 以上 → 伸身前宙1回ひねり→前転／前方1回ひねり→側宙
-    const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto"));
-    expect(labels([hard, ser(th, mo("mv3"), ct), ser(th)], 2)).toEqual([
+    // シリーズのDスコアの上位3つの平均：0.5超〜0.7以下 → 前宙→側宙→キャッチ
+    const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto")); // 0.5
+    const hard2 = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front")); // 0.7
+    const e = ser(th, mo("mv3"), ct); // 0.7
+    expect(labels([mid, hard2, e, ser(th)], 3)).toEqual(["前宙→側宙→キャッチ"]);
+    // 0.7超〜0.9未満 → 前方1回ひねり→前転→キャッチ
+    const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto")); // 0.9
+    expect(labels([hard, hard2, e, ser(th)], 3)).toEqual(["前方宙返り1回ひねり→前転→キャッチ"]);
+    // 0.9 以上 → 伸身前宙1回ひねり→前転／前方1回ひねり→側宙
+    const hard3 = ser(sk("a_roundoff"), sk("d_backlay25"), sk("b_front"), sk("b_sidesalto")); // 0.9
+    const hard4 = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_sidesalto"), sk("b_front")); // 0.9
+    expect(labels([hard, hard3, hard4, e, ser(th)], 4)).toEqual([
       "伸身前宙1回ひねり→前転→キャッチ",
       "前方宙返り1回ひねり→側宙→キャッチ",
-    ]);
-    // 0.5超〜0.7未満 → 前方1回ひねり→前転→キャッチ
-    const hard2 = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"));
-    expect(labels([hard, hard2, ser(th, mo("chene", 2), ct), ser(th)], 3)).toEqual([
-      "前方宙返り1回ひねり→前転→キャッチ",
     ]);
   });
 
@@ -167,13 +168,13 @@ describe("自動入力", () => {
     expect(st.items[0]).toMatchObject({ kind: "catch", catchTypes: [] });
   });
 
-  it("投げている間に前転：第一候補はキャッチ。3動作以上かつ平均0.5以上なら 転がり→キャッチ", () => {
+  it("投げている間に前転：第一候補はキャッチ。3動作以上かつ平均0.7以上なら 転がり→キャッチ", () => {
     // 2動作（シェネ→前転）：キャッチだけ
     expect(labels([ser(th, mo("chene"), mo("fwd_roll"))], 0)).toEqual(["キャッチ"]);
     // 3動作でも平均が低い（構成が空）→ キャッチ が先、続けて従来の キャッチ→投げ→キャッチ
     expect(labels([ser(th, mo("chene", 2), mo("fwd_roll"))], 0)).toEqual(["キャッチ", "キャッチ→投げ→キャッチ"]);
-    // 平均0.5以上（D難度のタンブリング）→ 転がり→キャッチ が第一候補
-    const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
+    // 平均0.7以上（E難度のタンブリング）→ 転がり→キャッチ が第一候補
+    const mid = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"));
     const s = ser(th, mo("chene", 2), mo("fwd_roll"));
     expect(labels([mid, s], 1)).toEqual(["転がり→キャッチ", "キャッチ", "キャッチ→投げ→キャッチ"]);
     // 動作が足りなければ平均が高くても 転がり は出ない
@@ -193,17 +194,22 @@ describe("自動入力", () => {
     // 難度の高い上位3つの平均（0.2 の低難度は外れる）。低難度の投げを足しても下がらない
     expect(avg([hard, hard2, mid, ser(th, mo("chene"), ct), cur])).toBeCloseTo((0.9 + 0.7 + 0.5) / 3);
     expect(avg([hard, hard2, mid, low, cur])).toBeCloseTo((0.9 + 0.7 + 0.5) / 3);
-    // シリーズごとに最も高いユニットを1つだけ数える（連続投げの2回目も候補には入る）
-    const both = ser(th, mo("mv3"), ct, th, mo("chene"), ct); // 1つ目 E 0.7、2つ目は低い → 0.7
-    expect(avg([both, cur])).toBeCloseTo(0.7);
-    // 2つ目の投げのほうが高ければ、そちらを採る（1つ目 シェネ、2つ目 縦3動作）
-    const second = ser(th, mo("chene"), ct, th, mo("mv3"), ct);
-    expect(avg([second, cur])).toBeCloseTo(0.7);
-    // 1つのシリーズに強いユニットが2つあっても1シリーズとして数える
+    // シリーズのDスコア＝そのシリーズの全ユニットの難度点の合計（低難度の投げ・連続投げの2回目も含む）
+    const single = avg([ser(th, mo("mv3"), ct), cur]); // 0.7
+    const lowOne = avg([ser(th, mo("chene"), ct), cur]);
+    const both = ser(th, mo("mv3"), ct, th, mo("chene"), ct);
+    // 2つの投げの難度点の合計以上（連続投げのシリーズ加点も足される）
+    expect(avg([both, cur])).toBeGreaterThanOrEqual(single + lowOne - 1e-9);
+    // 強いユニットが2つあるシリーズは、その合計が1シリーズのDスコアになる
     const twoStrong = ser(th, mo("mv3"), ct, sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto"));
-    const lowSeries = ser(th, mo("chene"), ct);
-    const lowVal = avg([lowSeries, cur]);
-    expect(avg([twoStrong, mid, lowSeries, cur])).toBeCloseTo((0.9 + 0.5 + lowVal) / 3);
+    expect(avg([twoStrong, cur])).toBeCloseTo(0.7 + 0.9);
+    // 加点も足す（視野外の投げ・キャッチの技術加点 0.1 ずつ）
+    const withTech = ser(
+      { kind: "throw", throwTypes: ["noview"], reqTypes: [] },
+      mo("mv3"),
+      { kind: "catch", catchTypes: ["noview"], catchTwo: false },
+    );
+    expect(avg([withTech, cur])).toBeGreaterThan(single);
   });
 
   it("投げ→シェネ（3回以下）：キャッチ／前転→キャッチ", () => {
@@ -275,9 +281,11 @@ describe("自動入力", () => {
     expect(labels([cur], 0)).toEqual(["後方宙返り半ひねり→前宙"]);
     const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
     const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto"));
-    // 平均 0.3超〜0.5 → 後方宙返り1回半ひねり
-    expect(labels([mid, cur], 1)[0]).toBe("後方宙返り1回半ひねり→前宙");
-    // 平均 0.5超 → 後方伸身宙返り2回半ひねり
+    // 平均 0.5超〜0.7 → 後方宙返り1回半ひねり（0.5以下はハーフ）
+    const hard2 = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"));
+    expect(labels([mid, cur], 1)[0]).toBe("後方宙返り半ひねり→前宙");
+    expect(labels([hard2, cur], 1)[0]).toBe("後方宙返り1回半ひねり→前宙");
+    // 平均 0.7超 → 後方伸身宙返り2回半ひねり
     expect(labels([hard, cur], 1)[0]).toBe("後方伸身宙返り2回半ひねり→前宙");
     // 三宙を実施済み（ほかのシリーズ）→ バク転も候補に
     expect(labels([hard, cur], 1)).toEqual(["後方伸身宙返り2回半ひねり→前宙", "バク転"]);
@@ -319,24 +327,26 @@ describe("自動入力", () => {
 
   it("後ろ向きで終わる宙返りのあと：他シリーズの平均難度に応じた候補", () => {
     const cur = ser(sk("a_roundoff"), sk("b_backsalto")); // 後方宙返り＝後ろ向きで終わる
-    const low = ser(th, mo("chene"), ct); // 0.2以下
-    const c1 = ser(sk("a_roundoff"), sk("b_backhalf"), sk("b_front")); // 難度 0.3 台
+    const low = ser(th, mo("chene"), ct); // 0.2
     const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto")); // 0.5
-    const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto")); // 0.7
+    const hard2 = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front")); // 0.7（三宙にならない）
+    const hard = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_front"), sk("b_sidesalto")); // 0.9（三宙）
+    const hard3 = ser(sk("a_roundoff"), sk("d_backlay25"), sk("b_front"), sk("b_sidesalto")); // 0.9
+    const hard4 = ser(sk("a_roundoff"), sk("d_frontlay1"), sk("b_sidesalto"), sk("b_front")); // 0.9
+    const f = ser(th, mo("chene", 5), ct); // シェネ×5＝F 0.9（三宙にならない）
+    const e = ser(th, mo("mv3"), ct); // 0.7
     const L = (l: Series[]) => labels(l, l.length - 1);
-    // 平均0.2以下 → 無し
+    // 平均0.4以下 → 無し
     expect(L([low, cur])).toEqual([]);
-    const e = ser(th, mo("mv3"), ct); // 徒手 E = 0.7（三宙にはならない）
-    expect(L([mid, cur])).toEqual(["前宙", "きりもみ"]); // 0.5 ちょうどは きりもみ まで
-    // 0.5超〜0.7未満（三宙未達・つなぎでない）→ 前宙、きりもみ、前宙→側宙
-    expect(L([mid, e, cur])).toEqual(["前宙", "きりもみ", "前宙→側宙"]);
-    // 0.7 以上 → さらに きりもみ転回
-    expect(L([e, cur])).toEqual(["前宙", "きりもみ", "前宙→側宙", "きりもみ転回"]);
-    // 三宙を実施済みなら 前宙→側宙 は出さない
-    expect(L([hard, cur])).toEqual(["前宙", "きりもみ", "きりもみ転回"]);
-    // 平均0.3超〜0.5 未満 は 前宙 のみ（0.3 ちょうどは 前宙 まで）
-    expect(L([c1, cur])).toEqual(["前宙"]);
+    // 0.4超〜0.5 → 前宙のみ
+    expect(L([mid, cur])).toEqual(["前宙"]);
+    // 0.5超〜0.7 → 前宙、きりもみ
+    expect(L([hard2, cur])).toEqual(["前宙", "きりもみ"]);
+    // 0.7超（三宙未達・つなぎでない）→ さらに 前宙→側宙
+    expect(L([f, e, cur])).toEqual(["前宙", "きりもみ", "前宙→側宙"]);
+    // 三宙を実施済みなら 前宙→側宙 は出さない。0.9 以上は きりもみ転回も
+    expect(L([hard, hard3, hard4, cur])).toEqual(["前宙", "きりもみ", "きりもみ転回"]);
     // 前向きに降りる宙返り（半ひねり）では出ない
-    expect(L([mid, ser(sk("a_roundoff"), sk("b_backhalf"))])).not.toContain("きりもみ");
+    expect(L([hard2, ser(sk("a_roundoff"), sk("b_backhalf"))])).not.toContain("きりもみ");
   });
 });

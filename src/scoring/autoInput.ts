@@ -46,14 +46,14 @@ const KIRIMOMI_TEN_ID = "c_kirimomiten";
 /** テンポひねりの次に出す技：テンポ／ハーフ（後方宙返り半ひねり）／後方伸身宙返り2回半ひねり */
 const TEMPO_TWIST_NEXT = [TEMPO_SKILL_ID, "b_backhalf", "d_backlay25"];
 const KIRIMOMI_ID = "b_kirimomi";
-/** 後ろ向きで終わる宙返りのあと、他のシリーズの平均難度の境目（以下／超）。0.7以上できりもみ転回も出す */
-export const AFTER_BACK_NONE_MAX = 0.2;
-export const AFTER_BACK_FRONT_MAX = 0.3;
-export const AFTER_BACK_KIRIMOMI_MAX = 0.5;
+/** 後ろ向きで終わる宙返りのあと、他のシリーズの難度の目安（上位3シリーズのDスコア平均）の境目（以下／超）。0.9以上できりもみ転回も出す */
+export const AFTER_BACK_NONE_MAX = 0.4;
+export const AFTER_BACK_FRONT_MAX = 0.5;
+export const AFTER_BACK_KIRIMOMI_MAX = 0.7;
 const FLICFLAC_ID = "a_flicflac";
 /** テンポのあとの「宙返り→前宙」の宙返り（前向きに降りる後方の半ひねり系）を選ぶ、他のシリーズの平均難度の境目 */
-export const TEMPO_AVG_LOW_MAX = 0.3;
-export const TEMPO_AVG_MID_MAX = 0.5;
+export const TEMPO_AVG_LOW_MAX = 0.5;
+export const TEMPO_AVG_MID_MAX = 0.7;
 const TEMPO_LOW: TwistParams = { base: "back", twist: 0.5, posture: "tuck" };
 const TEMPO_MID: TwistParams = { base: "back", twist: 1.5, posture: "tuck" };
 const TEMPO_LAYOUT: TwistParams = { base: "back", twist: 0, posture: "layout" };
@@ -80,10 +80,10 @@ const ROLL_MOTION_ID = "roll";
 const ROLL_MOTION_IDS = [THROW_ROLL_MOTION, ROLL_MOTION_ID];
 
 /** 投げタンをおすすめするときの、構成全体の平均難度点の境目（この値以下ならその段） */
-export const THROW_TUM_AVG_FRONT_ROLL_MAX = 0.3;
-export const THROW_TUM_AVG_FRONT_SIDE_MAX = 0.5;
-/** 0.5超〜0.7未満は前方1回ひねり→前転。この値以上は伸身前宙1回ひねり→前転／前方1回ひねり→側宙 */
-export const THROW_TUM_AVG_LAYOUT_MIN = 0.7;
+export const THROW_TUM_AVG_FRONT_ROLL_MAX = 0.5;
+export const THROW_TUM_AVG_FRONT_SIDE_MAX = 0.7;
+/** 0.7超〜0.9未満は前方1回ひねり→前転。この値以上は伸身前宙1回ひねり→前転／前方1回ひねり→側宙 */
+export const THROW_TUM_AVG_LAYOUT_MIN = 0.9;
 
 export interface AutoInputSuggestion {
   /** 候補の識別子（同じ候補が続けて出ているかの判定・テスト用） */
@@ -456,12 +456,15 @@ export function effectiveScores(
   // 目安の計算だけは十年後モードの F（0.9）まで内部で数える。E（0.7）で頭打ちにすると、
   // 実際には F 相当の徒手（シェネ×5 など）が E と区別できなくなる。画面の採点には影響しない
   const result = computeScore(others, apparatus, { junior, future: "F" });
-  // シリーズごとに、有効な（採用され上位3つに入った）ユニットの最高の難度点を1つだけ拾う。
-  // 連続投げの2回目も、いったんそのシリーズの候補に入れる（低ければ最高に負けて数えられない）
+  // シリーズごとの D スコア：不採用・上位3つ外の低難度ユニットも含めた難度点の合計に、
+  // そのシリーズの加点（シリーズ・技術・手具操作・二つ投げの徒手動作）を足す。
+  // 同じ内容の重複シリーズは D に算入されないので数えない
   const scores: number[] = [];
-  result.seriesBreakdowns.forEach((b) => {
-    const valid = [...b.tumRows, ...b.handRows].filter((r) => r.adopted && r.inTop);
-    if (valid.length > 0) scores.push(Math.max(...valid.map((r) => r.score)));
+  result.seriesBreakdowns.forEach((b, i) => {
+    if (result.dupFlags[i]) return;
+    const units = [...b.tumRows, ...b.handRows];
+    if (units.length === 0) return;
+    scores.push(units.reduce((sum, r) => sum + r.score, 0) + b.sBonus + b.tech + b.appOp + b.twoMot);
   });
   return scores;
 }
@@ -485,10 +488,10 @@ export function averageDifficulty(
 
 /** 転がりに切り替えて受けにいく、動作数とシリーズ平均の下限 */
 export const ROLL_CATCH_MIN_MOTIONS = 3;
-export const ROLL_CATCH_MIN_AVG = 0.5;
+export const ROLL_CATCH_MIN_AVG = 0.7;
 
 /**
- * 投げている間に前転を入れたとき：第一候補はキャッチ。動作が3以上で構成の平均難度が0.5以上なら
+ * 投げている間に前転を入れたとき：第一候補はキャッチ。動作が3以上で構成の難度の目安が0.7以上なら
  * 前転の代わりに 転がり→キャッチ を第一候補にする（そのほかの候補は別案に残す）。
  */
 function baseSuggestions(
