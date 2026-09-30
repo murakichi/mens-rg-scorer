@@ -103,7 +103,8 @@ describe("自動入力", () => {
   it("投げのシリーズのあとに投げを足す：投げタン未達成なら平均難度に応じて勧める", () => {
     // 平均 B(0.2) → 前宙→前転→キャッチ
     const prev = ser(th, mo("chene"), ct);
-    expect(labels([prev, ser(th)], 1)).toEqual(["前宙→前転→キャッチ", "側宙→キャッチ"]);
+    const tumB = ser(sk("a_roundoff"), sk("b_backsalto"));
+    expect(labels([prev, tumB, ser(th)], 2)).toEqual(["前宙→前転→キャッチ", "側宙→キャッチ"]);
     // 平均 0.3超〜0.5→ 前宙→側宙→キャッチ
     const mid = ser(sk("a_roundoff"), sk("c_back1full"), sk("b_sidesalto"));
     expect(labels([prev, mid, mid, ser(th)], 3)).toEqual(["前宙→側宙→キャッチ"]);
@@ -121,6 +122,10 @@ describe("自動入力", () => {
     const tum = ser(th, sk("b_front"), ct);
     expect(ids([tum, ser(th)], 1).some((i) => i.startsWith("throwTumbling"))).toBe(false);
     expect(ids([ser(th)], 0)).toEqual([]);
+    // 投げ未実施（タンブリングだけ）／タンブリング未実施（投げだけ）でも勧めない
+    const tumB = ser(sk("a_roundoff"), sk("b_backsalto"));
+    expect(ids([tumB, ser(th)], 1)).toEqual([]);
+    expect(ids([ser(th, mo("chene"), ct), ser(th)], 1)).toEqual([]);
     expect(ids([ser(sk("a_roundoff")), ser(th)], 1)).toEqual([]);
   });
 

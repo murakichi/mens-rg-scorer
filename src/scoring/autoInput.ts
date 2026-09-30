@@ -145,15 +145,20 @@ function baseSuggestions(
     ];
   }
 
-  // ---- 投げのシリーズのあとに投げを足したとき：投げタン未達成なら平均難度に合わせて勧める ----
+  // ---- 投げを足したとき：投げタン未実施・投げ実施済み・タンブリング実施済みなら平均難度に合わせて勧める ----
   if (
     n === 1 &&
     last.kind === "throw" &&
-    list
-      .slice(0, sIdx)
-      .some((s2) => s2.items.some((it) => it.kind === "throw")) &&
     !list.some((s2) =>
       analyzeSeries(s2, junior).units.some((u) => u.isThrowTumbling),
+    ) &&
+    list.some(
+      (s2, i) => i !== sIdx && s2.items.some((it) => it.kind === "throw"),
+    ) &&
+    list.some(
+      (s2, i) =>
+        i !== sIdx &&
+        analyzeSeries(s2, junior).units.some((u) => u.type === "tumbling"),
     )
   ) {
     const avg = routineAverage();
