@@ -282,4 +282,12 @@ describe("自動入力", () => {
     // テンポ以外の技では出ない
     expect(ids([ser(sk("a_roundoff"), sk("b_backsalto"))], 0)).toEqual([]);
   });
+
+  it("テンポひねりのあと：テンポ／ハーフ／後方伸身宙返り2回半ひねり", () => {
+    expect(labels([ser(sk("a_roundoff"), sk("c_tempotwist"))], 0)).toEqual([
+      "テンポ宙返り",
+      "後方宙返り半ひねり",
+      "後方伸身宙返り2回半ひねり",
+    ]);
+  });
 });

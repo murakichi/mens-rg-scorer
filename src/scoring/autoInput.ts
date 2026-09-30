@@ -25,6 +25,8 @@ import {
 import {
   CHAIN_END_SKILLS,
   isTempoSalto,
+  TEMPO_SKILL_ID,
+  TEMPO_TWIST_SKILL_ID,
   endsFacingBackward,
   THROW_ROLL_MOTION,
 } from "./tumblingChain";
@@ -40,6 +42,8 @@ const FRONT_ID = "b_front";
 const FRONT_LAYOUT_ID_TWIST = FRONT_LAYOUT_TWIST_ID;
 const FRONT_TWIST_ID = "c_front1full";
 const KIRIMOMI_TEN_ID = "c_kirimomiten";
+/** テンポひねりの次に出す技：テンポ／ハーフ（後方宙返り半ひねり）／後方伸身宙返り2回半ひねり */
+const TEMPO_TWIST_NEXT = [TEMPO_SKILL_ID, "b_backhalf", "d_backlay25"];
 const FLICFLAC_ID = "a_flicflac";
 /** テンポのあとの「宙返り→前宙」の宙返り（前向きに降りる後方の半ひねり系）を選ぶ、他のシリーズの平均難度の境目 */
 export const TEMPO_AVG_LOW_MAX = 0.3;
@@ -341,6 +345,10 @@ function coreSuggestions(
   if (!lastId) return [];
 
   // テンポのあと：①平均難度に応じた宙返り→前宙 ②三宙を実施済みならバク転
+  // テンポひねりのあとは、テンポ・ハーフ・後方伸身宙返り2回半ひねり
+  if (lastId === TEMPO_TWIST_SKILL_ID) {
+    return TEMPO_TWIST_NEXT.map((id) => suggestion(`tempoTwist-${id}`, [skillItem(id)]));
+  }
   if (isTempoSalto(lastId)) {
     const avg = averageDifficulty(list, sIdx, junior, apparatus);
     // 平均難度で段を決め、ほかのタンブリングで実施済み（同じ技は難度に数えない）なら一段下げる：
