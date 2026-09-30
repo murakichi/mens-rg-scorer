@@ -40,6 +40,8 @@ interface Props {
   /** 十年後モードの上限難度（null＝OFF）。技の選択肢と難度表示に反映する。 */
   future?: FutureLevel;
   onChange: (next: Series[]) => void;
+  /** 自動入力（おすすめ表示）を出すか。既定は出す */
+  autoInputEnabled?: boolean;
   /** 採点結果。省略時はこのコンポーネント内で計算する（テンプレート編集用） */
   result?: ReturnType<typeof computeScore>;
   /** シリーズカードに出すテンプレート読み込みプルダウンの選択肢 */
@@ -65,6 +67,7 @@ export function SeriesListEditor({
   apparatus,
   junior,
   future = null,
+  autoInputEnabled = true,
   onChange,
   result,
   templateOptions,
@@ -143,7 +146,7 @@ export function SeriesListEditor({
           onSaveTemplate={onSaveTemplate && (() => onSaveTemplate(sIdx))}
           onUpdateField={(patch) => updateSeriesField(sIdx, patch)}
           onAddItem={(kind) => addItem(sIdx, kind)}
-          autoInput={autoInputSuggestions(series, sIdx, junior, apparatus)}
+          autoInput={autoInputEnabled ? autoInputSuggestions(series, sIdx, junior, apparatus) : undefined}
           onAddItems={(items) => addItems(sIdx, items)}
           onUpdateItem={(iIdx, patch) => updateItem(sIdx, iIdx, patch)}
           onRemoveItem={(iIdx) => removeItem(sIdx, iIdx)}
