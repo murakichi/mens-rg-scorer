@@ -38,6 +38,7 @@ const FRONT_ID = "b_front";
 const FRONT_LAYOUT_ID_TWIST = FRONT_LAYOUT_TWIST_ID;
 const FRONT_TWIST_ID = "c_front1full";
 const KIRIMOMI_TEN_ID = "c_kirimomiten";
+const DIVING_FRONT_ID = "b_divefront";
 const SIDE_SALTO_ID = "b_sidesalto";
 /** 投げている間の徒手が、この動作数に達したら「キャッチ→背面投げ→背面キャッチ」を勧める */
 export const HAND_MOTIONS_FOR_REPEAT_THROW = 3;
@@ -328,6 +329,17 @@ function coreSuggestions(
 
   const lastId = skillAt(n - 1);
   if (!lastId) return [];
+
+  // ダイビング前宙以外の宙返りからロンダートでつないだら、ダイビング前宙
+  const beforeId = skillAt(n - 2);
+  if (
+    lastId === ROUNDOFF_SKILL_ID &&
+    beforeId &&
+    beforeId !== DIVING_FRONT_ID &&
+    skillDef(beforeId)?.isSalto
+  ) {
+    return [suggestion("roundoff-divingFront", [skillItem(DIVING_FRONT_ID)])];
+  }
 
   // ロンダート→前向きに降りる宙返り
   if (skillAt(n - 2) === ROUNDOFF_SKILL_ID && isForwardLanding(lastId)) {

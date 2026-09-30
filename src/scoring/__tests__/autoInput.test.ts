@@ -250,4 +250,12 @@ describe("自動入力", () => {
     expect(labels([ser(mo("fwd_roll"))], 0)).toEqual([]);
     expect(labels([ser(th, ct, mo("fwd_roll"))], 0)).toEqual([]);
   });
+
+  it("ダイビング前宙以外の宙返りからロンダートでつないだら、ダイビング前宙", () => {
+    expect(labels([ser(sk("a_roundoff"), sk("b_backhalf"), sk("a_roundoff"))], 0)).toEqual(["ダイビング前宙"]);
+    expect(labels([ser(sk("a_roundoff"), sk("b_backhalf"), sk("b_front"), sk("a_roundoff"))], 0)).toEqual(["ダイビング前宙"]);
+    // 宙返りの前のロンダート（入り）／ダイビング前宙からのロンダートでは出さない
+    expect(labels([ser(sk("a_roundoff"))], 0)).toEqual([]);
+    expect(labels([ser(sk("b_divefront"), sk("a_roundoff"))], 0)).toEqual([]);
+  });
 });
