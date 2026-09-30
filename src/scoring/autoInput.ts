@@ -10,6 +10,7 @@ import { motionDef, motionTimes, prevSkillId, seriesTags, analyzeSeries, thrownC
 import { CHAIN_END_SKILLS, endsFacingBackward, THROW_ROLL_MOTION } from "./tumblingChain";
 import { itemLabel } from "./templates";
 import { NO_VIEW_TAG } from "./autoThrows";
+import { computeScore } from "./score";
 import type { ApparatusKey, Item, Series } from "./types";
 
 /** 「投げ→伸身前方宙返り1回ひねり」のあとに前転→キャッチが続く、その技 */
@@ -22,6 +23,9 @@ export const HAND_MOTIONS_FOR_REPEAT_THROW = 3;
 
 /** この本数目以降の投げは、前転・転がりで終わったら手具を使ったキャッチ（クラブ・リング） */
 export const PRESS_CATCH_FROM_THROW = 5;
+/** 「タンブリングをすべて満たしている」とみなす必須要素のキー（score.ts の `required`） */
+const TUMBLING_REQUIRED_KEYS = ["dir", "throwTum", "triple", "connect", "tumCount"];
+const CHENE_ID = "chene";
 const ROLL_MOTION_IDS = [THROW_ROLL_MOTION, "roll"];
 
 export interface AutoInputSuggestion {
@@ -83,6 +87,13 @@ export function autoInputSuggestions(
   }
   if (last.kind === "motion" && last.motionId) {
     const t = openThrowIndex(items);
+    // ロープ：タンブリングの必須要素が揃っていれば、シェネのあとは手以外のキャッチ（足で受ける）
+    if (apparatus === "rope" && t >= 0 && last.motionId === CHENE_ID) {
+      const r = computeScore(list, apparatus, { junior });
+      if (r.required.filter((c) => TUMBLING_REQUIRED_KEYS.includes(c.key)).every((c) => c.passed !== false)) {
+        return [suggestion("ropeNonHandCatch", [{ kind: "catch", catchTypes: ["nonhand"], catchTwo: false }])];
+      }
+    }
     // クラブ・リングの5本目以降の投げが前転・転がりで終わるなら、もう一方の手具で押さえて受ける
     if (
       t >= 0 &&

@@ -74,4 +74,19 @@ describe("自動入力", () => {
     expect(autoInputSuggestions([four, fifth], 1, false, "stick").map((s) => s.id)).not.toContain("pressCatch");
     expect(autoInputSuggestions([four, ser(th, mo("chene"))], 1, false, "clubs")).toEqual([]);
   });
+
+  it("ロープ：タンブリングの必須要素が揃った状態でシェネ → 手以外のキャッチ", () => {
+    const tumbling = [
+      ser(sk("a_roundoff"), sk("b_backhalf"), sk("a_roundoff"), sk("b_backhalf")),
+      ser(sk("a_roundoff"), sk("b_backhalf"), sk("b_front"), sk("b_sidesalto")),
+      ser(sk("a_roundoff"), sk("b_backhalf")),
+      ser(th, sk("b_front"), ct),
+    ];
+    const chene = ser(th, mo("chene"));
+    const [g] = autoInputSuggestions([...tumbling, chene], 4, false, "rope");
+    expect(g.items[0]).toMatchObject({ kind: "catch", catchTypes: ["nonhand"] });
+    // 必須要素が足りなければ出ない／他の手具でも出ない
+    expect(autoInputSuggestions([chene], 0, false, "rope")).toEqual([]);
+    expect(autoInputSuggestions([...tumbling, chene], 4, false, "stick").map((s) => s.id)).not.toContain("ropeNonHandCatch");
+  });
 });
