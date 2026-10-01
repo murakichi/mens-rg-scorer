@@ -46,10 +46,15 @@ export const FRONT_KIRIMOMI_THROW_PATTERN: AutoTumblingPattern = {
   kirimomiThrow: true,
 };
 
-/** この形の1本目（前方系）の候補と重み（前宙が主流） */
+/**
+ * この形の1本目（前方系）の候補と重み。全国上位クラスの形なので**C難度以上が好ましく**、
+ * 前宙（B）は残すが低い重みにする（ひねり入りのC・Dが主）。
+ */
 export const FRONT_KIRIMOMI_FRONT_SKILLS: { id: string; weight: number }[] = [
-  { id: "b_front", weight: 5 },
-  { id: "c_front1full", weight: 1 },
+  { id: "c_front1full", weight: 4 },
+  { id: "d_frontlay1", weight: 2 },
+  { id: "e_frontlay2", weight: 0.5 },
+  { id: "b_front", weight: 0.5 },
 ];
 
 /** きりもみ（背面投げ）のid */

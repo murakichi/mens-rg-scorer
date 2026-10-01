@@ -20,6 +20,7 @@ import {
   ROUNDOFF_SKILL_ID,
   TWO_THROW_TAG,
   hasLeftHandThrow,
+  leadsBackward,
   skillDef,
   skillDifficulty,
   canOperateApparatus,
@@ -345,7 +346,10 @@ export function chainEndsOk(
     (!pattern.connect || n > connectAt) &&
     canEndWith(last, draws) &&
     (draws.layoutAfterConnect || !layoutOnlyAfterConnect(pattern, saltoIds, n, connectAt)) &&
-    (!pattern.throwInSkill || canThrowAt(beforeLast, last, draws))
+    (!pattern.throwInSkill || canThrowAt(beforeLast, last, draws)) &&
+    // 宙返りの最中に投げて前転を続ける形では、前方系のあとのきりもみ（首・背中に着地）は
+    // 投げのあとの前転と競合するので採用しない
+    !(pattern.throwInSkill && pattern.rollFinish && last === "b_kirimomi" && !leadsBackward(beforeLast ?? ""))
   );
 }
 

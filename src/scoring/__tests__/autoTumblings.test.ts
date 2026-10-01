@@ -112,6 +112,7 @@ import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../t
 import { unseenShape } from "../unseenShapes";
 import { canOperateApparatus } from "../constants";
 import {
+  AFTER_BACKWARD_KIRIMOMI,
   AFTER_FORWARD_KIRIMOMI,
   THROW_AFTER_CONNECT_SALTOS,
   tumblingChainEndErrors,
@@ -274,7 +275,10 @@ describe("宙返りの連続の組み方", () => {
     // 後方1回半ひねりは前向きに降りるので、次は前方系・側方系
     nextSaltoOptions("c_back15").forEach((id) => expect(skillDef(id)?.category).not.toBe(CATEGORY.BACKWARD));
     // テンポは後ろ向きに降りるので、次は後方系
-    nextSaltoOptions("b_tempo").forEach((id) => expect(skillDef(id)?.category).toBe(CATEGORY.BACKWARD));
+    // （きりもみだけは後方系のあとにも置ける）
+    nextSaltoOptions("b_tempo")
+      .filter((id) => !AFTER_BACKWARD_KIRIMOMI.includes(id))
+      .forEach((id) => expect(skillDef(id)?.category).toBe(CATEGORY.BACKWARD));
   });
 
   it("難度はだんだん下がる（テンポだけ例外）", () => {
@@ -290,8 +294,10 @@ describe("宙返りの連続の組み方", () => {
   });
 
   it("後方系を続けて実施しない（テンポ・後方伸身宙返りは例外）", () => {
-    expect(nextSaltoOptions("b_backsalto")).toEqual([]);
-    expect(nextSaltoOptions("b_backtuck")).toEqual([]);
+    // 続くのは きりもみ だけ（そのあとに技は続かない）
+    expect(nextSaltoOptions("b_backsalto")).toEqual(["b_kirimomi"]);
+    expect(nextSaltoOptions("b_backtuck")).toEqual(["b_kirimomi"]);
+    expect(nextSaltoOptions("b_kirimomi")).toEqual([]);
     expect(nextSaltoOptions("b_tempo").length).toBeGreaterThan(0);
   });
 
@@ -481,8 +487,10 @@ describe("宙返りの連続の組み方", () => {
   });
 
   it("前方の半ひねりからは後方系に続けられる（後方系どうしの連続はしない）", () => {
-    nextSaltoOptions("b_fronthalf").forEach((id) => expect(skillDef(id)?.category).toBe(CATEGORY.BACKWARD));
-    expect(nextSaltoOptions("b_backsalto")).toEqual([]);
+    nextSaltoOptions("b_fronthalf")
+      .filter((id) => !AFTER_BACKWARD_KIRIMOMI.includes(id)) // きりもみは後方系のあとにも置ける
+      .forEach((id) => expect(skillDef(id)?.category).toBe(CATEGORY.BACKWARD));
+    expect(nextSaltoOptions("b_backsalto")).toEqual(["b_kirimomi"]);
   });
 
   it("実際の連続の例どおりに組める", () => {

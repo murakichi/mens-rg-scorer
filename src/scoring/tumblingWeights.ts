@@ -400,6 +400,7 @@ export const SKILL_PICK_WEIGHT: Record<string, number> = {
   // 実質 0.1（ロンダート 1 ＞ バク転 0.5 ＞ ハンドスプリング 0.1）にする
   a_handspring: 0.5,
   // 前方宙返り1回ひねり（1）＞ 伸身前宙 ＞ きりもみ転回
+  b_kirimomi: 0.3,
   c_kirimomiten: 0.3,
   // 側宙（1）＞ 転宙（`LIMITED_SKILLS` で 0.2）
   // 屈伸は抱え込み・伸身より少ない

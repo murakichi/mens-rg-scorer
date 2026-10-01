@@ -84,8 +84,8 @@ describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
     );
     // 首から背中に着地する技・側宙の後には何も続かない
     CHAIN_END_SKILLS.forEach((id) => expect(tr.next(id)).toEqual([]));
-    // テンポ以外の後方系（後ろ向きに降りる）の後も続かない
-    expect(tr.next("b_backsalto")).toEqual([]);
+    // テンポ以外の後方系（後ろ向きに降りる）の後は きりもみ だけ（そのあとは続かない）
+    expect(ids(tr.next("b_backsalto"))).toEqual(["b_kirimomi"]);
   });
 
   it("連続の難度はだんだん下がる（テンポと例外を除く）", () => {
@@ -395,17 +395,27 @@ describe("つなぎの後の宙返りで投げる形（`connectThrowInSkill`）"
 });
 
 describe("前方系のあとのきりもみ転回", () => {
-  it("前宙のあとに出て、側宙より選ばれにくい（きりもみは出ない）", () => {
+  it("前宙のあとに出て、側宙より選ばれにくい（きりもみも出る）", () => {
     const tr = table("chain");
     const after = tr.next("b_front");
     expect(ids(after)).toContain("c_kirimomiten");
-    // きりもみは首から背中にかけて着地するので、ここには出さない
-    expect(ids(after)).not.toContain("b_kirimomi");
+    // きりもみも前方系のあとに置ける（あとに技は続かない）
+    expect(ids(after)).toContain("b_kirimomi");
+    expect(find(after, "b_kirimomi")!.weight).toBeLessThan(find(after, SIDE_SALTO_ID)!.weight);
+    expect(tr.next("b_kirimomi")).toHaveLength(0);
     // 難度は上がる（前宙B→きりもみ転回C）が、きりもみ系は連続の中でだけ宙返りになるので許す
     expect(value("c_kirimomiten")).toBeGreaterThan(value("b_front"));
     // 側宙 ＞ きりもみ転回 ＞ 転宙
     expect(find(after, "c_kirimomiten")!.weight).toBeLessThan(find(after, SIDE_SALTO_ID)!.weight);
     expect(find(after, "c_kirimomiten")!.weight).toBeGreaterThan(find(after, TENCHU_SKILL_ID)!.weight);
+  });
+
+  it("後方系の宙返りのあと（後ろ向きに降りても）きりもみだけは置け、そのあとは続かない", () => {
+    const tr = table("chain");
+    // 後方宙返り1回ひねり（後ろ向きに降りる）／後方宙返り半ひねり（前向きに降りる）
+    expect(ids(tr.next("c_back1full"))).toEqual(["b_kirimomi"]);
+    expect(ids(tr.next("b_backhalf"))).toContain("b_kirimomi");
+    expect(tr.next("b_kirimomi")).toHaveLength(0);
   });
 
   it("投げてから跳ぶ投げタンの2本目にも出る", () => {

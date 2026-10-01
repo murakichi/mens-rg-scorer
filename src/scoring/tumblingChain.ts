@@ -249,10 +249,18 @@ export const difficultyValue = (id: string, junior: boolean, future: FutureLevel
  * ——きりもみ転回のC難度は「連続が1段上がった」という意味ではないため。
  * 選ばれやすさは `SKILL_PICK_WEIGHT`（きりもみ転回 0.3）がそのまま効くので、
  * 側宙（1）より低く、転宙（`LIMITED_SKILLS` の 0.2）より高い。
- * きりもみは入れない：首から背中にかけて着地するので、そのまま受けには繋げられない
- * （後方伸身のあとだけは連続の技として実施するので `AFTER_BACK_LAYOUT_SALTOS` にある）。
+ * きりもみも前方系のあとに普通に置く（前宙→きりもみ→キャッチ、投げ→前方系→きりもみ（背面投げ）
+ * →キャッチ→キャッチ の実施例がある）。首から背中にかけて着地するので、あとに続けられるのは
+ * 受けだけ（`endsChain`）。ただし**投げタンで宙返りの最中に投げたあとに前転を続ける形**とは
+ * 競合するので、その位置のきりもみは採用しない（`chainEndsOk`）。
  */
-export const AFTER_FORWARD_KIRIMOMI: string[] = ["c_kirimomiten"];
+export const AFTER_FORWARD_KIRIMOMI: string[] = ["b_kirimomi", "c_kirimomiten"];
+
+/**
+ * 後方系の宙返りのあとのきりもみ。前向きに降りても後ろ向きに降りても置けるが、
+ * 首・背中に着地するのでそのあとに技は続けない（`endsChain`）。きりもみ転回は置かない。
+ */
+export const AFTER_BACKWARD_KIRIMOMI: string[] = ["b_kirimomi"];
 
 /** 連続に使う宙返り（きりもみ系は宙返りの連続の中でだけ宙返りになるので使わない） */
 function saltoList(
@@ -279,6 +287,8 @@ export function firstSaltoOptions(junior = false, future: FutureLevel = null): s
 export function nextSaltoOptions(prevId: string, junior = false, future: FutureLevel = null): string[] {
   // 首から背中にかけて着地する技（とび前転・きりもみ）の後には続けられない
   if (endsChain(prevId)) return [];
+  // 2回宙返りは連続にも きりもみ にも続かない
+  if (skillDef(prevId)?.isDoubleSalto) return [];
   const offered = new Set(skillOptions(junior, skillFlowAfter(prevId), future).map((s) => s.id));
   // 転宙の後は側宙だけ（それ以外は続けない）
   if (onlySideSaltoAfter(prevId)) return [SIDE_SALTO_ID].filter((id) => offered.has(id));
@@ -301,7 +311,9 @@ export function nextSaltoOptions(prevId: string, junior = false, future: FutureL
   // 後方系を続けて実施することは少ない（テンポは例外）。
   // 前方の半ひねりのように**前方系から後ろ向きに降りた**後に後方系へ入るのは普通に実施する
   // （例：ロンダート→後方1回半ひねり→前宙半ひねり→ダイビング前宙）。
-  if (backward && !isTempoSalto(prevId) && isBackwardSalto(prevId)) return [];
+  // 後方系の宙返りのあとは、後ろ向きに降りても きりもみ だけは置ける（あとに技は続かない）
+  if (backward && !isTempoSalto(prevId) && isBackwardSalto(prevId))
+    return AFTER_BACKWARD_KIRIMOMI.filter((id) => offered.has(id));
   const ceiling = isTempoSalto(prevId) ? maxDiff(future) : difficultyValue(prevId, junior, future);
   // 難度が上がってよい例外（後方宙返り半ひねり→前方宙返り1回ひねり など）
   const rise = DIFFICULTY_RISE_AFTER[prevId] ?? [];
@@ -311,9 +323,9 @@ export function nextSaltoOptions(prevId: string, junior = false, future: FutureL
     .map((s) => s.id);
   // きりもみ系は `saltoList` に入っていない（宙返りの連続の中でだけ宙返りになる）ので、
   // 前方系のあとに実施するものだけここで足す
-  const kirimomi = backward
-    ? []
-    : AFTER_FORWARD_KIRIMOMI.filter((id) => offered.has(id) && !list.includes(id));
+  const kirimomi = (backward ? AFTER_BACKWARD_KIRIMOMI : AFTER_FORWARD_KIRIMOMI).filter(
+    (id) => offered.has(id) && !list.includes(id),
+  );
   return [...list, ...kirimomi];
 }
 
