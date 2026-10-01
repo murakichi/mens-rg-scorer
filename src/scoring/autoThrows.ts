@@ -65,7 +65,8 @@ export interface AutoThrowPattern {
    * **二つ投げ→キャッチ→（徒手0〜1動作）→手具で押さえつけてキャッチ**の形（クラブ・リング）。
    * 二つを違う高さに投げ、高いほう（横投げ）を残して低いほうを先に受け、
    * そのまま高いほうをもう一方の手具で押さえつけて受ける。`chene` の回数は
-   * **2つのキャッチの間**の徒手で、キャッチは2つ同時ではなく1つずつ（`catchTwo` なし）。
+   * 徒手（0〜1動作）で、置く場所は `AutoThrowSpec.splitMotionAt`（二つとも空中にある間／2つのキャッチの間）。
+   * キャッチは2つ同時ではなく1つずつ（`catchTwo` なし）。
    */
   splitCatch?: boolean;
   /**
@@ -550,8 +551,15 @@ export const cheneCountWeight = (hands: AutoHands, count: number): number => {
   return count === SPIN_MAIN_CHENE_COUNT + 1 ? SPIN_THIRD_CHENE_WEIGHT : SPIN_OVER_CHENE_WEIGHT;
 };
 
+/** `splitCatch` の徒手を置く場所：二つとも空中にある間（投げ→**徒手**→キャッチ→キャッチ）か、2つのキャッチの間 */
+export type SplitMotionAt = "bothAir" | "betweenCatches" | "both";
+/** どの位置も実施しそうなので均等に引く（`both` は両方の位置に同じ動作を入れる） */
+export const SPLIT_MOTION_PLACES: SplitMotionAt[] = ["bothAir", "betweenCatches", "both"];
+
 /** 1本ぶんの自動生成の内容 */
 export interface AutoThrowSpec {
+  /** `pattern.splitCatch` のときの徒手の位置（未指定は2つのキャッチの間） */
+  splitMotionAt?: SplitMotionAt;
   pattern: AutoThrowPattern;
   /** シェネの回数 */
   cheneCount: number;
@@ -586,16 +594,22 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
     ...(throwStyle.throwTypes ? { throwTypes: [...throwStyle.throwTypes] } : {}),
   });
   if (pattern.splitCatch) {
-    // 低いほうを先に（通常のキャッチ）→ 0〜1動作 → 高いほう（横投げ）を押さえつけてキャッチ
-    items.push({ kind: "catch" });
-    if (spec.cheneCount > 0)
-      items.push({
-        kind: "motion",
-        motionId: CHENE,
-        count: spec.cheneCount,
-        hands: spec.hands !== null,
-        ...(spec.hands !== null ? { handsType: spec.hands } : {}),
-      });
+    // 低いほうを先に（通常のキャッチ）、高いほう（横投げ）を押さえつけてキャッチ。
+    // 0〜1動作は二つとも空中にある間か、2つのキャッチの間
+    const motion: Item[] =
+      spec.cheneCount > 0
+        ? [
+            {
+              kind: "motion",
+              motionId: CHENE,
+              count: spec.cheneCount,
+              hands: spec.hands !== null,
+              ...(spec.hands !== null ? { handsType: spec.hands } : {}),
+            },
+          ]
+        : [];
+    const at = spec.splitMotionAt ?? "betweenCatches";
+    items.push(...(at === "betweenCatches" ? [] : motion), { kind: "catch" }, ...(at === "bothAir" ? [] : motion));
     items.push({ kind: "catch", catchTypes: [CATCH_USE_APPARATUS] });
     return { executionDeduction: 0, items };
   }
@@ -773,6 +787,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
             ? { ...throwStyle, throwTypes: [...(throwStyle.throwTypes || []), SIDE_THROW_TAG] }
             : throwStyle,
           catchStyle: press,
+          splitMotionAt: SPLIT_MOTION_PLACES[Math.min(SPLIT_MOTION_PLACES.length - 1, Math.floor(rand() * SPLIT_MOTION_PLACES.length))],
         };
     }
     const catchStyle = nextCatchFor(pattern, throwStyle, motions);

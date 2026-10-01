@@ -130,6 +130,15 @@ describe("横投げ", () => {
         expect(items[0]).toMatchObject({ reqTypes: ["twothrow"], throwTypes: [SIDE_THROW_TAG] });
         // 間の徒手は0〜1動作、キャッチは2つ同時ではなく1つずつ
         expect(spec.cheneCount).toBeLessThanOrEqual(1);
+        // 徒手は二つとも空中の間（最初のキャッチの前）か2つのキャッチの間
+        const motionIdx = items.map((i, n) => (i.kind === "motion" ? n : -1)).filter((n) => n >= 0);
+        const firstCatch = items.findIndex((i) => i.kind === "catch");
+        if (spec.cheneCount > 0) {
+          const at = spec.splitMotionAt;
+          expect(motionIdx.length).toBe(at === "both" ? 2 : 1);
+          expect(motionIdx.some((n) => n < firstCatch)).toBe(at !== "betweenCatches");
+          expect(motionIdx.some((n) => n > firstCatch)).toBe(at !== "bothAir");
+        } else expect(motionIdx).toHaveLength(0);
         const catches = items.filter((i) => i.kind === "catch");
         expect(catches).toHaveLength(2);
         expect(catches[0]).not.toHaveProperty("catchTwo");
@@ -138,6 +147,13 @@ describe("横投げ", () => {
         expect(checkApparatusFlow(buildAutoThrowSeries(spec), apparatus)).toEqual([]);
       });
     });
+    // 徒手を置く場所は両方出る
+    const places = new Set<string>();
+    for (let k = 0; k < 20; k++)
+      autoThrowSpecs("clubs").forEach((s) => {
+        if (s.pattern.splitCatch && s.cheneCount > 0) places.add(s.splitMotionAt ?? "");
+      });
+    expect([...places].sort()).toEqual(["betweenCatches", "both", "bothAir"]);
     // スティック・ロープには出ない
     expect(autoThrowSpecs("stick").some((s) => s.pattern.splitCatch)).toBe(false);
     expect(autoThrowSpecs("rope").some((s) => s.pattern.splitCatch)).toBe(false);
