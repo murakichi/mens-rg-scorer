@@ -9,9 +9,10 @@
 //     Dスコアの範囲に「シリーズを丸ごと落とす」より先に「減らして収める」で届かせる
 //  ③ 刈り込み：抜いても評価が下がらないシリーズを取り除く（＝評価されない要素を入れない）
 //  ④ 並べ替え（`orderSeries`）：投げとタンブリングを交互にし、締めのキャッチを最後に置く
-//  ⑤ 詰め直し（`swapIn` / `satisfying` / `upgradeTumblings`）：必須要素が残っていれば
-//     1本ずつ入れ替え、それでも足りなければ不足を満たす1本を起点に組み直す。
-//     最後にタンブリングだけを高難度の候補に入れ替える
+//  ⑤ 詰め直し（`swapIn` / `satisfying` / `upgradeTumblings` / `levelAdoptedDiffs`）：
+//     必須要素が残っていれば1本ずつ入れ替え、それでも足りなければ不足を満たす1本を起点に
+//     組み直す。そのあとタンブリングだけを高難度の候補に入れ替え、最後に
+//     **採用される難度が1段以内に揃うように**均す
 // =====================================================================
 
 import { analyzeSeries } from "./analysis";
@@ -23,18 +24,28 @@ import {
   usedSkillIds,
   withSaltoCount,
 } from "./autoTumblings";
-import { endsWithFinishCatch, evaluateUsed, type Evaluation } from "./generateEvaluate";
+import {
+  endsWithFinishCatch,
+  evaluateUsed,
+  rangePenalty,
+  type Evaluation,
+} from "./generateEvaluate";
 import {
   BASIC_LEVEL_MAX_SCORE,
   DEFAULT_MAX_AUTO_THROWS,
   DEFAULT_MAX_AUTO_TUMBLINGS,
   FINISH_CATCH_TAG,
   HAND_UPGRADE_ROUNDS,
+  SPREAD_REPAIR_BUDGET,
+  SPREAD_REPAIR_ROOM_RUN,
+  SPREAD_REPAIR_ROUNDS,
   THROW_REBUILD_CANDIDATES,
   TUMBLING_UPGRADE_ROUNDS,
   aimsAllE,
   autoLimitOf,
   autoSeriesMax,
+  leadThrowCheneCount,
+  preferredThrowCount,
 } from "./generateWeights";
 import { shuffled } from "./pick";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
@@ -66,6 +77,8 @@ export function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () 
         future: opts.future ?? null,
         // 生成する形の珍しさ（0〜100。既定50＝実測どおり）
         rarity: opts.rarity,
+        // 連続投げの安いほうは**その水準の1段下**に合わせる（採用の難度を揃えるため）
+        leadCheneCount: leadThrowCheneCount(opts.maxScore, opts.future ?? null),
       }),
     );
   if (opts.autoTumblings !== false)
@@ -333,6 +346,113 @@ export function upgradeHandUnits(
   const swapped = swapIn(best.used, best.ev, throws, opts, HAND_UPGRADE_ROUNDS);
   if (swapped.ev.value <= best.ev.value + 1e-9) return best;
   const ordered = orderSeries(swapped.used, swapped.ev, opts);
+  return { used: ordered.used, ev: ordered.ev };
+}
+
+/**
+ * **採用ユニットの難度を均す最後の一手**（`MAX_ADOPTED_DIFF_SPREAD`）。
+ * 変えるのは「どのシリーズを使うか」と「自動生成のシリーズの量」、それに**投げを1本足すこと**だけ。
+ * タンブリングの本数は変えないし、シリーズを抜くこともしない。
+ *
+ * ばらつきの正体は**Dスコアの上限と貪欲法の順番**。貪欲法は1本足すごとに評価が上がるものを
+ * 採るので、難度のかたまりが大きいタンブリングから埋まり、投げの番になるとDスコアの残りが
+ * 少なく**安い投げ（徒手0〜1動作＝A・B難度）しか入らない**。Dスコア 2〜3点台の投げの最頻値は
+ * 4回（`preferredThrowCount`）で、うち1本が投げタンだと徒手ユニットはちょうど3つ＝
+ * **上位3つに全部入る**ので、その安い1本がそのまま採用されて幅3〜4になる
+ * （実測：上限3.0で タン[E,C,E] 徒手[B,E,A] のような構成。幅1〜2で収まっていた構成は
+ *  どれも投げ5回で、安い徒手が上位3つから外れていた）。
+ *
+ * 1本だけ入れ替えても直らない：安い投げを厚い投げに替えるとDスコアが上限を超えるので、
+ * **同時に別のユニットを下げなければならない**。評価が上がる手しか採らない `swapIn` では
+ * その「下げる」1手を踏めないし、幅のペナルティを重くしても同じ
+ * （実測：0.5 → 1.5 → 4 と上げても頭打ち。足す手・量を動かす手を足しても変わらなかった）。
+ *
+ * なので**はみ出しの合計（`adoptedSpreadCost`）が減る向きに1手ずつ降りていき、いちばん均った
+ * ところを採る**。手放してよい評価の量は `SPREAD_REPAIR_BUDGET` までで、途中もその外には出ない。
+ * 幅そのものではなくはみ出しの合計を見るのは**足場**のため：幅は最大と最小しか見ないので、
+ * {C,C,E,E} の C を1つ D に上げても幅は2のままで1手ずつでは改善が見えないが、
+ * はみ出しなら 2 → 1 と減る。
+ * Dスコアの範囲・必須要素は降りる途中も崩さない（均すために点数の芯を落とさない）。
+ * 安い投げ自体も残す — ユーザーの要望どおり、加点のための低難度の投げはそのまま。
+ * 揃え方は「厚い投げに替える」か「投げを1本足して上位3つから押し出す」のどちらか
+ * （足すのは最頻値＋1回まで）。
+ */
+export function levelAdoptedDiffs(
+  best: { used: SeriesTemplate[]; ev: Evaluation },
+  pool: SeriesTemplate[],
+  opts: GenerateOptions,
+  maxSeries: number,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  if (best.ev.spreadCost <= 1e-9) return best;
+  const miss = (ev: Evaluation) => rangePenalty(ev.dScore, opts.minScore, opts.maxScore);
+  const missLimit = miss(best.ev) + 1e-9;
+  const floor = best.ev.value - SPREAD_REPAIR_BUDGET;
+  const junior = !!opts.junior;
+  const future = opts.future ?? null;
+  let list = best.used;
+  let ev = best.ev;
+  /** いまのところいちばん均っている構成（予算内なのは作り方から保証される） */
+  let goal = best;
+  /** 「余地を作る」だけの手を続けて踏んだ回数（下げ続けても均らないので頭を打たせる） */
+  let roomRun = 0;
+  for (let round = 0; round < SPREAD_REPAIR_ROUNDS; round++) {
+    if (ev.spreadCost <= 1e-9) break;
+    let pick: { used: SeriesTemplate[]; ev: Evaluation; room: boolean } | null = null;
+    const usedIds = new Set(list.map((t) => t.id));
+    const consider = (next: SeriesTemplate[]) => {
+      if (!withinAutoLimits(next, opts)) return;
+      const e = evaluateUsed(next, opts);
+      // **予算の外には出ない**。範囲外・投げタン超過・タンブリング4本目などは評価が
+      // 100点単位で落ちるので、ここで一緒に弾かれる
+      if (e.value < floor - 1e-9) return;
+      if (miss(e) > missLimit) return;
+      if (e.missing.length > best.ev.missing.length) return;
+      // 投げの回数は減らさない（安い投げを消すのは「均した」ではなく「やめた」）。
+      // 増やすのは**上位3つから押し出す**ための1本だけ許す（投げ4回のうち1本が投げタンだと
+      // 徒手ユニットが3つ＝全部採用されてしまうので、1本足すと安いほうが外れる）。
+      // ただし最頻値（`preferredThrowCount`）＋1回まで — 均しのために実測の分布を壊さない
+      if (e.throwCount < best.ev.throwCount) return;
+      if (
+        e.throwCount > best.ev.throwCount &&
+        e.throwCount > preferredThrowCount(e.dScore, junior) + 1
+      )
+        return;
+      const better = e.spreadCost < ev.spreadCost - 1e-9;
+      // はみ出しは同じまま**Dスコアに余地を作る**手。上限いっぱいの構成では、安い投げを
+      // 厚くするのに先に別のユニットを下げる必要があり、その1手だけでは均らない。
+      // ただし続けては踏まない（下げ続けても均らないので、点数だけ失う）
+      const room =
+        roomRun < SPREAD_REPAIR_ROOM_RUN &&
+        Math.abs(e.spreadCost - ev.spreadCost) < 1e-9 &&
+        e.dScore < ev.dScore - 1e-9;
+      if (!better && !room) return;
+      // はみ出しがいちばん減る手を採る（同じなら評価の高いほう）
+      if (pick && !(e.spreadCost < pick.ev.spreadCost - 1e-9 || e.value > pick.ev.value + 1e-9)) return;
+      pick = { used: next, ev: e, room: !better };
+    };
+    // 量を変える手（自動生成のシリーズは投げ＝シェネの回数・タンブリング＝宙返りの本数）
+    list.forEach((t, i) => autoVariants(t).forEach((v) => consider(list.map((x, k) => (k === i ? v : x)))));
+    // **シリーズの種類は変えない**（タンブリングは同じ本数のまま、投げは投げのまま）。
+    // 投げをタンブリングに替えると投げの回数が最頻値から外れ、交互の並びも崩れる
+    const tumFlags = list.map((t) => isTumblingSeries(t.series, junior, future));
+    for (const t of pool) {
+      if (usedIds.has(t.id)) continue;
+      const tum = isTumblingSeries(t.series, junior, future);
+      // 足す手（安い投げを上位3つから押し出す）。足すのは投げだけ
+      if (!tum && list.length < maxSeries) consider([...list, t]);
+      // 入れ替える手（厚い投げに替える・高すぎるタンブリングを下げる）
+      for (let i = 0; i < list.length; i++)
+        if (tumFlags[i] === tum) consider(list.map((x, k) => (k === i ? t : x)));
+    }
+    if (!pick) break;
+    const step = pick as { used: SeriesTemplate[]; ev: Evaluation; room: boolean };
+    list = step.used;
+    ev = step.ev;
+    roomRun = step.room ? roomRun + 1 : 0;
+    if (ev.spreadCost < goal.ev.spreadCost - 1e-9) goal = { used: list, ev };
+  }
+  if (goal.used === best.used) return best;
+  const ordered = orderSeries(goal.used, goal.ev, opts);
   return { used: ordered.used, ev: ordered.ev };
 }
 

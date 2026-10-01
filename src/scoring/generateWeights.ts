@@ -11,7 +11,7 @@
 // どの値も**実測して決めた**もので、根拠は `app-scoring-spec.md` と work-logs に残す。
 // =====================================================================
 
-import { NON_HAND_TAG, isAutoThrowTemplate } from "./autoThrows";
+import { LEAD_THROW_CHENE_COUNT, NON_HAND_TAG, isAutoThrowTemplate } from "./autoThrows";
 import { isAutoTumblingTemplate } from "./autoTumblings";
 import {
   ADOPT_COUNT,
@@ -483,6 +483,112 @@ export const allEScore = (future: FutureLevel = null): number =>
 
 /** 徒手ユニットの入れ替えを試す回数（タンブリングと同じ） */
 export const HAND_UPGRADE_ROUNDS = TUMBLING_UPGRADE_ROUNDS;
+
+/**
+ * **難度として採用されるユニットの難度は、1段より広くばらつかない**。
+ * 実際の演技は「D難度の選手なら C と D」「E難度の選手なら D と E」のように揃っていて、
+ * 同じ演技の採用ユニットに C と E が並んだり、B以下が混ざったりしない。
+ *
+ * 採用（＝重複でなく、上位3つに入った）ユニットの難度の**最大 − 最小**がこの段数まで。
+ * 1段までは許すので {C,D} も {D,E} も通り、{C,D,E}（幅2）や {B,…,E} は均しに行く。
+ *
+ * **技そのもののばらつきは対象外** — 前宙を混ぜても、そのユニットの難度が揃っていればよい。
+ * **採用されない低難度の投げも対象外** — 技術加点のためだけの投げは上位3つに入らないので、
+ * そのまま残る。
+ */
+export const MAX_ADOPTED_DIFF_SPREAD = 1;
+
+/**
+ * **均すために手放してよい評価の量**（`levelAdoptedDiffs`）。
+ *
+ * この規則は**評価の重みにしない**。試して駄目だったのは2つ：
+ *  - はみ出しに重みを掛けて評価から引く（0.5 → 1.5 → 4）。効きは頭打ちで、幅2以上が
+ *    25/25 → 16〜22/25 止まり。ばらつきは重みの問題ではなく**経路**の問題で、
+ *    Dスコアの上限に張り付いた構成では「安い投げを厚くする」1手が上限を超えてしまう。
+ *  - 重みを強くする（0.7）と幅は縮むが、**貪欲法の他の釣り合いを壊した**：
+ *    安い投げは1本やめれば消えるので、上限3.0で投げ4回以上が 85% → 58% に落ち、
+ *    投げとタンブリングの交互の並びも崩れ、難度の比重のつまみも効かなくなった。
+ *    ユーザーの要望は「加点のための低難度の投げはそのまま残して」なので、これは逆。
+ *
+ * なので評価には一切入れず、**構成が決まったあとの詰め直しだけ**で均す。そのとき
+ * 難度をタンブリングから徒手へ移すぶん評価（`TUMBLING_PREFERENCE_WEIGHT` など）は少し下がるので、
+ * 「この量までなら手放してよい」を決めておく。Dスコアの範囲と必須要素は別に守るので、
+ * ここで下がるのは実際の点数ではなく**好みの重み**のぶん。
+ */
+export const SPREAD_REPAIR_BUDGET = 1.0;
+
+/**
+ * **その水準の選手が実施するユニットの難度**（上限から導く）。採点されるのは
+ * 上位3タンブリング＋上位3徒手の `ADOPT_COUNT * 2` ＝6ユニットなので、Dスコア X の演技は
+ * 1ユニットあたり X / 6 を担う。その水準に届く最小の難度がこれ
+ * （上限2.5・3.0 → D、3.5・4.0 → E、1.5 → C、4.2 → E。`allEScore` と同じ導き方で、
+ *  4.2 ＝ E×6 がちょうど「ceiling が E で6つ全部E」になる）。
+ * 上限の指定が無ければ天井なし（最大を目指す）。
+ */
+export function unitDifficultyCeiling(
+  targetScore?: number | null,
+  future: FutureLevel = null,
+): number | null {
+  if (targetScore == null) return null;
+  const per = targetScore / (ADOPT_COUNT * 2);
+  const ceiling = maxDiff(future);
+  const found = (Object.keys(DIFF_SCORE) as Difficulty[])
+    .filter((d) => DIFF_VALUE[d] <= ceiling)
+    .sort((a, b) => DIFF_VALUE[a] - DIFF_VALUE[b])
+    .find((d) => DIFF_SCORE[d] >= per - 1e-9);
+  return found ? DIFF_VALUE[found] : ceiling;
+}
+
+/**
+ * **その水準より高い難度のユニットを採用しているぶんの重み**（1段につき）。
+ *
+ * ばらつきの本当の原因はここ。貪欲法はかたまりの大きいタンブリングから埋めるので、
+ * 上限3.0の構成でもタンブリングはE難度まで上がり（`upgradeTumblings` が押し上げる）、
+ * 投げの番にはDスコアの残りが無く**安い投げしか入らない**。だから採用の中に E と A・B が
+ * 並ぶ。天井を水準に合わせて下げると、Dスコアは6ユニットに割り振るしかなくなり、
+ * 投げも厚くなる＝自然に揃う。
+ *
+ * 1段ぶんの難度（D→E は 0.2、`TUMBLING_PREFERENCE_WEIGHT` も合わせて 0.32 ほど）より重く、
+ * 必須要素（`REQUIRED_ELEMENT_WEIGHT` 10）より軽い。**天井を超えたぶんだけ**を見るので、
+ * 「安い投げを1本やめればはみ出しが消える」という逆方向の抜け道が無い
+ * （低いほうを罰すると、上限3.0で投げ4回以上が 85% → 58% に落ちた）。
+ */
+export const ADOPTED_OVER_CEILING_WEIGHT = 0.5;
+
+/**
+ * **連続投げの1回目（`leadPair` / `trailPair` の安いほう）で実施するシェネの回数**。
+ *
+ * この形は 多様な投げ受け の種類を操作を増やさずに1つ稼ぐためのもので、徒手を1動作しか
+ * 入れない。ところが投げ4回（うち1本が投げタン）だと徒手ユニットはちょうど3つ＝
+ * **上位3つに全部入る**ので、その安い1本がそのまま採用されて難度の幅が開く
+ * （実測：上限3.0でばらついた構成の低いユニットは、ほぼ全部がこの安いほうだった）。
+ *
+ * 「安い」は**その水準に対して安い**という意味なので、回数を水準の1段下のユニットに合わせる
+ * （徒手ユニットの難度は A ＋ 動作数なので、`ceiling - 1 - DIFF_VALUE.A` 動作）。
+ * 上限の指定が無ければ最小の1回（上の水準では採用に入らないので、揃えに行く必要がない）。
+ */
+export function leadThrowCheneCount(
+  targetScore?: number | null,
+  future: FutureLevel = null,
+): number {
+  const ceiling = unitDifficultyCeiling(targetScore, future);
+  if (ceiling == null) return LEAD_THROW_CHENE_COUNT;
+  return Math.max(LEAD_THROW_CHENE_COUNT, ceiling - 1 - DIFF_VALUE.A);
+}
+
+/**
+ * **均す詰め直しの手数**。Dスコアの上限に張り付いた構成では「別のユニットを下げて余地を作る」→
+ * 「安い投げを厚くする」の2手が要るので、それが何度か入る程度の手数。
+ * 1手ごとに候補を総当たりするが、候補の数は手具ごとに80〜90なので生成時間は数百msで済む。
+ */
+export const SPREAD_REPAIR_ROUNDS = 12;
+
+/**
+ * 「余地を作る」だけの手（はみ出しは変わらないがDスコアを下げる手）を続けて踏める回数。
+ * 上限いっぱいの構成では安い投げを厚くする前に別のユニットを下げる必要があるが、
+ * 下げ続けても均らない（点数だけ失う）ので頭を打たせる。
+ */
+export const SPREAD_REPAIR_ROOM_RUN = 2;
 
 /**
  * **6つ全部Eに届いていないぶんの重み**。4.2 以上を狙うなら E×6 が先で、加点はその後。

@@ -53,6 +53,7 @@ import {
 import {
   autoPool,
   greedyAttempt,
+  levelAdoptedDiffs,
   orderSeries,
   satisfying,
   swapIn,
@@ -141,6 +142,11 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   //    加点を積む前に**採点される6つを全部E難度にする**のが先。タンブリングは⑦でほぼE
   //    になるが徒手側が届かないので、候補を投げに絞って同じように入れ替える。
   best = upgradeHandUnits(best, pool, opts);
+
+  // ⑦'' 採用される難度を1段以内に揃える（`MAX_ADOPTED_DIFF_SPREAD`）。評価が上がる手しか
+  //     採らない入れ替えではDスコアの上限の壁を越えられないので、はみ出しが減る向きに
+  //     数手降りて、予算（`SPREAD_REPAIR_BUDGET`）の内でいちばん均ったところを採る。
+  best = levelAdoptedDiffs(best, pool, opts, maxSeries);
 
   // ⑧ 種類を埋めていない「その他の投げ受け」のタグを外す。その他は**実態が違うものを
   //    別の種類として数えてもらう**ための入力なので、種類に効いていないものは意味がない。
