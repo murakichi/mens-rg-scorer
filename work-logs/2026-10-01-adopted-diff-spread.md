@@ -74,7 +74,7 @@
 
 ## 結果
 
-- PR: PRPLACEHOLDER
+- PR: https://github.com/murakichi/mens-rg-scorer/pull/127
 
 ## 気づき・申し送り
 
