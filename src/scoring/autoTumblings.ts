@@ -204,16 +204,7 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       : draws.leftHandThrow
         ? [LEFT_HAND_THROW_TAG]
         : [];
-    // 押さえつけキャッチで受ける形（転がり・前転で終わる）のときだけ横投げにする
-    const lastId = spec.saltoIds.slice(0, spec.saltoCount).slice(-1)[0];
-    const pressed =
-      !!pattern.rollFinish && !noRollAfter(lastId) && draws.pressCatch && !draws.twoThrow && !draws.secondThrow;
-    const side = !!draws.sideThrow && pressed;
-    items.push({
-      kind: "throw",
-      ...(reqTypes.length > 0 ? { reqTypes } : {}),
-      ...(side ? { throwTypes: [SIDE_THROW_TAG] } : {}),
-    });
+    items.push({ kind: "throw", ...(reqTypes.length > 0 ? { reqTypes } : {}) });
   }
   spec.entry.forEach((id) => items.push(skillItem(id)));
   const saltos = spec.saltoIds.slice(0, spec.saltoCount);
@@ -244,7 +235,6 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   // 転がり・前転のあとは手具を使ったキャッチ（押さえつけ）で受けるのが定番。
   // 背面キャッチ（視野外）を引いたときはそちらで受ける（押さえつけとは同時に実施しない）
   if (pattern.throwCatch) {
-    const press = rolled && draws.pressCatch && !draws.twoThrow && !draws.secondThrow;
     // 背面キャッチ（視野外）は、続く投げが**視野外でなければ**実施できる
     // （視野外で受けて視野外に投げることだけができない＝`canThrowAfterCatch`）。
     // 2つ同時キャッチを視野外で受けることはしない
@@ -252,6 +242,22 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       draws.backCatch &&
       !draws.twoThrow &&
       (!draws.secondThrow || canThrowAfterCatch({ id: NO_VIEW_TAG, name: "", catchTypes: [NO_VIEW_TAG] }, draws.secondThrow));
+    // 押さえつけて受ける投げは**横投げ**（`draws.sideThrow`。クラブは必ず）。技の最中の投げが
+    // 視野外のときは横投げにできないので、横投げが要る形では押さえつけない
+    const throwItem = items.find(
+      (it): it is Extract<Item, { kind: "throw" | "skill" }> =>
+        pattern.throwInSkill ? it.kind === "skill" && !!it.isThrow : it.kind === "throw",
+    );
+    const sideOk = !!throwItem && !(throwItem.throwTypes || []).includes(NO_VIEW_TAG);
+    const press =
+      rolled &&
+      draws.pressCatch &&
+      !draws.twoThrow &&
+      !draws.secondThrow &&
+      !back &&
+      !(draws.sideThrow && !sideOk);
+    if (press && draws.sideThrow && throwItem)
+      throwItem.throwTypes = [...(throwItem.throwTypes || []), SIDE_THROW_TAG];
     const catchTypes = back ? [NO_VIEW_TAG] : press ? [CATCH_USE_APPARATUS] : [];
     items.push({
       kind: "catch",

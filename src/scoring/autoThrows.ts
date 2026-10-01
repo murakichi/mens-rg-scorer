@@ -62,6 +62,14 @@ export interface AutoThrowPattern {
    */
   trailPair?: boolean;
   /**
+   * **二つ投げ→キャッチ→（徒手0〜1動作）→手具で押さえつけてキャッチ**の形（クラブ・リング）。
+   * 二つを違う高さに投げ、高いほう（横投げ）を残して低いほうを先に受け、
+   * そのまま高いほうをもう一方の手具で押さえつけて受ける。`chene` の回数は
+   * 徒手（0〜1動作）で、置く場所は `AutoThrowSpec.splitMotionAt`（二つとも空中にある間／2つのキャッチの間）。
+   * キャッチは2つ同時ではなく1つずつ（`catchTwo` なし）。
+   */
+  splitCatch?: boolean;
+  /**
    * 十年後モード専用の形（その上限難度に届いていないと候補にしない）。
    * 現行規則では徒手はE止まり（4動作）なので、5〜6動作の形はここで区別する。
    */
@@ -112,6 +120,8 @@ export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
   // あとに最低限の投げ受けを1本足す形（連続投げは1回目で難度を採ることが多い）
   { id: "cheneTrailPair", chene: { min: 3, max: 4 }, after: [], noViewPair: false, trailPair: true },
   { id: "cheneRollTrailPair", chene: { min: 1, max: 3 }, after: [times(FWD_ROLL, 1)], noViewPair: false, trailPair: true },
+  // 二つ投げ（高いほうは横投げ）→低いほうをキャッチ→0〜1動作→高いほうを押さえつけてキャッチ
+  { id: "twoThrowSplitCatch", chene: { min: 0, max: 1 }, after: [], noViewPair: false, splitCatch: true },
   // ---- 十年後モードでだけ実施する、5〜6動作の形（`HAND_MOTION_WEIGHT` の数え方）----
   // シェネ×5＝5.0（F）／シェネ×4→前転＝5.5（G）／前転×4＝6.0（G）／シェネ×6＝6.0（G）
   { id: "cheneFive", chene: { min: 5, max: 5 }, after: [], noViewPair: false, future: "F" },
@@ -318,16 +328,24 @@ export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
  * **横投げ**（`SIDE_THROW_TAG`）を付ける確率。技術加点にはならず、投げ方の種類として
  * 数えるだけなので、実際に実施しやすい形だけに寄せる（ロープは横投げをしない）。
  *  - 手具を使ったキャッチ（押さえつけ）で受ける投げ：もう一方の手具を体側に構えて受けるので
- *    横に投げるのが定番。特にクラブ
+ *    横に投げるのが定番。**クラブは横投げ以外で押さえつけて受けることはない**（必ず横投げ。
+ *    横投げにできない投げ方では押さえつけキャッチを引かない — `catchStyleWeight`）
  *  - スティックの**低難度の左手投げ**（徒手が `SIDE_LEFT_HAND_MAX_MOTIONS` 動作以下）
  */
-export const SIDE_THROW_PRESS_CHANCE: Partial<Record<ApparatusKey, number>> = { clubs: 0.9, ring: 0.6 };
+/** クラブで押さえつけキャッチが要る「横投げにできない投げ方」の受け方の重み（引かない） */
+export const CLUBS_PRESS_WITHOUT_SIDE_WEIGHT = 0;
+export const SIDE_THROW_PRESS_CHANCE: Partial<Record<ApparatusKey, number>> = { clubs: 1, ring: 0.6 };
 export const SIDE_LEFT_HAND_CHANCE = 0.8;
 export const SIDE_LEFT_HAND_MAX_MOTIONS = 1;
 
-/** その投げ方が横投げを付けられるか（二つ投げ・手以外の投げには付けない） */
-const canAddSideThrow = (style: AutoThrowStyle): boolean =>
-  !style.two && !(style.throwTypes || []).includes(SIDE_THROW_TAG) && !(style.throwTypes || []).includes(NON_HAND_TAG);
+/**
+ * その投げ方が横投げを付けられるか。二つ投げ・手以外の投げには付けない。
+ * **視野外の投げとも組み合わせない**（横に投げながら視野外にするのは現実的でない）。
+ */
+const canAddSideThrow = (style: AutoThrowStyle): boolean => {
+  const types = style.throwTypes || [];
+  return !style.two && !types.includes(SIDE_THROW_TAG) && !types.includes(NON_HAND_TAG) && !types.includes(NO_VIEW_TAG);
+};
 
 /** 横投げを付けた投げ方（idは変えない。すでに付いている・付けられないときはそのまま） */
 export const withSideThrow = (style: AutoThrowStyle): AutoThrowStyle =>
@@ -398,6 +416,9 @@ export function catchStyleWeight({
   demandScore?: number | null;
 }): number {
   const has = (tag: string) => catchHasTag(catchStyle, tag);
+  // クラブは横投げ以外の投げを手具で押さえつけて受けない（視野外・手以外・二つ投げは横投げにできない）
+  if (apparatus === "clubs" && has(CATCH_USE_APPARATUS) && !canAddSideThrow(throwStyle))
+    return CLUBS_PRESS_WITHOUT_SIDE_WEIGHT;
   const nonHandRule = NON_HAND_CATCH_RULE[apparatus];
   // 手以外のキャッチを低難度の投げでしか実施しない手具では、徒手が多い形では実施しない
   if (has(NON_HAND_TAG) && nonHandRule.lowDifficultyOnly && motions > NON_HAND_CATCH_MAX_MOTIONS)
@@ -493,6 +514,8 @@ export function throwStylesForPattern(
   // 二つ投げも「2回目 かつ 徒手を多く実施する（＝高難度）」形は実施されない
   // （実施例があるのは 視野外投げ→1シェネ→視野外キャッチ→**二つ投げ→そのままキャッチ**の
   //  ように、2回目の二つ投げをすぐ受ける形＝`trailPair` のほう）
+  // 二つ投げ→キャッチ→押さえつけてキャッチの形は二つ投げだけ（手具が二つの種目）
+  if (pattern.splitCatch) return styles.filter((t) => t.two);
   return pattern.leadPair ? styles.filter((t) => t.id !== NON_HAND_TAG && !t.two) : styles;
 }
 
@@ -528,8 +551,15 @@ export const cheneCountWeight = (hands: AutoHands, count: number): number => {
   return count === SPIN_MAIN_CHENE_COUNT + 1 ? SPIN_THIRD_CHENE_WEIGHT : SPIN_OVER_CHENE_WEIGHT;
 };
 
+/** `splitCatch` の徒手を置く場所：二つとも空中にある間（投げ→**徒手**→キャッチ→キャッチ）か、2つのキャッチの間 */
+export type SplitMotionAt = "bothAir" | "betweenCatches" | "both";
+/** どの位置も実施しそうなので均等に引く（`both` は両方の位置に同じ動作を入れる） */
+export const SPLIT_MOTION_PLACES: SplitMotionAt[] = ["bothAir", "betweenCatches", "both"];
+
 /** 1本ぶんの自動生成の内容 */
 export interface AutoThrowSpec {
+  /** `pattern.splitCatch` のときの徒手の位置（未指定は2つのキャッチの間） */
+  splitMotionAt?: SplitMotionAt;
   pattern: AutoThrowPattern;
   /** シェネの回数 */
   cheneCount: number;
@@ -563,6 +593,26 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
     ...(throwStyle.reqTypes ? { reqTypes: [...throwStyle.reqTypes] } : {}),
     ...(throwStyle.throwTypes ? { throwTypes: [...throwStyle.throwTypes] } : {}),
   });
+  if (pattern.splitCatch) {
+    // 低いほうを先に（通常のキャッチ）、高いほう（横投げ）を押さえつけてキャッチ。
+    // 0〜1動作は二つとも空中にある間か、2つのキャッチの間
+    const motion: Item[] =
+      spec.cheneCount > 0
+        ? [
+            {
+              kind: "motion",
+              motionId: CHENE,
+              count: spec.cheneCount,
+              hands: spec.hands !== null,
+              ...(spec.hands !== null ? { handsType: spec.hands } : {}),
+            },
+          ]
+        : [];
+    const at = spec.splitMotionAt ?? "betweenCatches";
+    items.push(...(at === "betweenCatches" ? [] : motion), { kind: "catch" }, ...(at === "bothAir" ? [] : motion));
+    items.push({ kind: "catch", catchTypes: [CATCH_USE_APPARATUS] });
+    return { executionDeduction: 0, items };
+  }
   if (spec.cheneCount > 0)
     items.push({
       kind: "motion",
@@ -725,6 +775,21 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     }
     const cheneCount = counts();
     const motions = patternMotions(pattern, cheneCount);
+    if (pattern.splitCatch) {
+      // 二つ投げの高いほうは横投げ、受けは押さえつけ（二つ投げの通常の受け方から外れる専用の形）
+      const press = autoCatchStyles(apparatus).find((c) => c.id === CATCH_USE_APPARATUS);
+      if (press)
+        return {
+          pattern,
+          cheneCount,
+          hands: cheneCount > 0 ? nextHands(cheneCount) : null,
+          throwStyle: canUseSideThrow(apparatus)
+            ? { ...throwStyle, throwTypes: [...(throwStyle.throwTypes || []), SIDE_THROW_TAG] }
+            : throwStyle,
+          catchStyle: press,
+          splitMotionAt: SPLIT_MOTION_PLACES[Math.min(SPLIT_MOTION_PLACES.length - 1, Math.floor(rand() * SPLIT_MOTION_PLACES.length))],
+        };
+    }
     const catchStyle = nextCatchFor(pattern, throwStyle, motions);
     return {
       pattern,

@@ -203,7 +203,8 @@ describe("投げ方・受け方の網羅", () => {
     expect(catchStylesForThrow("stick", false).map((c) => c.id)).not.toContain(CATCH_USE_APPARATUS);
     (["clubs", "ring"] as ApparatusKey[]).forEach((app) => {
       autoThrowSpecs(app, { random: seeded(41) }).forEach((sp) => {
-        if (sp.throwStyle.two) expect(sp.catchStyle.id).not.toBe(CATCH_USE_APPARATUS);
+        // 例外は「二つ投げ→キャッチ→押さえつけてキャッチ」の専用の形（`splitCatch`）だけ
+        if (sp.throwStyle.two && !sp.pattern.splitCatch) expect(sp.catchStyle.id).not.toBe(CATCH_USE_APPARATUS);
       });
     });
   });
