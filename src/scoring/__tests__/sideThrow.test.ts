@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeScore } from "../score";
+import { checkApparatusFlow } from "../analysis";
 import { apparatusBlockers, stripForApparatus } from "../analysis";
 import { SIDE_THROW_TAG, TECHNIQUE_BONUS } from "../constants";
 import { autoThrowSpecs, buildAutoThrowSeries } from "../autoThrows";
@@ -116,5 +117,29 @@ describe("横投げ", () => {
       });
     }
     expect(presses).toBeGreaterThan(0);
+  });
+
+  it("自動生成：二つ投げ（横）→キャッチ→0〜1動作→押さえつけてキャッチの形が出る（クラブ・リング）", () => {
+    (["clubs", "ring"] as const).forEach((apparatus) => {
+      const specs = autoThrowSpecs(apparatus).filter((s) => s.pattern.splitCatch);
+      expect(specs.length).toBeGreaterThan(0);
+      specs.forEach((spec) => {
+        const items = buildAutoThrowSeries(spec).items;
+        const kinds = items.map((i) => i.kind);
+        expect(kinds[0]).toBe("throw");
+        expect(items[0]).toMatchObject({ reqTypes: ["twothrow"], throwTypes: [SIDE_THROW_TAG] });
+        // 間の徒手は0〜1動作、キャッチは2つ同時ではなく1つずつ
+        expect(spec.cheneCount).toBeLessThanOrEqual(1);
+        const catches = items.filter((i) => i.kind === "catch");
+        expect(catches).toHaveLength(2);
+        expect(catches[0]).not.toHaveProperty("catchTwo");
+        expect(catches[1]).toMatchObject({ catchTypes: ["useapp"] });
+        expect(items[items.length - 1].kind).toBe("catch");
+        expect(checkApparatusFlow(buildAutoThrowSeries(spec), apparatus)).toEqual([]);
+      });
+    });
+    // スティック・ロープには出ない
+    expect(autoThrowSpecs("stick").some((s) => s.pattern.splitCatch)).toBe(false);
+    expect(autoThrowSpecs("rope").some((s) => s.pattern.splitCatch)).toBe(false);
   });
 });

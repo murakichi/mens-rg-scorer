@@ -62,6 +62,13 @@ export interface AutoThrowPattern {
    */
   trailPair?: boolean;
   /**
+   * **二つ投げ→キャッチ→（徒手0〜1動作）→手具で押さえつけてキャッチ**の形（クラブ・リング）。
+   * 二つを違う高さに投げ、高いほう（横投げ）を残して低いほうを先に受け、
+   * そのまま高いほうをもう一方の手具で押さえつけて受ける。`chene` の回数は
+   * **2つのキャッチの間**の徒手で、キャッチは2つ同時ではなく1つずつ（`catchTwo` なし）。
+   */
+  splitCatch?: boolean;
+  /**
    * 十年後モード専用の形（その上限難度に届いていないと候補にしない）。
    * 現行規則では徒手はE止まり（4動作）なので、5〜6動作の形はここで区別する。
    */
@@ -112,6 +119,8 @@ export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
   // あとに最低限の投げ受けを1本足す形（連続投げは1回目で難度を採ることが多い）
   { id: "cheneTrailPair", chene: { min: 3, max: 4 }, after: [], noViewPair: false, trailPair: true },
   { id: "cheneRollTrailPair", chene: { min: 1, max: 3 }, after: [times(FWD_ROLL, 1)], noViewPair: false, trailPair: true },
+  // 二つ投げ（高いほうは横投げ）→低いほうをキャッチ→0〜1動作→高いほうを押さえつけてキャッチ
+  { id: "twoThrowSplitCatch", chene: { min: 0, max: 1 }, after: [], noViewPair: false, splitCatch: true },
   // ---- 十年後モードでだけ実施する、5〜6動作の形（`HAND_MOTION_WEIGHT` の数え方）----
   // シェネ×5＝5.0（F）／シェネ×4→前転＝5.5（G）／前転×4＝6.0（G）／シェネ×6＝6.0（G）
   { id: "cheneFive", chene: { min: 5, max: 5 }, after: [], noViewPair: false, future: "F" },
@@ -504,6 +513,8 @@ export function throwStylesForPattern(
   // 二つ投げも「2回目 かつ 徒手を多く実施する（＝高難度）」形は実施されない
   // （実施例があるのは 視野外投げ→1シェネ→視野外キャッチ→**二つ投げ→そのままキャッチ**の
   //  ように、2回目の二つ投げをすぐ受ける形＝`trailPair` のほう）
+  // 二つ投げ→キャッチ→押さえつけてキャッチの形は二つ投げだけ（手具が二つの種目）
+  if (pattern.splitCatch) return styles.filter((t) => t.two);
   return pattern.leadPair ? styles.filter((t) => t.id !== NON_HAND_TAG && !t.two) : styles;
 }
 
@@ -574,6 +585,20 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
     ...(throwStyle.reqTypes ? { reqTypes: [...throwStyle.reqTypes] } : {}),
     ...(throwStyle.throwTypes ? { throwTypes: [...throwStyle.throwTypes] } : {}),
   });
+  if (pattern.splitCatch) {
+    // 低いほうを先に（通常のキャッチ）→ 0〜1動作 → 高いほう（横投げ）を押さえつけてキャッチ
+    items.push({ kind: "catch" });
+    if (spec.cheneCount > 0)
+      items.push({
+        kind: "motion",
+        motionId: CHENE,
+        count: spec.cheneCount,
+        hands: spec.hands !== null,
+        ...(spec.hands !== null ? { handsType: spec.hands } : {}),
+      });
+    items.push({ kind: "catch", catchTypes: [CATCH_USE_APPARATUS] });
+    return { executionDeduction: 0, items };
+  }
   if (spec.cheneCount > 0)
     items.push({
       kind: "motion",
@@ -736,6 +761,20 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     }
     const cheneCount = counts();
     const motions = patternMotions(pattern, cheneCount);
+    if (pattern.splitCatch) {
+      // 二つ投げの高いほうは横投げ、受けは押さえつけ（二つ投げの通常の受け方から外れる専用の形）
+      const press = autoCatchStyles(apparatus).find((c) => c.id === CATCH_USE_APPARATUS);
+      if (press)
+        return {
+          pattern,
+          cheneCount,
+          hands: cheneCount > 0 ? nextHands(cheneCount) : null,
+          throwStyle: canUseSideThrow(apparatus)
+            ? { ...throwStyle, throwTypes: [...(throwStyle.throwTypes || []), SIDE_THROW_TAG] }
+            : throwStyle,
+          catchStyle: press,
+        };
+    }
     const catchStyle = nextCatchFor(pattern, throwStyle, motions);
     return {
       pattern,
