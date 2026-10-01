@@ -568,6 +568,11 @@ export interface AutoThrowSpec {
   catchStyle: AutoCatchStyle;
   /** 先に足す投げ受けの投げ方（`pattern.leadPair` のときだけ。受けは通常のキャッチ） */
   leadThrowStyle?: AutoThrowStyle;
+  /**
+   * 連続投げの「安いほう」（`leadPair` の1回目・`trailPair` の2回目）で実施するシェネの回数。
+   * 既定は1回目が `LEAD_THROW_CHENE_COUNT`、2回目は0（徒手なし）。
+   */
+  leadCheneCount?: number;
   /** あとに足す投げ受けの投げ方（`pattern.trailPair` のときだけ。徒手なし） */
   trailThrowStyle?: AutoThrowStyle;
   /** あとに足す投げ受けの受け方（徒手なしの投げ受けとして引く。演技の締めになり得る） */
@@ -584,8 +589,14 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
       kind: "throw",
       ...(spec.leadThrowStyle.throwTypes ? { throwTypes: [...spec.leadThrowStyle.throwTypes] } : {}),
     });
-    // 連続投げの1回目が低難度になる形では、1シェネを挟む
-    items.push({ kind: "motion", motionId: CHENE, count: LEAD_THROW_CHENE_COUNT, hands: false });
+    // 連続投げの1回目が低難度になる形では、シェネを挟む。「安い」は**その水準に対して安い**
+    // という意味なので、回数は呼び出し側が水準に合わせて渡す（`leadThrowCheneCount`）
+    items.push({
+      kind: "motion",
+      motionId: CHENE,
+      count: spec.leadCheneCount ?? LEAD_THROW_CHENE_COUNT,
+      hands: false,
+    });
     items.push({ kind: "catch" });
   }
   items.push({
@@ -640,6 +651,10 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
       ...(style.reqTypes ? { reqTypes: [...style.reqTypes] } : {}),
       ...(style.throwTypes ? { throwTypes: [...style.throwTypes] } : {}),
     });
+    // 連続投げの2回目も「安いほう」。水準の1段下に合わせる（受け方は徒手なしのまま引く）
+    const trailChene = spec.leadCheneCount ?? 0;
+    if (trailChene > 0)
+      items.push({ kind: "motion", motionId: CHENE, count: trailChene, hands: false });
     const close = spec.trailCatchStyle;
     items.push({
       kind: "catch",
@@ -678,6 +693,11 @@ export interface AutoThrowOptions {
    * 確率にまとめて掛かる（`rarityExponent` / `rarityChance`）。
    */
   rarity?: number;
+  /**
+   * 連続投げの1回目で実施するシェネの回数（`leadThrowCheneCount` が水準から決める）。
+   * 省略すると `LEAD_THROW_CHENE_COUNT`（1回）。
+   */
+  leadCheneCount?: number;
 }
 
 /**
@@ -800,6 +820,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, motions, rand, chance),
       catchStyle,
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
+      ...(opts.leadCheneCount != null ? { leadCheneCount: opts.leadCheneCount } : {}),
       ...(pattern.trailPair
         ? (() => {
             const trailThrowStyle = nextTrailThrow(catchStyle);

@@ -57,9 +57,12 @@ import {
   SHAPE_PRIORITY_WEIGHT,
   THROW_ORDER_WEIGHT,
   preferenceWeights,
+  ADOPTED_OVER_CEILING_WEIGHT,
   ALL_E_SHORTFALL_WEIGHT,
+  MAX_ADOPTED_DIFF_SPREAD,
   aimsAllE,
   topDifficulty,
+  unitDifficultyCeiling,
   VERTICAL_THREE_MOTIONS,
   VERTICAL_THREE_THROW_WEIGHT,
   requiresAllElements,
@@ -69,7 +72,7 @@ import {
 import { computeScore, type ScoreResult } from "./score";
 import type { GenerateOptions } from "./generateOptions";
 import type { SeriesTemplate } from "./templates";
-import type { ApparatusKey, FutureLevel, Series } from "./types";
+import type { ApparatusKey, Difficulty, FutureLevel, Series } from "./types";
 import { unseenPenalty } from "./unseenShapes";
 
 /** 演技全体での、実施が少ない技の回数（技idごと） */
@@ -377,13 +380,75 @@ export interface Evaluation {
   missing: string[];
   /** ルールの投げ回数（一般3回・ジュニア2回）に足りていないか。Dスコアに関係なく必ず満たす */
   throwCountUnmet: boolean;
+  /** 実施した投げの回数。詰め直しで減らさないために見る */
+  throwCount: number;
+  /** 採用ユニットの難度の幅（段数）。`MAX_ADOPTED_DIFF_SPREAD` を超えていたら均しに行く */
+  diffSpread: number;
+  /** 採用ユニットが1段ぶんの窓からはみ出したぶんの合計（`adoptedSpreadCost`） */
+  spreadCost: number;
 }
 
 /**
- * 構成の良さ。範囲外は強いペナルティ、そのうえで D + A残点 を最大化する。
- * 必須要素の不足・ジュニアの投げ超過はA減点として効くので、これだけで
- * 「必須要素を満たしつつ難度を上げる」方向に進む。
+ * **難度として採用されたユニットの難度**（重複でなく、上位3つに入ったもの）。
+ * タンブリング・投げの徒手に加えて、単独の徒手系要素（跳躍）とロープの跳びも同じ枠を争うので
+ * まとめて見る。採用されない低難度の投げ（技術加点のためだけのもの）は入らない。
  */
+export function adoptedDifficulties(r: ScoreResult): Difficulty[] {
+  const out: Difficulty[] = [];
+  r.seriesBreakdowns.forEach((b) => {
+    [...b.tumRows, ...b.handRows].forEach((row) => {
+      if (row.adopted && row.inTop) out.push(row.diff);
+    });
+  });
+  r.handElementRows.forEach((row) => {
+    if (row.adopted && row.inTop) out.push(row.difficulty);
+  });
+  r.ropeJumpRows.forEach((row) => {
+    if (row.adopted && row.inTop) out.push(row.difficulty);
+  });
+  return out;
+}
+
+/** 採用ユニットの難度の幅（最大 − 最小。段数）。1つ以下なら0 */
+export function adoptedDiffSpread(r: ScoreResult): number {
+  const values = adoptedDifficulties(r).map((d) => DIFF_VALUE[d]);
+  if (values.length < 2) return 0;
+  return Math.max(...values) - Math.min(...values);
+}
+
+/** 採用ユニットのうち、その水準の天井（`unitDifficultyCeiling`）を超えているぶんの段数の合計 */
+export function adoptedOverCeiling(r: ScoreResult, ceiling: number | null): number {
+  if (ceiling == null) return 0;
+  return adoptedDifficulties(r).reduce((n, d) => n + Math.max(0, DIFF_VALUE[d] - ceiling), 0);
+}
+
+/**
+ * **採用ユニットが「1段ぶんの窓」にどれだけ収まっていないか**（段数の合計）。
+ * 幅（最大 − 最小）そのものではなく、窓（`MAX_ADOPTED_DIFF_SPREAD` ＋1段）を
+ * いちばん収まりの良い位置に置いたときの、はみ出したぶんの合計。0 なら幅は1段以内。
+ *
+ * 幅でなくこの形にしているのは**探索の足場**のため。幅は「いちばん高い1本といちばん低い1本」
+ * しか見ないので、{C,C,E,E} の C を1つ D に上げても幅は2のままで、1手ずつ降りる探索には
+ * 改善が見えない。はみ出しの合計なら 2 → 1 と減るので、「タンブリングを下げる」→
+ * 「安い投げを厚くする」と順に降りていける（`levelAdoptedDiffs`）。
+ */
+export function adoptedSpreadCost(r: ScoreResult): number {
+  const values = adoptedDifficulties(r).map((d) => DIFF_VALUE[d]);
+  if (values.length < 2) return 0;
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  let best = Infinity;
+  for (let x = lo; x <= hi; x++) {
+    let cost = 0;
+    values.forEach((v) => {
+      if (v < x) cost += x - v;
+      else if (v > x + MAX_ADOPTED_DIFF_SPREAD) cost += v - (x + MAX_ADOPTED_DIFF_SPREAD);
+    });
+    best = Math.min(best, cost);
+  }
+  return best;
+}
+
 /**
  * **採点される6ユニット（上位3タンブリング＋上位3徒手）のうち、E難度に届いていない数**。
  * Dスコア 4.2 は E×6 ちょうど（`allEScore`）なので、それ以上を狙うならここが0でなければ
@@ -400,6 +465,11 @@ export function allEShortfall(r: ScoreResult, future: FutureLevel = null): numbe
   return Math.max(0, ADOPT_COUNT * 2 - atTop);
 }
 
+/**
+ * 構成の良さ。範囲外は強いペナルティ、そのうえで D + A残点 を最大化する。
+ * 必須要素の不足・ジュニアの投げ超過はA減点として効くので、これだけで
+ * 「必須要素を満たしつつ難度を上げる」方向に進む。
+ */
 export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evaluation {
   const r = computeScore(series, opts.apparatus, { junior: !!opts.junior, future: opts.future ?? null });
   const penalty = rangePenalty(r.dScore, opts.minScore, opts.maxScore);
@@ -458,6 +528,12 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
   const lean = preferenceWeights(opts.tumblingBalance);
   // 4.2以上を狙うときは、6ユニットを全部E難度にするのが加点より先
   const allE = aimsAllE(opts) ? allEShortfall(r, opts.future ?? null) * ALL_E_SHORTFALL_WEIGHT : 0;
+  // 採用されるユニットの難度は1段より広くばらつかない（CとEが並ばない・B以下を混ぜない）
+  const spreadCost = adoptedSpreadCost(r);
+  // その水準の選手が実施しない高難度のユニットを採用しているぶん（§難度のばらつき）
+  const overCeiling =
+    adoptedOverCeiling(r, unitDifficultyCeiling(opts.maxScore, opts.future ?? null)) *
+    ADOPTED_OVER_CEILING_WEIGHT;
   // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
   const auto = autoCount * AUTO_SERIES_WEIGHT;
   return {
@@ -470,7 +546,8 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
       (r.tumblingScore + r.handScore) * DIFFICULTY_PREFERENCE_WEIGHT +
       r.tumblingScore * lean.tumbling +
       r.handScore * lean.hand -
-      allE +
+      allE -
+      overCeiling +
       r.aScore -
       variety -
       tumVariety -
@@ -491,6 +568,9 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
     aScore: r.aScore,
     missing: r.missing.map((m) => m.label),
     throwCountUnmet: r.required.some((c) => c.key === "count3" && c.passed === false),
+    throwCount: r.performedThrowCount,
+    diffSpread: adoptedDiffSpread(r),
+    spreadCost,
   };
 }
 
