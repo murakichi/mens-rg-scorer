@@ -513,7 +513,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         draws: {
           ...ends,
           pressCatch: rand() < chance(ROLL_FINISH_PRESS_CATCH_CHANCE),
-          ...(apparatus && rand() < chance(TUMBLING_NON_HAND_CATCH_CHANCE[apparatus] ?? 0)
+          ...(apparatus && TUMBLING_NON_HAND_CATCH_CHANCE[apparatus] && rand() < chance(TUMBLING_NON_HAND_CATCH_CHANCE[apparatus] ?? 0)
             ? { nonHandCatch: true, ...(rand() < chance(TUMBLING_NON_HAND_SIDE_CHANCE[apparatus] ?? 0) ? { nonHandSide: true } : {}) }
             : {}),
           ...(apparatus && rand() < chance(SIDE_THROW_PRESS_CHANCE[apparatus] ?? 0) ? { sideThrow: true } : {}),
