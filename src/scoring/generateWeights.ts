@@ -13,10 +13,17 @@
 
 import { NON_HAND_TAG, isAutoThrowTemplate } from "./autoThrows";
 import { isAutoTumblingTemplate } from "./autoTumblings";
-import { ADOPT_COUNT, USE_APPARATUS_TAG, throwCountRequired } from "./constants";
+import {
+  ADOPT_COUNT,
+  DIFF_SCORE,
+  DIFF_VALUE,
+  USE_APPARATUS_TAG,
+  maxDiff,
+  throwCountRequired,
+} from "./constants";
 import type { GenerateOptions } from "./generateOptions";
 import type { SeriesTemplate } from "./templates";
-import type { ApparatusKey } from "./types";
+import type { ApparatusKey, Difficulty, FutureLevel } from "./types";
 
 /** 生成する構成に入れる投げタンの本数の上限（必須要素は1本で満たせる） */
 export const DEFAULT_MAX_THROW_TUMBLING = 1;
@@ -457,3 +464,37 @@ export const THROW_REBUILD_CANDIDATES = 4;
 
 /** タンブリングの入れ替えを試す回数 */
 export const TUMBLING_UPGRADE_ROUNDS = 2;
+
+/**
+ * **Dスコア 4.2 は「採点される6ユニットが全部E難度」ちょうど**
+ * （`DIFF_SCORE.E` 0.7 × `ADOPT_COUNT` 3 × 2＝タンブリングと徒手）。
+ * つまり 4.2 以上を狙うなら、**まず6つ全部をEにしてから加点を積む**しかない。
+ * そこを要求されたら徒手側も入れ替えて引き上げる（`upgradeHandUnits`）。
+ *
+ * 値は定数から導く（難度点や採用数を変えたらここも自動で追従する）。
+ */
+export function topDifficulty(future: FutureLevel = null): Difficulty {
+  const ceiling = maxDiff(future);
+  return (Object.keys(DIFF_SCORE) as Difficulty[]).find((d) => DIFF_VALUE[d] === ceiling) ?? "E";
+}
+
+export const allEScore = (future: FutureLevel = null): number =>
+  DIFF_SCORE[topDifficulty(future)] * ADOPT_COUNT * 2;
+
+/** 徒手ユニットの入れ替えを試す回数（タンブリングと同じ） */
+export const HAND_UPGRADE_ROUNDS = TUMBLING_UPGRADE_ROUNDS;
+
+/**
+ * **6つ全部Eに届いていないぶんの重み**。4.2 以上を狙うなら E×6 が先で、加点はその後。
+ * 加点1つ（技術加点0.1、上限つきの加点も0.1）より重くしないと、貪欲法は
+ * 「ユニットをEに上げる」より「加点の付く投げを増やす」を選んでしまう。
+ * 難度の刻み（0.1）も投げ本数の重み（0.2〜0.3）も上回る値にしてある。
+ * 数えるのは**採用されて上位3つに入ったユニットのうちE難度のもの**で、
+ * 6から引く（ユニット自体が足りない場合も同じだけ足りない扱いになる）。
+ */
+export const ALL_E_SHORTFALL_WEIGHT = 0.5;
+
+/** 6つ全部Eを狙う水準か（要求したDスコア＝`minScore`。上限だけの指定では狙わない） */
+export function aimsAllE(opts: { minScore?: number | null; future?: FutureLevel }): boolean {
+  return (opts.minScore ?? 0) >= allEScore(opts.future ?? null) - 1e-9;
+}
