@@ -158,4 +158,22 @@ describe("横投げ", () => {
     expect(autoThrowSpecs("stick").some((s) => s.pattern.splitCatch)).toBe(false);
     expect(autoThrowSpecs("rope").some((s) => s.pattern.splitCatch)).toBe(false);
   });
+
+  it("自動生成：リングは手以外のキャッチ（首・足にはめる）でも横投げになる。クラブでは付かない", () => {
+    const count = (apparatus: "ring" | "clubs") => {
+      let n = 0;
+      for (let r = 0; r < 30; r++)
+        for (const spec of autoThrowSpecs(apparatus)) {
+          const [t, ...rest] = buildAutoThrowSeries(spec).items as any[];
+          const c = rest.find((i) => i.kind === "catch");
+          if ((c?.catchTypes || []).includes("nonhand") && (t.throwTypes || []).includes(SIDE_THROW_TAG)) {
+            n++;
+            expect(t.throwTypes).not.toContain("nonhand");
+          }
+        }
+      return n;
+    };
+    expect(count("ring")).toBeGreaterThan(0);
+    expect(count("clubs")).toBe(0);
+  });
 });
