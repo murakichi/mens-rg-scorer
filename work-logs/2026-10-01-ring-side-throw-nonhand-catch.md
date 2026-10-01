@@ -11,7 +11,7 @@
 
 ## やったこと
 
-- `autoThrows.ts`: `SIDE_THROW_NON_HAND_CHANCE`（リング 0.5）を追加し、手以外のキャッチで受ける投げにも `maybeSideThrow` が横投げを付ける。押さえつけ＞手以外＞左手投げの順で判定。
+- `autoThrows.ts`: `SIDE_THROW_NON_HAND_CHANCE`（リング 0.7）を追加し、手以外のキャッチで受ける投げにも `maybeSideThrow` が横投げを付ける。押さえつけ＞手以外＞左手投げの順で判定。
 - `__tests__/sideThrow.test.ts`: リングで出る・クラブでは出ないテストを追加。
 
 ## 確認
@@ -20,4 +20,4 @@
 
 ## 気づき・申し送り
 
-- 0.5 は仮の値。実測の頻度は未確認。投げタン側（`draws.sideThrow`）の手以外キャッチは未対応。
+- 0.7（オーナー指定：リングは手以外のキャッチなら横投げの方が多い）。投げタン側（`draws.sideThrow`）の手以外キャッチは未対応。

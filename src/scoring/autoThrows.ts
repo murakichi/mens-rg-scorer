@@ -339,7 +339,7 @@ export const SIDE_THROW_PRESS_CHANCE: Partial<Record<ApparatusKey, number>> = { 
  * 手以外のキャッチ（首にはめる・後転の途中で足にはめる）で受ける投げも横投げにする確率。
  * リングは輪なので、横に投げて首や足にはめて受ける実施がある。他の手具では横投げと組まない。
  */
-export const SIDE_THROW_NON_HAND_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.5 };
+export const SIDE_THROW_NON_HAND_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.7 };
 export const SIDE_LEFT_HAND_CHANCE = 0.8;
 export const SIDE_LEFT_HAND_MAX_MOTIONS = 1;
 
