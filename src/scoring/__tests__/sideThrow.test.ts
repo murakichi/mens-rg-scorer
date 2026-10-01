@@ -4,6 +4,7 @@ import { apparatusBlockers, stripForApparatus } from "../analysis";
 import { SIDE_THROW_TAG, TECHNIQUE_BONUS } from "../constants";
 import { autoThrowSpecs, buildAutoThrowSeries } from "../autoThrows";
 import { commonBlockers } from "../templates";
+import { autoTumblingTemplates } from "../autoTumblings";
 import type { Series } from "../types";
 
 const ser = (throwTypes: string[]): Series => ({
@@ -89,5 +90,31 @@ describe("横投げ", () => {
       });
     expect(low).toBeGreaterThan(0);
     expect(lowSide / low).toBeGreaterThan(0.6);
+  });
+
+  it("自動生成：クラブは横投げ以外の投げを押さえつけキャッチで受けない", () => {
+    const check = (series: Series) => {
+      let thrown: string[] | null = null;
+      series.items.forEach((item) => {
+        if (item.kind === "throw" || (item.kind === "skill" && item.isThrow)) thrown = item.throwTypes || [];
+        if (item.kind === "catch" && (item.catchTypes || []).includes("useapp")) {
+          expect(thrown).not.toBeNull();
+          expect(thrown).toContain(SIDE_THROW_TAG);
+        }
+      });
+    };
+    let presses = 0;
+    for (let k = 0; k < 10; k++) {
+      autoThrowSpecs("clubs").forEach((spec) => {
+        const s = buildAutoThrowSeries(spec);
+        presses += s.items.filter((i) => i.kind === "catch" && (i.catchTypes || []).includes("useapp")).length;
+        check(s);
+      });
+      autoTumblingTemplates("clubs").forEach((t) => {
+        presses += t.series.items.filter((i) => i.kind === "catch" && (i.catchTypes || []).includes("useapp")).length;
+        check(t.series);
+      });
+    }
+    expect(presses).toBeGreaterThan(0);
   });
 });

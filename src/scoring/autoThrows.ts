@@ -318,10 +318,13 @@ export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
  * **横投げ**（`SIDE_THROW_TAG`）を付ける確率。技術加点にはならず、投げ方の種類として
  * 数えるだけなので、実際に実施しやすい形だけに寄せる（ロープは横投げをしない）。
  *  - 手具を使ったキャッチ（押さえつけ）で受ける投げ：もう一方の手具を体側に構えて受けるので
- *    横に投げるのが定番。特にクラブ
+ *    横に投げるのが定番。**クラブは横投げ以外で押さえつけて受けることはない**（必ず横投げ。
+ *    横投げにできない投げ方では押さえつけキャッチを引かない — `catchStyleWeight`）
  *  - スティックの**低難度の左手投げ**（徒手が `SIDE_LEFT_HAND_MAX_MOTIONS` 動作以下）
  */
-export const SIDE_THROW_PRESS_CHANCE: Partial<Record<ApparatusKey, number>> = { clubs: 0.9, ring: 0.6 };
+/** クラブで押さえつけキャッチが要る「横投げにできない投げ方」の受け方の重み（引かない） */
+export const CLUBS_PRESS_WITHOUT_SIDE_WEIGHT = 0;
+export const SIDE_THROW_PRESS_CHANCE: Partial<Record<ApparatusKey, number>> = { clubs: 1, ring: 0.6 };
 export const SIDE_LEFT_HAND_CHANCE = 0.8;
 export const SIDE_LEFT_HAND_MAX_MOTIONS = 1;
 
@@ -403,6 +406,9 @@ export function catchStyleWeight({
   demandScore?: number | null;
 }): number {
   const has = (tag: string) => catchHasTag(catchStyle, tag);
+  // クラブは横投げ以外の投げを手具で押さえつけて受けない（視野外・手以外・二つ投げは横投げにできない）
+  if (apparatus === "clubs" && has(CATCH_USE_APPARATUS) && !canAddSideThrow(throwStyle))
+    return CLUBS_PRESS_WITHOUT_SIDE_WEIGHT;
   const nonHandRule = NON_HAND_CATCH_RULE[apparatus];
   // 手以外のキャッチを低難度の投げでしか実施しない手具では、徒手が多い形では実施しない
   if (has(NON_HAND_TAG) && nonHandRule.lowDifficultyOnly && motions > NON_HAND_CATCH_MAX_MOTIONS)
