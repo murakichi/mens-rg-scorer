@@ -27,7 +27,42 @@ export interface AutoTumblingPattern {
   throwInSkill?: boolean;
   /** 最後に前転でつなぐか（投げ受けの着地） */
   rollFinish: boolean;
+  /**
+   * 投げ→前方系→**きりもみ（その最中に背面＝視野外投げ）**→キャッチ→キャッチ（クラブ・リング）。
+   * 全国上位クラスが実施する形で、1本目の投げで手具1つを上げ、きりもみの最中にもう1つを
+   * 背面に投げて、2つのキャッチを1つずつ受ける。遷移表には載せない専用の形
+   * （`FRONT_KIRIMOMI_THROW_PATTERN`）。
+   */
+  kirimomiThrow?: boolean;
 }
+
+/** 投げ→前方系→きりもみ（背面投げ）→キャッチ→キャッチ。遷移表ではなく専用に組む */
+export const FRONT_KIRIMOMI_THROW_PATTERN: AutoTumblingPattern = {
+  id: "frontKirimomiThrow",
+  saltos: { min: 2, max: 2 },
+  connect: false,
+  throwCatch: true,
+  rollFinish: false,
+  kirimomiThrow: true,
+};
+
+/** この形の1本目（前方系）の候補と重み（前宙が主流） */
+export const FRONT_KIRIMOMI_FRONT_SKILLS: { id: string; weight: number }[] = [
+  { id: "b_front", weight: 5 },
+  { id: "c_front1full", weight: 1 },
+];
+
+/** きりもみ（背面投げ）のid */
+export const FRONT_KIRIMOMI_SKILL_ID = "b_kirimomi";
+
+/**
+ * この形を候補に入れる**要求Dスコアの下限**＝全国上位クラス（全日本1〜5位の帯の下限、4.5）。
+ * 下限を指定しない・これ未満のときは作らない（`HARD_THROW_FREE_SCORE` と逆向きに、
+ * 要求が高いときだけ出す）。
+ */
+export const TOP_CLASS_MIN_SCORE = 4.5;
+/** 上位クラスの要求のとき、この形を候補に入れる確率（1回の生成につき1回引く。珍しさのつまみを通す） */
+export const FRONT_KIRIMOMI_THROW_CHANCE = 0.5;
 
 export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
   // 宙返りの連続（3本で三宙）。難度はだんだん下がる

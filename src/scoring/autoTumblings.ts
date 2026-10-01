@@ -38,6 +38,11 @@ import { userSkillWeight, type SkillWeightStore } from "./skillWeights";
 import {
   AUTO_TUMBLING_PATTERNS,
   DEFAULT_CONNECT_AT,
+  FRONT_KIRIMOMI_FRONT_SKILLS,
+  FRONT_KIRIMOMI_SKILL_ID,
+  FRONT_KIRIMOMI_THROW_CHANCE,
+  FRONT_KIRIMOMI_THROW_PATTERN,
+  TOP_CLASS_MIN_SCORE,
   basicLevelPattern,
   canTwoThrowTumbling,
   saltoCountRange,
@@ -74,7 +79,7 @@ import {
   usableSkills,
 } from "./tumblingTransitions";
 import { newTemplateId, type SeriesTemplate } from "./templates";
-import { CATEGORY, SIDE_THROW_TAG } from "./constants";
+import { CATEGORY, SIDE_THROW_TAG, hasTwoThrow } from "./constants";
 import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
 // 入力画面・生成側から今までどおり `autoTumblings` 1か所で参照できるようにしておく
@@ -196,6 +201,15 @@ function applyApparatusOps(items: Item[], pattern: AutoTumblingPattern, junior: 
 export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false): Series {
   const { pattern, draws } = spec;
   const items: Item[] = [];
+  if (pattern.kirimomiThrow) {
+    // 投げ → 前方系 → きりもみ（最中に背面＝視野外投げ）→ キャッチ → キャッチ。
+    // きりもみは手具操作できない（`canOperateApparatus`）ので操作は付けない
+    items.push({ kind: "throw" });
+    items.push(skillItem(spec.saltoIds[0]));
+    items.push({ ...skillItem(spec.saltoIds[1], true), throwTypes: [NO_VIEW_TAG] });
+    items.push({ kind: "catch" }, { kind: "catch" });
+    return { executionDeduction: 0, items };
+  }
   // 技の最中に投げる形では、先頭に投げを置かず最後の宙返りに投げを付ける
   if (pattern.throwCatch && !pattern.throwInSkill) {
     // 必須投げ（二つ投げ／左手投げ）はどちらか一方だけ（手具が違うので同時には起きない）
@@ -497,6 +511,45 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       });
     }
   });
+
+  // 全国上位クラス（要求Dスコアが高い）では、クラブ・リングの
+  // 投げ→前方系→きりもみ（背面投げ）→キャッチ→キャッチ も候補に入れる
+  if (
+    apparatus &&
+    hasTwoThrow(apparatus) &&
+    !basicLevel &&
+    (opts.demandScore ?? 0) >= TOP_CLASS_MIN_SCORE &&
+    rand() < chance(FRONT_KIRIMOMI_THROW_CHANCE)
+  ) {
+    const usableNow = usableSkills(ctxBase);
+    const fronts = FRONT_KIRIMOMI_FRONT_SKILLS.filter((f) => usableNow([f.id]).length > 0);
+    const front = pickDifferent(
+      fronts.map((f) => f.id),
+      [],
+      rand,
+      Object.fromEntries(fronts.map((f) => [f.id, f.weight])),
+      exp,
+    );
+    if (front && usableNow([FRONT_KIRIMOMI_SKILL_ID]).length > 0)
+      specs.push({
+        pattern: FRONT_KIRIMOMI_THROW_PATTERN,
+        saltoCount: 2,
+        entry: [],
+        saltoIds: [front, FRONT_KIRIMOMI_SKILL_ID],
+        connectId: "",
+        draws: {
+          backwardEnd: false,
+          rareEnd: true,
+          layoutAfterConnect: true,
+          roll: 1,
+          backToForwardThrow: false,
+          pressCatch: false,
+          twoThrow: false,
+          leftHandThrow: false,
+          backCatch: false,
+        },
+      });
+  }
 
   // 入りの技は1本目の系統に合わせて配る（投げてから実施する投げタンには付けない）。
   // 入りの技も実施の多さで選ぶ（ロンダート＞バク転＞ハンドスプリング）。
