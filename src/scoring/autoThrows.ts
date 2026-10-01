@@ -325,9 +325,14 @@ export const SIDE_THROW_PRESS_CHANCE: Partial<Record<ApparatusKey, number>> = { 
 export const SIDE_LEFT_HAND_CHANCE = 0.8;
 export const SIDE_LEFT_HAND_MAX_MOTIONS = 1;
 
-/** その投げ方が横投げを付けられるか（二つ投げ・手以外の投げには付けない） */
-const canAddSideThrow = (style: AutoThrowStyle): boolean =>
-  !style.two && !(style.throwTypes || []).includes(SIDE_THROW_TAG) && !(style.throwTypes || []).includes(NON_HAND_TAG);
+/**
+ * その投げ方が横投げを付けられるか。二つ投げ・手以外の投げには付けない。
+ * **視野外の投げとも組み合わせない**（横に投げながら視野外にするのは現実的でない）。
+ */
+const canAddSideThrow = (style: AutoThrowStyle): boolean => {
+  const types = style.throwTypes || [];
+  return !style.two && !types.includes(SIDE_THROW_TAG) && !types.includes(NON_HAND_TAG) && !types.includes(NO_VIEW_TAG);
+};
 
 /** 横投げを付けた投げ方（idは変えない。すでに付いている・付けられないときはそのまま） */
 export const withSideThrow = (style: AutoThrowStyle): AutoThrowStyle =>

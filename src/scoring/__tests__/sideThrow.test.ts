@@ -40,6 +40,9 @@ describe("横投げ", () => {
       for (let k = 0; k < 20; k++) {
         autoThrowSpecs(apparatus).forEach((spec) => {
           if (!(spec.catchStyle.catchTypes || []).includes("useapp")) return;
+          // 視野外の投げ・二つ投げ・手以外の投げは横投げにしない（分母から外す）
+          const t = spec.throwStyle.throwTypes || [];
+          if (t.includes("noview") || t.includes("nonhand") || spec.throwStyle.two) return;
           press += 1;
           if ((spec.throwStyle.throwTypes || []).includes(SIDE_THROW_TAG)) pressSide += 1;
         });
@@ -55,6 +58,19 @@ describe("横投げ", () => {
         if ((buildAutoThrowSeries(s).items.some((i) => i.kind === "throw" && (i.throwTypes || []).includes(SIDE_THROW_TAG)))) ropeSide += 1;
       });
     expect(ropeSide).toBe(0);
+  });
+
+  it("自動生成：横投げと視野外の投げは組み合わせない", () => {
+    (["stick", "clubs", "ring"] as const).forEach((apparatus) => {
+      for (let k = 0; k < 20; k++)
+        autoThrowSpecs(apparatus).forEach((spec) => {
+          buildAutoThrowSeries(spec).items.forEach((item) => {
+            if (item.kind !== "throw") return;
+            const types = item.throwTypes || [];
+            expect(types.includes(SIDE_THROW_TAG) && types.includes("noview")).toBe(false);
+          });
+        });
+    });
   });
 
   it("自動生成：スティックの低難度の左手投げは高確率で横投げ、高難度は付かない", () => {
