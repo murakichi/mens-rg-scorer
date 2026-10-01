@@ -28,6 +28,7 @@ import { calcTumblingDifficulty, needsRoundoffBefore, prevSkillId, stripForAppar
 import {
   CATCH_USE_APPARATUS,
   NO_VIEW_TAG,
+  NON_HAND_TAG,
   SIDE_THROW_PRESS_CHANCE,
   canThrowAfterCatch,
   type AutoThrowStyle,
@@ -88,6 +89,11 @@ export * from "./tumblingTransitions";
  * 1本ぶんの候補で**1回だけ引く**抽選の結果。宙返りの本数を変えても同じ判断を使うので、
  * 候補（`AutoTumblingSpec`）に持たせる（`withSaltoCount`）。
  */
+/** 投げタンの着地（前転のあと）を手以外のキャッチで受ける確率（リング・ロープ） */
+export const TUMBLING_NON_HAND_CATCH_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.3, rope: 0.3 };
+/** 手以外のキャッチで受ける投げタンの投げが横投げになる確率（リングは必ず。ロープは横投げを持たない） */
+export const TUMBLING_NON_HAND_SIDE_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 1 };
+
 export interface TumblingDraws {
   /** 後ろ向きで終わる後方宙返りで終わってよいか（`backwardEndChance`） */
   backwardEnd: boolean;
@@ -106,6 +112,13 @@ export interface TumblingDraws {
    * （`SIDE_THROW_PRESS_CHANCE`。ロープ・スティックは持たない）。未指定は通常の投げ。
    */
   sideThrow?: boolean;
+  /**
+   * 前転でつないだ着地を**手以外のキャッチ**（リング：首・足にはめる／ロープ：足にはめる）で受けるか
+   * （`TUMBLING_NON_HAND_CATCH_CHANCE`）。リングは横投げ（`TUMBLING_NON_HAND_SIDE_CHANCE`）。
+   */
+  nonHandCatch?: boolean;
+  /** 手以外のキャッチのとき、投げを横投げにするか（`nonHandCatch` と同時に引く） */
+  nonHandSide?: boolean;
   /** 投げタンの投げを二つ投げにするか（クラブ・リングで、投げてから跳ぶ形だけ） */
   twoThrow: boolean;
   /**
@@ -249,16 +262,28 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
         pattern.throwInSkill ? it.kind === "skill" && !!it.isThrow : it.kind === "throw",
     );
     const sideOk = !!throwItem && !(throwItem.throwTypes || []).includes(NO_VIEW_TAG);
+    // 手以外のキャッチ：リングは横投げが前提（技の最中の投げが視野外なら横投げにできないので受けない）
+    const nonHandSide = !!draws.nonHandCatch && !!draws.nonHandSide;
+    const nonHand =
+      rolled &&
+      !!draws.nonHandCatch &&
+      !draws.twoThrow &&
+      !draws.secondThrow &&
+      !back &&
+      (!nonHandSide || sideOk);
     const press =
       rolled &&
       draws.pressCatch &&
       !draws.twoThrow &&
       !draws.secondThrow &&
       !back &&
+      !nonHand &&
       !(draws.sideThrow && !sideOk);
+    if (nonHand && nonHandSide && throwItem)
+      throwItem.throwTypes = [...(throwItem.throwTypes || []), SIDE_THROW_TAG];
     if (press && draws.sideThrow && throwItem)
       throwItem.throwTypes = [...(throwItem.throwTypes || []), SIDE_THROW_TAG];
-    const catchTypes = back ? [NO_VIEW_TAG] : press ? [CATCH_USE_APPARATUS] : [];
+    const catchTypes = back ? [NO_VIEW_TAG] : nonHand ? [NON_HAND_TAG] : press ? [CATCH_USE_APPARATUS] : [];
     items.push({
       kind: "catch",
       // 二つ投げは2つとも空中にあるので、押さえつけては受けられない（2つ同時キャッチで受ける）。
@@ -488,6 +513,9 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         draws: {
           ...ends,
           pressCatch: rand() < chance(ROLL_FINISH_PRESS_CATCH_CHANCE),
+          ...(apparatus && rand() < chance(TUMBLING_NON_HAND_CATCH_CHANCE[apparatus] ?? 0)
+            ? { nonHandCatch: true, ...(rand() < chance(TUMBLING_NON_HAND_SIDE_CHANCE[apparatus] ?? 0) ? { nonHandSide: true } : {}) }
+            : {}),
           ...(apparatus && rand() < chance(SIDE_THROW_PRESS_CHANCE[apparatus] ?? 0) ? { sideThrow: true } : {}),
           twoThrow,
           leftHandThrow,
