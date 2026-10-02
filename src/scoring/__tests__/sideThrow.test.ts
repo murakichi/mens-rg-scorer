@@ -158,4 +158,47 @@ describe("横投げ", () => {
     expect(autoThrowSpecs("stick").some((s) => s.pattern.splitCatch)).toBe(false);
     expect(autoThrowSpecs("rope").some((s) => s.pattern.splitCatch)).toBe(false);
   });
+
+  it("自動生成：リングは手以外のキャッチ（首・足にはめる）でも横投げになる。クラブでは付かない", () => {
+    const count = (apparatus: "ring" | "clubs") => {
+      let n = 0;
+      for (let r = 0; r < 30; r++)
+        for (const spec of autoThrowSpecs(apparatus)) {
+          const [t, ...rest] = buildAutoThrowSeries(spec).items as any[];
+          const c = rest.find((i) => i.kind === "catch");
+          if ((c?.catchTypes || []).includes("nonhand") && (t.throwTypes || []).includes(SIDE_THROW_TAG)) {
+            n++;
+            expect(t.throwTypes).not.toContain("nonhand");
+          }
+        }
+      return n;
+    };
+    expect(count("ring")).toBeGreaterThan(0);
+    expect(count("clubs")).toBe(0);
+  });
+
+  it("自動生成：リング・ロープの投げタンは手以外のキャッチで受けることがあり、リングは必ず横投げ", () => {
+    const run = (apparatus: "ring" | "rope" | "clubs") => {
+      let nonHand = 0;
+      let side = 0;
+      for (let r = 0; r < 20; r++)
+        for (const t of autoTumblingTemplates(apparatus)) {
+          const items = t.series.items as any[];
+          const c = items.find((i) => i.kind === "catch");
+          if (!(c?.catchTypes || []).includes("nonhand")) continue;
+          nonHand++;
+          const th = items.find((i) => (i.kind === "throw" || i.kind === "skill") && (i.kind === "throw" || i.isThrow));
+          if ((th.throwTypes || []).includes(SIDE_THROW_TAG)) side++;
+          expect(checkApparatusFlow(t.series, apparatus as "ring")).toEqual([]);
+        }
+      return { nonHand, side };
+    };
+    const ring = run("ring");
+    expect(ring.nonHand).toBeGreaterThan(0);
+    expect(ring.side).toBe(ring.nonHand);
+    const rope = run("rope");
+    expect(rope.nonHand).toBeGreaterThan(0);
+    expect(rope.side).toBe(0);
+    expect(run("clubs").nonHand).toBe(0);
+  });
 });
