@@ -65,6 +65,7 @@ import {
   backwardEndChance,
   pairAfterChance,
   rollAfterChance,
+  throwInSkillChance,
 } from "./tumblingWeights";
 import {
   buildTransitions,
@@ -394,7 +395,11 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     }
     return next();
   };
+  // タンブリング中に投げる形は上級者だけ。候補に混ぜるかどうかは1回だけ引く
+  // （形ごとに引くと生き残りを貪欲法が拾う。`throwInSkillChance`）
+  const keepThrowInSkill = rand() < chance(throwInSkillChance(opts.targetScore));
   AUTO_TUMBLING_PATTERNS.forEach((rawPattern) => {
+    if (rawPattern.throwInSkill && !keepThrowInSkill) return;
     // 基本的な構成ではつなぎ技を実施せず、連続も2本まで
     const pattern = basicLevel ? basicLevelPattern(rawPattern) : rawPattern;
     if (!pattern) return;

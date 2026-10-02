@@ -13,6 +13,9 @@ import {
   DIFFICULTY_RISE_AFTER,
   isBackToForwardThrow,
   throwInSkillTypes,
+  throwInSkillChance,
+  THROW_IN_SKILL_CHANCE,
+  THROW_IN_SKILL_MIN_SCORE,
   BACK_TO_FORWARD_THROW_CHANCE,
   withJuniorBoost,
   JUNIOR_UPGRADE_BOOST_MAX_SCORE,
@@ -1002,6 +1005,34 @@ describe("つなぎ技", () => {
     expect(computeScore([throwRoll], "stick").noApparatusDeduction).toBe(0);
   });
 
+  it("宙返りの途中で投げる投げタンは上級者だけ（通常の投げタンより少ない）", () => {
+    // 宙返りの最中に手具を離すので、投げてから跳ぶ形よりずっと難しい
+    expect(throwInSkillChance(1.5)).toBe(0);
+    expect(throwInSkillChance(2.9)).toBe(0);
+    expect(throwInSkillChance(THROW_IN_SKILL_MIN_SCORE)).toBe(THROW_IN_SKILL_CHANCE);
+    expect(throwInSkillChance(4.5)).toBe(THROW_IN_SKILL_CHANCE);
+    // 上限の指定が無ければ最上位とみなす
+    expect(throwInSkillChance(null)).toBe(THROW_IN_SKILL_CHANCE);
+    // 通常の投げタン（投げてから跳ぶ形）より少ない
+    expect(THROW_IN_SKILL_CHANCE).toBeLessThan(1);
+
+    // 候補は**1回の抽選**で混ぜるかどうかが決まる（形ごとに引くと生き残りを貪欲法が拾う）。
+    // 混ざった生成では全部、混ざらなかった生成では1本も出ない
+    // この疑似乱数は最初の出力が種にほぼ比例するので、当たる種（偶数の小さいもの）と
+    // 外れる種（奇数）で両方の枝を踏む
+    const inSkillCount = (seed: number, targetScore?: number) =>
+      autoTumblingTemplates("stick", { random: seeded(seed), targetScore }).filter(
+        (t) => t.spec.pattern.throwInSkill,
+      ).length;
+    expect(inSkillCount(0, 4.5)).toBeGreaterThan(0);
+    expect(inSkillCount(2, 4.5)).toBeGreaterThan(0);
+    expect(inSkillCount(19, 4.5)).toBe(0);
+    expect(inSkillCount(23, 4.5)).toBe(0);
+
+    // 2点台を狙う構成では、当たる種でも候補に入らない（実測：上限2.5以下で20構成すべて0本）
+    [0, 2, 4, 6, 8].forEach((seed) => expect(inSkillCount(seed, 2.5)).toBe(0));
+  }, 60_000);
+
   it("宙返りの途中で投げる投げタンはロンダートから入るのを優先する", () => {
     expect(THROW_IN_SKILL_ROUNDOFF_WEIGHT).toBeGreaterThan(1);
     let roundoff = 0;
@@ -1358,7 +1389,11 @@ describe("投げタン", () => {
   });
 
   it("連続の最後に投げる形は普通のタンブリングと同じ入り方ができる", () => {
-    const specs = autoTumblingSpecs({ random: seeded(7) }).filter((sp) => sp.pattern.throwInSkill);
+    // 候補に混ぜるかどうかは生成ごとに1回引く（`throwInSkillChance`）。この疑似乱数は
+    // **最初の出力が種にほぼ比例する**ので、抽選が当たる偶数の種を使う
+    const specs = [0, 2, 4, 6, 8].flatMap((seed) =>
+      autoTumblingSpecs({ random: seeded(seed) }).filter((sp) => sp.pattern.throwInSkill),
+    );
     expect(specs.length).toBeGreaterThan(0);
     // 後方系から入る候補（ロンダート→後方系→…→投げ）も作れる
     expect(

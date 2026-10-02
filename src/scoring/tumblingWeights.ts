@@ -139,6 +139,28 @@ export function rollAfterChance(id: string, prevId?: string): number {
 }
 
 /**
+ * **タンブリング中に投げる投げタン（`throwInSkill`）は上級者だけが実施する**。
+ *
+ * 宙返りの最中に手具を離すので、投げてから跳ぶ形（投げ→前方系→前転→キャッチ）より
+ * ずっと難しい。候補の数はほぼ半々（投げタン18本中8本）なのに、**生成結果では
+ * 上級者側の多数派になっていた**（実測：上限3.0 で 20構成中11本、3.5以上で 12〜14本）。
+ * `chainThrowInSkill` が三宙と投げタンを1本のシリーズで両立してシリーズを1本節約するので、
+ * 貪欲法が必ず拾ってしまう — 「頻度は2か所で決まる」のいつもの形。
+ *
+ * なので**候補に混ぜるかどうかを1回の抽選で決める**（形ごとに引くと生き残りを貪欲法が拾う。
+ * `verticalThreeChance` と同じ考え方）。要求する上限（`targetScore` ＝ `maxScore`）が
+ * `THROW_IN_SKILL_MIN_SCORE` 未満なら実施しない＝**上級者のみ**。それ以上でも
+ * `THROW_IN_SKILL_CHANCE` に抑えて、**投げてから跳ぶ形より少なく**する
+ * （上限の指定が無ければ最上位とみなす）。珍しさのつまみも通す。
+ */
+export const THROW_IN_SKILL_MIN_SCORE = 3.0;
+
+export const THROW_IN_SKILL_CHANCE = 0.4;
+
+export const throwInSkillChance = (targetScore?: number | null): number =>
+  targetScore != null && targetScore < THROW_IN_SKILL_MIN_SCORE ? 0 : THROW_IN_SKILL_CHANCE;
+
+/**
  * 宙返りの途中で投げる投げタン（`throwInSkill`）で、**ロンダートから入る**
  * （＝後方系の宙返りから始める）ことを優先する重み。
  */
