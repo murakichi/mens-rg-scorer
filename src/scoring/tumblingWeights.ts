@@ -149,11 +149,12 @@ export function rollAfterChance(id: string, prevId?: string): number {
  *
  * なので**候補に混ぜるかどうかを1回の抽選で決める**（形ごとに引くと生き残りを貪欲法が拾う。
  * `verticalThreeChance` と同じ考え方）。要求する上限（`targetScore` ＝ `maxScore`）が
- * `THROW_IN_SKILL_MIN_SCORE` 未満なら実施しない＝**上級者のみ**。それ以上でも
+ * `THROW_IN_SKILL_MIN_SCORE`（4.0 ＝ 全日本の上位帯。オーナー指定）未満なら実施しない＝
+ * **上級者のみ**。それ以上でも
  * `THROW_IN_SKILL_CHANCE` に抑えて、**投げてから跳ぶ形より少なく**する
  * （上限の指定が無ければ最上位とみなす）。珍しさのつまみも通す。
  */
-export const THROW_IN_SKILL_MIN_SCORE = 3.0;
+export const THROW_IN_SKILL_MIN_SCORE = 4.0;
 
 export const THROW_IN_SKILL_CHANCE = 0.4;
 

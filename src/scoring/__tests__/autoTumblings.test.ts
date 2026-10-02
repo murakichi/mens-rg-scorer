@@ -1007,8 +1007,11 @@ describe("つなぎ技", () => {
 
   it("宙返りの途中で投げる投げタンは上級者だけ（通常の投げタンより少ない）", () => {
     // 宙返りの最中に手具を離すので、投げてから跳ぶ形よりずっと難しい
+    // 実施するのは**D要求値4以上**（オーナー指定）。3点台までは実施しない
+    expect(THROW_IN_SKILL_MIN_SCORE).toBe(4.0);
     expect(throwInSkillChance(1.5)).toBe(0);
     expect(throwInSkillChance(2.9)).toBe(0);
+    expect(throwInSkillChance(3.5)).toBe(0);
     expect(throwInSkillChance(THROW_IN_SKILL_MIN_SCORE)).toBe(THROW_IN_SKILL_CHANCE);
     expect(throwInSkillChance(4.5)).toBe(THROW_IN_SKILL_CHANCE);
     // 上限の指定が無ければ最上位とみなす
