@@ -335,6 +335,11 @@ export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
 /** クラブで押さえつけキャッチが要る「横投げにできない投げ方」の受け方の重み（引かない） */
 export const CLUBS_PRESS_WITHOUT_SIDE_WEIGHT = 0;
 export const SIDE_THROW_PRESS_CHANCE: Partial<Record<ApparatusKey, number>> = { clubs: 1, ring: 0.6 };
+/**
+ * 手以外のキャッチ（首にはめる・後転の途中で足にはめる）で受ける投げも横投げにする確率。
+ * リングは輪なので、横に投げて首や足にはめて受ける実施がある。他の手具では横投げと組まない。
+ */
+export const SIDE_THROW_NON_HAND_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.7 };
 export const SIDE_LEFT_HAND_CHANCE = 0.8;
 export const SIDE_LEFT_HAND_MAX_MOTIONS = 1;
 
@@ -365,11 +370,9 @@ export function maybeSideThrow(
 ): AutoThrowStyle {
   if (!canUseSideThrow(apparatus) || !canAddSideThrow(throwStyle)) return throwStyle;
   const press = catchHasTag(catchStyle, CATCH_USE_APPARATUS);
-  const p = press
-    ? (SIDE_THROW_PRESS_CHANCE[apparatus] ?? 0)
-    : (throwStyle.reqTypes || []).includes(LEFT_HAND_TAG) && motions <= SIDE_LEFT_HAND_MAX_MOTIONS
-      ? SIDE_LEFT_HAND_CHANCE
-      : 0;
+  const leftHandLow = (throwStyle.reqTypes || []).includes(LEFT_HAND_TAG) && motions <= SIDE_LEFT_HAND_MAX_MOTIONS;
+  const nonHandP = catchHasTag(catchStyle, NON_HAND_TAG) ? (SIDE_THROW_NON_HAND_CHANCE[apparatus] ?? 0) : 0;
+  const p = press ? (SIDE_THROW_PRESS_CHANCE[apparatus] ?? 0) : nonHandP > 0 ? nonHandP : leftHandLow ? SIDE_LEFT_HAND_CHANCE : 0;
   return p > 0 && rand() < chance(p) ? withSideThrow(throwStyle) : throwStyle;
 }
 
