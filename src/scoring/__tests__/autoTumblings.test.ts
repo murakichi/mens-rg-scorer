@@ -14,6 +14,8 @@ import {
   isBackToForwardThrow,
   throwInSkillTypes,
   throwInSkillChance,
+  catchInSkillChance,
+  CATCH_IN_SKILL_CHANCE,
   THROW_IN_SKILL_CHANCE,
   THROW_IN_SKILL_MIN_SCORE,
   BACK_TO_FORWARD_THROW_CHANCE,
@@ -1034,6 +1036,42 @@ describe("つなぎ技", () => {
 
     // 2点台を狙う構成では、当たる種でも候補に入らない（実測：上限2.5以下で20構成すべて0本）
     [0, 2, 4, 6, 8].forEach((seed) => expect(inSkillCount(seed, 2.5)).toBe(0));
+  }, 60_000);
+
+  it("技の最中に受ける投げタンは、投げる形と同じ水準でそれより少ない", () => {
+    // 実施する水準は技の最中の投げと同じ（D要求値4以上）
+    expect(catchInSkillChance(3.5)).toBe(0);
+    expect(catchInSkillChance(THROW_IN_SKILL_MIN_SCORE)).toBe(CATCH_IN_SKILL_CHANCE);
+    expect(catchInSkillChance(null)).toBe(CATCH_IN_SKILL_CHANCE);
+    // 頻度は投げる形より低い
+    expect(CATCH_IN_SKILL_CHANCE).toBeLessThan(THROW_IN_SKILL_CHANCE);
+
+    // 組み立てた形：投げ→前方系1本の最中に受け（キャッチアイテムを置かない）
+    const built = [18, 20, 43, 45].flatMap((seed) =>
+      autoTumblingTemplates("stick", { random: seeded(seed), targetScore: 4.5 }),
+    ).filter((t) => t.spec.pattern.catchInSkill);
+    expect(built.length).toBeGreaterThan(0);
+    built.forEach((t) => {
+      const items = t.series.items;
+      expect(items[0].kind).toBe("throw");
+      const last = items[items.length - 1];
+      expect(last.kind).toBe("skill");
+      expect(last.kind === "skill" ? last.isCatch : false).toBe(true);
+      // キャッチアイテムは置かない（受けた技で終わる）
+      expect(items.some((it) => it.kind === "catch")).toBe(false);
+      // 手具の流れが通る（投げた1つを受けて終わる）
+      expect(checkApparatusFlow(t.series, "stick")).toEqual([]);
+      // 投げタンとして数えられる
+      expect(analyzeSeries(t.series).units.some((u) => u.isThrowTumbling)).toBe(true);
+    });
+    // 3点台までは候補に入らない
+    [18, 20, 43, 45].forEach((seed) =>
+      expect(
+        autoTumblingTemplates("stick", { random: seeded(seed), targetScore: 3.5 }).filter(
+          (t) => t.spec.pattern.catchInSkill,
+        ),
+      ).toHaveLength(0),
+    );
   }, 60_000);
 
   it("宙返りの途中で投げる投げタンはロンダートから入るのを優先する", () => {

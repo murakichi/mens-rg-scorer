@@ -266,6 +266,9 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
       (firstWeights[id] ?? 1) *
         (roundoff !== 1 && isBackwardSalto(id) ? roundoff : 1) *
         (forwardEntry !== 1 && isForwardSalto(id) ? forwardEntry : 1) *
+        // 技の最中に受ける形は宙返り1本なので、**受ける技は1本目**。実施中に手具を扱うのが
+        // 難しい宙返り（側宙・きりもみ転回・ひねりのある前方系）は、投げと同じ重みで下げる
+        (pattern.catchInSkill ? throwInSaltoWeight(id) : 1) *
         // 1本目に置いても後方系の継続が確定する（後ろ向きに降りる技は最後に置けない）
         backLandingForwardWeight(id),
     ),

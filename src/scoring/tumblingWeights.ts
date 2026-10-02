@@ -49,9 +49,16 @@ export const PAIR_AFTER_THROW_FIRST_CHANCE = 0.5;
 
 export const PAIR_AFTER_THROW_IN_SKILL_CHANCE = 0.2;
 
-/** その形で投げタンのキャッチのあとに連続投げを続ける確率 */
+/**
+ * その形で投げタンのキャッチのあとに連続投げを続ける確率。
+ * 技の最中に受ける形（`catchInSkill`）は**受けた技でシリーズが終わる**ので続けない。
+ */
 export const pairAfterChance = (pattern: AutoTumblingPattern): number =>
-  pattern.throwInSkill ? PAIR_AFTER_THROW_IN_SKILL_CHANCE : PAIR_AFTER_THROW_FIRST_CHANCE;
+  pattern.catchInSkill
+    ? 0
+    : pattern.throwInSkill
+      ? PAIR_AFTER_THROW_IN_SKILL_CHANCE
+      : PAIR_AFTER_THROW_FIRST_CHANCE;
 
 /**
  * 投げタンの投げを**二つ投げ**にする確率（クラブ・リングだけ）。
@@ -160,6 +167,16 @@ export const THROW_IN_SKILL_CHANCE = 0.4;
 
 export const throwInSkillChance = (targetScore?: number | null): number =>
   targetScore != null && targetScore < THROW_IN_SKILL_MIN_SCORE ? 0 : THROW_IN_SKILL_CHANCE;
+
+/**
+ * **タンブリング中に受ける投げタン（`catchInSkill`）**。実施する水準はタンブリング中の投げと
+ * 同じ（`THROW_IN_SKILL_MIN_SCORE` 以上）で、**頻度はそれより低い**（オーナー指定）。
+ * 抽選の形も同じ — 候補に混ぜるかどうかを生成ごとに1回だけ引く。
+ */
+export const CATCH_IN_SKILL_CHANCE = 0.2;
+
+export const catchInSkillChance = (targetScore?: number | null): number =>
+  targetScore != null && targetScore < THROW_IN_SKILL_MIN_SCORE ? 0 : CATCH_IN_SKILL_CHANCE;
 
 /**
  * 宙返りの途中で投げる投げタン（`throwInSkill`）で、**ロンダートから入る**

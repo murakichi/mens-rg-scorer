@@ -834,3 +834,80 @@ describe("技の最中の投げの二つ投げ", () => {
     expect(seriesSignature(twoThrowSeries())).not.toBe(seriesSignature(plain));
   });
 });
+
+describe("技の最中の受け（isCatch）", () => {
+  const throwItem = (): Item => ({ kind: "throw" });
+  const catchingSkill = (skillId: string, extra: Partial<Extract<Item, { kind: "skill" }>> = {}): Item => ({
+    kind: "skill",
+    skillId,
+    hasApparatus: false,
+    isThrow: false,
+    isCatch: true,
+    ...extra,
+  });
+
+  it("その技でユニットが閉じ、投げタンとして扱われる（技の最中の投げと同じ）", () => {
+    const a = analyzeSeries(S(throwItem(), catchingSkill("b_front")));
+    expect(a.units).toHaveLength(1);
+    expect(a.units[0].type).toBe("throw");
+    expect(a.units[0].isThrowTumbling).toBe(true);
+    // 投げ1回ぶんとして数える（受けは投げの回数には足さない）
+    expect(a.throwCount).toBe(1);
+    // キャッチアイテムで書いた同じ内容と難度が一致する
+    const withItem = analyzeSeries(S(throwItem(), { kind: "skill", skillId: "b_front", hasApparatus: false, isThrow: false }, { kind: "catch" }));
+    expect(a.units[0].finalDiff).toBe(withItem.units[0].finalDiff);
+  });
+
+  it("受けたあとは別のユニットになる（キャッチで区切るのと同じ）", () => {
+    const a = analyzeSeries(
+      S(throwItem(), catchingSkill("b_front"), { kind: "motion", motionId: "chene", count: 2 }),
+    );
+    expect(a.units).toHaveLength(2);
+    expect(a.units[0].isThrowTumbling).toBe(true);
+    // 2つ目は投げを含まない徒手ユニット（転回技が無いので type は徒手側＝"throw"）
+    expect(a.units[1].isThrow).toBe(false);
+    expect(a.units[1].isThrowTumbling).toBeFalsy();
+  });
+
+  it("受けるのは技の終わりなので、その技には手具操作を付けられない", () => {
+    // 投げの技は離す瞬間まで手元にあるので操作あり（＝false）、受けの技はまだ空（＝true）
+    const items = [throwItem(), catchingSkill("b_front")];
+    expect(handsEmptyFlags(items, "stick")).toEqual([false, true]);
+    const thrown: Item[] = [
+      { kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: true },
+      { kind: "catch" },
+    ];
+    expect(handsEmptyFlags(thrown, "stick")[0]).toBe(false);
+  });
+
+  it("手具の流れの検証に効く（受けすぎ・受け不足を見つける）", () => {
+    expect(checkApparatusFlow(S(throwItem(), catchingSkill("b_front")), "stick")).toEqual([]);
+    // 投げていないのに技の最中に受けるのは空中に手具が無い
+    expect(checkApparatusFlow(S(catchingSkill("b_front")), "stick")[0]).toContain("技の最中の受け");
+    // 投げたまま受けないと余る
+    expect(checkApparatusFlow(S(throwItem(), { kind: "skill", skillId: "b_front", hasApparatus: false, isThrow: false }), "stick")).toHaveLength(1);
+  });
+
+  it("2つ同時キャッチを入力できる位置も、キャッチアイテムと同じに判定する", () => {
+    // クラブの二つ投げ → 2つとも空中なので、技の最中の受けでも2つ同時にできる
+    const items: Item[] = [
+      { kind: "throw", reqTypes: ["twothrow"] },
+      catchingSkill("b_front"),
+    ];
+    expect(catchTwoFlags(items, "clubs")[1]).toBe(true);
+    // スティック（手具1つ）では同時に受けられない
+    expect(catchTwoFlags(items, "stick")[1]).toBe(false);
+  });
+
+  it("その手具で入力できない受け方は落とす（キャッチアイテムと同じ）", () => {
+    const list = [S(throwItem(), catchingSkill("b_front", { catchTypes: ["useapp"], catchTwo: true }))];
+    // スティックには押さえつける相手の手具が無い
+    expect(apparatusBlockers(list, "stick")).toContain("手具を使った投げ・キャッチ");
+    expect(apparatusBlockers(list, "stick")).toContain("2つ同時キャッチ");
+    const stripped = stripForApparatus(list, "stick")[0].items[1];
+    expect(stripped.kind === "skill" ? stripped.catchTypes : null).toEqual([]);
+    expect(stripped.kind === "skill" ? stripped.catchTwo : null).toBe(false);
+    // クラブなら残る
+    expect(apparatusBlockers(list, "clubs")).toEqual([]);
+  });
+});

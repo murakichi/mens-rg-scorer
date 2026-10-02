@@ -25,6 +25,11 @@ export interface AutoTumblingPattern {
    * 前に何本入れても自由で、三宙と投げタンを1シリーズで両方満たせる。
    */
   throwInSkill?: boolean;
+  /**
+   * 受けを**最後の宙返りの最中**に実施するか（`throwCatch` と併用）。
+   * 点数の扱いは技の最中の投げと同じで、その技でユニットが閉じる（キャッチアイテムを置かない）。
+   */
+  catchInSkill?: boolean;
   /** 最後に前転でつなぐか（投げ受けの着地） */
   rollFinish: boolean;
 }
@@ -38,6 +43,15 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
   { id: "throwRoll", saltos: { min: 1, max: 1 }, connect: false, throwCatch: true, rollFinish: true },
   // 投げタン：投げ→前方系→側宙（転宙）→キャッチ
   { id: "throwSalto", saltos: { min: 2, max: 2 }, connect: false, throwCatch: true, rollFinish: false },
+  // 投げタン：投げ→前方系1本の**最中に受け**（受けた技でシリーズが終わる）
+  {
+    id: "throwCatchInSkill",
+    saltos: { min: 1, max: 1 },
+    connect: false,
+    throwCatch: true,
+    catchInSkill: true,
+    rollFinish: false,
+  },
   // 投げタン：つなぎ技を挟んで、**つなぎの後の宙返り**の最中に投げて前転→キャッチ。
   // 投げるのは大抵ダイビング前宙か前宙（`THROW_AFTER_CONNECT_SALTOS`）
   {
@@ -63,7 +77,12 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
 export const canTwoThrowTumbling = (
   apparatus: ApparatusKey | undefined,
   pattern: AutoTumblingPattern,
-): boolean => !!apparatus && hasTwoThrow(apparatus) && !!pattern.throwCatch && !pattern.throwInSkill;
+): boolean =>
+  !!apparatus &&
+  hasTwoThrow(apparatus) &&
+  !!pattern.throwCatch &&
+  !pattern.throwInSkill &&
+  !pattern.catchInSkill;
 
 /**
  * 連続投げの2回目に使える投げ方。手以外の投げは2回目には実施できない。

@@ -65,6 +65,7 @@ import {
   backwardEndChance,
   pairAfterChance,
   rollAfterChance,
+  catchInSkillChance,
   throwInSkillChance,
 } from "./tumblingWeights";
 import {
@@ -228,6 +229,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     // 入力画面と同じで、そのままでは後方系に入れない位置ではロンダートを補う
     const throwsHere = !!pattern.throwInSkill && i === saltos.length - 1;
     const next = skillItem(id, throwsHere);
+    // 技の最中に受ける形は、最後の宙返りで受けてそこでシリーズが終わる
+    if (pattern.catchInSkill && i === saltos.length - 1) next.isCatch = true;
     // 後ろ向きで終わる宙返りのあとに前方系で投げるのは、きりもみの視野外投げだけ
     if (throwsHere) {
       // 直前の技は並びから取る（つなぎ技が間に入るとそこで向きが変わる）
@@ -248,7 +251,7 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   if (rolled) items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
   // 転がり・前転のあとは手具を使ったキャッチ（押さえつけ）で受けるのが定番。
   // 背面キャッチ（視野外）を引いたときはそちらで受ける（押さえつけとは同時に実施しない）
-  if (pattern.throwCatch) {
+  if (pattern.throwCatch && !pattern.catchInSkill) {
     // 背面キャッチ（視野外）は、続く投げが**視野外でなければ**実施できる
     // （視野外で受けて視野外に投げることだけができない＝`canThrowAfterCatch`）。
     // 2つ同時キャッチを視野外で受けることはしない
@@ -294,7 +297,7 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     });
   }
   // 投げタンのキャッチのあとに連続投げを続ける形
-  if (pattern.throwCatch && draws.secondThrow) {
+  if (pattern.throwCatch && !pattern.catchInSkill && draws.secondThrow) {
     const style = draws.secondThrow;
     items.push({
       kind: "throw",
@@ -398,8 +401,11 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
   // タンブリング中に投げる形は上級者だけ。候補に混ぜるかどうかは1回だけ引く
   // （形ごとに引くと生き残りを貪欲法が拾う。`throwInSkillChance`）
   const keepThrowInSkill = rand() < chance(throwInSkillChance(opts.targetScore));
+  // タンブリング中に受ける形も同じ水準で、頻度はそれより低い（`catchInSkillChance`）
+  const keepCatchInSkill = rand() < chance(catchInSkillChance(opts.targetScore));
   AUTO_TUMBLING_PATTERNS.forEach((rawPattern) => {
     if (rawPattern.throwInSkill && !keepThrowInSkill) return;
+    if (rawPattern.catchInSkill && !keepCatchInSkill) return;
     // 基本的な構成ではつなぎ技を実施せず、連続も2本まで
     const pattern = basicLevel ? basicLevelPattern(rawPattern) : rawPattern;
     if (!pattern) return;

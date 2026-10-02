@@ -413,6 +413,22 @@ function isThrowItem(item: Item): boolean {
 }
 
 /**
+ * キャッチか（**技の最中の受け**を含む）。点数の扱いは技の最中の投げと同じで、
+ * キャッチアイテムと同じようにユニットを閉じ、技術加点・多様な受け方・必須要素に効く。
+ */
+export function isCatchItem(item: Item): boolean {
+  return item.kind === "catch" || (item.kind === "skill" && !!item.isCatch);
+}
+
+/** その位置のキャッチの技術タグ（キャッチでなければ空） */
+export const catchTagsOf = (item: Item): string[] =>
+  item.kind === "catch" || (item.kind === "skill" && item.isCatch) ? item.catchTypes || [] : [];
+
+/** そのキャッチで手元に戻る手具の数（2つ同時キャッチなら2つ） */
+export const caughtCount = (item: Item): number =>
+  (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) && item.catchTwo ? 2 : 1;
+
+/**
  * ユニットを区切る位置（その手前で区切る）を返す。
  *
  * キャッチで区切るほかに、**タンブリングの合間の徒手（側転・徒手動作）でも区切る**。
@@ -428,10 +444,10 @@ export function unitSplitFlags(items: Item[]): boolean[] {
   const segments: [number, number][] = [];
   let from = 0;
   items.forEach((item, i) => {
-    if (item.kind === "catch") {
-      segments.push([from, i]);
-      from = i + 1;
-    }
+    if (!isCatchItem(item)) return;
+    // 技の最中の受けは**その技自体が区間の中身**なので、区間はその技まで含める
+    segments.push([from, item.kind === "catch" ? i : i + 1]);
+    from = i + 1;
   });
   segments.push([from, items.length]);
 
@@ -506,6 +522,8 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
         hasApparatus: !!item.hasApparatus && canOperateApparatus(item.skillId),
         isThrow: !!item.isThrow,
       });
+      // 技の最中に受けたら、その技を含めてユニットが閉じる（キャッチアイテムと同じ）
+      if (item.isCatch) flush();
     } else if (item.kind === "motion") {
       if (!buf) buf = newBuf();
       const m = motionDef(item.motionId, junior, future);
@@ -596,11 +614,14 @@ export function handsEmptyFlags(items: Item[], apparatus: ApparatusKey): boolean
       return false;
     }
     if (item.kind === "catch") {
-      inHand = Math.min(total, inHand + (item.catchTwo ? 2 : 1));
+      inHand = Math.min(total, inHand + caughtCount(item));
       return false;
     }
     const empty = inHand === 0;
     if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - thrownCount(item));
+    // 技の最中の受けは**技の終わり**に手元に戻るので、その技の間はまだ手元が空
+    // （投げの技は離す瞬間まで手元にあるので操作あり。そこが投げと非対称）
+    if (item.kind === "skill" && item.isCatch) inHand = Math.min(total, inHand + caughtCount(item));
     return empty;
   });
 }
@@ -620,10 +641,15 @@ export function catchTwoFlags(items: Item[], apparatus: ApparatusKey): boolean[]
     }
     if (item.kind === "catch") {
       const allowed = total > 1 && inHand === 0;
-      inHand = Math.min(total, inHand + (item.catchTwo ? 2 : 1));
+      inHand = Math.min(total, inHand + caughtCount(item));
       return allowed;
     }
     if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - thrownCount(item));
+    if (item.kind === "skill" && item.isCatch) {
+      const allowed = total > 1 && inHand === 0;
+      inHand = Math.min(total, inHand + caughtCount(item));
+      return allowed;
+    }
     return false;
   });
 }
@@ -665,6 +691,10 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
         (item.reqTypes || []).forEach((id) => {
           if (!canUseReqType(apparatus, id)) reasons.add(requiredThrowName(id));
         });
+        // 技の最中の受けも、キャッチアイテムと同じ入力の制限を受ける
+        if (!tags && (item.catchTypes || []).includes(USE_APPARATUS_TAG))
+          reasons.add(APPARATUS_INPUT_NAMES.useapp);
+        if (!tags && item.catchTwo) reasons.add(APPARATUS_INPUT_NAMES.catchTwo);
       }
       if (item.kind === "catch") {
         if (!tags && (item.catchTypes || []).includes(USE_APPARATUS_TAG))
@@ -704,6 +734,9 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
               hasApparatus: false,
               throwTypes: withoutTag(item.throwTypes),
               reqTypes: withoutReq(item.reqTypes),
+              ...(item.isCatch
+                ? { catchTypes: withoutTag(item.catchTypes), catchTwo: tags ? item.catchTwo : false }
+                : {}),
             };
           if (item.kind === "throw")
             return {
@@ -716,6 +749,16 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
               ...item,
               throwTypes: withoutTag(item.throwTypes),
               reqTypes: withoutReq(item.reqTypes),
+              // 技の最中の受けのタグも、キャッチアイテムと同じように落とす
+              ...(item.isCatch
+                ? { catchTypes: withoutTag(item.catchTypes), catchTwo: tags ? item.catchTwo : false }
+                : {}),
+            };
+          if (item.kind === "skill" && item.isCatch)
+            return {
+              ...item,
+              catchTypes: withoutTag(item.catchTypes),
+              catchTwo: tags ? item.catchTwo : false,
             };
           if (item.kind === "catch")
             return {
@@ -749,8 +792,14 @@ export function checkApparatusFlow(series: Series, apparatusKey: keyof typeof AP
         inHand -= num;
         inAir += num;
       }
+    } else if (item.kind === "skill" && item.isCatch) {
+      const num = caughtCount(item);
+      if (inAir < num) errors.push(`${idx + 1}番目の技の最中の受け：空中に手具がありません`);
+      const c = Math.min(num, inAir);
+      inAir -= c;
+      inHand += c;
     } else if (item.kind === "catch") {
-      const num = item.catchTwo ? 2 : 1;
+      const num = caughtCount(item);
       if (inAir < num) errors.push(`${idx + 1}番目のキャッチ：空中に手具がありません`);
       const c = Math.min(num, inAir);
       inAir -= c;

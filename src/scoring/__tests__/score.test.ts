@@ -4,6 +4,7 @@ import {
   ART_DEDUCTION_ITEMS,
   NO_APP_ALL_DEDUCTION,
   NO_APP_SALTO_DEDUCTION,
+  TECHNIQUE_BONUS,
   canOperateApparatus,
 } from "../constants";
 import type { Series, Item } from "../types";
@@ -1271,5 +1272,56 @@ describe("きりもみ系は手具操作ができない", () => {
       "stick",
     );
     expect(ok.apparatusOpBonus).toBeGreaterThan(0);
+  });
+});
+
+describe("技の最中の受け（点数の扱いは技の最中の投げと同じ）", () => {
+  const catching = (catchTypes?: string[]): Item => ({
+    kind: "skill",
+    skillId: "b_front",
+    hasApparatus: false,
+    isThrow: false,
+    isCatch: true,
+    ...(catchTypes ? { catchTypes } : {}),
+  });
+
+  it("受け方の技術タグが技術加点に効く（キャッチアイテムと同額）", () => {
+    const plain = computeScore([S({ kind: "throw" }, catching())], "stick");
+    const tagged = computeScore([S({ kind: "throw" }, catching(["noview"]))], "stick");
+    expect(tagged.techniqueBonus - plain.techniqueBonus).toBeCloseTo(TECHNIQUE_BONUS, 5);
+    // キャッチアイテムに同じタグを付けた構成と同額
+    const asItem = computeScore(
+      [S({ kind: "throw" }, { kind: "skill", skillId: "b_front", hasApparatus: false, isThrow: false }, { kind: "catch", catchTypes: ["noview"] })],
+      "stick",
+    );
+    expect(tagged.techniqueBonus).toBeCloseTo(asItem.techniqueBonus, 5);
+  });
+
+  it("受け方の種類として数える（多様な受け方の充足に効く）", () => {
+    // 通常キャッチ＋技の最中の視野外受け＋手以外キャッチ ＝ 受け方3種類
+    const r = computeScore(
+      [
+        S({ kind: "throw" }, { kind: "catch" }),
+        S({ kind: "throw" }, catching(["noview"])),
+        S({ kind: "throw" }, { kind: "catch", catchTypes: ["nonhand"] }),
+      ],
+      "stick",
+    );
+    expect(r.catchKindCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it("転回系の投げ受け（投げタン）の必須要素を満たす", () => {
+    const r = computeScore([S({ kind: "throw" }, catching())], "stick");
+    expect(r.required.find((x) => x.key === "throwTum")?.passed).toBe(true);
+  });
+
+  it("難度はキャッチアイテムで書いた同じ内容と一致する", () => {
+    const inSkill = computeScore([S({ kind: "throw" }, catching())], "stick");
+    const asItem = computeScore(
+      [S({ kind: "throw" }, { kind: "skill", skillId: "b_front", hasApparatus: false, isThrow: false }, { kind: "catch" })],
+      "stick",
+    );
+    expect(inSkill.tumblingScore).toBeCloseTo(asItem.tumblingScore, 5);
+    expect(inSkill.handScore).toBeCloseTo(asItem.handScore, 5);
   });
 });

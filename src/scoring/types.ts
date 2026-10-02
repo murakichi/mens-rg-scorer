@@ -53,6 +53,18 @@ export interface SkillItem {
    * 投げアイテムの `reqTypes` と同じ扱いで、手元/空中の手具数にも必須要素の判定にも効く。
    */
   reqTypes?: string[];
+  /**
+   * この技の最中に受けを行うか（`isThrow` とは同時に成り立たない）。
+   * **点数の扱いは技の最中の投げと同じ** — キャッチアイテムと同じようにユニットを閉じ、
+   * `catchTypes` は技術加点・多様な受け方・必須要素に効く。
+   * 受けるのは技の終わりなので、その技自体に手具操作は付けられない
+   * （投げの技は離す瞬間まで手元にあるので付けられる。そこが投げと非対称）。
+   */
+  isCatch?: boolean;
+  /** 技の最中の受けの技術タグ（noview / nonhand / useapp）。`isCatch` 時のみ有効。 */
+  catchTypes?: string[];
+  /** 技の最中の受けが2つ同時キャッチか。`isCatch` 時のみ有効。 */
+  catchTwo?: boolean;
 }
 
 export interface MotionItem {
