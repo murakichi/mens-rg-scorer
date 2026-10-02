@@ -54,7 +54,6 @@ import {
   adoptedSpreadCost,
   adoptedOverCeiling,
   unitDifficultyCeiling,
-  leadThrowCheneCount,
   levelAdoptedDiffs,
   MAX_ADOPTED_DIFF_SPREAD,
   ADOPTED_OVER_CEILING_WEIGHT,
@@ -647,30 +646,56 @@ describe("採用される難度のばらつき", () => {
     expect(of(DIFF_VALUE.C, DIFF_VALUE.D, DIFF_VALUE.E, DIFF_VALUE.E)).toBe(1);
   });
 
-  it("連続投げの『安いほう』はその水準の1段下に合わせる", () => {
-    // 徒手ユニットの難度は A ＋ 動作数。天井の1段下になる回数を返す
-    expect(leadThrowCheneCount(1.5)).toBe(LEAD_THROW_CHENE_COUNT); // 天井C → B＝1動作
-    expect(leadThrowCheneCount(3.0)).toBe(2); // 天井D → C＝2動作
-    expect(leadThrowCheneCount(3.5)).toBe(3); // 天井E → D＝3動作
-    // 上限の指定が無ければ最小（その水準では採用に入らないので揃える必要がない）
-    expect(leadThrowCheneCount(null)).toBe(LEAD_THROW_CHENE_COUNT);
-    // 実際に組み立てた候補にも乗る：連続投げの1本目（投げ→シェネ→キャッチ）の回数が変わる
-    const pairs = autoThrowTemplates("stick", { leadCheneCount: 3, random: seeded(11) }).filter(
-      (t) => t.spec.pattern.leadPair,
-    );
-    expect(pairs.length).toBeGreaterThan(0);
-    pairs.forEach((t) => {
+  it("連続投げの『安いほう』は水準に関係なく安いまま（高難度が2本続かない）", () => {
+    // この形は 多様な投げ受け の種類を**操作をほとんど足さずに**1つ稼ぐためのもので、
+    // 連続投げは1回目で難度を採る。水準に合わせて厚くすると「高難度の投げ→高難度の投げ」に
+    // なってしまう（実測：上限3.5で「投げ→シェネ×3→キャッチ→投げ→シェネ×3→キャッチ」が
+    // 連続投げ22組のうち18組）ので、回数は水準で変えない
+    expect(LEAD_THROW_CHENE_COUNT).toBe(1);
+    const built = autoThrowTemplates("stick", { random: seeded(11) });
+    const leads = built.filter((t) => t.spec.pattern.leadPair);
+    const trails = built.filter((t) => t.spec.pattern.trailPair);
+    expect(leads.length).toBeGreaterThan(0);
+    expect(trails.length).toBeGreaterThan(0);
+    leads.forEach((t) => {
       const first = t.series.items.find((it) => it.kind === "motion");
-      expect(first && first.kind === "motion" ? first.count : 0).toBe(3);
+      expect(first && first.kind === "motion" ? first.count : 0).toBe(LEAD_THROW_CHENE_COUNT);
     });
-    // 既定（渡さない）は今までどおり1回
-    autoThrowTemplates("stick", { random: seeded(11) })
-      .filter((t) => t.spec.pattern.leadPair)
-      .forEach((t) => {
-        const first = t.series.items.find((it) => it.kind === "motion");
-        expect(first && first.kind === "motion" ? first.count : 0).toBe(LEAD_THROW_CHENE_COUNT);
-      });
+    // `trailPair` の2本目は徒手なし（キャッチの直前は投げのまま）
+    trails.forEach((t) => {
+      const items = t.series.items;
+      expect(items[items.length - 1].kind).toBe("catch");
+      expect(items[items.length - 2].kind).toBe("throw");
+    });
   });
+
+  it("生成した構成に『高難度の投げ→高難度の投げ』が出ない", () => {
+    // 連続する投げの徒手ユニットが両方D難度以上になっていないこと
+    // （実測：上限3.5／3.5〜4.0 で手具ごとに 5〜22組 あったものが、4手具 × 6条件すべて0）
+    let pairs = 0;
+    ([[null, 3.5], [3.5, 4.0]] as [number | null, number | null][]).forEach(([min, max]) => {
+      [3, 11, 19, 27, 35].forEach((seed) => {
+        const r = generateRoutine([], {
+          apparatus: "stick",
+          ...(min != null ? { minScore: min } : {}),
+          ...(max != null ? { maxScore: max } : {}),
+          random: seeded(seed),
+        });
+        if (!r) return;
+        r.series.forEach((ser) => {
+          const units = analyzeSeries(ser).units.filter((u) => u.type === "throw" && !u.isThrowTumbling);
+          for (let k = 0; k + 1 < units.length; k++) {
+            pairs += 1;
+            const both =
+              DIFF_VALUE[units[k].finalDiff] >= DIFF_VALUE.D &&
+              DIFF_VALUE[units[k + 1].finalDiff] >= DIFF_VALUE.D;
+            expect(both).toBe(false);
+          }
+        });
+      });
+    });
+    expect(pairs).toBeGreaterThan(0);
+  }, 120_000);
 
   it("天井を超えたぶんだけを罰する（低いほうを罰すると投げをやめてしまう）", () => {
     const over = (ds: Difficulty[], ceiling: number | null) =>
@@ -711,9 +736,13 @@ describe("採用される難度のばらつき", () => {
     });
   }, 120_000);
 
-  it("生成すると難度がだいぶ揃う（実測：幅2以上が 25/25 → 5〜14/25）", () => {
+  it("生成すると難度がある程度揃う（実測：幅2以上が 25/25 → 15〜22/25）", () => {
     // 上限いっぱいの構成ではDスコアが張り付くので完全には揃わない。
-    // 「可能な限り揃える」方針なので、割合で見る
+    // 「絶対に揃っていなければならないわけではないが可能な限り」という方針なので割合で見る。
+    // **連続投げの安いほうを厚くするのは取り下げた**（高難度の投げが2本続くため）ので、
+    // ここは一度 5〜14/25 まで下がったあと 15〜22/25 に戻っている。残りの低いユニットは
+    // 単独の最小形の投げ（必須投げをいちばん安く満たす形）で、これは加点のための投げと
+    // 同じ形なので潰していない
     let over = 0, n = 0;
     [[null, 2.5], [null, 3.0], [3.5, 4.0]].forEach(([min, max]) => {
       [3, 11, 19, 27, 35, 43].forEach((seed) => {
@@ -730,7 +759,7 @@ describe("採用される難度のばらつき", () => {
     });
     expect(n).toBeGreaterThan(0);
     // 直す前はこの3条件すべてで 100%（幅2以上）だった
-    expect(over / n).toBeLessThan(0.5);
+    expect(over / n).toBeLessThan(0.8);
     // 採用ユニットが1つ以下なら幅は0
     expect(adoptedDiffSpread({ seriesBreakdowns: [], handElementRows: [], ropeJumpRows: [] } as never)).toBe(0);
   }, 120_000);

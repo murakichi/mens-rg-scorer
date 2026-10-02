@@ -11,7 +11,7 @@
 // どの値も**実測して決めた**もので、根拠は `app-scoring-spec.md` と work-logs に残す。
 // =====================================================================
 
-import { LEAD_THROW_CHENE_COUNT, NON_HAND_TAG, isAutoThrowTemplate } from "./autoThrows";
+import { NON_HAND_TAG, isAutoThrowTemplate } from "./autoThrows";
 import { isAutoTumblingTemplate } from "./autoTumblings";
 import {
   ADOPT_COUNT,
@@ -554,27 +554,6 @@ export function unitDifficultyCeiling(
  * （低いほうを罰すると、上限3.0で投げ4回以上が 85% → 58% に落ちた）。
  */
 export const ADOPTED_OVER_CEILING_WEIGHT = 0.5;
-
-/**
- * **連続投げの1回目（`leadPair` / `trailPair` の安いほう）で実施するシェネの回数**。
- *
- * この形は 多様な投げ受け の種類を操作を増やさずに1つ稼ぐためのもので、徒手を1動作しか
- * 入れない。ところが投げ4回（うち1本が投げタン）だと徒手ユニットはちょうど3つ＝
- * **上位3つに全部入る**ので、その安い1本がそのまま採用されて難度の幅が開く
- * （実測：上限3.0でばらついた構成の低いユニットは、ほぼ全部がこの安いほうだった）。
- *
- * 「安い」は**その水準に対して安い**という意味なので、回数を水準の1段下のユニットに合わせる
- * （徒手ユニットの難度は A ＋ 動作数なので、`ceiling - 1 - DIFF_VALUE.A` 動作）。
- * 上限の指定が無ければ最小の1回（上の水準では採用に入らないので、揃えに行く必要がない）。
- */
-export function leadThrowCheneCount(
-  targetScore?: number | null,
-  future: FutureLevel = null,
-): number {
-  const ceiling = unitDifficultyCeiling(targetScore, future);
-  if (ceiling == null) return LEAD_THROW_CHENE_COUNT;
-  return Math.max(LEAD_THROW_CHENE_COUNT, ceiling - 1 - DIFF_VALUE.A);
-}
 
 /**
  * **均す詰め直しの手数**。Dスコアの上限に張り付いた構成では「別のユニットを下げて余地を作る」→

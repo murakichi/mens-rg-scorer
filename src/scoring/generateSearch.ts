@@ -44,7 +44,6 @@ import {
   aimsAllE,
   autoLimitOf,
   autoSeriesMax,
-  leadThrowCheneCount,
   preferredThrowCount,
 } from "./generateWeights";
 import { shuffled } from "./pick";
@@ -77,8 +76,6 @@ export function autoPool(opts: GenerateOptions, own: SeriesTemplate[], rand: () 
         future: opts.future ?? null,
         // 生成する形の珍しさ（0〜100。既定50＝実測どおり）
         rarity: opts.rarity,
-        // 連続投げの安いほうは**その水準の1段下**に合わせる（採用の難度を揃えるため）
-        leadCheneCount: leadThrowCheneCount(opts.maxScore, opts.future ?? null),
       }),
     );
   if (opts.autoTumblings !== false)
