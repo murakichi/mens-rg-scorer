@@ -17,6 +17,7 @@ Two rule documents live at the repo root — keep both and `src/scoring/constant
 - `npm run typecheck` — types only, no emit.
 - `npm run preview` — serve the production build locally.
 - `npm test` — vitest (single run); `npm run test:watch` to keep it running.
+- `npm run probe -- "<技名 or 前宙→きりもみ転回>" [--apparatus clubs] [--max 3.5,none] [--min 4] [--rarity 0,50,100] [-n 12] [--junior] [--future F]` — 「○○は生成される？」を一度に確かめる（`src/scoring/probe.ts`、`scripts/probe.mjs`）。候補（`autoPool`＋本数違い）に当たる数と、実際に生成した構成に出た数、その技が各上限で候補に入れるか（`usableSkills`）を表で出し、「候補にない」か「候補にはあるが評価で負けている」かを切り分ける。生成に形を足してもこのコマンドは変えなくてよい（`autoPool` と `generateRoutine` を呼ぶだけ）。シリーズごと指定するなら `--exact`（`*` は任意の1アイテム）。`--seed` で再現できる。
 
 The scoring logic is covered by vitest suites in `src/scoring/__tests__/` (analysis / score / aside / team / junior / templates / generate / tags / options / twist ほか). **After changing scoring logic, add or update a test there and run `npm test` plus `npm run build`.** `test-reports/` holds the reports written by the `scoring-test` skill (`.claude/skills/scoring-test`), which walks one rule-compliance pass: compare `mens-rg-rules.md` against `src/scoring/`, add tests for an angle no past report covered, and file an issue for anything wrong.
 
@@ -95,6 +96,7 @@ The data model is a flat **list of `Series`**, each an ordered list of `items` (
   - **手具別の現実則**：クラブは二つ投げを手以外で受けない／横投げ以外を押さえつけで受けない、リングは手以外のキャッチ×横投げが多い、ロープは足で受けて終わる（`FINISH_CATCH_TAG`、クラブは押さえつけで終わる）、`splitCatch`（二つ投げ→キャッチ→押さえつけ）は二つ投げに押さえつけキャッチを付けない一般則の唯一の例外。**手以外／手具を使ったキャッチの後は投げない**（`NO_THROW_AFTER_CATCH_TAGS`）、視野外のキャッチの後は視野外の投げだけ不可（`NO_SAME_TAG_AFTER_CATCH_TAGS`）。**その他**は「規則上は同じだが実際は別の捉え方」を表す入力なので、不足の種類を埋めるときだけ使い、余りは `trimSpareOtherStyles` が落とす。横投げは種類数に数えるが技術加点は付けない。
   - **タンブリングの連鎖則**：次の技の系統は前の技の着地向き（`leadsBackward`/`endsFacingBackward`）で決まり、難度は基本的に下がる（`DIFFICULTY_RISE_AFTER` が例外）。`CHAIN_END_SKILLS`（きりもみ系・側宙・とび前転）の後には何も続かず、転宙の後は側宙だけ。後方宙返り半ひねりは延長、前半ひねりで終わらない、後方着地で終わらない（低得点のみ可）。投げの位置は切り返しでは投げない（きりもみの視野外投げは例外）。きりもみ系は手具操作なし。**どの技がなぜ出ないか**は遷移表（`__tests__/transitions.test.ts`）の1行を見る。
   - **ユーザーが触れるつまみ（生成のみに効く）**：`rarity`（0〜100、重みを1つの単調変換 `rarityExponent`/`rarityChance` に通す。その他は対象外）、`tumblingBalance`（0〜100、幅は小さい。構造的なので重みを上げて広げない）、`skillWeights`（技ごとの倍率。`SkillWeightModal`、`localStorage` の `mens-rg-scorer:skill-weights:v1` には1以外だけ保存、0は候補から除外、位置別の上書きの後にも掛ける）、大会レベル（`COMPETITION_LEVELS` で D 範囲を埋めるだけ）。
+  - **「○○は出る？」は `npm run probe` で確かめる**（候補にあるか・生成に出るかを手具×上限×珍しさの表で）。
   - **生成のテスト**：重みを変えたら、`docs/generator-notes.md` の形式で実測（20〜40本、手具別、複数の D 上限）を取り、値と結果を追記する。
 - A template's apparatus can be **共通** (`COMMON_APPARATUS`): usable with every apparatus, allowed only when the series has no apparatus-specific input (`commonBlockers` — 二つ投げ/左手投げ/手具を使った投げ・キャッチ/2つ同時キャッチ/ロープ跳び); such templates are edited with those inputs hidden (`SeriesCard`'s `common` prop) and scored as stick (`scoringApparatus`).
 - Team mode (団体モード) is fully wired for D/A/E, but the A-side deduction values are provisional (see `team.ts`) and §3.4.5.4 の欠点テーブル is individual-only so far; crossing-group detail and union-skill difficulty are still TODO.
