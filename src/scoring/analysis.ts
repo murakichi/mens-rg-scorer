@@ -429,6 +429,22 @@ export const caughtCount = (item: Item): number =>
   (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) && item.catchTwo ? 2 : 1;
 
 /**
+ * **技の最中に受けたあと、タンブリングがそのまま続くか**（続くなら同じユニットのまま扱う）。
+ *
+ * 受けた技はタンブリングの連鎖の途中なので、直後に転回技が続くならそこで切らない
+ * （実施例：投げ→ロンダート（手具を使ったキャッチ）→後方宙返り1回半ひねり→ロンダート→
+ * ダイビング前宙 は**1本の投げタン**。切ってしまうとロンダート1本だけのユニットになり、
+ * A難度の技が1本だけ＝徒手動作1つとして数えるので投げタンにならない）。
+ * **キャッチアイテム（手で受ける）は従来どおり必ず切る** — いったん手に戻してから次の連鎖に入る。
+ */
+export function catchSkillContinues(items: Item[], i: number): boolean {
+  const item = items[i];
+  if (!(item?.kind === "skill" && item.isCatch)) return false;
+  const next = items[i + 1];
+  return !!next && isTumblingItem(next);
+}
+
+/**
  * ユニットを区切る位置（その手前で区切る）を返す。
  *
  * キャッチで区切るほかに、**タンブリングの合間の徒手（側転・徒手動作）でも区切る**。
@@ -445,7 +461,10 @@ export function unitSplitFlags(items: Item[]): boolean[] {
   let from = 0;
   items.forEach((item, i) => {
     if (!isCatchItem(item)) return;
-    // 技の最中の受けは**その技自体が区間の中身**なので、区間はその技まで含める
+    // 技の最中の受けは**その技自体が区間の中身**なので、区間はその技まで含める。
+    // 受けた後に連鎖が続くときも区間はここで切る（手具は手元に戻っているので、
+    // そこから先の徒手は「投げ上げている間」の例外に入らない）。ユニットを続けるかは
+    // `analyzeSeries` 側の `catchSkillContinues` が決める
     segments.push([from, item.kind === "catch" ? i : i + 1]);
     from = i + 1;
   });
@@ -522,8 +541,10 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
         hasApparatus: !!item.hasApparatus && canOperateApparatus(item.skillId),
         isThrow: !!item.isThrow,
       });
-      // 技の最中に受けたら、その技を含めてユニットが閉じる（キャッチアイテムと同じ）
-      if (item.isCatch) flush();
+      // 技の最中に受けたら、その技を含めてユニットが閉じる（キャッチアイテムと同じ）。
+      // ただし直後に転回技が続くなら、受けた技は連鎖の途中なので**同じユニットのまま続ける**
+      // （`catchSkillContinues`）
+      if (item.isCatch && !catchSkillContinues(series.items, i)) flush();
     } else if (item.kind === "motion") {
       if (!buf) buf = newBuf();
       const m = motionDef(item.motionId, junior, future);

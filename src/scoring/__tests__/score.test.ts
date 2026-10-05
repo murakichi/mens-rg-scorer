@@ -5,6 +5,7 @@ import {
   NO_APP_ALL_DEDUCTION,
   NO_APP_SALTO_DEDUCTION,
   TECHNIQUE_BONUS,
+  DIFF_SCORE,
   canOperateApparatus,
 } from "../constants";
 import type { Series, Item } from "../types";
@@ -1313,6 +1314,27 @@ describe("技の最中の受け（点数の扱いは技の最中の投げと同�
   it("転回系の投げ受け（投げタン）の必須要素を満たす", () => {
     const r = computeScore([S({ kind: "throw" }, catching())], "stick");
     expect(r.required.find((x) => x.key === "throwTum")?.passed).toBe(true);
+  });
+
+  it("受けたあと連鎖が続く実施例は1本の投げタンになる（リング）", () => {
+    // 実施例：投げ→ロンダート（手具を使ったキャッチ）→後方宙返り1回半ひねり→ロンダート→
+    // ダイビング前宙。受けた技で切ると、ロンダート1本＝徒手ユニットB難度になり
+    // 「転回系の投げ受け」を満たさなくなる
+    const skill = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: true, isThrow: false });
+    const ser = S(
+      { kind: "throw" },
+      { kind: "skill", skillId: "a_roundoff", hasApparatus: false, isThrow: false, isCatch: true, catchTypes: ["useapp"] },
+      skill("c_back15"),
+      skill("a_roundoff"),
+      skill("b_divefront"),
+    );
+    const r = computeScore([ser], "ring");
+    expect(r.required.find((x) => x.key === "throwTum")?.passed).toBe(true);
+    // タンブリング側にE難度1本ぶんが乗る（徒手ユニットは作られない）
+    expect(r.tumblingScore).toBeCloseTo(DIFF_SCORE.E, 5);
+    expect(r.handScore).toBeCloseTo(0, 5);
+    // 手具を使ったキャッチの技術加点も付く
+    expect(r.techniqueBonus).toBeCloseTo(TECHNIQUE_BONUS, 5);
   });
 
   it("難度はキャッチアイテムで書いた同じ内容と一致する", () => {

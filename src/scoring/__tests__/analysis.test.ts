@@ -15,6 +15,7 @@ import {
   stripForApparatus,
   handsEmptyFlags,
   catchTwoFlags,
+  catchSkillContinues,
   checkApparatusFlow,
   tumblingVariety,
 } from "../analysis";
@@ -876,6 +877,46 @@ describe("技の最中の受け（isCatch）", () => {
     // 2つ目は投げを含まない徒手ユニット（転回技が無いので type は徒手側＝"throw"）
     expect(a.units[1].isThrow).toBe(false);
     expect(a.units[1].isThrowTumbling).toBeFalsy();
+  });
+
+  it("受けた直後に転回技が続くときは、同じユニットのまま（1本の投げタン）", () => {
+    // 実施例（リング）：投げ→ロンダート（手具を使ったキャッチ）→後方宙返り1回半ひねり→
+    // ロンダート→ダイビング前宙。受けた技は連鎖の途中なので、ここで切らない
+    const ser = S(
+      throwItem(),
+      catchingSkill("a_roundoff", { catchTypes: ["useapp"] }),
+      { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: false },
+      { kind: "skill", skillId: "a_roundoff", hasApparatus: true, isThrow: false },
+      { kind: "skill", skillId: "b_divefront", hasApparatus: true, isThrow: false },
+    );
+    const a = analyzeSeries(ser);
+    expect(a.units).toHaveLength(1);
+    expect(a.units[0].isThrowTumbling).toBe(true);
+    // 切ってしまうとロンダート1本だけ＝徒手動作1つのユニット（B難度）になってしまう
+    expect(a.units[0].finalDiff).toBe("E");
+    expect(catchSkillContinues(ser.items, 1)).toBe(true);
+  });
+
+  it("受けた直後が徒手（側転・徒手動作）ならそこで切る", () => {
+    // 側転は徒手扱いなので連鎖の続きではない
+    const withCartwheel = S(
+      throwItem(),
+      catchingSkill("a_roundoff"),
+      { kind: "skill", skillId: "a_cartwheel", hasApparatus: true, isThrow: false },
+    );
+    expect(catchSkillContinues(withCartwheel.items, 1)).toBe(false);
+    expect(analyzeSeries(withCartwheel).units).toHaveLength(2);
+    // 何も続かないときも切る（従来どおり）
+    expect(catchSkillContinues(S(throwItem(), catchingSkill("b_front")).items, 1)).toBe(false);
+  });
+
+  it("キャッチアイテム（手で受ける）のあとの転回技は従来どおり別のユニット", () => {
+    // いったん手に戻してから次の連鎖に入るので、技の最中の受けとは扱いが違う
+    const a = analyzeSeries(
+      S(throwItem(), { kind: "catch" }, { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: false }),
+    );
+    expect(a.units).toHaveLength(2);
+    expect(a.units[0].isThrowTumbling).toBeFalsy();
   });
 
   it("受けるのは技の終わりなので、その技には手具操作を付けられない", () => {

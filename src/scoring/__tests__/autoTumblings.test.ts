@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { CATCH_USE_APPARATUS } from "../autoThrows";
 import {
   AUTO_TUMBLING_PATTERNS,
   BASIC_LEVEL_MAX_DIFF,
@@ -1048,47 +1049,64 @@ describe("つなぎ技", () => {
     // 頻度は投げる形より低い
     expect(CATCH_IN_SKILL_CHANCE).toBeLessThan(THROW_IN_SKILL_CHANCE);
 
-    // 組み立てた形：投げ→前方系1本の最中に受け（キャッチアイテムを置かない）
-    const built = [18, 20, 43, 45].flatMap((seed) =>
-      autoTumblingTemplates("stick", { random: seeded(seed), targetScore: 4.5 }),
-    ).filter((t) => t.spec.pattern.catchInSkill);
+    // 組み立てた形：投げ→**連鎖の1本目の技の最中に受け**→そのままタンブリングが続く
+    // （実施例・リング：投げ→ロンダート（手具を使ったキャッチ）→後方宙返り1回半ひねり→
+    // ロンダート→ダイビング前宙）
+    const built = [18, 20, 43, 45]
+      .flatMap((seed) => autoTumblingTemplates("ring", { random: seeded(seed), targetScore: 4.5 }))
+      .filter((t) => t.spec.pattern.catchInSkill);
     expect(built.length).toBeGreaterThan(0);
     built.forEach((t) => {
       const items = t.series.items;
       expect(items[0].kind).toBe("throw");
-      const last = items[items.length - 1];
-      expect(last.kind).toBe("skill");
-      expect(last.kind === "skill" ? last.isCatch : false).toBe(true);
+      // 受けるのは**1本目の技**（手具が空中にあるのはそこまで）
+      const skills = items.filter((it) => it.kind === "skill");
+      const first = skills[0];
+      expect(first.kind === "skill" ? first.isCatch : false).toBe(true);
+      expect(skills.slice(1).every((it) => it.kind === "skill" && !it.isCatch)).toBe(true);
       // **受ける技はロンダートか前宙だけ**（自動生成だけの制限。入力画面はどの技でも付けられる）
-      expect(CATCH_IN_SKILL_SKILLS).toContain(last.kind === "skill" ? last.skillId : "");
-      // キャッチアイテムは置かない（受けた技で終わる）
+      expect(CATCH_IN_SKILL_SKILLS).toContain(first.kind === "skill" ? first.skillId : "");
+      // キャッチアイテムは置かない（受けた技の時点で手元に戻っている）
       expect(items.some((it) => it.kind === "catch")).toBe(false);
-      // 手具の流れが通る（投げた1つを受けて終わる）
-      expect(checkApparatusFlow(t.series, "stick")).toEqual([]);
-      // 受ける前に前方系を1本挟める。**連鎖のルールはそのまま通す**
-      // （これを通さないと「投げ→転宙→ロンダート(受)」のように転宙の後に続けてしまう）
+      // 受けるまでは手具が空中なので、そこまでの技に手具操作は付かない
+      expect(first.kind === "skill" ? first.hasApparatus : true).toBeFalsy();
+      // 手具の流れ・連鎖のルールのどちらも通る（連鎖は派生元のタンブリング候補のまま）
+      expect(checkApparatusFlow(t.series, "ring")).toEqual([]);
       expect(tumblingFlowErrors(t.series)).toEqual([]);
-      const saltos = items.filter((it) => it.kind === "skill");
-      expect(saltos.length).toBeLessThanOrEqual(2);
-      saltos.slice(0, -1).forEach((it) => {
-        expect(it.kind === "skill" ? isForwardSalto(it.skillId) : false).toBe(true);
-      });
-      // 投げタンとして数えられる（ロンダート1本だけで受ける形はA難度なので徒手ユニット）
-      const tt = analyzeSeries(t.series).units.some((u) => u.isThrowTumbling);
-      expect(tt).toBe(saltos.length > 1 || (last.kind === "skill" && last.skillId !== ROUNDOFF_SKILL_ID));
+      // 受けた直後に転回技が続けば1本の投げタン（`catchSkillContinues`）
+      const units = analyzeSeries(t.series).units;
+      if (skills.length > 1) {
+        expect(units).toHaveLength(1);
+        expect(units[0].isThrowTumbling).toBe(true);
+      }
+      // 押さえつけて受けるのは床に手をつくロンダートの最中だけ
+      const tags = first.kind === "skill" ? first.catchTypes || [] : [];
+      if (tags.length > 0) {
+        expect(tags).toEqual([CATCH_USE_APPARATUS]);
+        expect(first.kind === "skill" ? first.skillId : "").toBe(ROUNDOFF_SKILL_ID);
+      }
     });
-    // 受ける技にロンダートと前宙の両方が出る
-    const caught = new Set(
-      built.map((t) => {
-        const last = t.series.items[t.series.items.length - 1];
-        return last.kind === "skill" ? last.skillId : "";
-      }),
+    // 受けたあとタンブリングが続く形が出る（実施例の形）
+    expect(built.some((t) => t.series.items.filter((it) => it.kind === "skill").length > 2)).toBe(true);
+    // 受ける技にロンダートと前宙の両方が出る。**ほとんどはロンダート**で、前宙は少ない
+    // （前宙で受ける＝前方系から入るので、`FORWARD_ENTRY_WEIGHT` が高い要求値では下げる。
+    // 種8本で前宙が出たのは1本だけ）
+    const caught = [18, 20, 22, 24, 26, 43, 45, 47].flatMap((seed) =>
+      autoTumblingTemplates("ring", { random: seeded(seed), targetScore: 4.5 })
+        .filter((t) => t.spec.pattern.catchInSkill)
+        .map((t) => {
+          const first = t.series.items.find((it) => it.kind === "skill");
+          return first?.kind === "skill" ? first.skillId : "";
+        }),
     );
-    expect([...caught].sort()).toEqual([...CATCH_IN_SKILL_SKILLS].sort());
+    expect([...new Set(caught)].sort()).toEqual([...CATCH_IN_SKILL_SKILLS].sort());
+    expect(caught.filter((id) => id === ROUNDOFF_SKILL_ID).length).toBeGreaterThan(
+      caught.filter((id) => id === FRONT_SALTO_ID).length,
+    );
     // 3点台までは候補に入らない
     [18, 20, 43, 45].forEach((seed) =>
       expect(
-        autoTumblingTemplates("stick", { random: seeded(seed), targetScore: 3.5 }).filter(
+        autoTumblingTemplates("ring", { random: seeded(seed), targetScore: 3.5 }).filter(
           (t) => t.spec.pattern.catchInSkill,
         ),
       ).toHaveLength(0),

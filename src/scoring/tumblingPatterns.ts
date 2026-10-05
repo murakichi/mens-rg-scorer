@@ -26,8 +26,11 @@ export interface AutoTumblingPattern {
    */
   throwInSkill?: boolean;
   /**
-   * 受けを**最後の宙返りの最中**に実施するか（`throwCatch` と併用）。
-   * 点数の扱いは技の最中の投げと同じで、その技でユニットが閉じる（キャッチアイテムを置かない）。
+   * 受けを**連鎖の1本目の技の最中**に実施するか（投げを先頭に置き、キャッチアイテムは置かない）。
+   * 点数の扱いは技の最中の投げと同じ。受けたら手具は手元に戻るので、そこから先は
+   * ただのタンブリングの連鎖として続く — なので**この形は専用の形を持たず**、
+   * ふつうのタンブリングの候補から `autoTumblings.ts` が派生させる
+   * （1本目がロンダートか前宙のものだけ。`CATCH_IN_SKILL_SKILLS`）。
    */
   catchInSkill?: boolean;
   /** 最後に前転でつなぐか（投げ受けの着地） */
@@ -43,15 +46,6 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
   { id: "throwRoll", saltos: { min: 1, max: 1 }, connect: false, throwCatch: true, rollFinish: true },
   // 投げタン：投げ→前方系→側宙（転宙）→キャッチ
   { id: "throwSalto", saltos: { min: 2, max: 2 }, connect: false, throwCatch: true, rollFinish: false },
-  // 投げタン：投げ→前方系1本の**最中に受け**（受けた技でシリーズが終わる）
-  {
-    id: "throwCatchInSkill",
-    saltos: { min: 1, max: 1 },
-    connect: false,
-    throwCatch: true,
-    catchInSkill: true,
-    rollFinish: false,
-  },
   // 投げタン：つなぎ技を挟んで、**つなぎの後の宙返り**の最中に投げて前転→キャッチ。
   // 投げるのは大抵ダイビング前宙か前宙（`THROW_AFTER_CONNECT_SALTOS`）
   {
