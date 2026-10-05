@@ -109,7 +109,7 @@ const outFile = arg("--out", "weight-audit.json");
 
 const measure = (ablate) =>
   new Promise((resolve, reject) => {
-    const p = spawn(process.execPath, [process.argv[1], "--worker", "--runs", String(runs)], {
+    const p = spawn(process.execPath, [process.argv[1], "--worker", "--runs", String(runs), "--conds", arg("--conds", "base")], {
       env: { ...process.env, ...(ablate ? { ABLATE: ablate } : {}) },
       stdio: ["ignore", "pipe", "inherit"],
     });
