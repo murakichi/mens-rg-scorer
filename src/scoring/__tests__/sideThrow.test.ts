@@ -225,6 +225,26 @@ describe("1回の投げ・受けは組み合わせ全体で1種類", () => {
     expect(split.throwKindCount).toBe(2);
   });
 
+  it("右手・左手・二つ投げは種類に影響しない（投げ方・受け方とも）", () => {
+    const left: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" }],
+    };
+    const two: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", reqTypes: ["twothrow"] }, { kind: "catch" }],
+    };
+    const r = computeScore([ser([]), left, two], "stick");
+    expect(r.throwKindCount).toBe(1);
+    expect(r.catchKindCount).toBe(1);
+    // チェックを付けた左手投げは、同じチェックの通常の投げと同じ種類
+    const leftSide: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", reqTypes: ["lefthand"], throwTypes: [SIDE_THROW_TAG] }, { kind: "catch" }],
+    };
+    expect(computeScore([ser([SIDE_THROW_TAG]), leftSide], "stick").throwKindCount).toBe(1);
+  });
+
   it("受け方も複数チェックして1種類", () => {
     const both = computeScore([catchSer(["noview", "nonhand"])], "clubs");
     expect(both.catchKindCount).toBe(1);

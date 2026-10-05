@@ -301,10 +301,11 @@ export interface ComputeOptions {
 /**
  * 1回の投げ・受けの種類。チェックした組み合わせ全体で1種類とし、被りは組み合わせが同じかで見る
  * （横投げ＋手具を使った投げ と 横投げだけ は別の投げ方）。「その他」は別カウントなので含めない。
+ * 右手・左手・二つ投げ（必須投げ・`reqTypes`）は種類に影響しない。
  * チェックが無ければ `plain`、「その他」だけなら種類なし。
  */
-const kindKey = (types: string[], extra: string[] = [], plain = "normal"): string | undefined => {
-  const parts = [...new Set([...types.filter((t) => t !== "other"), ...extra])].sort();
+const kindKey = (types: string[], plain = "normal"): string | undefined => {
+  const parts = [...new Set(types.filter((t) => t !== "other"))].sort();
   if (parts.length > 0) return parts.join("+");
   return types.length === 0 ? plain : undefined;
 };
@@ -716,18 +717,16 @@ export function computeScore(
       if (itemOver[i][j]) return; // 上限超過の投げ受けは種類にも数えない
       if (item.kind === "throw") {
         const types = item.throwTypes || [];
-        const reqs = item.reqTypes || [];
         if (types.includes("other")) throwOtherCount += 1;
         if (isDup) return;
         // 1回の投げは1種類（チェックの組み合わせ全体）として数える
-        const tk = kindKey(types, reqs.includes("lefthand") ? ["lefthand"] : []);
+        const tk = kindKey(types);
         if (tk) throwKinds.add(tk);
-        if (reqs.includes("lefthand")) catchKinds.add("lefthand"); // 左手投げは左手キャッチも同時カウント
       } else if (item.kind === "skill" && item.isThrow) {
         const types = item.throwTypes || [];
         if (isDup) return;
         // 1回の投げは1種類（チェックの組み合わせ全体）。チェックが無ければ投げタン
-        const tk = kindKey(types, [], "tumthrow");
+        const tk = kindKey(types, "tumthrow");
         if (tk) throwKinds.add(tk);
       } else if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
         const types = item.catchTypes || [];
