@@ -202,3 +202,28 @@ describe("横投げ", () => {
     expect(run("clubs").nonHand).toBe(0);
   });
 });
+
+describe("1回の投げ・受けで数える種類は1つ", () => {
+  const catchSer = (catchTypes: string[]): Series => ({
+    executionDeduction: 0,
+    items: [{ kind: "throw" }, { kind: "catch", catchTypes }],
+  });
+
+  it("投げ方を複数チェックしても種類は1つ（技術加点はチェックの数だけ）", () => {
+    const both = computeScore([ser(["useapp", SIDE_THROW_TAG])], "clubs");
+    const one = computeScore([ser(["useapp"])], "clubs");
+    expect(both.throwKindCount).toBe(1);
+    expect(one.throwKindCount).toBe(1);
+    expect(both.techniqueBonus).toBe(one.techniqueBonus);
+    // 別の投げに分ければ2種類
+    const split = computeScore([ser(["useapp"]), ser([SIDE_THROW_TAG])], "clubs");
+    expect(split.throwKindCount).toBe(2);
+  });
+
+  it("受け方も複数チェックして1種類", () => {
+    const both = computeScore([catchSer(["noview", "nonhand"])], "clubs");
+    expect(both.catchKindCount).toBe(1);
+    const split = computeScore([catchSer(["noview"]), catchSer(["nonhand"])], "clubs");
+    expect(split.catchKindCount).toBe(2);
+  });
+});

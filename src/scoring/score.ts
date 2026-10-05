@@ -298,6 +298,12 @@ export interface ComputeOptions {
   ropeJumps?: RopeJumpItem[][];
 }
 
+/** 投げ・受けの種類の優先度（1回の投げ・受けで数える種類は先に当たる1つだけ） */
+const THROW_KIND_PRIORITY = ["noview", "nonhand", "useapp", SIDE_THROW_TAG];
+const CATCH_KIND_PRIORITY = ["noview", "nonhand", "useapp"];
+const pickKind = (types: string[], priority: string[]): string | undefined =>
+  priority.find((k) => types.includes(k));
+
 export function computeScore(
   rawSeries: Series[],
   apparatus: ApparatusKey,
@@ -708,31 +714,22 @@ export function computeScore(
         const reqs = item.reqTypes || [];
         if (types.includes("other")) throwOtherCount += 1;
         if (isDup) return;
-        if (types.length === 0) throwKinds.add("normal");
-        if (types.includes("noview")) throwKinds.add("noview");
-        if (types.includes("nonhand")) throwKinds.add("nonhand");
-        if (types.includes("useapp")) throwKinds.add("useapp");
-        if (types.includes(SIDE_THROW_TAG)) throwKinds.add("side");
-        if (reqs.includes("lefthand")) {
-          throwKinds.add("lefthand");
-          catchKinds.add("lefthand"); // 左手投げは左手キャッチも同時カウント
-        }
+        // 1回の投げは1種類だけ数える（複数チェックしても優先度の高い1つ。左手投げは別格）
+        const tk = reqs.includes("lefthand") ? "lefthand" : pickKind(types, THROW_KIND_PRIORITY) ?? (types.length === 0 ? "normal" : undefined);
+        if (tk) throwKinds.add(tk);
+        if (reqs.includes("lefthand")) catchKinds.add("lefthand"); // 左手投げは左手キャッチも同時カウント
       } else if (item.kind === "skill" && item.isThrow) {
         const types = item.throwTypes || [];
         if (isDup) return;
-        throwKinds.add("tumthrow");
-        if (types.includes("noview")) throwKinds.add("noview");
-        if (types.includes("nonhand")) throwKinds.add("nonhand");
-        if (types.includes("useapp")) throwKinds.add("useapp");
-        if (types.includes(SIDE_THROW_TAG)) throwKinds.add("side");
+        // 1回の投げは1種類だけ数える（複数チェックしても優先度の高い1つ。無ければ投げタン）
+        throwKinds.add(pickKind(types, THROW_KIND_PRIORITY) ?? "tumthrow");
       } else if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
         const types = item.catchTypes || [];
         if (types.includes("other")) catchOtherCount += 1;
         if (isDup) return;
-        if (types.length === 0) catchKinds.add("normal");
-        if (types.includes("noview")) catchKinds.add("noview");
-        if (types.includes("nonhand")) catchKinds.add("nonhand");
-        if (types.includes("useapp")) catchKinds.add("useapp");
+        // 1回の受けは1種類だけ数える（複数チェックしても優先度の高い1つ）
+        const ck = pickKind(types, CATCH_KIND_PRIORITY) ?? (types.length === 0 ? "normal" : undefined);
+        if (ck) catchKinds.add(ck);
       }
     });
   });
