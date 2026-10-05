@@ -200,12 +200,12 @@ export const CATCH_IN_SKILL_SKILLS = [ROUNDOFF_SKILL_ID, FRONT_SALTO_ID];
  * 押さえつけて受ける投げは横投げのことが多いので、横投げを付けるかは
  * 既存の `SIDE_THROW_PRESS_CHANCE` の抽選（`draws.sideThrow`）をそのまま使う。
  *
- * 実施例が1つなので**この0.5はアプリ側の判断**（規則にも実測にも根拠は無い）。
+ * 0.2 はオーナー指定（候補の5本に1本。残りはタグなしでふつうに受ける）。
  *
  * **技の最中の受けに付ける受け方はこれだけ**（オーナー指定）— 視野外のキャッチ・
  * 手以外のキャッチは現実的でないので自動生成では付けない（入力画面では付けられる）。
  */
-export const CATCH_IN_SKILL_PRESS_CHANCE = 0.5;
+export const CATCH_IN_SKILL_PRESS_CHANCE = 0.2;
 
 /**
  * 宙返りの途中で投げる投げタン（`throwInSkill`）で、**ロンダートから入る**
