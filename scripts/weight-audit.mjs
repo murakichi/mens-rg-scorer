@@ -1,5 +1,6 @@
 // 生成の重みの棚卸し：1つずつ中立の値に戻して、同じ乱数の種で出力がどれだけ変わるかを測る。
-//   node scripts/weight-audit.mjs [--runs 5] [--jobs 4] [--out FILE] [--only NAME,NAME]
+//   node scripts/weight-audit.mjs [--runs 5] [--jobs 4] [--out FILE] [--only NAME,NAME] [--conds base|extra]
+//   base ＝ 手具4つ × 上限2.5/4.5/なし/下限4.2。extra ＝ ジュニア・十年後(F)・必須要素が厳しい帯・高い下限。
 // 結果は JSON（既定: weight-audit.json）。読み方は docs/weight-audit.md。
 //
 // 中立にする値（`neutral`）：
@@ -43,9 +44,20 @@ if (argv.includes("--worker")) {
     const gen = await server.ssrLoadModule("/src/scoring/generate.ts");
     const probe = await server.ssrLoadModule("/src/scoring/probe.ts");
     const conds = [];
+    const extra = arg("--conds", "base") === "extra";
     for (const apparatus of ["stick", "clubs", "ring", "rope"]) {
-      conds.push({ apparatus, maxScore: 2.5 }, { apparatus, maxScore: 4.5 }, { apparatus, maxScore: null });
-      conds.push({ apparatus, minScore: 4.2, maxScore: null });
+      if (extra) {
+        conds.push(
+          { apparatus, junior: true, maxScore: 2.5 },
+          { apparatus, junior: true, maxScore: 4.5 },
+          { apparatus, future: "F", maxScore: null },
+          { apparatus, minScore: 3.0, maxScore: 3.2 },
+          { apparatus, minScore: 4.6, maxScore: null },
+        );
+      } else {
+        conds.push({ apparatus, maxScore: 2.5 }, { apparatus, maxScore: 4.5 }, { apparatus, maxScore: null });
+        conds.push({ apparatus, minScore: 4.2, maxScore: null });
+      }
     }
     const out = [];
     let k = 0;
@@ -107,7 +119,7 @@ const measure = (ablate) =>
   });
 
 const t0 = Date.now();
-console.error(`対象 ${list.length} 個 / 1個あたり ${16 * runs} 構成 / 並列 ${jobs}`);
+console.error(`対象 ${list.length} 個 / 1個あたり ${(arg("--conds", "base") === "extra" ? 20 : 16) * runs} 構成 / 並列 ${jobs}`);
 const base = await measure(null);
 const base2 = await measure(null);
 const deterministic = base.every((b, i) => b.fp === base2[i].fp);
