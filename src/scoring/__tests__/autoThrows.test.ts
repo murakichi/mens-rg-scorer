@@ -49,7 +49,7 @@ import { DEFAULT_MAX_AUTO_THROWS, generateRoutine } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
 import type { ApparatusKey, Item, Series } from "../types";
-import { TECHNIQUE_BONUS, TWO_THROW_TAG } from "../constants";
+import { DIFF_VALUE, TECHNIQUE_BONUS, TWO_THROW_TAG } from "../constants";
 import { UNSEEN_SHAPES, unseenPenalty, unseenShapeChance } from "../unseenShapes";
 
 const APPARATUS_KEYS: ApparatusKey[] = ["stick", "clubs", "ring", "rope"];
@@ -923,5 +923,90 @@ describe("実施例の無い投げ受け（要求値が上がるほど出やす�
     const high = share(5.5);
     expect(low).toBeLessThan(0.02);
     expect(high).toBeGreaterThan(low * 3);
+  });
+});
+
+describe("2つを別々に投げる形（投げ→徒手→投げ→キャッチ→徒手→キャッチ）", () => {
+  const overlapSpecs = (apparatus: ApparatusKey, seeds: number) => {
+    const out: ReturnType<typeof autoThrowSpecs> = [];
+    for (let seed = 1; seed <= seeds; seed++)
+      autoThrowSpecs(apparatus, { random: seeded(seed) }).forEach((s) => s.pattern.overlap && out.push(s));
+    return out;
+  };
+  const motionCount = (it: Item) => (it.kind === "motion" ? it.count ?? 0 : 0);
+
+  it("クラブ・リングだけに出る。スティック・ロープには出ない", () => {
+    expect(overlapSpecs("clubs", 30).length).toBeGreaterThan(0);
+    expect(overlapSpecs("ring", 30).length).toBeGreaterThan(0);
+    expect(overlapSpecs("stick", 30)).toHaveLength(0);
+    expect(overlapSpecs("rope", 30)).toHaveLength(0);
+  });
+
+  it("並びは 投げ→徒手→投げ→キャッチ→徒手→キャッチ で、前半か後半のどちらか一方だけが高難度（3動作以上）", () => {
+    (["clubs", "ring"] as const).forEach((apparatus) => {
+      const specs = overlapSpecs(apparatus, 60);
+      expect(specs.some((s) => s.pattern.overlap === "firstHigh")).toBe(true);
+      expect(specs.some((s) => s.pattern.overlap === "secondHigh")).toBe(true);
+      specs.forEach((spec) => {
+        const series = buildAutoThrowSeries(spec);
+        expect(series.items.map((i) => i.kind)).toEqual(["throw", "motion", "throw", "catch", "motion", "catch"]);
+        expect(checkApparatusFlow(series, apparatus)).toEqual([]);
+        const [first, second] = [motionCount(series.items[1]), motionCount(series.items[4])];
+        expect(first >= 3 !== second >= 3).toBe(true);
+        expect(spec.pattern.overlap === "firstHigh" ? first : second).toBe(spec.cheneCount);
+        // 二つ投げ・手以外の投げは使わない
+        series.items.forEach((i) => {
+          if (i.kind === "throw") {
+            expect(i.reqTypes ?? []).not.toContain("twothrow");
+            expect(i.throwTypes ?? []).not.toContain("nonhand");
+          }
+        });
+      });
+    });
+  });
+
+  it("後半を低難度にする型：背面投げ＋背面キャッチ／横投げ＋転がり＋手具を使ったキャッチ（リングは背面＋手具を使ったキャッチも）", () => {
+    const seen = new Set<string>();
+    (["clubs", "ring"] as const).forEach((apparatus) => {
+      overlapSpecs(apparatus, 120)
+        .filter((s) => s.pattern.overlap === "firstHigh")
+        .forEach((spec) => {
+          const items = buildAutoThrowSeries(spec).items;
+          const throwB = items[2] as Extract<Item, { kind: "throw" }>;
+          const last = items[5] as Extract<Item, { kind: "catch" }>;
+          const lowMotion = items[4] as Extract<Item, { kind: "motion" }>;
+          expect(["chene", "fwd_roll", "roll"]).toContain(lowMotion.motionId);
+          expect(lowMotion.count).toBe(1);
+          const catchTypes = last.catchTypes ?? [];
+          if (spec.overlapLow === "noViewSet") {
+            expect(throwB.throwTypes).toEqual(["noview"]);
+            // 背面投げ＋背面キャッチのセット（クラブは背面のみ、リングは背面＋手具を使ったキャッチも）
+            expect(catchTypes.every((t) => t === "noview" || (apparatus === "ring" && t === "useapp"))).toBe(true);
+            seen.add(`${apparatus}:noview${catchTypes.includes("useapp") ? "+useapp" : ""}`);
+          }
+          if (spec.overlapLow === "sideRoll") {
+            expect(throwB.throwTypes).toEqual(["side"]);
+            expect(lowMotion.motionId).toBe("roll");
+            expect(catchTypes).toEqual(["useapp"]);
+            seen.add(`${apparatus}:sideRoll`);
+          }
+          if (lowMotion.motionId === "fwd_roll") seen.add(`${apparatus}:fwdRoll`);
+        });
+    });
+    expect(seen).toContain("clubs:noview");
+    expect(seen).toContain("ring:noview");
+    expect(seen).toContain("ring:noview+useapp");
+    expect(seen).not.toContain("clubs:noview+useapp");
+    expect(seen).toContain("clubs:sideRoll");
+    expect(seen).toContain("ring:sideRoll");
+    expect(seen).toContain("clubs:fwdRoll");
+  });
+
+  it("採点では2つの徒手ユニットになり、高難度のほうの徒手が難度を決める", () => {
+    const spec = overlapSpecs("clubs", 60).find((s) => s.pattern.overlap === "firstHigh")!;
+    const units = analyzeSeries(buildAutoThrowSeries(spec)).units;
+    expect(units).toHaveLength(2);
+    expect(units[0].throwCount).toBe(2);
+    expect(DIFF_VALUE[units[0].finalDiff]).toBeGreaterThan(DIFF_VALUE[units[1].finalDiff]);
   });
 });
