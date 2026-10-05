@@ -26,7 +26,7 @@
 ## 確認
 
 - 実測は `docs/generator-notes.md`（120構成すべて1本、両方 0、D 4.088→4.097）。
-- `npm test` 772本（23ファイル）green、`npm run build` green。
+- `npm test`（main をマージ後）805本 green・4本 fail。落ちた4本は `origin/main` だけでも同じに落ちる（私の変更と無関係）ので issue #136 に起票。`npm run build` green。
 
 ## 結果
 
