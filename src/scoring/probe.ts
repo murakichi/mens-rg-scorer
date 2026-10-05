@@ -33,6 +33,9 @@ export function parseQuery(query: string): string[] {
 export function itemText(item: Item): string {
   const rec = item as unknown as Record<string, unknown>;
   const mods: string[] = [];
+  // `itemLabel` は技の最中の投げ・受けを「技名(投)」「技名(受)」で出すので、
+  // ここで同じ指定を二重に付けないように落としてから付け直す（検索語はこちらの表記に揃える）
+  const label = itemLabel(item).replace(/\((?:投|受)\)$/, "");
   if (rec.isThrow) mods.push("(投げ)");
   if (rec.isCatch) mods.push("(受)");
   if (rec.hasApparatus) mods.push("(操作)");
@@ -41,7 +44,7 @@ export function itemText(item: Item): string {
     .filter(Boolean);
   if (rec.catchTwo) tags.push("catchTwo");
   if (tags.length > 0) mods.push(`[${tags.join(",")}]`);
-  return `${itemLabel(item)}${mods.join("")}`;
+  return `${label}${mods.join("")}`;
 }
 
 /**

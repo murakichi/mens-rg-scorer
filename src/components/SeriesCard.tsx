@@ -354,10 +354,12 @@ function ItemEditor({
             手具操作
           </label>
         )}
-        <label className="check">
+        {/* 投げと受けは同じ技では実施できない。入っているほうは外せるように残す */}
+        <label className={!item.isThrow && item.isCatch ? "check is-disabled" : "check"}>
           <input
             type="checkbox"
             checked={item.isThrow || false}
+            disabled={!item.isThrow && !!item.isCatch}
             onChange={(e) =>
               onUpdate(
                 e.target.checked
@@ -368,6 +370,46 @@ function ItemEditor({
           />
           この技の最中に投げ
         </label>
+        <label className={!item.isCatch && item.isThrow ? "check is-disabled" : "check"}>
+          <input
+            type="checkbox"
+            checked={item.isCatch || false}
+            disabled={!item.isCatch && !!item.isThrow}
+            onChange={(e) =>
+              onUpdate(
+                e.target.checked
+                  ? { isCatch: true }
+                  : { isCatch: false, catchTypes: [], catchTwo: false },
+              )
+            }
+          />
+          この技の最中に受け
+        </label>
+        {/* 受け方の種類はキャッチアイテムと同じ（点数の扱いも同じ） */}
+        {item.isCatch &&
+          [
+            ...CATCH_OPTIONS_COMMON,
+            ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : []),
+          ].map((opt) => (
+            <label key={opt.id} className="check">
+              <input
+                type="checkbox"
+                checked={(item.catchTypes || []).includes(opt.id)}
+                onChange={(e) => onUpdate({ catchTypes: toggle(item.catchTypes, opt.id, e.target.checked) })}
+              />
+              {opt.name}
+            </label>
+          ))}
+        {item.isCatch && !common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) && (
+          <label className="check-req">
+            <input
+              type="checkbox"
+              checked={item.catchTwo || false}
+              onChange={(e) => onUpdate({ catchTwo: e.target.checked })}
+            />
+            2つ同時キャッチ
+          </label>
+        )}
         {item.isThrow &&
           [
             ...SKILL_THROW_OPTIONS_COMMON,

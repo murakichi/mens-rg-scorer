@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { CATCH_USE_APPARATUS } from "../autoThrows";
 import {
   AUTO_TUMBLING_PATTERNS,
   BASIC_LEVEL_MAX_DIFF,
@@ -13,6 +14,12 @@ import {
   DIFFICULTY_RISE_AFTER,
   isBackToForwardThrow,
   throwInSkillTypes,
+  throwInSkillChance,
+  catchInSkillChance,
+  CATCH_IN_SKILL_CHANCE,
+  CATCH_IN_SKILL_SKILLS,
+  THROW_IN_SKILL_CHANCE,
+  THROW_IN_SKILL_MIN_SCORE,
   BACK_TO_FORWARD_THROW_CHANCE,
   withJuniorBoost,
   JUNIOR_UPGRADE_BOOST_MAX_SCORE,
@@ -83,6 +90,7 @@ import {
   saltoOptionsAfterConnect,
   saltoWeights,
   tumblingFlowErrors,
+  isForwardSalto,
   usedSkillIds,
   withSaltoCount,
   type AutoTumblingSpec,
@@ -1002,6 +1010,109 @@ describe("つなぎ技", () => {
     expect(computeScore([throwRoll], "stick").noApparatusDeduction).toBe(0);
   });
 
+  it("宙返りの途中で投げる投げタンは上級者だけ（通常の投げタンより少ない）", () => {
+    // 宙返りの最中に手具を離すので、投げてから跳ぶ形よりずっと難しい
+    // 実施するのは**D要求値4以上**（オーナー指定）。3点台までは実施しない
+    expect(THROW_IN_SKILL_MIN_SCORE).toBe(4.0);
+    expect(throwInSkillChance(1.5)).toBe(0);
+    expect(throwInSkillChance(2.9)).toBe(0);
+    expect(throwInSkillChance(3.5)).toBe(0);
+    expect(throwInSkillChance(THROW_IN_SKILL_MIN_SCORE)).toBe(THROW_IN_SKILL_CHANCE);
+    expect(throwInSkillChance(4.5)).toBe(THROW_IN_SKILL_CHANCE);
+    // 上限の指定が無ければ最上位とみなす
+    expect(throwInSkillChance(null)).toBe(THROW_IN_SKILL_CHANCE);
+    // 通常の投げタン（投げてから跳ぶ形）より少ない
+    expect(THROW_IN_SKILL_CHANCE).toBeLessThan(1);
+
+    // 候補は**1回の抽選**で混ぜるかどうかが決まる（形ごとに引くと生き残りを貪欲法が拾う）。
+    // 混ざった生成では全部、混ざらなかった生成では1本も出ない
+    // この疑似乱数は最初の出力が種にほぼ比例するので、当たる種（偶数の小さいもの）と
+    // 外れる種（奇数）で両方の枝を踏む
+    const inSkillCount = (seed: number, targetScore?: number) =>
+      autoTumblingTemplates("stick", { random: seeded(seed), targetScore }).filter(
+        (t) => t.spec.pattern.throwInSkill,
+      ).length;
+    expect(inSkillCount(0, 4.5)).toBeGreaterThan(0);
+    expect(inSkillCount(2, 4.5)).toBeGreaterThan(0);
+    expect(inSkillCount(19, 4.5)).toBe(0);
+    expect(inSkillCount(23, 4.5)).toBe(0);
+
+    // 2点台を狙う構成では、当たる種でも候補に入らない（実測：上限2.5以下で20構成すべて0本）
+    [0, 2, 4, 6, 8].forEach((seed) => expect(inSkillCount(seed, 2.5)).toBe(0));
+  }, 60_000);
+
+  it("技の最中に受ける投げタンは、投げる形と同じ水準でそれより少ない", () => {
+    // 実施する水準は技の最中の投げと同じ（D要求値4以上）
+    expect(catchInSkillChance(3.5)).toBe(0);
+    expect(catchInSkillChance(THROW_IN_SKILL_MIN_SCORE)).toBe(CATCH_IN_SKILL_CHANCE);
+    expect(catchInSkillChance(null)).toBe(CATCH_IN_SKILL_CHANCE);
+    // 頻度は投げる形より低い
+    expect(CATCH_IN_SKILL_CHANCE).toBeLessThan(THROW_IN_SKILL_CHANCE);
+
+    // 組み立てた形：投げ→**連鎖の1本目の技の最中に受け**→そのままタンブリングが続く
+    // （実施例・リング：投げ→ロンダート（手具を使ったキャッチ）→後方宙返り1回半ひねり→
+    // ロンダート→ダイビング前宙）
+    const built = [18, 20, 43, 45]
+      .flatMap((seed) => autoTumblingTemplates("ring", { random: seeded(seed), targetScore: 4.5 }))
+      .filter((t) => t.spec.pattern.catchInSkill);
+    expect(built.length).toBeGreaterThan(0);
+    built.forEach((t) => {
+      const items = t.series.items;
+      expect(items[0].kind).toBe("throw");
+      // 受けるのは**1本目の技**（手具が空中にあるのはそこまで）
+      const skills = items.filter((it) => it.kind === "skill");
+      const first = skills[0];
+      expect(first.kind === "skill" ? first.isCatch : false).toBe(true);
+      expect(skills.slice(1).every((it) => it.kind === "skill" && !it.isCatch)).toBe(true);
+      // **受ける技はロンダートか前宙だけ**（自動生成だけの制限。入力画面はどの技でも付けられる）
+      expect(CATCH_IN_SKILL_SKILLS).toContain(first.kind === "skill" ? first.skillId : "");
+      // キャッチアイテムは置かない（受けた技の時点で手元に戻っている）
+      expect(items.some((it) => it.kind === "catch")).toBe(false);
+      // 受けるまでは手具が空中なので、そこまでの技に手具操作は付かない
+      expect(first.kind === "skill" ? first.hasApparatus : true).toBeFalsy();
+      // 手具の流れ・連鎖のルールのどちらも通る（連鎖は派生元のタンブリング候補のまま）
+      expect(checkApparatusFlow(t.series, "ring")).toEqual([]);
+      expect(tumblingFlowErrors(t.series)).toEqual([]);
+      // 受けた直後に転回技が続けば1本の投げタン（`catchSkillContinues`）
+      const units = analyzeSeries(t.series).units;
+      if (skills.length > 1) {
+        expect(units).toHaveLength(1);
+        expect(units[0].isThrowTumbling).toBe(true);
+      }
+      // 押さえつけて受けるのは床に手をつくロンダートの最中だけ
+      const tags = first.kind === "skill" ? first.catchTypes || [] : [];
+      if (tags.length > 0) {
+        expect(tags).toEqual([CATCH_USE_APPARATUS]);
+        expect(first.kind === "skill" ? first.skillId : "").toBe(ROUNDOFF_SKILL_ID);
+      }
+    });
+    // 受けたあとタンブリングが続く形が出る（実施例の形）
+    expect(built.some((t) => t.series.items.filter((it) => it.kind === "skill").length > 2)).toBe(true);
+    // 受ける技にロンダートと前宙の両方が出る。**ほとんどはロンダート**で、前宙は少ない
+    // （前宙で受ける＝前方系から入るので、`FORWARD_ENTRY_WEIGHT` が高い要求値では下げる。
+    // 種8本で前宙が出たのは1本だけ）
+    const caught = [18, 20, 22, 24, 26, 43, 45, 47].flatMap((seed) =>
+      autoTumblingTemplates("ring", { random: seeded(seed), targetScore: 4.5 })
+        .filter((t) => t.spec.pattern.catchInSkill)
+        .map((t) => {
+          const first = t.series.items.find((it) => it.kind === "skill");
+          return first?.kind === "skill" ? first.skillId : "";
+        }),
+    );
+    expect([...new Set(caught)].sort()).toEqual([...CATCH_IN_SKILL_SKILLS].sort());
+    expect(caught.filter((id) => id === ROUNDOFF_SKILL_ID).length).toBeGreaterThan(
+      caught.filter((id) => id === FRONT_SALTO_ID).length,
+    );
+    // 3点台までは候補に入らない
+    [18, 20, 43, 45].forEach((seed) =>
+      expect(
+        autoTumblingTemplates("ring", { random: seeded(seed), targetScore: 3.5 }).filter(
+          (t) => t.spec.pattern.catchInSkill,
+        ),
+      ).toHaveLength(0),
+    );
+  }, 60_000);
+
   it("宙返りの途中で投げる投げタンはロンダートから入るのを優先する", () => {
     expect(THROW_IN_SKILL_ROUNDOFF_WEIGHT).toBeGreaterThan(1);
     let roundoff = 0;
@@ -1358,7 +1469,11 @@ describe("投げタン", () => {
   });
 
   it("連続の最後に投げる形は普通のタンブリングと同じ入り方ができる", () => {
-    const specs = autoTumblingSpecs({ random: seeded(7) }).filter((sp) => sp.pattern.throwInSkill);
+    // 候補に混ぜるかどうかは生成ごとに1回引く（`throwInSkillChance`）。この疑似乱数は
+    // **最初の出力が種にほぼ比例する**ので、抽選が当たる偶数の種を使う
+    const specs = [0, 2, 4, 6, 8].flatMap((seed) =>
+      autoTumblingSpecs({ random: seeded(seed) }).filter((sp) => sp.pattern.throwInSkill),
+    );
     expect(specs.length).toBeGreaterThan(0);
     // 後方系から入る候補（ロンダート→後方系→…→投げ）も作れる
     expect(

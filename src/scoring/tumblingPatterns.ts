@@ -25,6 +25,14 @@ export interface AutoTumblingPattern {
    * 前に何本入れても自由で、三宙と投げタンを1シリーズで両方満たせる。
    */
   throwInSkill?: boolean;
+  /**
+   * 受けを**連鎖の1本目の技の最中**に実施するか（投げを先頭に置き、キャッチアイテムは置かない）。
+   * 点数の扱いは技の最中の投げと同じ。受けたら手具は手元に戻るので、そこから先は
+   * ただのタンブリングの連鎖として続く — なので**この形は専用の形を持たず**、
+   * ふつうのタンブリングの候補から `autoTumblings.ts` が派生させる
+   * （1本目がロンダートか前宙のものだけ。`CATCH_IN_SKILL_SKILLS`）。
+   */
+  catchInSkill?: boolean;
   /** 最後に前転でつなぐか（投げ受けの着地） */
   rollFinish: boolean;
 }
@@ -63,7 +71,12 @@ export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
 export const canTwoThrowTumbling = (
   apparatus: ApparatusKey | undefined,
   pattern: AutoTumblingPattern,
-): boolean => !!apparatus && hasTwoThrow(apparatus) && !!pattern.throwCatch && !pattern.throwInSkill;
+): boolean =>
+  !!apparatus &&
+  hasTwoThrow(apparatus) &&
+  !!pattern.throwCatch &&
+  !pattern.throwInSkill &&
+  !pattern.catchInSkill;
 
 /**
  * 連続投げの2回目に使える投げ方。手以外の投げは2回目には実施できない。

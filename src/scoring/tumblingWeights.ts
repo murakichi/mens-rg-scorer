@@ -15,6 +15,7 @@ import {
   JUNIOR_SKILL_DIFFICULTY,
   CATEGORY,
   DIFF_VALUE,
+  ROUNDOFF_SKILL_ID,
   isBackwardSalto,
   maxDiff,
   skillDef,
@@ -49,9 +50,17 @@ export const PAIR_AFTER_THROW_FIRST_CHANCE = 0.5;
 
 export const PAIR_AFTER_THROW_IN_SKILL_CHANCE = 0.2;
 
-/** その形で投げタンのキャッチのあとに連続投げを続ける確率 */
+/**
+ * その形で投げタンのキャッチのあとに連続投げを続ける確率。
+ * 技の最中に受ける形（`catchInSkill`）は、受けたあとタンブリングの連鎖がそのまま続いて
+ * シリーズが終わるので、さらに投げ受けを足さない。
+ */
 export const pairAfterChance = (pattern: AutoTumblingPattern): number =>
-  pattern.throwInSkill ? PAIR_AFTER_THROW_IN_SKILL_CHANCE : PAIR_AFTER_THROW_FIRST_CHANCE;
+  pattern.catchInSkill
+    ? 0
+    : pattern.throwInSkill
+      ? PAIR_AFTER_THROW_IN_SKILL_CHANCE
+      : PAIR_AFTER_THROW_FIRST_CHANCE;
 
 /**
  * 投げタンの投げを**二つ投げ**にする確率（クラブ・リングだけ）。
@@ -137,6 +146,66 @@ export function rollAfterChance(id: string, prevId?: string): number {
   if (prevId && endsFacingBackward(prevId)) return ROLL_AFTER_SWITCH_CHANCE;
   return id === FRONT_SALTO_ID ? ROLL_AFTER_FRONT_CHANCE : ROLL_AFTER_FORWARD_CHANCE;
 }
+
+/**
+ * **タンブリング中に投げる投げタン（`throwInSkill`）は上級者だけが実施する**。
+ *
+ * 宙返りの最中に手具を離すので、投げてから跳ぶ形（投げ→前方系→前転→キャッチ）より
+ * ずっと難しい。候補の数はほぼ半々（投げタン18本中8本）なのに、**生成結果では
+ * 上級者側の多数派になっていた**（実測：上限3.0 で 20構成中11本、3.5以上で 12〜14本）。
+ * `chainThrowInSkill` が三宙と投げタンを1本のシリーズで両立してシリーズを1本節約するので、
+ * 貪欲法が必ず拾ってしまう — 「頻度は2か所で決まる」のいつもの形。
+ *
+ * なので**候補に混ぜるかどうかを1回の抽選で決める**（形ごとに引くと生き残りを貪欲法が拾う。
+ * `verticalThreeChance` と同じ考え方）。要求する上限（`targetScore` ＝ `maxScore`）が
+ * `THROW_IN_SKILL_MIN_SCORE`（4.0 ＝ 全日本の上位帯。オーナー指定）未満なら実施しない＝
+ * **上級者のみ**。それ以上でも
+ * `THROW_IN_SKILL_CHANCE` に抑えて、**投げてから跳ぶ形より少なく**する
+ * （上限の指定が無ければ最上位とみなす）。珍しさのつまみも通す。
+ */
+export const THROW_IN_SKILL_MIN_SCORE = 4.0;
+
+export const THROW_IN_SKILL_CHANCE = 0.4;
+
+export const throwInSkillChance = (targetScore?: number | null): number =>
+  targetScore != null && targetScore < THROW_IN_SKILL_MIN_SCORE ? 0 : THROW_IN_SKILL_CHANCE;
+
+/**
+ * **タンブリング中に受ける投げタン（`catchInSkill`）**。実施する水準はタンブリング中の投げと
+ * 同じ（`THROW_IN_SKILL_MIN_SCORE` 以上）で、**頻度はそれより低い**（オーナー指定）。
+ * 抽選の形も同じ — 候補に混ぜるかどうかを生成ごとに1回だけ引く。
+ */
+export const CATCH_IN_SKILL_CHANCE = 0.2;
+
+export const catchInSkillChance = (targetScore?: number | null): number =>
+  targetScore != null && targetScore < THROW_IN_SKILL_MIN_SCORE ? 0 : CATCH_IN_SKILL_CHANCE;
+
+/**
+ * **自動生成で「技の最中に受け」を付ける技**（オーナー指定）。ロンダートと前宙だけ。
+ * 入力画面はどの技にも付けられる（規則が禁じていないので制限しない）——
+ * ここは「実際に実施される形だけを提案する」という生成側の住み分け。
+ *
+ * 受けるのは**連鎖の1本目**（手具が空中にあるのはそこまでなので、受ける前に置けるものは無い）。
+ * 受けたら手具は手元に戻るので、**そこから先はただのタンブリングの連鎖**として続く
+ * （実施例：投げ→ロンダート（手具を使ったキャッチ）→後方宙返り1回半ひねり→ロンダート→
+ * ダイビング前宙）。採点側も受けた直後に転回技が続くなら1本の投げタンとして扱う
+ * （`catchSkillContinues`）。
+ */
+export const CATCH_IN_SKILL_SKILLS = [ROUNDOFF_SKILL_ID, FRONT_SALTO_ID];
+
+/**
+ * 技の最中の受けを**手具を使ったキャッチ（押さえつけ）**にする確率（クラブ・リングだけ）。
+ * 実施例（リング）は床に手をつくロンダートの最中に押さえつけて受ける形なので、
+ * **ロンダートで受けるときだけ**引く（前宙の最中には提案しない）。
+ * 押さえつけて受ける投げは横投げのことが多いので、横投げを付けるかは
+ * 既存の `SIDE_THROW_PRESS_CHANCE` の抽選（`draws.sideThrow`）をそのまま使う。
+ *
+ * 0.2 はオーナー指定（候補の5本に1本。残りはタグなしでふつうに受ける）。
+ *
+ * **技の最中の受けに付ける受け方はこれだけ**（オーナー指定）— 視野外のキャッチ・
+ * 手以外のキャッチは現実的でないので自動生成では付けない（入力画面では付けられる）。
+ */
+export const CATCH_IN_SKILL_PRESS_CHANCE = 0.2;
 
 /**
  * 宙返りの途中で投げる投げタン（`throwInSkill`）で、**ロンダートから入る**

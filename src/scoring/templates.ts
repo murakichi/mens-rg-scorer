@@ -46,7 +46,8 @@ export function commonBlockers(list: Series[]): string[] {
       if (item.kind === "throw" && (item.throwTypes || []).includes("useapp"))
         reasons.add("手具を使った投げ");
       if (item.kind === "skill" && (item.throwTypes || []).includes("useapp")) reasons.add("手具を使った投げ");
-      if (item.kind === "catch") {
+      // キャッチのタグは、キャッチアイテムにも技の最中の受けにも付く
+      if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
         if ((item.catchTypes || []).includes("useapp")) reasons.add("手具を使ったキャッチ");
         if (item.catchTwo) reasons.add("2つ同時キャッチ");
       }
@@ -232,7 +233,11 @@ export const apparatusName = (key: TemplateApparatus): string =>
 export function itemLabel(item: Item): string {
   if (item.kind === "throw") return "投げ";
   if (item.kind === "catch") return "キャッチ";
-  if (item.kind === "skill") return skillDef(item.skillId)?.name ?? "技";
+  if (item.kind === "skill") {
+    const name = skillDef(item.skillId)?.name ?? "技";
+    // 技の最中の投げ・受けはカード表示でも分かるようにする
+    return item.isThrow ? `${name}(投)` : item.isCatch ? `${name}(受)` : name;
+  }
   if (item.kind === "ropeJump") {
     const r = resolveRopeJump(item);
     if (!r) return "ロープ跳び";

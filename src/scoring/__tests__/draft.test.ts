@@ -374,4 +374,30 @@ describe("ロープ跳びリストの保存", () => {
   it("ロープ以外では跳びリストを持たない", () => {
     expect(normalizeIndividualDraft({ apparatus: "stick", series: [], ropeJumps: [{ kind: "ropeJump", jumpId: "3b" }] })!.ropeJumps).toEqual([]);
   });
+
+  it("技の最中の受けは保存データの往復で残る", () => {
+    const d = normalizeIndividualDraft({
+      apparatus: "clubs",
+      series: [
+        {
+          executionDeduction: 0,
+          items: [
+            { kind: "throw" },
+            {
+              kind: "skill",
+              skillId: "b_front",
+              hasApparatus: false,
+              isThrow: false,
+              isCatch: true,
+              catchTypes: ["noview"],
+            },
+          ],
+        },
+      ],
+    })!;
+    const item = d.series[0].items[1];
+    expect(item.kind).toBe("skill");
+    expect(item.kind === "skill" ? item.isCatch : null).toBe(true);
+    expect(item.kind === "skill" ? item.catchTypes : null).toEqual(["noview"]);
+  });
 });

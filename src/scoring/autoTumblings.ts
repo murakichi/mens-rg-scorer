@@ -65,6 +65,10 @@ import {
   backwardEndChance,
   pairAfterChance,
   rollAfterChance,
+  CATCH_IN_SKILL_PRESS_CHANCE,
+  CATCH_IN_SKILL_SKILLS,
+  catchInSkillChance,
+  throwInSkillChance,
 } from "./tumblingWeights";
 import {
   buildTransitions,
@@ -75,7 +79,7 @@ import {
   usableSkills,
 } from "./tumblingTransitions";
 import { newTemplateId, type SeriesTemplate } from "./templates";
-import { CATEGORY, SIDE_THROW_TAG } from "./constants";
+import { CATEGORY, SIDE_THROW_TAG, hasTwoThrow } from "./constants";
 import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
 // 入力画面・生成側から今までどおり `autoTumblings` 1か所で参照できるようにしておく
@@ -174,10 +178,14 @@ const skillItem = (skillId: string, isThrow = false): SkillItem => ({
  *    最低限＝0。技の最中に投げる形でE難度になるときだけ、その技に付けて加点を狙う
  */
 function applyApparatusOps(items: Item[], pattern: AutoTumblingPattern, junior: boolean): void {
-  const skills = items.flatMap((it, i) => (it.kind === "skill" && it.skillId ? [{ it, i }] : []));
-  skills.forEach(({ it }) => {
+  const allSkills = items.flatMap((it, i) => (it.kind === "skill" && it.skillId ? [{ it, i }] : []));
+  allSkills.forEach(({ it }) => {
     if (it.kind === "skill") it.hasApparatus = false;
   });
+  // 技の最中に受ける形では、受けるまで手具は空中にあるので、そこまでの技に操作は付けられない
+  // （付けても `stripForApparatus` が落とすが、生成する並び自体を正しくしておく）
+  const catchIdx = items.findIndex((it) => it.kind === "skill" && it.isCatch);
+  const skills = allSkills.filter(({ i }) => i > catchIdx);
   const isA = (id: string) => skillDifficulty(id, junior) === "A";
   // きりもみ系は実施中に手具を操作できないので、操作を付ける位置の候補から外す
   const saltoIdx = skills.filter(
@@ -219,6 +227,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
         : [];
     items.push({ kind: "throw", ...(reqTypes.length > 0 ? { reqTypes } : {}) });
   }
+  // 技の最中に受ける形：先頭に投げを置く（受けるのは連鎖の1本目の技。下で `isCatch` を付ける）
+  if (pattern.catchInSkill) items.push({ kind: "throw" });
   spec.entry.forEach((id) => items.push(skillItem(id)));
   const saltos = spec.saltoIds.slice(0, spec.saltoCount);
   saltos.forEach((id, i) => {
@@ -247,7 +257,7 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   if (rolled) items.push({ kind: "motion", motionId: THROW_ROLL_MOTION, count: 1 });
   // 転がり・前転のあとは手具を使ったキャッチ（押さえつけ）で受けるのが定番。
   // 背面キャッチ（視野外）を引いたときはそちらで受ける（押さえつけとは同時に実施しない）
-  if (pattern.throwCatch) {
+  if (pattern.throwCatch && !pattern.catchInSkill) {
     // 背面キャッチ（視野外）は、続く投げが**視野外でなければ**実施できる
     // （視野外で受けて視野外に投げることだけができない＝`canThrowAfterCatch`）。
     // 2つ同時キャッチを視野外で受けることはしない
@@ -293,7 +303,7 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     });
   }
   // 投げタンのキャッチのあとに連続投げを続ける形
-  if (pattern.throwCatch && draws.secondThrow) {
+  if (pattern.throwCatch && !pattern.catchInSkill && draws.secondThrow) {
     const style = draws.secondThrow;
     items.push({
       kind: "throw",
@@ -301,6 +311,25 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       ...(style.throwTypes ? { throwTypes: [...style.throwTypes] } : {}),
     });
     items.push({ kind: "catch", ...(style.two ? { catchTwo: true } : {}) });
+  }
+  // 技の最中に受ける形：**連鎖の1本目の技**で受ける（入りの技があればその技）。
+  // 手具が空中にあるのはそこまでなので、受ける前に置けるものは無い。
+  // クラブ・リングは押さえつけて受けることがあり（`CATCH_IN_SKILL_PRESS_CHANCE`）、
+  // 押さえつけて受ける投げは横投げのことが多い（`SIDE_THROW_PRESS_CHANCE` → `draws.sideThrow`）。
+  // **付ける受け方は手具を使ったキャッチだけ**（オーナー指定。技の最中に視野外・手以外で
+  // 受けるのは現実的でないので自動生成では提案しない）
+  if (pattern.catchInSkill) {
+    const first = items.find((it) => it.kind === "skill");
+    if (first?.kind === "skill") {
+      first.isCatch = true;
+      if (draws.pressCatch) {
+        first.catchTypes = [CATCH_USE_APPARATUS];
+        if (draws.sideThrow) {
+          const thrown = items.find((it) => it.kind === "throw");
+          if (thrown?.kind === "throw") thrown.throwTypes = [SIDE_THROW_TAG];
+        }
+      }
+    }
   }
   applyApparatusOps(items, pattern, junior);
   return { executionDeduction: 0, items };
@@ -394,7 +423,13 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     }
     return next();
   };
+  // タンブリング中に投げる形は上級者だけ。候補に混ぜるかどうかは1回だけ引く
+  // （形ごとに引くと生き残りを貪欲法が拾う。`throwInSkillChance`）
+  const keepThrowInSkill = rand() < chance(throwInSkillChance(opts.targetScore));
+  // タンブリング中に受ける形も同じ水準で、頻度はそれより低い（`catchInSkillChance`）
+  const keepCatchInSkill = rand() < chance(catchInSkillChance(opts.targetScore));
   AUTO_TUMBLING_PATTERNS.forEach((rawPattern) => {
+    if (rawPattern.throwInSkill && !keepThrowInSkill) return;
     // 基本的な構成ではつなぎ技を実施せず、連続も2本まで
     const pattern = basicLevel ? basicLevelPattern(rawPattern) : rawPattern;
     if (!pattern) return;
@@ -559,6 +594,45 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     entryUsed.set(category, used);
     spec.entry = list[Number(key)];
   });
+
+  // **技の最中に受ける形は、ふつうのタンブリングの候補から派生させる。**
+  // 受けるのは連鎖の1本目の技（入りのロンダート、または1本目の宙返りが前宙のもの）だけで、
+  // 受けたら手具は手元に戻るので**そこから先はそのタンブリングのまま**続く
+  // （実施例：投げ→ロンダート（手具を使ったキャッチ）→後方宙返り1回半ひねり→ロンダート→
+  // ダイビング前宙）。連鎖のルール・技の重み・前転の付き方は派生元の候補がそのまま持っている
+  // ので、この形のために遷移表を書き直す必要はない。
+  if (keepCatchInSkill) {
+    const derived = specs.flatMap((spec) => {
+      // 投げタンの候補からは作らない（投げは1本。受けてから投げる形はここでは提案しない）
+      if (spec.pattern.throwCatch) return [];
+      const firstSkill = spec.entry[0] ?? spec.saltoIds[0];
+      if (!CATCH_IN_SKILL_SKILLS.includes(firstSkill)) return [];
+      // 押さえつけて受けるのは床に手をつくロンダートの最中だけ（実施例。クラブ・リング）
+      const pressCatch =
+        firstSkill === ROUNDOFF_SKILL_ID &&
+        !!apparatus &&
+        hasTwoThrow(apparatus) &&
+        rand() < chance(CATCH_IN_SKILL_PRESS_CHANCE);
+      return [
+        {
+          ...spec,
+          pattern: { ...spec.pattern, id: `${spec.pattern.id}CatchInSkill`, catchInSkill: true },
+          draws: {
+            ...spec.draws,
+            pressCatch,
+            // 二つ投げ（2つとも空中では押さえつけられない）・左手投げ・背面キャッチ・
+            // 手以外のキャッチ・連続投げは、どれも投げタンのキャッチアイテム側の抽選なので使わない
+            twoThrow: false,
+            leftHandThrow: false,
+            backCatch: false,
+            nonHandCatch: false,
+            secondThrow: undefined,
+          },
+        },
+      ];
+    });
+    specs.push(...derived);
+  }
 
   const limit = Math.max(0, opts.limit ?? specs.length);
   return shuffled(specs, rand).slice(0, limit);

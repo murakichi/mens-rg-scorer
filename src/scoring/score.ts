@@ -374,7 +374,7 @@ export function computeScore(
         last = overLimitItem[i][j];
         return last;
       }
-      if (item.kind === "catch") return last;
+      if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) return last;
       return false;
     });
   });
@@ -551,6 +551,8 @@ export function computeScore(
         if (item.kind === "throw") techCount += bonusThrowTypes(item);
         else if (item.kind === "catch") techCount += (item.catchTypes || []).length;
         else if (item.kind === "skill" && item.isThrow) techCount += bonusThrowTypes(item);
+        // 技の最中の受けもキャッチと同じく技術加点に数える
+        else if (item.kind === "skill" && item.isCatch) techCount += (item.catchTypes || []).length;
       });
     }
     const tech = techCount * TECHNIQUE_BONUS;
@@ -595,7 +597,7 @@ export function computeScore(
           fin();
           // 上限超過（ジュニアの6回目以降）の二つ投げは加点に数えない
           if (!itemOver[i][j] && (item.reqTypes || []).includes("twothrow")) inTwo = true;
-        } else if (item.kind === "catch") {
+        } else if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
           fin();
         } else if (item.kind === "motion" && inTwo) {
           const m = motionDef(item.motionId, junior);
@@ -723,7 +725,7 @@ export function computeScore(
         if (types.includes("nonhand")) throwKinds.add("nonhand");
         if (types.includes("useapp")) throwKinds.add("useapp");
         if (types.includes(SIDE_THROW_TAG)) throwKinds.add("side");
-      } else if (item.kind === "catch") {
+      } else if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
         const types = item.catchTypes || [];
         if (types.includes("other")) catchOtherCount += 1;
         if (isDup) return;
