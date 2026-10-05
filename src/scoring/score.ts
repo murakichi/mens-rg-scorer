@@ -298,11 +298,16 @@ export interface ComputeOptions {
   ropeJumps?: RopeJumpItem[][];
 }
 
-/** 投げ・受けの種類の優先度（1回の投げ・受けで数える種類は先に当たる1つだけ） */
-const THROW_KIND_PRIORITY = ["noview", "nonhand", "useapp", SIDE_THROW_TAG];
-const CATCH_KIND_PRIORITY = ["noview", "nonhand", "useapp"];
-const pickKind = (types: string[], priority: string[]): string | undefined =>
-  priority.find((k) => types.includes(k));
+/**
+ * 1回の投げ・受けの種類。チェックした組み合わせ全体で1種類とし、被りは組み合わせが同じかで見る
+ * （横投げ＋手具を使った投げ と 横投げだけ は別の投げ方）。「その他」は別カウントなので含めない。
+ * チェックが無ければ `plain`、「その他」だけなら種類なし。
+ */
+const kindKey = (types: string[], extra: string[] = [], plain = "normal"): string | undefined => {
+  const parts = [...new Set([...types.filter((t) => t !== "other"), ...extra])].sort();
+  if (parts.length > 0) return parts.join("+");
+  return types.length === 0 ? plain : undefined;
+};
 
 export function computeScore(
   rawSeries: Series[],
@@ -714,21 +719,22 @@ export function computeScore(
         const reqs = item.reqTypes || [];
         if (types.includes("other")) throwOtherCount += 1;
         if (isDup) return;
-        // 1回の投げは1種類だけ数える（複数チェックしても優先度の高い1つ。左手投げは別格）
-        const tk = reqs.includes("lefthand") ? "lefthand" : pickKind(types, THROW_KIND_PRIORITY) ?? (types.length === 0 ? "normal" : undefined);
+        // 1回の投げは1種類（チェックの組み合わせ全体）として数える
+        const tk = kindKey(types, reqs.includes("lefthand") ? ["lefthand"] : []);
         if (tk) throwKinds.add(tk);
         if (reqs.includes("lefthand")) catchKinds.add("lefthand"); // 左手投げは左手キャッチも同時カウント
       } else if (item.kind === "skill" && item.isThrow) {
         const types = item.throwTypes || [];
         if (isDup) return;
-        // 1回の投げは1種類だけ数える（複数チェックしても優先度の高い1つ。無ければ投げタン）
-        throwKinds.add(pickKind(types, THROW_KIND_PRIORITY) ?? "tumthrow");
+        // 1回の投げは1種類（チェックの組み合わせ全体）。チェックが無ければ投げタン
+        const tk = kindKey(types, [], "tumthrow");
+        if (tk) throwKinds.add(tk);
       } else if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
         const types = item.catchTypes || [];
         if (types.includes("other")) catchOtherCount += 1;
         if (isDup) return;
-        // 1回の受けは1種類だけ数える（複数チェックしても優先度の高い1つ）
-        const ck = pickKind(types, CATCH_KIND_PRIORITY) ?? (types.length === 0 ? "normal" : undefined);
+        // 1回の受けは1種類（チェックの組み合わせ全体）として数える
+        const ck = kindKey(types);
         if (ck) catchKinds.add(ck);
       }
     });
