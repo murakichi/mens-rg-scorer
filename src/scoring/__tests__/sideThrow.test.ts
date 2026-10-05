@@ -202,3 +202,58 @@ describe("横投げ", () => {
     expect(run("clubs").nonHand).toBe(0);
   });
 });
+
+describe("1回の投げ・受けは組み合わせ全体で1種類", () => {
+  const catchSer = (catchTypes: string[]): Series => ({
+    executionDeduction: 0,
+    items: [{ kind: "throw" }, { kind: "catch", catchTypes }],
+  });
+
+  it("投げ方を複数チェックしても種類は1つ（技術加点はチェックの数だけ）", () => {
+    const both = computeScore([ser(["useapp", SIDE_THROW_TAG])], "clubs");
+    const one = computeScore([ser(["useapp"])], "clubs");
+    expect(both.throwKindCount).toBe(1);
+    expect(one.throwKindCount).toBe(1);
+    expect(both.techniqueBonus).toBe(one.techniqueBonus);
+    // 同じ組み合わせは（順番が違っても）重複、組み合わせが違えば別の投げ方
+    const same = computeScore([ser(["useapp", SIDE_THROW_TAG]), ser([SIDE_THROW_TAG, "useapp"])], "clubs");
+    expect(same.throwKindCount).toBe(1);
+    const combo = computeScore([ser(["useapp", SIDE_THROW_TAG]), ser([SIDE_THROW_TAG])], "clubs");
+    expect(combo.throwKindCount).toBe(2);
+    // 別の投げに分ければ2種類
+    const split = computeScore([ser(["useapp"]), ser([SIDE_THROW_TAG])], "clubs");
+    expect(split.throwKindCount).toBe(2);
+  });
+
+  it("右手・左手・二つ投げは種類に影響しない（投げ方・受け方とも）", () => {
+    const left: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" }],
+    };
+    const two: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", reqTypes: ["twothrow"] }, { kind: "catch" }],
+    };
+    const r = computeScore([ser([]), left, two], "stick");
+    expect(r.throwKindCount).toBe(1);
+    expect(r.catchKindCount).toBe(1);
+    // チェックを付けた左手投げは、同じチェックの通常の投げと同じ種類
+    const leftSide: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", reqTypes: ["lefthand"], throwTypes: [SIDE_THROW_TAG] }, { kind: "catch" }],
+    };
+    expect(computeScore([ser([SIDE_THROW_TAG]), leftSide], "stick").throwKindCount).toBe(1);
+  });
+
+  it("受け方も複数チェックして1種類", () => {
+    const both = computeScore([catchSer(["noview", "nonhand"])], "clubs");
+    expect(both.catchKindCount).toBe(1);
+    const split = computeScore([catchSer(["noview"]), catchSer(["nonhand"])], "clubs");
+    expect(split.catchKindCount).toBe(2);
+    // 組み合わせが違えば別の受け方、同じなら重複
+    const combo = computeScore([catchSer(["noview", "nonhand"]), catchSer(["noview"])], "clubs");
+    expect(combo.catchKindCount).toBe(2);
+    const same = computeScore([catchSer(["noview", "nonhand"]), catchSer(["nonhand", "noview"])], "clubs");
+    expect(same.catchKindCount).toBe(1);
+  });
+});

@@ -208,6 +208,14 @@ export const CATCH_IN_SKILL_SKILLS = [ROUNDOFF_SKILL_ID, FRONT_SALTO_ID];
 export const CATCH_IN_SKILL_PRESS_CHANCE = 0.2;
 
 /**
+ * 宙返りの途中で投げる投げタン（`throwInSkill`）の投げに**手具を使った投げ**を付ける確率（クラブだけ）。
+ * 実施は少ないので低くする。視野外の投げ（きりもみ）には付けない。
+ * 手具を使った投げ＋横投げ（視野外でない）は手具を使ったキャッチ（押さえつけ）で受けてよい
+ * （受けは通常の抽選 `ROLL_FINISH_PRESS_CATCH_CHANCE` / `draws.sideThrow` に従う）。
+ */
+export const THROW_IN_SKILL_USE_APPARATUS_CHANCE: Partial<Record<ApparatusKey, number>> = { clubs: 0.1 };
+
+/**
  * 宙返りの途中で投げる投げタン（`throwInSkill`）で、**ロンダートから入る**
  * （＝後方系の宙返りから始める）ことを優先する重み。
  */

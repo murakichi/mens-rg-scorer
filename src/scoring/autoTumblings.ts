@@ -66,6 +66,7 @@ import {
   pairAfterChance,
   rollAfterChance,
   CATCH_IN_SKILL_PRESS_CHANCE,
+  THROW_IN_SKILL_USE_APPARATUS_CHANCE,
   CATCH_IN_SKILL_SKILLS,
   catchInSkillChance,
   throwInSkillChance,
@@ -79,7 +80,7 @@ import {
   usableSkills,
 } from "./tumblingTransitions";
 import { newTemplateId, type SeriesTemplate } from "./templates";
-import { CATEGORY, SIDE_THROW_TAG, hasTwoThrow } from "./constants";
+import { CATEGORY, SIDE_THROW_TAG, USE_APPARATUS_TAG, hasTwoThrow } from "./constants";
 import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
 // 入力画面・生成側から今までどおり `autoTumblings` 1か所で参照できるようにしておく
@@ -123,6 +124,8 @@ export interface TumblingDraws {
   nonHandCatch?: boolean;
   /** 手以外のキャッチのとき、投げを横投げにするか（`nonHandCatch` と同時に引く） */
   nonHandSide?: boolean;
+  /** 技の最中の投げに手具を使った投げを付けるか（`THROW_IN_SKILL_USE_APPARATUS_CHANCE`。クラブだけ） */
+  useAppThrow?: boolean;
   /** 投げタンの投げを二つ投げにするか（クラブ・リングで、投げてから跳ぶ形だけ） */
   twoThrow: boolean;
   /**
@@ -242,6 +245,9 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       // 直前の技は並びから取る（つなぎ技が間に入るとそこで向きが変わる）
       const types = throwInSkillTypes(prevSkillId(items, items.length), id);
       if (types) next.throwTypes = [...types];
+      // 手具を使った投げ（低確率。視野外の投げには付けない）
+      if (draws.useAppThrow && !(next.throwTypes || []).includes(NO_VIEW_TAG))
+        next.throwTypes = [...(next.throwTypes || []), USE_APPARATUS_TAG];
     }
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
     items.push(next);
@@ -538,6 +544,8 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         rand() < chance(unseenShapeChance("throwTumLeftHandThrow", opts.demandScore));
       const backCatch =
         plainThrowTum && rand() < chance(unseenShapeChance("throwTumBackCatch", opts.demandScore));
+      const useAppThrowChance =
+        pattern.throwInSkill && apparatus ? chance(THROW_IN_SKILL_USE_APPARATUS_CHANCE[apparatus] ?? 0) : 0;
       specs.push({
         pattern,
         saltoCount,
@@ -552,6 +560,7 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
             ? { nonHandCatch: true, ...(rand() < chance(TUMBLING_NON_HAND_SIDE_CHANCE[apparatus] ?? 0) ? { nonHandSide: true } : {}) }
             : {}),
           ...(apparatus && rand() < chance(SIDE_THROW_PRESS_CHANCE[apparatus] ?? 0) ? { sideThrow: true } : {}),
+          ...(useAppThrowChance > 0 && rand() < useAppThrowChance ? { useAppThrow: true } : {}),
           twoThrow,
           leftHandThrow,
           backCatch,

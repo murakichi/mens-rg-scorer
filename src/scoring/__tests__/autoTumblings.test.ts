@@ -1794,3 +1794,41 @@ describe("通常の投げタンの背面キャッチ・左手投げ（実施例�
         }
   });
 });
+
+describe("技の最中の投げに付ける手具を使った投げ（クラブだけ・低確率）", () => {
+  const throwSkills = (apparatus: "clubs" | "ring" | "stick" | "rope", seeds: number) => {
+    const out: { types: string[]; catchTypes: string[]; series: ReturnType<typeof buildAutoTumblingSeries> }[] = [];
+    for (let seed = 1; seed <= seeds; seed++)
+      autoTumblingSpecs({ apparatus, targetScore: THROW_IN_SKILL_MIN_SCORE + 1, random: seeded(seed) }).forEach((sp) => {
+        if (!sp.pattern.throwInSkill) return;
+        const series = buildAutoTumblingSeries(sp);
+        const it = series.items.find((i) => i.kind === "skill" && i.isThrow);
+        const last = series.items[series.items.length - 1];
+        if (it?.kind === "skill")
+          out.push({
+            types: it.throwTypes || [],
+            catchTypes: last.kind === "catch" ? last.catchTypes || [] : [],
+            series,
+          });
+      });
+    return out;
+  };
+
+  it("クラブでだけ、低い確率で手具を使った投げが付く。視野外の投げには付かない", () => {
+    const clubs = throwSkills("clubs", 60);
+    const withUse = clubs.filter((x) => x.types.includes("useapp"));
+    expect(clubs.length).toBeGreaterThan(50);
+    expect(withUse.length).toBeGreaterThan(0);
+    expect(withUse.length / clubs.length).toBeLessThan(0.3);
+    expect(withUse.every((x) => !x.types.includes("noview"))).toBe(true);
+    (["ring", "stick", "rope"] as const).forEach((a) =>
+      expect(throwSkills(a, 30).some((x) => x.types.includes("useapp"))).toBe(false),
+    );
+  });
+
+  it("手具を使った投げ＋横投げ（視野外でない）は手具を使ったキャッチで受けてよく、手具の流れも破綻しない", () => {
+    const combo = throwSkills("clubs", 150).filter((x) => x.types.includes("useapp") && x.types.includes("side"));
+    expect(combo.some((x) => x.catchTypes.includes(CATCH_USE_APPARATUS))).toBe(true);
+    combo.forEach((x) => expect(checkApparatusFlow(x.series, "clubs")).toEqual([]));
+  });
+});
