@@ -56,6 +56,18 @@
 - 候補（リング・種8本）：56本すべて `checkApparatusFlow`・`tumblingFlowErrors` クリーン。
   実施例と同じ形（投げ→ロンダート(受)→後方宙返り1回半ひねり→ロンダート→ダイビング前宙）が出る
 
+## main の取り込み
+
+- 作業中に main が進んでいた（#132 CLAUDE.md の生成節を要約＋`docs/generator-notes.md` に分割、
+  #133 `npm run probe`）。CLAUDE.md は**main の要約の形に合わせ**、実測と経緯は
+  `docs/generator-notes.md` 側へ移した（要約には技の最中の投げ・受けの行を1行だけ足した）
+- `probe.ts` の `itemText` が `itemLabel` の「技名(投)」「技名(受)」と二重になっていたので、
+  落としてから付け直すようにした（検索語の表記 `(投げ)` / `(受)` は変えない）
+- オーナーの probe ツールで最終確認：
+  `npm run probe -- "ロンダート(受)" --apparatus ring --max 3.5,4.5,none -n 12`
+  → 上限3.5 で 0/12、4.5 で 2/12、上限なしで 1/12。例に
+  `投げ[side]→ロンダート(受)[useapp]→後方伸身宙返り半ひねり→前宙→側宙(操作)` が出る
+
 ## 結果
 
 - PR: https://github.com/murakichi/mens-rg-scorer/pull/131（前回のPRに続けて入れた）
