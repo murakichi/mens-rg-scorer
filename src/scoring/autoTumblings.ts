@@ -48,6 +48,10 @@ import {
 import {
   THROW_ROLL_MOTION,
   TUMBLING_ENTRIES,
+  connectOptionsAfter,
+  firstSaltoOptions,
+  isForwardSalto,
+  nextSaltoOptions,
   layoutOnlyAfterConnect,
   noRollAfter,
   throwInSkillTypes,
@@ -65,6 +69,7 @@ import {
   backwardEndChance,
   pairAfterChance,
   rollAfterChance,
+  CATCH_IN_SKILL_SKILLS,
   catchInSkillChance,
   throwInSkillChance,
 } from "./tumblingWeights";
@@ -403,9 +408,60 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
   const keepThrowInSkill = rand() < chance(throwInSkillChance(opts.targetScore));
   // タンブリング中に受ける形も同じ水準で、頻度はそれより低い（`catchInSkillChance`）
   const keepCatchInSkill = rand() < chance(catchInSkillChance(opts.targetScore));
+  // **技の最中に受ける形はここだけ遷移表を通さない。** 受ける技はロンダートか前宙だけで
+  // （`CATCH_IN_SKILL_SKILLS`）、ロンダートは宙返りではないので遷移表の1本目に出てこないし、
+  // 後ろ向きに降りる技なので連鎖の終わりにも置けない（`canEndChain`）。
+  // 形は「投げ→その技の最中に受け」の2アイテムだけなので、連鎖の仕組みは要らない。
+  const catchPattern = AUTO_TUMBLING_PATTERNS.find((p) => p.catchInSkill);
+  if (catchPattern && keepCatchInSkill) {
+    const usable = usableSkills(ctxBase);
+    const catchIds = usable(CATCH_IN_SKILL_SKILLS);
+    // 受ける前に前方系を1本挟める（投げが先なので手具の滞空時間の都合で前方系だけ）。
+    // 制限は**受ける技**だけなので、前の1本は普通の前方系から引く。
+    // これが無いと最高でC難度（投げ→前宙(受)）で、D要求値4以上の構成では
+    // 採用ユニットの難度（{D,E}に揃える）に入れず、貪欲法が一度も選ばない
+    const leads = usable(firstSaltoOptions(junior, opts.future ?? null)).filter(isForwardSalto);
+    /**
+     * その技のあとに受ける技を続けられるか。**連鎖のルールはそのまま使う** —
+     * 前宙は宙返りの続きとして（`nextSaltoOptions`）、ロンダートはつなぎ技として
+     * （`connectOptionsAfter`）許される位置だけ。これを通さないと
+     * 「投げ→転宙→ロンダート(受)」のように転宙の後に続けてしまう（転宙の後は側宙だけ）
+     */
+    const canFollow = (lead: string, id: string) =>
+      (id === ROUNDOFF_SKILL_ID
+        ? connectOptionsAfter(lead, junior, opts.future ?? null)
+        : nextSaltoOptions(lead, junior, opts.future ?? null)
+      ).includes(id);
+    const combos = catchIds.flatMap((id) => [
+      [id],
+      ...leads.filter((lead) => lead !== id && canFollow(lead, id)).map((lead) => [lead, id]),
+    ]);
+    combos.forEach((ids) => {
+      specs.push({
+        pattern: catchPattern,
+        saltoCount: ids.length,
+        entry: [],
+        saltoIds: ids,
+        connectId: "",
+        draws: {
+          backwardEnd: false,
+          rareEnd: false,
+          layoutAfterConnect: false,
+          backToForwardThrow: false,
+          // 受けた技でシリーズが終わるので、前転も押さえつけも続く投げも引かない
+          roll: 1,
+          pressCatch: false,
+          twoThrow: false,
+          leftHandThrow: false,
+          backCatch: false,
+        },
+      });
+    });
+  }
   AUTO_TUMBLING_PATTERNS.forEach((rawPattern) => {
     if (rawPattern.throwInSkill && !keepThrowInSkill) return;
-    if (rawPattern.catchInSkill && !keepCatchInSkill) return;
+    // 技の最中に受ける形は上で組んだので、汎用の連鎖は通さない
+    if (rawPattern.catchInSkill) return;
     // 基本的な構成ではつなぎ技を実施せず、連続も2本まで
     const pattern = basicLevel ? basicLevelPattern(rawPattern) : rawPattern;
     if (!pattern) return;

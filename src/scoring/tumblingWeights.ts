@@ -15,6 +15,7 @@ import {
   JUNIOR_SKILL_DIFFICULTY,
   CATEGORY,
   DIFF_VALUE,
+  ROUNDOFF_SKILL_ID,
   isBackwardSalto,
   maxDiff,
   skillDef,
@@ -177,6 +178,16 @@ export const CATCH_IN_SKILL_CHANCE = 0.2;
 
 export const catchInSkillChance = (targetScore?: number | null): number =>
   targetScore != null && targetScore < THROW_IN_SKILL_MIN_SCORE ? 0 : CATCH_IN_SKILL_CHANCE;
+
+/**
+ * **自動生成で「技の最中に受け」を付ける技**（オーナー指定）。ロンダートと前宙だけ。
+ * 入力画面はどの技にも付けられる（規則が禁じていないので制限しない）——
+ * ここは「実際に実施される形だけを提案する」という生成側の住み分け。
+ *
+ * ロンダートはA難度の転回技なので、投げ→ロンダート(受) は**投げタンにならず**
+ * 徒手1動作のユニット（B難度）になる（`handMotionsOfSkill`）。前宙で受ければ投げタンになる。
+ */
+export const CATCH_IN_SKILL_SKILLS = [ROUNDOFF_SKILL_ID, FRONT_SALTO_ID];
 
 /**
  * 宙返りの途中で投げる投げタン（`throwInSkill`）で、**ロンダートから入る**

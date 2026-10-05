@@ -16,6 +16,7 @@ import {
   throwInSkillChance,
   catchInSkillChance,
   CATCH_IN_SKILL_CHANCE,
+  CATCH_IN_SKILL_SKILLS,
   THROW_IN_SKILL_CHANCE,
   THROW_IN_SKILL_MIN_SCORE,
   BACK_TO_FORWARD_THROW_CHANCE,
@@ -88,6 +89,7 @@ import {
   saltoOptionsAfterConnect,
   saltoWeights,
   tumblingFlowErrors,
+  isForwardSalto,
   usedSkillIds,
   withSaltoCount,
   type AutoTumblingSpec,
@@ -1057,13 +1059,32 @@ describe("つなぎ技", () => {
       const last = items[items.length - 1];
       expect(last.kind).toBe("skill");
       expect(last.kind === "skill" ? last.isCatch : false).toBe(true);
+      // **受ける技はロンダートか前宙だけ**（自動生成だけの制限。入力画面はどの技でも付けられる）
+      expect(CATCH_IN_SKILL_SKILLS).toContain(last.kind === "skill" ? last.skillId : "");
       // キャッチアイテムは置かない（受けた技で終わる）
       expect(items.some((it) => it.kind === "catch")).toBe(false);
       // 手具の流れが通る（投げた1つを受けて終わる）
       expect(checkApparatusFlow(t.series, "stick")).toEqual([]);
-      // 投げタンとして数えられる
-      expect(analyzeSeries(t.series).units.some((u) => u.isThrowTumbling)).toBe(true);
+      // 受ける前に前方系を1本挟める。**連鎖のルールはそのまま通す**
+      // （これを通さないと「投げ→転宙→ロンダート(受)」のように転宙の後に続けてしまう）
+      expect(tumblingFlowErrors(t.series)).toEqual([]);
+      const saltos = items.filter((it) => it.kind === "skill");
+      expect(saltos.length).toBeLessThanOrEqual(2);
+      saltos.slice(0, -1).forEach((it) => {
+        expect(it.kind === "skill" ? isForwardSalto(it.skillId) : false).toBe(true);
+      });
+      // 投げタンとして数えられる（ロンダート1本だけで受ける形はA難度なので徒手ユニット）
+      const tt = analyzeSeries(t.series).units.some((u) => u.isThrowTumbling);
+      expect(tt).toBe(saltos.length > 1 || (last.kind === "skill" && last.skillId !== ROUNDOFF_SKILL_ID));
     });
+    // 受ける技にロンダートと前宙の両方が出る
+    const caught = new Set(
+      built.map((t) => {
+        const last = t.series.items[t.series.items.length - 1];
+        return last.kind === "skill" ? last.skillId : "";
+      }),
+    );
+    expect([...caught].sort()).toEqual([...CATCH_IN_SKILL_SKILLS].sort());
     // 3点台までは候補に入らない
     [18, 20, 43, 45].forEach((seed) =>
       expect(

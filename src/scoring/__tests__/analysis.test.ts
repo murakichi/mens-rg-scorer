@@ -846,6 +846,15 @@ describe("技の最中の受け（isCatch）", () => {
     ...extra,
   });
 
+  it("入力はどの技にも付けられる（自動生成の制限は生成側だけ）", () => {
+    // 規則が禁じていないので入力は制限しない。側宙でも転宙でも採点が通る
+    ["b_sidesalto", "b_tenchu", "a_roundoff"].forEach((skillId) => {
+      const a = analyzeSeries(S(throwItem(), catchingSkill(skillId)));
+      expect(a.units.length).toBeGreaterThan(0);
+      expect(checkApparatusFlow(S(throwItem(), catchingSkill(skillId)), "stick")).toEqual([]);
+    });
+  });
+
   it("その技でユニットが閉じ、投げタンとして扱われる（技の最中の投げと同じ）", () => {
     const a = analyzeSeries(S(throwItem(), catchingSkill("b_front")));
     expect(a.units).toHaveLength(1);
