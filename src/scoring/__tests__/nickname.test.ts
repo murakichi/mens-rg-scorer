@@ -18,14 +18,19 @@ describe("seriesNickname", () => {
   it("ロンダート→1回半→ロンダート→ダイビング前宙 = 1回半つなぎダイビング前宙", () => {
     expect(seriesNickname(ser(sk("a_roundoff"), sk("c_back15"), sk("a_roundoff"), sk("b_divefront")))).toBe("1回半つなぎダイビング前宙");
   });
-  it("後方伸身1回ひねり→前宙 = 伸身1回切り返し", () => {
-    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front")))).toBe("伸身1回切り返し");
+  it("後方伸身1回ひねり→前宙 = 伸身1回ひねり切り返し", () => {
+    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front")))).toBe("伸身1回ひねり切り返し");
   });
   it("切り返しの後に前宙以外が来る／前宙の後に技が続く", () => {
-    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_fronthalf")))).toBe("伸身1回切り返し半");
-    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_tenchu")))).toBe("伸身1回切り返し転宙");
-    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front"), sk("b_kirimomi")))).toBe("伸身1回切り返しきりもみ");
-    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front"), sk("b_front")))).toBe("伸身1回切り返し前宙");
+    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_fronthalf")))).toBe("伸身1回ひねり切り返し半");
+    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_tenchu")))).toBe("伸身1回ひねり切り返し転宙");
+    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front"), sk("b_kirimomi")))).toBe("伸身1回ひねり切り返しきりもみ");
+    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front"), sk("b_front")))).toBe("伸身1回ひねり切り返し前宙");
+  });
+  it("ひねり無し・ハーフからの切り返し", () => {
+    expect(seriesNickname(ser(sk("b_backlayout"), sk("b_front")))).toBe("スワン切り返し");
+    expect(seriesNickname(ser(sk("b_backlayhalf"), sk("b_front")))).toBe("ハーフ切り返し");
+    expect(seriesNickname(ser(sk("c_back15"), sk("b_front")))).toBe("1回半ひねり切り返し");
   });
   it("伸身系の略し方とひねり", () => {
     expect(seriesNickname(ser(sk("b_backlayout")))).toBe("スワン");

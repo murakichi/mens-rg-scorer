@@ -91,7 +91,10 @@ function readRun(run: SkillItem[]): string {
     // 前宙以外（前宙半ひねり・転宙など）なら切り返しの後ろにその技が続く。
     // 前宙の後に技が続くときも、続きはそのまま読む
     if (!mark && next && !skillMark(next) && isBackTwist(it.skillId) && isForwardSalto(next.skillId)) {
-      out += skillReading(it.skillId) + "切り返し";
+      // ひねりからの切り返しは「n回ひねり切り返し」（ハーフ・スワン・ひねり無しはそのまま）
+      const base = skillReading(it.skillId);
+      const t = skillDef(it.skillId)?.twist;
+      out += base + (t && t.twist > 0 && base !== "ハーフ" ? "ひねり" : "") + "切り返し";
       if (next.skillId === "b_front") i++;
       continue;
     }
