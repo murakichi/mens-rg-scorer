@@ -30,6 +30,7 @@ import {
   NO_VIEW_TAG,
   NON_HAND_TAG,
   SIDE_THROW_PRESS_CHANCE,
+  SIDE_THROW_TWO_THROW_CHANCE,
   canThrowAfterCatch,
   type AutoThrowStyle,
 } from "./autoThrows";
@@ -117,6 +118,11 @@ export interface TumblingDraws {
    * （`SIDE_THROW_PRESS_CHANCE`。ロープ・スティックは持たない）。未指定は通常の投げ。
    */
   sideThrow?: boolean;
+  /**
+   * 二つ投げの投げタンの投げを**横投げ**にするか（`SIDE_THROW_TWO_THROW_CHANCE`。リングだけ）。
+   * 2つ同時キャッチで受けるので、押さえつけの `sideThrow` とは別の抽選。
+   */
+  twoThrowSide?: boolean;
   /**
    * 前転でつないだ着地を**手以外のキャッチ**（リング：首・足にはめる／ロープ：足にはめる）で受けるか
    * （`TUMBLING_NON_HAND_CATCH_CHANCE`）。リングは横投げ（`TUMBLING_NON_HAND_SIDE_CHANCE`）。
@@ -284,7 +290,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     const nonHand =
       rolled &&
       !!draws.nonHandCatch &&
-      !draws.twoThrow &&
+      // 二つ投げ（2つ同時キャッチ）の手以外のキャッチは、横投げが前提のリングだけ（クラブは受けられない）
+      (!draws.twoThrow || nonHandSide) &&
       !draws.secondThrow &&
       !back &&
       (!nonHandSide || sideOk);
@@ -299,6 +306,9 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     if (nonHand && nonHandSide && throwItem)
       throwItem.throwTypes = [...(throwItem.throwTypes || []), SIDE_THROW_TAG];
     if (press && draws.sideThrow && throwItem)
+      throwItem.throwTypes = [...(throwItem.throwTypes || []), SIDE_THROW_TAG];
+    // 二つ投げの投げタン（2つ同時キャッチ）：リングは横投げにすることがある
+    if (draws.twoThrow && draws.twoThrowSide && throwItem && sideOk && !(throwItem.throwTypes || []).includes(SIDE_THROW_TAG))
       throwItem.throwTypes = [...(throwItem.throwTypes || []), SIDE_THROW_TAG];
     const catchTypes = back ? [NO_VIEW_TAG] : nonHand ? [NON_HAND_TAG] : press ? [CATCH_USE_APPARATUS] : [];
     items.push({
@@ -562,6 +572,11 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
             : {}),
           ...(apparatus && rand() < chance(SIDE_THROW_PRESS_CHANCE[apparatus] ?? 0) ? { sideThrow: true } : {}),
           ...(useAppThrowChance > 0 && rand() < useAppThrowChance ? { useAppThrow: true } : {}),
+          // 二つ投げの投げタンの横投げ（引くのは二つ投げでリングのときだけ。それ以外は乱数を使わない）
+          ...(twoThrow && apparatus && (SIDE_THROW_TWO_THROW_CHANCE[apparatus] ?? 0) > 0 &&
+          rand() < chance(SIDE_THROW_TWO_THROW_CHANCE[apparatus] ?? 0)
+            ? { twoThrowSide: true }
+            : {}),
           twoThrow,
           leftHandThrow,
           backCatch,

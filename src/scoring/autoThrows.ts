@@ -371,6 +371,20 @@ export const SIDE_THROW_PRESS_CHANCE: Partial<Record<ApparatusKey, number>> = { 
  * リングは輪なので、横に投げて首や足にはめて受ける実施がある。他の手具では横投げと組まない。
  */
 export const SIDE_THROW_NON_HAND_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.7 };
+/**
+ * **二つ投げを横投げで行う**確率（リングだけ）。リングは輪なので二つ投げでも横に投げる実施があり、
+ * 2つ同時キャッチで受ける通常の二つ投げ・投げタンの二つ投げにも付く（投げタン側は
+ * `draws.twoThrowSide` に同じ確率）。ふつうの横投げ（押さえつけ 0.6／手以外 0.7）より少し低く、
+ * 珍しい形ではない。視野外・手以外の投げとは組まない。二つ投げ→キャッチ→押さえつけの形
+ * （`splitCatch`）は別に高いほうを必ず横投げにする。
+ */
+export const SIDE_THROW_TWO_THROW_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.5 };
+/**
+ * 二つ投げを**手以外のキャッチ**（2つ同時キャッチのうち一方を首・足にはめる）で受けるときの横投げの確率。
+ * 手以外のキャッチで受ける投げは横投げのほうが多い（`SIDE_THROW_NON_HAND_CHANCE` 0.7）ので
+ * 二つ投げの通常（0.5）より上げ、ふつうの手以外のキャッチの横投げよりは少し低くする。
+ */
+export const SIDE_THROW_TWO_THROW_NON_HAND_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.6 };
 export const SIDE_LEFT_HAND_CHANCE = 0.8;
 export const SIDE_LEFT_HAND_MAX_MOTIONS = 1;
 
@@ -399,7 +413,23 @@ export function maybeSideThrow(
   rand: () => number,
   chance: (p: number) => number = (p) => p,
 ): AutoThrowStyle {
-  if (!canUseSideThrow(apparatus) || !canAddSideThrow(throwStyle)) return throwStyle;
+  if (!canUseSideThrow(apparatus)) return throwStyle;
+  if (throwStyle.two) {
+    // 二つ投げ：横投げにするのは `SIDE_THROW_TWO_THROW_CHANCE` を持つ手具（リング）だけ。
+    // 引かない手具では乱数を消費しない
+    const pTwo = catchHasTag(catchStyle, NON_HAND_TAG)
+      ? Math.max(
+          SIDE_THROW_TWO_THROW_CHANCE[apparatus] ?? 0,
+          SIDE_THROW_TWO_THROW_NON_HAND_CHANCE[apparatus] ?? 0,
+        )
+      : (SIDE_THROW_TWO_THROW_CHANCE[apparatus] ?? 0);
+    const types = throwStyle.throwTypes || [];
+    const blocked = [SIDE_THROW_TAG, NON_HAND_TAG, NO_VIEW_TAG].some((t) => types.includes(t));
+    return pTwo > 0 && !blocked && rand() < chance(pTwo)
+      ? { ...throwStyle, throwTypes: [...types, SIDE_THROW_TAG] }
+      : throwStyle;
+  }
+  if (!canAddSideThrow(throwStyle)) return throwStyle;
   const press = catchHasTag(catchStyle, CATCH_USE_APPARATUS);
   const leftHandLow = (throwStyle.reqTypes || []).includes(LEFT_HAND_TAG) && motions <= SIDE_LEFT_HAND_MAX_MOTIONS;
   const nonHandP = catchHasTag(catchStyle, NON_HAND_TAG) ? (SIDE_THROW_NON_HAND_CHANCE[apparatus] ?? 0) : 0;
