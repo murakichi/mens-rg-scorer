@@ -109,6 +109,7 @@ function readMotion(it: Item): string {
   const name = skillDef(it.motionId)
     ? skillReading(it.motionId)
     : (MOTION_OPTIONS.find((o) => o.id === it.motionId) ?? HAND_MOTIONS.find((o) => o.id === it.motionId))?.name ?? "";
+  if (n > 1 && it.motionId === "fwd_roll") return `${n}回${name}`;
   return n > 1 ? String(n) + name : name;
 }
 

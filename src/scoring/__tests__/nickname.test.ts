@@ -39,6 +39,11 @@ describe("seriesNickname", () => {
     expect(seriesNickname(ser(sk("c_back1full")))).toBe("1回");
     expect(seriesNickname(ser(sk("c_front1full")))).toBe("1回");
   });
+  it("前転の連続は n回前転", () => {
+    const m = (motionId: string, count: number) => ({ kind: "motion", motionId, count }) as Item;
+    expect(seriesNickname(ser({ kind: "throw" }, m("fwd_roll", 3), { kind: "catch" }))).toBe("投げ3回前転");
+    expect(seriesNickname(ser({ kind: "throw" }, m("chene", 4), m("fwd_roll", 1), { kind: "catch" }))).toBe("投げ4シェネ前転");
+  });
   it("投げ・キャッチ", () => {
     const m = { kind: "motion", motionId: "chene", count: 3 } as Item;
     const fr = { kind: "motion", motionId: "a_frontroll" } as Item;
