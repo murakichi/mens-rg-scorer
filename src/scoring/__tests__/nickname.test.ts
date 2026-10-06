@@ -12,26 +12,26 @@ describe("seriesNickname", () => {
   it("ロンダート→後方宙返り = ロン宙", () => {
     expect(seriesNickname(ser(sk("a_roundoff"), sk("b_backsalto")))).toBe("ロン宙");
   });
-  it("ロンダート→1回半→前宙（投げ）= 一回半前宙投げ", () => {
-    expect(seriesNickname(ser(sk("a_roundoff"), sk("c_back15"), sk("b_front", { isThrow: true })))).toBe("一回半前宙投げ");
+  it("ロンダート→1回半→前宙（投げ）= 1回半前宙投げ", () => {
+    expect(seriesNickname(ser(sk("a_roundoff"), sk("c_back15"), sk("b_front", { isThrow: true })))).toBe("1回半前宙投げ");
   });
-  it("ロンダート→1回半→ロンダート→ダイビング前宙 = 一回半つなぎダイビング前宙", () => {
-    expect(seriesNickname(ser(sk("a_roundoff"), sk("c_back15"), sk("a_roundoff"), sk("b_divefront")))).toBe("一回半つなぎダイビング前宙");
+  it("ロンダート→1回半→ロンダート→ダイビング前宙 = 1回半つなぎダイビング前宙", () => {
+    expect(seriesNickname(ser(sk("a_roundoff"), sk("c_back15"), sk("a_roundoff"), sk("b_divefront")))).toBe("1回半つなぎダイビング前宙");
   });
-  it("後方伸身1回ひねり→前宙 = 伸身一回切り返し", () => {
-    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front")))).toBe("伸身一回切り返し");
+  it("後方伸身1回ひねり→前宙 = 伸身1回切り返し", () => {
+    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front")))).toBe("伸身1回切り返し");
   });
   it("伸身系の略し方とひねり", () => {
     expect(seriesNickname(ser(sk("b_backlayout")))).toBe("スワン");
     expect(seriesNickname(ser(sk("b_backlayhalf")))).toBe("ハーフ");
-    expect(seriesNickname(ser(sk("d_backlay2twist")))).toBe("伸身二回");
-    expect(seriesNickname(ser(sk("c_back1full")))).toBe("一回");
-    expect(seriesNickname(ser(sk("c_front1full")))).toBe("一回");
+    expect(seriesNickname(ser(sk("d_backlay2twist")))).toBe("伸身2回");
+    expect(seriesNickname(ser(sk("c_back1full")))).toBe("1回");
+    expect(seriesNickname(ser(sk("c_front1full")))).toBe("1回");
   });
   it("投げ・キャッチ", () => {
     const m = { kind: "motion", motionId: "chene", count: 3 } as Item;
     const fr = { kind: "motion", motionId: "a_frontroll" } as Item;
-    expect(seriesNickname(ser({ kind: "throw" }, m, fr, { kind: "catch" }))).toBe("投げ三シェネとび前転");
+    expect(seriesNickname(ser({ kind: "throw" }, m, fr, { kind: "catch" }))).toBe("投げ3シェネとび前転");
     expect(seriesNickname(ser({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch", catchTypes: ["noview", "useapp"] }))).toBe("背面投げ背面手具キャッチ");
     expect(seriesNickname(ser({ kind: "throw", throwTypes: ["useapp"] }, sk("b_tempo"), { kind: "catch" }))).toBe("手具投げテンポ");
   });

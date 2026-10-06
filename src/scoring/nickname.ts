@@ -5,14 +5,12 @@
 import { LEFT_HAND_THROW_TAG, TWO_THROW_TAG, USE_APPARATUS_TAG, HAND_MOTIONS, MOTION_OPTIONS, skillDef } from "./constants";
 import type { CatchItem, Item, Series, SkillItem } from "./types";
 
-const KANJI = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
-const kanjiNum = (n: number): string => (Number.isInteger(n) && n >= 0 && n <= 10 ? KANJI[n] : String(n));
 
 /** ひねり回数の読み：0.5 → 半、1 → 一回、1.5 → 一回半 */
 function twistReading(twist: number): string {
   if (twist === 0.5) return "半";
   const whole = Math.floor(twist);
-  return `${kanjiNum(whole)}回${twist % 1 !== 0 ? "半" : ""}`;
+  return `${String(whole)}回${twist % 1 !== 0 ? "半" : ""}`;
 }
 
 /** 投げ・キャッチの種類を「背面／手以外／手具」の接頭辞にする */
@@ -104,7 +102,7 @@ function readMotion(it: Item): string {
   const name = skillDef(it.motionId)
     ? skillReading(it.motionId)
     : (MOTION_OPTIONS.find((o) => o.id === it.motionId) ?? HAND_MOTIONS.find((o) => o.id === it.motionId))?.name ?? "";
-  return n > 1 ? kanjiNum(n) + name : name;
+  return n > 1 ? String(n) + name : name;
 }
 
 /** ユニット（投げ〜キャッチ）の中身を左から読む */
