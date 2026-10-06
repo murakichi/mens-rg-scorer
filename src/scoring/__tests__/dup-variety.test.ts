@@ -58,18 +58,33 @@ describe("投げ方・受け方の多様性 — その他の例外", () => {
 });
 
 // -------------------------------------------------------------------------
-// 左手投げは投げ方・受け方の両方に数える
-//   score.ts: reqs.includes("lefthand") → throwKinds と catchKinds 双方に add
+// 右手・左手・二つ投げ（必須投げ）は投げ方・受け方の種類に影響させない（#134）
+//   score.ts: 1回の投げ／受けは throwTypes／catchTypes のチェックの組み合わせ1つが1種類。
+//   reqTypes（lefthand／twothrow）は種類の数に入らない。
 // -------------------------------------------------------------------------
-describe("投げ方・受け方の多様性 — 左手投げの二重カウント", () => {
-  it("左手投げ1回が受け方（catchKinds）にも lefthand を加える", () => {
-    // lefthand の catch 側計上を確認する。対照として catch のみのシリーズは受け方1（normal）。
+describe("投げ方・受け方の多様性 — 必須投げ（左手投げ・二つ投げ）は種類に数えない", () => {
+  it("左手投げ・二つ投げにしても、投げ方・受け方の種類は通常の投げ受けと同じ1種類", () => {
     const base = computeScore([S({ kind: "throw" }, { kind: "catch" })], "stick");
-    expect(base.catchKindCount).toBe(1); // normal のみ
+    expect(base.throwKindCount).toBe(1);
+    expect(base.catchKindCount).toBe(1);
 
-    const r = computeScore([S({ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" })], "stick");
-    // 投げ：throwTypes [] → normal ＋ lefthand = 2。
-    // 受け：lefthand（投げ由来で同時加算）＋ normal（catch []）= 2。
+    const left = computeScore([S({ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" })], "stick");
+    expect(left.throwKindCount).toBe(1);
+    expect(left.catchKindCount).toBe(1);
+
+    const two = computeScore([S({ kind: "throw", reqTypes: ["twothrow"] }, { kind: "catch" })], "clubs");
+    expect(two.throwKindCount).toBe(1);
+    expect(two.catchKindCount).toBe(1);
+  });
+
+  it("技術タグ（視野外）を付けると別の1種類になる", () => {
+    const r = computeScore(
+      [
+        S({ kind: "throw" }, { kind: "catch" }),
+        S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch", catchTypes: ["noview"] }),
+      ],
+      "stick",
+    );
     expect(r.throwKindCount).toBe(2);
     expect(r.catchKindCount).toBe(2);
   });
