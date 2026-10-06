@@ -65,7 +65,9 @@ import {
   ROUNDOFF_ENTRY_CONNECT_MAX_SCORE,
   roundoffEntryWeight,
   FORWARD_ENTRY_FREE_SCORE,
-  FORWARD_ENTRY_CONNECT_FREE_SCORE,
+  FORWARD_ENTRY_CONNECT_FLOOR_SCORE,
+  FORWARD_ENTRY_CONNECT_START_SCORE,
+  FORWARD_ENTRY_CONNECT_FLOOR_WEIGHT,
   FORWARD_ENTRY_WEIGHT,
   forwardEntryWeight,
   SWITCH_SIDE_SALTO_WEIGHT,
@@ -1150,12 +1152,19 @@ describe("つなぎ技", () => {
     expect(forwardEntryWeight(3.0)).toBe(FORWARD_ENTRY_WEIGHT);
     expect(forwardEntryWeight(null)).toBe(FORWARD_ENTRY_WEIGHT);
     expect(FORWARD_ENTRY_WEIGHT).toBeLessThan(1);
-    // つなぎの形（前宙→ロンダート→後方系）は中級者も実施するので、下げ始めるのが遅い
-    expect(forwardEntryWeight(3.0, true)).toBe(1);
-    expect(FORWARD_ENTRY_CONNECT_FREE_SCORE).toBeGreaterThan(FORWARD_ENTRY_FREE_SCORE);
-    expect(forwardEntryWeight(FORWARD_ENTRY_CONNECT_FREE_SCORE + 0.5, true)).toBe(
-      FORWARD_ENTRY_WEIGHT,
+    // つなぎの形（前宙→ロンダート→後方系）は段ではなく、Dスコアが上がるほどなだらかに減る
+    expect(forwardEntryWeight(FORWARD_ENTRY_CONNECT_START_SCORE, true)).toBe(1);
+    const connect = [2.5, 3.0, 3.5, 4.0, 4.5].map((t) => forwardEntryWeight(t, true));
+    for (let i = 1; i < connect.length; i++) expect(connect[i]).toBeLessThan(connect[i - 1]);
+    // 中級者（3点前後）はふつうの前方入りより実施する
+    expect(forwardEntryWeight(3.0, true)).toBeGreaterThan(forwardEntryWeight(3.0));
+    // 床に届いたら一定で、上限なし（＝難度を狙いきる）も床
+    expect(forwardEntryWeight(FORWARD_ENTRY_CONNECT_FLOOR_SCORE, true)).toBeCloseTo(
+      FORWARD_ENTRY_CONNECT_FLOOR_WEIGHT,
+      10,
     );
+    expect(forwardEntryWeight(7, true)).toBeCloseTo(FORWARD_ENTRY_CONNECT_FLOOR_WEIGHT, 10);
+    expect(forwardEntryWeight(null, true)).toBe(FORWARD_ENTRY_CONNECT_FLOOR_WEIGHT);
     // 候補の1本目が前方系になる割合は、高いDスコアのほうが低い
     const forwardShare = (targetScore: number | null) => {
       let forward = 0;
