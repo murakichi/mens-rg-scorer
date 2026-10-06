@@ -49,12 +49,23 @@ describe("技術加点 §3.5.5.5(2)", () => {
     expect(r.techniqueBonus).toBeCloseTo(0.4, 5);
   });
 
-  it("各その都度：同一の視野外投げを2回（重複シリーズでも）出現ごとに加算 → +0.20", () => {
-    // §3.5.5.5(2) は「同じ技は重複して数えない」の但し書きが無い（⑦のみに付く）。
-    // よって重複シリーズでも技術加点は出現回数ぶん計上されるのがルール準拠。
+  it("各その都度：視野外投げを2回、別の内容のシリーズで出現ごとに加算 → +0.20", () => {
+    // §3.5.5.5(2) は「各その都度」。別のシリーズなら出現回数ぶん数える
+    const a = S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch" });
+    const b = S({ kind: "throw", throwTypes: ["noview"] }, { kind: "motion", motionId: "chene", count: 1 }, { kind: "catch" });
+    const r = computeScore([a, b], "stick");
+    expect(r.techniqueBonus).toBeCloseTo(0.2, 5);
+  });
+
+  it("完全に同じシリーズ（重複シリーズ）はDに算入しないので技術加点も数えない → +0.10", () => {
+    // 重複シリーズは難度点・連続投げ加点・技術加点・手具操作加点・二つ投げ加点すべて0
+    // （app-scoring-spec.md §6.3。§3.5.5「全く同じ技は難度として数えない」を重複シリーズ全体に及ぼす）。
+    // 同じ入力でも違う演技だと宣言する `notDuplicate` を付ければ解除され、出現ごとに数える
     const s = () => S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch" });
     const r = computeScore([s(), s()], "stick");
-    expect(r.techniqueBonus).toBeCloseTo(0.2, 5);
+    expect(r.techniqueBonus).toBeCloseTo(0.1, 5);
+    const sameButDeclared = computeScore([s(), { ...s(), notDuplicate: true }], "stick");
+    expect(sameButDeclared.techniqueBonus).toBeCloseTo(0.2, 5);
   });
 
   it.skip("その他（other）の投げは技術加点の対象外＝0（→ issue #2、修正後に skip 解除）", () => {
