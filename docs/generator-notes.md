@@ -28,3 +28,36 @@
 
 - **How unusual the generated series are is the user's choice** (`GenerateOptions.rarity`, 0〜100, default `DEFAULT_RARITY` 50, a slider in `GenerateModal`). Every edge weight in the transition table already *is* "how often this is performed", so the knob is one monotone transform of those weights: `rarityExponent` maps 0 → `RARITY_COMMON_EXPONENT` (3, sharpening onto the most likely), 50 → 1 (exactly the measured frequencies) and 100 → `RARITY_RARE_EXPONENT` (−1, inverting them). `pickWeighted`/`pickDifferent` take that exponent (`rarityWeight`, and a weight of 0 stays unpickable even inverted), and the 0〜1 draws go through `rarityChance(p, rarity)` = `p^k / (p^k + (1-p)^k)`, which leaves 0.5, 0 and 1 alone and moves everything else the same direction — so a "rare series" means the rare *shapes* too (二つ投げ mid-tumbling, the きりもみ 視野外投げ, the つなぎ-after-second position, the unseen shapes), not just rare skills. `pick.ts` owns it since both `autoThrows.ts` and `autoTumblings.ts` draw through it; `cycler` round-robins are deliberately untouched (they exist to spread candidates evenly, not to model frequency). **The evaluation is not touched**, so a shape whose difficulty moves the score barely responds to the knob — what responds is everything score-neutral. Measured over 36 routines per setting, rarity 0/25/50/75/100: rare skills (ハンドスプリング・転宙・きりもみ系・テンポひねり) per routine 0.06 / 0.47 / 1.08 / 2.28 / 2.89, distinct skills used 17 / 22 / 24 / 25 / 24, D score 5.05 / 4.99 / 4.98 / 5.14 / 5.27. その他 is deliberately exempt (see below): it is a variety-bookkeeping input, not a frequency, so the knob neither manufactures nor suppresses it.
 
+
+
+---
+
+## 二つ投げのシリーズは1構成に1本まで（2026-10-05）
+
+**経緯**：クラブ・リング20構成ずつの実測で、二つ投げのシリーズが投げと投げタンの**両方**に出る構成が 10〜25 %、投げのシリーズだけで1構成に1本を超える条件もあった（クラブ上限なし 20構成に24本）。二つ投げは必須投げで1回やれば足り、投げ方の種類にも数えず、投げタンに載せても加点にならない。
+
+**実装**：評価に `extraTwoThrowSeriesCount` × `TWO_THROW_EXTRA_WEIGHT`（1。現実志向の重み 0.1〜0.9 より上、`REQUIRED_ELEMENT_WEIGHT` 10 より下）。重みだけでは足りず、2つの穴を塞いだ：
+1. 貪欲法は足す・外すしかしないので、同点で二つ投げでない投げに替える手がない → `dropExtraTwoThrow`（二つ投げでない候補への `swapIn`。**シェネ回数違いの別案も候補にしないと**、Dスコアの上限を踏み越えて替えられない）。
+2. `levelAdoptedDiffs` は予算 `SPREAD_REPAIR_BUDGET`（1.0）まで評価を落とす手を採るので、重み1の罰は**払えてしまう**（段階ごとの本数を測ると、均しの段で2本目が入っていた）→ その手を明示的に弾く。
+
+**優先度**：投げタンの二つ投げは `twoThrowTumblingCount` × `TWO_THROW_TUMBLING_WEIGHT`（0.3）で通常の二つ投げより下げる。禁止にしないのは、必須投げと転回系の投げ受けを1本で満たせる、Dスコアの上限が低い帯の効率的な形だから。
+
+**実測**（クラブ・リング 上限3.0 / 4.5 / なし × 各20構成）：二つ投げのシリーズは**全120構成で1本、両方は 0**（前：両方 2〜5/20）。投げタンで実施する割合は 26/120 → 17/120（上限3.0 で 8/20 → 5〜6/20、4.5 以上は 1〜2/20）。D は 4.088 → 4.097、1構成あたりの技数 10.61 → 10.66 で変わらず（96→360構成、手具4つ × 上限3.0 / 4.5 / なし）。
+
+
+---
+
+## つなぎの前方系入りをDスコアが上がるほど減らす（2026-10-06）
+
+**変更**：`forwardEntryWeight(target, connect=true)` を、`FORWARD_ENTRY_CONNECT_FREE_SCORE`（3.5）までは1・それ以降は0.2の**段**から、`FORWARD_ENTRY_CONNECT_START_SCORE`（1.5）→ `FORWARD_ENTRY_CONNECT_FLOOR_SCORE`（5.0）で `FORWARD_ENTRY_CONNECT_FLOOR_WEIGHT`（0.1）へ向かう**指数の補間**にした（上限なし＝床）。ふつうの前方入り（つなぎ以外）は変えていない。
+
+**実測（候補の段階）**：つなぎ形の候補（stick、各上限 200 seed）の1本目が前方系の割合。
+
+| 上限 | 2.5 | 3.0 | 3.5 | 4.0 | 4.5 | 5.0 | なし |
+|---|---|---|---|---|---|---|---|
+| 前 | 0.215 | 0.280 | 0.270 | 0.110 | 0.093 | 0.093 | 0.093 |
+| 後 | 0.157 | 0.193 | 0.127 | 0.106 | 0.069 | 0.056 | 0.056 |
+
+3.5 が最も効き（0.27→0.13）、高い帯も下がった。**3.0 が 2.5 より高いのは別の仕組み**：`ROUNDOFF_ENTRY_CONNECT_BOOST`（後ろ入りの優遇）が 3.0 未満だけ段で効くため、3.0 で後ろ入りの優遇が外れて前方入りの比率が相対的に上がる（今回は触っていない）。
+
+**実測（生成の段階）**：生成された構成で前方入りのつなぎ（本/構成、各上限 100〜160 構成）は 0.09/0.14/0.22/0.07/0.17/0.09/0.13 → 0.08/0.12/0.10/0.08/0.11/0.17/0.09。**単調には出ない**。1つの数字が 7〜27 本の範囲で揺れていて、乱数のばらつき（標準偏差 約4本）と同程度。これは重みが候補の引きにしか効かず、貪欲法がどの候補を選ぶかは評価（必須要素のつなぎ・難度）が決めるため。D は 2.42/2.91/3.29/3.92/4.42/4.79/4.96 → 2.37/2.87/3.30/3.95/4.43/4.80/4.98 で変わらない。評価側に罰を足せばもっと効くが、要求値に応じて重みを変える評価は崖になりやすいので、今回は候補の引きだけ。

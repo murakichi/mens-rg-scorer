@@ -249,23 +249,43 @@ export function roundoffEntryWeight(targetScore?: number | null, connect = false
 /**
  * **前方系から入る通常のタンブリング**（ロンダートを使わず、助走から前方系の宙返り、または
  * ハンドスプリングから入る形）は、Dスコア0〜1点台の初心者でしか見かけない。
- * 目標Dスコアが `FORWARD_ENTRY_FREE_SCORE` を超えたら下げる。
+ * 目標Dスコアが `FORWARD_ENTRY_FREE_SCORE` を超えたら一段下げる（`FORWARD_ENTRY_WEIGHT`）。
  *
- * ただし**つなぎの形**（前宙→ロンダート→後方系）は中級者が普通に実施するので、
- * `FORWARD_ENTRY_CONNECT_FREE_SCORE` までは下げない。禁止はしない（重みだけ）。
+ * **つなぎの形**（前宙→ロンダート→後方系）は中級者が実施するが、Dスコアが上がるほど
+ * 実施しなくなる。段で切らず、`FORWARD_ENTRY_CONNECT_START_SCORE` から `FORWARD_ENTRY_CONNECT_FLOOR_SCORE`
+ * まで**なだらかに**下げる（指数補間。床は `FORWARD_ENTRY_CONNECT_FLOOR_WEIGHT`）。
+ * 上限を指定しない（難度を狙いきる）ときは床の重み。禁止はしない（重みだけ）。
  * 投げタン（`pattern.throwCatch`）は対象外：投げてから跳ぶ形は手具の滞空時間の都合で
  * 前方系しか実施できず、ここで下げる意味がない。
  */
 export const FORWARD_ENTRY_FREE_SCORE = 2.0;
 
-export const FORWARD_ENTRY_CONNECT_FREE_SCORE = 3.5;
+/** つなぎの形の重みを下げ始めるDスコア（前方入りの下げ始めより早い） */
+export const FORWARD_ENTRY_CONNECT_START_SCORE = 1.5;
+
+/** つなぎの形が床の重みに届くDスコア（これ以上は一定） */
+export const FORWARD_ENTRY_CONNECT_FLOOR_SCORE = 5.0;
+
+/** つなぎの形の、Dスコアが高いときの重み */
+export const FORWARD_ENTRY_CONNECT_FLOOR_WEIGHT = 0.1;
 
 export const FORWARD_ENTRY_WEIGHT = 0.2;
 
 export function forwardEntryWeight(targetScore?: number | null, connect = false): number {
-  const free = connect ? FORWARD_ENTRY_CONNECT_FREE_SCORE : FORWARD_ENTRY_FREE_SCORE;
+  if (connect) {
+    if (targetScore == null) return FORWARD_ENTRY_CONNECT_FLOOR_WEIGHT;
+    const t = Math.min(
+      1,
+      Math.max(
+        0,
+        (targetScore - FORWARD_ENTRY_CONNECT_START_SCORE) /
+          (FORWARD_ENTRY_CONNECT_FLOOR_SCORE - FORWARD_ENTRY_CONNECT_START_SCORE),
+      ),
+    );
+    return FORWARD_ENTRY_CONNECT_FLOOR_WEIGHT ** t;
+  }
   // 上限を指定しない＝難度を狙いきる構成なので、初心者の形は下げる
-  if (targetScore != null && targetScore <= free) return 1;
+  if (targetScore != null && targetScore <= FORWARD_ENTRY_FREE_SCORE) return 1;
   return FORWARD_ENTRY_WEIGHT;
 }
 

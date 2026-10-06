@@ -17,7 +17,7 @@
 
 import { motionDef, motionTimes } from "./analysis";
 import { OTHER_TAG } from "./autoThrows";
-import { VARIETY_REQUIRED } from "./constants";
+import { TWO_THROW_TAG, VARIETY_REQUIRED } from "./constants";
 import {
   LIMITED_SKILLS,
   LIMITED_SKILL_MAX,
@@ -50,6 +50,8 @@ import {
   HIGH_DIFFICULTY_WEIGHT,
   LIMITED_SKILL_WEIGHT,
   OTHER_FIRST_WEIGHT,
+  TWO_THROW_EXTRA_WEIGHT,
+  TWO_THROW_TUMBLING_WEIGHT,
   OTHER_STYLE_WEIGHT,
   REPEATABLE_SALTOS,
   REQUIRED_ELEMENT_WEIGHT,
@@ -127,6 +129,30 @@ export function shapeRankTotal(
       : tumblingShapeRank(shape, units[0].finalDiff);
   });
   return total;
+}
+
+/**
+ * 二つ投げ（投げ・技の最中の投げ）を含むシリーズのうち、**2本目以降**の本数。
+ * 投げのシリーズか投げタンかは問わない（両方に入れるのも2本目として数える）。
+ */
+export function extraTwoThrowSeriesCount(series: Series[]): number {
+  return Math.max(0, series.filter(hasTwoThrow).length - 1);
+}
+
+/** 二つ投げを含むシリーズのうち、投げタン（転回系の投げ受け）で実施しているものの本数 */
+export function twoThrowTumblingCount(series: Series[], r: ScoreResult): number {
+  return series.filter(
+    (ser, i) => hasTwoThrow(ser) && r.analysis[i]?.units.some((u) => u.isThrowTumbling),
+  ).length;
+}
+
+/** 二つ投げ（投げ・技の最中の投げ）を含むシリーズか */
+export function hasTwoThrow(series: Series): boolean {
+  return series.items.some(
+    (it) =>
+      (it.kind === "throw" || (it.kind === "skill" && !!it.isThrow)) &&
+      (it.reqTypes || []).includes(TWO_THROW_TAG),
+  );
 }
 
 /** その構成で「手以外・手具を使った投げのあとに徒手を2動作以上または転回系」を実施している回数 */
@@ -516,6 +542,10 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
   // 実施例の無い形（`unseenShapes.ts` に宣言）。稼ぐ点数をそのまま打ち消すので、
   // 出現率は候補を出す確率（要求Dスコアのカーブ）だけで決まる
   const rareStyle = unseenPenalty(series);
+  // 二つ投げのシリーズは1構成に1本まで（必須投げを1回満たせば足りる）
+  const twoThrowExtra = extraTwoThrowSeriesCount(series) * TWO_THROW_EXTRA_WEIGHT;
+  // 二つ投げの投げタンは通常の二つ投げより優先度を下げる（禁止ではない）
+  const twoThrowTumbling = twoThrowTumblingCount(series, r) * TWO_THROW_TUMBLING_WEIGHT;
   // クラブは押さえてキャッチ、ロープは足に絡めたキャッチで演技を締める
   const finishCatch = missesFinishCatch(series, opts.apparatus) ? FINISH_CATCH_WEIGHT : 0;
   // 手以外・手具を使った投げのあとに徒手を多く実施する形は、要求値が5.0を超えるまで嫌う
@@ -558,6 +588,8 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
       verticalThree -
       otherStyle -
       rareStyle -
+      twoThrowExtra -
+      twoThrowTumbling -
       finishCatch -
       hardThrow -
       auto -

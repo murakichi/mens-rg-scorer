@@ -5,28 +5,73 @@ import type { Series, Item } from "../types";
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 
 // =========================================================================
-// E難度ボーナス E_BONUS（ルール §3.5.5.5(3) 投げの経路）
-//   手具を保持して行うE難度の転回系に「投げ」が含まれる → +0.10（tumblingScore に加算）。
-//   実装：unit.finalDiff==="E" && unit.skillThrow のとき DIFF_SCORE[E] に E_BONUS を上乗せ。
+// §3.5.5.5(3) 投げの経路：手具を保持して行うE難度の転回系に「投げ」が含まれる → +0.10。
+//   技の最中の投げ（isThrow）があれば、手具操作のチェックは要らない。シリーズとしてE難度なら成立。
+//   加点は apparatusOpBonus（1演技で最大0.10）で、tumblingScore には上乗せしない（二重計上しない）。
 // =========================================================================
-describe("E難度ボーナス §3.5.5.5(3)〔投げ〕", () => {
-  it("E難度タンブリング＋技中の投げ → 0.7 + 0.10 = 0.80", () => {
+describe("手具操作加点 §3.5.5.5(3)〔技の最中の投げ〕", () => {
+  it("E難度タンブリング＋技の最中の投げ → 手具操作なしでも +0.10（難度の点は0.70のまま）", () => {
     const r = computeScore([S({ kind: "skill", skillId: "e_doublelay", isThrow: true }, { kind: "catch" })], "stick");
-    // E難度(0.7) に E_BONUS(0.1) が乗る
-    expect(r.tumblingScore).toBeCloseTo(0.8, 5);
+    expect(r.tumblingScore).toBeCloseTo(0.7, 5);
+    expect(r.apparatusOpBonus).toBeCloseTo(0.1, 5);
   });
 
-  it("E難度でも投げが無ければ E_BONUS なし → 0.70", () => {
+  it("手具操作のチェックがあっても結果は同じ（投げだけで足りる）", () => {
+    const r = computeScore(
+      [S({ kind: "skill", skillId: "e_doublelay", isThrow: true, hasApparatus: true }, { kind: "catch" })],
+      "stick",
+    );
+    expect(r.apparatusOpBonus).toBeCloseTo(0.1, 5);
+  });
+
+  it("きりもみ系で投げても、シリーズがE難度なら加点（操作はできないが投げは離す動作）", () => {
+    const r = computeScore(
+      [S(
+        { kind: "skill", skillId: "a_roundoff" },
+        { kind: "skill", skillId: "e_doublelay" },
+        { kind: "skill", skillId: "b_kirimomi", isThrow: true },
+        { kind: "catch" },
+      )],
+      "stick",
+    );
+    expect(r.apparatusOpBonus).toBeCloseTo(0.1, 5);
+  });
+
+  it("E難度でも投げが無ければ加点なし（操作1回だけも同じ）", () => {
     const r = computeScore([S({ kind: "skill", skillId: "e_doublelay" }, { kind: "catch" })], "stick");
     expect(r.tumblingScore).toBeCloseTo(0.7, 5);
+    expect(r.apparatusOpBonus).toBeCloseTo(0, 5);
   });
 
-  it("投げがあってもE未満なら E_BONUS なし（D難度単体 → 0.50）", () => {
-    const r = computeScore([S({ kind: "skill", skillId: "d_doubleback", isThrow: true }, { kind: "catch" })], "stick");
-    // d_doubleback D(4) + 投げ+1 = 5 → E?? いや calcTumblingDifficulty で +1 されるため要確認。
-    // D(4)+1(投げ)=5 → E。したがって E_BONUS が乗り 0.7+0.1=0.8 になる。
-    // → 「投げ+1でEに格上げ」される境界を明示（下の期待値はルールの難度算出に従う）
-    expect(r.tumblingScore).toBeCloseTo(0.8, 5);
+  it("投げがあってもシリーズがE未満なら加点なし", () => {
+    const r = computeScore([S({ kind: "skill", skillId: "b_front", isThrow: true }, { kind: "catch" })], "stick");
+    expect(r.apparatusOpBonus).toBeCloseTo(0, 5);
+  });
+
+  it("難度は投げを含めて判定する：投げを除いたシリーズがD以上なら、投げでE（投げの+1）になるので加点", () => {
+    // 投げを除くとD（0.50・加点なし）→ 技の最中の投げで +1 されてE（0.70）→ 加点
+    const noThrow = computeScore([S({ kind: "skill", skillId: "d_back2twist" }, { kind: "catch" })], "stick");
+    expect(noThrow.apparatusOpBonus).toBeCloseTo(0, 5);
+    const withThrow = computeScore(
+      [S({ kind: "skill", skillId: "d_back2twist", isThrow: true }, { kind: "catch" })],
+      "stick",
+    );
+    expect(withThrow.tumblingScore).toBeCloseTo(0.7, 5);
+    expect(withThrow.apparatusOpBonus).toBeCloseTo(0.1, 5);
+    // 投げを除いてC止まり（投げを足してもD）なら加点なし
+    const lowC = computeScore(
+      [S({ kind: "skill", skillId: "c_front1full", isThrow: true }, { kind: "catch" })],
+      "stick",
+    );
+    expect(lowC.tumblingScore).toBeCloseTo(0.5, 5);
+    expect(lowC.apparatusOpBonus).toBeCloseTo(0, 5);
+  });
+
+  it("条件を満たすシリーズが2本あっても、加点は1演技で0.10", () => {
+    const one = S({ kind: "skill", skillId: "e_doublelay", isThrow: true }, { kind: "catch" });
+    const two = S({ kind: "skill", skillId: "e_doublelay", isThrow: true, hasApparatus: true }, { kind: "catch" });
+    const r = computeScore([one, two], "stick");
+    expect(r.apparatusOpBonus).toBeCloseTo(0.1, 5);
   });
 });
 

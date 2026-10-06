@@ -27,6 +27,8 @@ import {
 import {
   endsWithFinishCatch,
   evaluateUsed,
+  extraTwoThrowSeriesCount,
+  hasTwoThrow,
   rangePenalty,
   type Evaluation,
 } from "./generateEvaluate";
@@ -309,6 +311,25 @@ export function upgradeTumblings(
   return { used: ordered.used, ev: ordered.ev };
 }
 
+/**
+ * 二つ投げのシリーズが2本以上入っているときに、**二つ投げを含まない候補**への入れ替えを試す
+ * （1構成に1本まで、`TWO_THROW_EXTRA_WEIGHT`）。貪欲法は足す・外すしかしないので、
+ * 同じ点数で二つ投げでない投げに替えられる場合も、ここで入れ替えて初めて届く。
+ */
+export function dropExtraTwoThrow(
+  best: { used: SeriesTemplate[]; ev: Evaluation },
+  pool: SeriesTemplate[],
+  opts: GenerateOptions,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  if (extraTwoThrowSeriesCount(best.used.map((t) => t.series)) === 0) return best;
+  // シェネの回数・宙返りの本数を変えた別案も候補にする（Dスコアの上限を踏み越えずに替えるため）
+  const plain = pool.flatMap((t) => [t, ...autoVariants(t)]).filter((t) => !hasTwoThrow(t.series));
+  const swapped = swapIn(best.used, best.ev, plain, opts, 3);
+  if (swapped.ev.value <= best.ev.value + 1e-9) return best;
+  const ordered = orderSeries(swapped.used, swapped.ev, opts);
+  return { used: ordered.used, ev: ordered.ev };
+}
+
 /** 投げの徒手ユニット（投げタンを除く）を含むシリーズか。徒手側の入れ替えの対象 */
 export function isHandThrowSeries(
   series: Series,
@@ -404,6 +425,12 @@ export function levelAdoptedDiffs(
       if (e.value < floor - 1e-9) return;
       if (miss(e) > missLimit) return;
       if (e.missing.length > best.ev.missing.length) return;
+      // 二つ投げのシリーズは増やさない（1構成に1本まで。予算で払える額なので明示的に弾く）
+      if (
+        extraTwoThrowSeriesCount(next.map((t) => t.series)) >
+        extraTwoThrowSeriesCount(best.used.map((t) => t.series))
+      )
+        return;
       // 投げの回数は減らさない（安い投げを消すのは「均した」ではなく「やめた」）。
       // 増やすのは**上位3つから押し出す**ための1本だけ許す（投げ4回のうち1本が投げタンだと
       // 徒手ユニットが3つ＝全部採用されてしまうので、1本足すと安いほうが外れる）。

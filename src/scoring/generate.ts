@@ -59,6 +59,7 @@ import {
   swapIn,
   upgradeTumblings,
   upgradeHandUnits,
+  dropExtraTwoThrow,
   usableTemplates,
 } from "./generateSearch";
 import type { GenerateOptions, GenerateResult } from "./generateOptions";
@@ -142,6 +143,9 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   //    加点を積む前に**採点される6つを全部E難度にする**のが先。タンブリングは⑦でほぼE
   //    になるが徒手側が届かないので、候補を投げに絞って同じように入れ替える。
   best = upgradeHandUnits(best, pool, opts);
+
+  // ⑦''' 二つ投げのシリーズは1構成に1本まで。2本以上入っていたら、二つ投げでない候補に入れ替える。
+  best = dropExtraTwoThrow(best, pool, opts);
 
   // ⑦'' 採用される難度を1段以内に揃える（`MAX_ADOPTED_DIFF_SPREAD`）。評価が上がる手しか
   //     採らない入れ替えではDスコアの上限の壁を越えられないので、はみ出しが減る向きに
