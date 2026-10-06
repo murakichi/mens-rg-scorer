@@ -27,10 +27,10 @@ describe("seriesNickname", () => {
     expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front"), sk("b_kirimomi")))).toBe("伸身1回ひねり切り返しきりもみ");
     expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front"), sk("b_front")))).toBe("伸身1回ひねり切り返し前宙");
   });
-  it("ひねり無し・ハーフからの切り返し", () => {
+  it("前向きで終わる後方系（半ひねり）からは切り返しと呼ばない", () => {
     expect(seriesNickname(ser(sk("b_backlayout"), sk("b_front")))).toBe("スワン切り返し");
-    expect(seriesNickname(ser(sk("b_backlayhalf"), sk("b_front")))).toBe("ハーフ切り返し");
-    expect(seriesNickname(ser(sk("c_back15"), sk("b_front")))).toBe("1回半ひねり切り返し");
+    expect(seriesNickname(ser(sk("b_backlayhalf"), sk("b_front")))).toBe("ハーフ前宙");
+    expect(seriesNickname(ser(sk("c_back15"), sk("b_front")))).toBe("1回半前宙");
   });
   it("伸身系の略し方とひねり", () => {
     expect(seriesNickname(ser(sk("b_backlayout")))).toBe("スワン");

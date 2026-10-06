@@ -2,7 +2,7 @@
 // 略称：シリーズを現場の呼び方（ロンダーバック・一回半前宙投げ …）で読む
 // 表示専用。採点には一切関わらない。
 // =====================================================================
-import { CATEGORY, LEFT_HAND_THROW_TAG, TWO_THROW_TAG, USE_APPARATUS_TAG, HAND_MOTIONS, MOTION_OPTIONS, skillDef } from "./constants";
+import { CATEGORY, LEFT_HAND_THROW_TAG, leadsBackward, TWO_THROW_TAG, USE_APPARATUS_TAG, HAND_MOTIONS, MOTION_OPTIONS, skillDef } from "./constants";
 import type { CatchItem, Item, Series, SkillItem } from "./types";
 
 
@@ -87,14 +87,13 @@ function readRun(run: SkillItem[]): string {
       } else out += "ロンダート" + mark;
       continue;
     }
-    // 後方系→前方系の連続は「○○切り返し」。次が前宙ならその前宙は呼ばず、
+    // 後ろ向きで終わる後方系→前方系の連続は「○○切り返し」（半ひねりで前向きに終わる技は呼ばない）。次が前宙ならその前宙は呼ばず、
     // 前宙以外（前宙半ひねり・転宙など）なら切り返しの後ろにその技が続く。
     // 前宙の後に技が続くときも、続きはそのまま読む
-    if (!mark && next && !skillMark(next) && isBackTwist(it.skillId) && isForwardSalto(next.skillId)) {
-      // ひねりからの切り返しは「n回ひねり切り返し」（ハーフ・スワン・ひねり無しはそのまま）
-      const base = skillReading(it.skillId);
+    if (!mark && next && !skillMark(next) && isBackTwist(it.skillId) && leadsBackward(it.skillId) && isForwardSalto(next.skillId)) {
+      // ひねりからの切り返しは「n回ひねり切り返し」（スワン・ひねり無しはそのまま）
       const t = skillDef(it.skillId)?.twist;
-      out += base + (t && t.twist > 0 && base !== "ハーフ" ? "ひねり" : "") + "切り返し";
+      out += skillReading(it.skillId) + (t && t.twist > 0 ? "ひねり" : "") + "切り返し";
       if (next.skillId === "b_front") i++;
       continue;
     }
