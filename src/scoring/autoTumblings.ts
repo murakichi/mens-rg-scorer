@@ -201,7 +201,8 @@ function applyApparatusOps(items: Item[], pattern: AutoTumblingPattern, junior: 
   const ids = saltoIdx.map(({ it }) => (it.kind === "skill" ? it.skillId : ""));
   const isE = calcTumblingDifficulty(ids, !!pattern.throwCatch, junior) === "E";
   if (pattern.throwCatch) {
-    // 技の最中に投げる形は、その技を保持していればE難度で加点が付く
+    // 技の最中に投げる形は、E難度なら投げだけで加点が付く（操作は要らない）。
+    // 投げる技は手具を持って跳ぶので操作を付ける（転回中の操作の割合を下げない）
     if (isE && pattern.throwInSkill) setOp(items.find((it) => it.kind === "skill" && it.isThrow));
     return;
   }

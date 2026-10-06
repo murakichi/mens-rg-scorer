@@ -574,12 +574,10 @@ export function computeScore(
       const ops = ser.items.filter(
         (item) => item.kind === "skill" && item.hasApparatus && canOperateApparatus(item.skillId),
       ).length;
-      // 「投げ**または**2回以上の操作」（§3.5.5.5(3)）。手具を保持した技の最中に投げた場合は
-      // 操作1回でも条件を満たす（手具が1つの種目では投げた後は保持できないので、この形になる）
-      const heldThrow = ser.items.some(
-        (item) =>
-          item.kind === "skill" && item.hasApparatus && item.isThrow && canOperateApparatus(item.skillId),
-      );
+      // 「投げ**または**2回以上の操作」（§3.5.5.5(3)）。技の最中に投げれば、手具操作のチェックが
+      // 無くても条件を満たす（投げは手具を保持した技から離す動作なので、操作の入力は要らない。
+      // きりもみ系の視野外投げも同じ）。手具が1つの種目では投げた後は保持できないので、この形になる
+      const heldThrow = ser.items.some((item) => item.kind === "skill" && !!item.skillId && item.isThrow);
       if (ops >= 2 || heldThrow) {
         const maxD = a.units.reduce(
           (m, u, j) => (overLimitUnit[i][j] ? m : Math.max(m, DIFF_VALUE[u.finalDiff] || 0)),

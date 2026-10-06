@@ -789,13 +789,13 @@ describe("computeScore — タンブリング難度点も塊ごとの内訳を�
     );
     expect(held.seriesBreakdowns[0].tumRows[0].score).toBeCloseTo(0.7, 5);
     expect(held.apparatusOpBonus).toBeCloseTo(0.1, 5);
-    // 手具を保持していなければ付かない
+    // 手具操作のチェックが無くても、技の最中の投げがあれば付く（シリーズとしてEなら成立）
     const free = computeScore(
       [S({ kind: "skill", skillId: "e_doublelay", isThrow: true }, { kind: "catch" })],
       "clubs",
     );
-    expect(free.apparatusOpBonus).toBe(0);
-    expect(free.dScore).toBeCloseTo(0.7, 5);
+    expect(free.apparatusOpBonus).toBeCloseTo(0.1, 5);
+    expect(free.dScore).toBeCloseTo(0.8, 5);
   });
 
   it("手具操作2回以上と技の最中の投げは重複しない（まとめて最大0.1）", () => {
