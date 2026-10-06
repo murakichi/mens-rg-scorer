@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
@@ -43,7 +43,8 @@ import {
   seriesTags,
 } from "../scoring/analysis";
 import { tumblingChainEndErrors } from "../scoring/tumblingChain";
-import { itemLabel } from "../scoring/templates";
+import { seriesNickname } from "../scoring/nickname";
+import { describeSeries, itemLabel } from "../scoring/templates";
 import type { AutoInputSuggestion } from "../scoring/autoInput";
 import type { SkillFlow } from "../scoring/constants";
 import type { ApparatusKey, FutureLevel, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
@@ -575,6 +576,9 @@ export function SeriesCard({
   onMoveItem,
   onRemoveSeries,
 }: Props) {
+  // シリーズを畳む（見出しだけ残す）。表示だけの状態で、採点や保存には関わらない
+  const nickname = seriesNickname(ser);
+  const [collapsed, setCollapsed] = useState(false);
   const seriesQualifies = a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus);
   // 手具の流れ（投げてから受けるまで）と、連続を終える技の後に何か続いていないか。
   // どちらも警告だけで採点には影響しない
@@ -664,9 +668,20 @@ export function SeriesCard({
     <section className="card" id={`series-${sIdx}`} onKeyDown={onCardKeyDown}>
       <div className="line-head">
         <span>
+          <button
+            className={`collapse-btn${collapsed ? " is-collapsed" : ""}`}
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "シリーズを開く" : "シリーズを畳む"}
+            title={collapsed ? "開く" : "畳む"}
+          >
+            <ChevronDown size={15} />
+          </button>
           シリーズ {sIdx + 1}
+          {nickname && <span className="series-nickname">{nickname}</span>}
           {isDup ? "（重複：D・本数・投げ回数に不算入）" : isDupSignature ? "（重複扱いを解除中）" : ""}
           <SeriesTags series={ser} junior={junior} />
+          {collapsed && <span className="collapsed-summary">{describeSeries(ser)}｜D寄与 {b.dPart.toFixed(1)} 点</span>}
         </span>
         {canRemove && (
           <button className="remove-btn-sm" onClick={onRemoveSeries}>
@@ -674,6 +689,8 @@ export function SeriesCard({
           </button>
         )}
       </div>
+      {!collapsed && (
+        <>
       {showExec && (
       <div className="exec-row">
         <label className="exec-label">
@@ -912,6 +929,8 @@ export function SeriesCard({
           <p className="hint">※同一構成ですが「別の内容」として重複扱いを解除中（通常のシリーズとして算入）</p>
         )}
       </div>
+        </>
+      )}
     </section>
   );
 }
