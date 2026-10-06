@@ -48,6 +48,25 @@ describe("手具操作加点 §3.5.5.5(3)〔技の最中の投げ〕", () => {
     expect(r.apparatusOpBonus).toBeCloseTo(0, 5);
   });
 
+  it("難度は投げを含めて判定する：投げを除いたシリーズがD以上なら、投げでE（投げの+1）になるので加点", () => {
+    // 投げを除くとD（0.50・加点なし）→ 技の最中の投げで +1 されてE（0.70）→ 加点
+    const noThrow = computeScore([S({ kind: "skill", skillId: "d_back2twist" }, { kind: "catch" })], "stick");
+    expect(noThrow.apparatusOpBonus).toBeCloseTo(0, 5);
+    const withThrow = computeScore(
+      [S({ kind: "skill", skillId: "d_back2twist", isThrow: true }, { kind: "catch" })],
+      "stick",
+    );
+    expect(withThrow.tumblingScore).toBeCloseTo(0.7, 5);
+    expect(withThrow.apparatusOpBonus).toBeCloseTo(0.1, 5);
+    // 投げを除いてC止まり（投げを足してもD）なら加点なし
+    const lowC = computeScore(
+      [S({ kind: "skill", skillId: "c_front1full", isThrow: true }, { kind: "catch" })],
+      "stick",
+    );
+    expect(lowC.tumblingScore).toBeCloseTo(0.5, 5);
+    expect(lowC.apparatusOpBonus).toBeCloseTo(0, 5);
+  });
+
   it("条件を満たすシリーズが2本あっても、加点は1演技で0.10", () => {
     const one = S({ kind: "skill", skillId: "e_doublelay", isThrow: true }, { kind: "catch" });
     const two = S({ kind: "skill", skillId: "e_doublelay", isThrow: true, hasApparatus: true }, { kind: "catch" });
