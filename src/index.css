@@ -1889,3 +1889,11 @@ input[type="checkbox"] {
   font-weight: 500;
   opacity: 0.8;
 }
+
+/* ---- シリーズの略称 ---- */
+.series-nickname {
+  margin-left: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.75;
+}

@@ -43,6 +43,7 @@ import {
   seriesTags,
 } from "../scoring/analysis";
 import { tumblingChainEndErrors } from "../scoring/tumblingChain";
+import { seriesNickname } from "../scoring/nickname";
 import { describeSeries, itemLabel } from "../scoring/templates";
 import type { AutoInputSuggestion } from "../scoring/autoInput";
 import type { SkillFlow } from "../scoring/constants";
@@ -576,6 +577,7 @@ export function SeriesCard({
   onRemoveSeries,
 }: Props) {
   // シリーズを畳む（見出しだけ残す）。表示だけの状態で、採点や保存には関わらない
+  const nickname = seriesNickname(ser);
   const [collapsed, setCollapsed] = useState(false);
   const seriesQualifies = a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus);
   // 手具の流れ（投げてから受けるまで）と、連続を終える技の後に何か続いていないか。
@@ -676,6 +678,7 @@ export function SeriesCard({
             <ChevronDown size={15} />
           </button>
           シリーズ {sIdx + 1}
+          {nickname && <span className="series-nickname">{nickname}</span>}
           {isDup ? "（重複：D・本数・投げ回数に不算入）" : isDupSignature ? "（重複扱いを解除中）" : ""}
           <SeriesTags series={ser} junior={junior} />
           {collapsed && <span className="collapsed-summary">{describeSeries(ser)}｜D寄与 {b.dPart.toFixed(1)} 点</span>}
