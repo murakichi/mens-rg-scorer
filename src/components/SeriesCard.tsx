@@ -7,6 +7,7 @@ import {
   canUseSideThrow,
   SKILL_THROW_OPTIONS_COMMON,
   CATCH_OPTIONS_COMMON,
+  catchOptionBlocked,
   CATCH_OPTIONS_APPARATUS,
   REQUIRED_THROW_OPTIONS,
   TWO_THROW_TAG,
@@ -216,16 +217,21 @@ function ItemEditor({
     return (
       <>
         <div className="catch-tag">キャッチ</div>
-        {[...CATCH_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])].map((opt) => (
-          <label key={opt.id} className="check">
-            <input
-              type="checkbox"
-              checked={(item.catchTypes || []).includes(opt.id)}
-              onChange={(e) => onUpdate({ catchTypes: toggle(item.catchTypes, opt.id, e.target.checked) })}
-            />
-            {opt.name}
-          </label>
-        ))}
+        {[...CATCH_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])].map((opt) => {
+          // 手具を使ったキャッチと手以外のキャッチは同時に実施できない
+          const blocked = catchOptionBlocked(opt.id, item.catchTypes);
+          return (
+            <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+              <input
+                type="checkbox"
+                checked={(item.catchTypes || []).includes(opt.id)}
+                disabled={blocked}
+                onChange={(e) => onUpdate({ catchTypes: toggle(item.catchTypes, opt.id, e.target.checked) })}
+              />
+              {opt.name}
+            </label>
+          );
+        })}
         {/* 2つ同時キャッチは二つ投げで2つとも空中にあるときだけ（すでに付いていれば外せるように残す） */}
         {!common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) && (
           <label className="check-req">
@@ -391,16 +397,20 @@ function ItemEditor({
           [
             ...CATCH_OPTIONS_COMMON,
             ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : []),
-          ].map((opt) => (
-            <label key={opt.id} className="check">
-              <input
-                type="checkbox"
-                checked={(item.catchTypes || []).includes(opt.id)}
-                onChange={(e) => onUpdate({ catchTypes: toggle(item.catchTypes, opt.id, e.target.checked) })}
-              />
-              {opt.name}
-            </label>
-          ))}
+          ].map((opt) => {
+            const blocked = catchOptionBlocked(opt.id, item.catchTypes);
+            return (
+              <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+                <input
+                  type="checkbox"
+                  checked={(item.catchTypes || []).includes(opt.id)}
+                  disabled={blocked}
+                  onChange={(e) => onUpdate({ catchTypes: toggle(item.catchTypes, opt.id, e.target.checked) })}
+                />
+                {opt.name}
+              </label>
+            );
+          })}
         {item.isCatch && !common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) && (
           <label className="check-req">
             <input

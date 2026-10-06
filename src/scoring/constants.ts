@@ -50,6 +50,23 @@ export const CATCH_OPTIONS_COMMON = [
 export const CATCH_OPTIONS_APPARATUS = [{ id: USE_APPARATUS_TAG, name: "手具を使ったキャッチ" }];
 
 /**
+ * **手具を使ったキャッチ**（もう一方の手具で押さえる）と**手以外のキャッチ**（首・足にはめる）は
+ * 1回の受けで同時には実施できない（排他）。
+ */
+export const NON_HAND_CATCH_TAG = "nonhand";
+export const CATCH_EXCLUSIVE_TAGS: string[] = [USE_APPARATUS_TAG, NON_HAND_CATCH_TAG];
+
+/**
+ * そのキャッチのタグ `types` に対して、`optId` のチェックを新しく付けられないか（排他の相手が付いている）。
+ * すでに付いているものは外せるように、**付いている側は塞がない**（旧データで両方付いていても直せる）。
+ */
+export const catchOptionBlocked = (optId: string, types: string[] | undefined): boolean => {
+  const have = types || [];
+  if (!CATCH_EXCLUSIVE_TAGS.includes(optId) || have.includes(optId)) return false;
+  return CATCH_EXCLUSIVE_TAGS.some((t) => t !== optId && have.includes(t));
+};
+
+/**
  * 横投げの技術タグ。投げ方の一種類として数える（多様な投げ受けの種類数）。
  * ロープでは実施しないので、それ以外の手具だけに出す（`canUseSideThrow`）。
  * 技術加点（0.1）は付けない — 投げ方の種類としてだけ数える。
