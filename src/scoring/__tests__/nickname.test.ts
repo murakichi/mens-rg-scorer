@@ -21,6 +21,12 @@ describe("seriesNickname", () => {
   it("後方伸身1回ひねり→前宙 = 伸身1回切り返し", () => {
     expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front")))).toBe("伸身1回切り返し");
   });
+  it("切り返しの後に前宙以外が来る／前宙の後に技が続く", () => {
+    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_fronthalf")))).toBe("伸身1回切り返し半");
+    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_tenchu")))).toBe("伸身1回切り返し転宙");
+    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front"), sk("b_kirimomi")))).toBe("伸身1回切り返しきりもみ");
+    expect(seriesNickname(ser(sk("c_backlay1full"), sk("b_front"), sk("b_front")))).toBe("伸身1回切り返し前宙");
+  });
   it("伸身系の略し方とひねり", () => {
     expect(seriesNickname(ser(sk("b_backlayout")))).toBe("スワン");
     expect(seriesNickname(ser(sk("b_backlayhalf")))).toBe("ハーフ");

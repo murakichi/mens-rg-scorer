@@ -2,7 +2,7 @@
 // 略称：シリーズを現場の呼び方（ロンダーバック・一回半前宙投げ …）で読む
 // 表示専用。採点には一切関わらない。
 // =====================================================================
-import { LEFT_HAND_THROW_TAG, TWO_THROW_TAG, USE_APPARATUS_TAG, HAND_MOTIONS, MOTION_OPTIONS, skillDef } from "./constants";
+import { CATEGORY, LEFT_HAND_THROW_TAG, TWO_THROW_TAG, USE_APPARATUS_TAG, HAND_MOTIONS, MOTION_OPTIONS, skillDef } from "./constants";
 import type { CatchItem, Item, Series, SkillItem } from "./types";
 
 
@@ -52,7 +52,10 @@ function skillReading(skillId: string): string {
 }
 
 const isBackTwist = (id: string) => skillDef(id)?.twist?.base === "back";
-const isFrontTwist = (id: string) => skillDef(id)?.twist?.base === "front";
+const isForwardSalto = (id: string) => {
+  const d = skillDef(id);
+  return !!d?.isSalto && d.category === CATEGORY.FORWARD;
+};
 const isSalto = (it?: Item) => it?.kind === "skill" && !!skillDef(it.skillId)?.isSalto;
 
 /** 投げ・受けの印（読みが空でない＝名前を落とせない） */
@@ -84,10 +87,12 @@ function readRun(run: SkillItem[]): string {
       } else out += "ロンダート" + mark;
       continue;
     }
-    // 後方系→前方系の連続は、前宙を呼ばず「○○切り返し」
-    if (!mark && next && !skillMark(next) && isBackTwist(it.skillId) && isFrontTwist(next.skillId)) {
+    // 後方系→前方系の連続は「○○切り返し」。次が前宙ならその前宙は呼ばず、
+    // 前宙以外（前宙半ひねり・転宙など）なら切り返しの後ろにその技が続く。
+    // 前宙の後に技が続くときも、続きはそのまま読む
+    if (!mark && next && !skillMark(next) && isBackTwist(it.skillId) && isForwardSalto(next.skillId)) {
       out += skillReading(it.skillId) + "切り返し";
-      i++;
+      if (next.skillId === "b_front") i++;
       continue;
     }
     out += skillReading(it.skillId) + mark;
