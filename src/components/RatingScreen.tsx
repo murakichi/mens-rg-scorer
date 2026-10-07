@@ -8,25 +8,21 @@ import {
   RATING_BOOST_STEP,
   clampBoost,
   computeRating,
+  COMMON_RATING_APPARATUS,
+  DEFAULT_RATING_APPARATUS,
+  NO_APPARATUS,
+  scoringApparatusOf,
+  RATING_APPARATUS_OPTIONS,
   loadRatingEntries,
   normalizePerformGrade,
+  normalizeRatingApparatus,
   saveRatingEntries,
+  seriesForApparatus,
+  type RatingApparatus,
   type PerformGrade,
   type RatingEntry,
 } from "../scoring/rating";
-import { APPARATUS } from "../scoring/constants";
-import type { ApparatusKey, Series } from "../scoring/types";
-
-const APPARATUS_STORAGE_KEY = "mens-rg-scorer:rating:apparatus:v1";
-
-function loadApparatus(): ApparatusKey {
-  try {
-    const v = localStorage.getItem(APPARATUS_STORAGE_KEY);
-    return v && v in APPARATUS ? (v as ApparatusKey) : "stick";
-  } catch {
-    return "stick";
-  }
-}
+import type { Series } from "../scoring/types";
 
 const SKIP_LABEL = {
   duplicate: "同じ内容（高いほうを採用）",
@@ -34,30 +30,28 @@ const SKIP_LABEL = {
   over: `上位${RATING_ADOPT_COUNT}個の外`,
 } as const;
 
+const apparatusName = (a: RatingApparatus) => RATING_APPARATUS_OPTIONS.find((o) => o.id === a)?.name ?? "";
 const fmt = (n: number) => n.toFixed(2);
 
 /** 実施できる技・シリーズを好きなだけ入力し、上位10個からレーティングを出す画面。採点には影響しない。 */
 export function RatingScreen() {
-  const [apparatus, setApparatus] = useState<ApparatusKey>(() => loadApparatus());
   const [entries, setEntries] = useState<RatingEntry[]>(() => loadRatingEntries());
   const [sel, setSel] = useState(0);
 
   useEffect(() => saveRatingEntries(entries), [entries]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(APPARATUS_STORAGE_KEY, apparatus);
-    } catch {
-      // 保存できなくても使える
-    }
-  }, [apparatus]);
-  const result = useMemo(() => computeRating(entries, undefined, apparatus), [entries, apparatus]);
+  const result = useMemo(() => computeRating(entries), [entries]);
 
   const cur = entries[Math.min(sel, entries.length - 1)];
   const curIdx = cur ? entries.indexOf(cur) : -1;
+  const curApparatus: RatingApparatus = normalizeRatingApparatus(cur?.apparatus);
   const patch = (i: number, p: Partial<RatingEntry>) =>
     setEntries((es) => es.map((e, j) => (j === i ? { ...e, ...p } : e)));
   const add = () => {
-    setEntries((es) => [...es, { series: emptySeries(), grade: "A", boost: 0 }]);
+    setEntries((es) => [
+      ...es,
+      // 直前に選んでいた手具を引き継ぐ（同じ手具の入力が続くことが多い）
+      { apparatus: cur?.apparatus ?? DEFAULT_RATING_APPARATUS, series: emptySeries(), grade: "A", boost: 0 },
+    ]);
     setSel(entries.length);
   };
   const remove = (i: number) => {
@@ -76,18 +70,11 @@ export function RatingScreen() {
 
   return (
     <div className="rating-screen">
-      <div className="rating-apparatus">
-        {(Object.keys(APPARATUS) as ApparatusKey[]).map((k) => (
-          <button key={k} className={k === apparatus ? "io-btn is-active" : "io-btn"} onClick={() => setApparatus(k)}>
-            {APPARATUS[k].name}
-          </button>
-        ))}
-      </div>
       <div>
         <p className="note">
           実施できる技・シリーズを好きなだけ入力すると、重複を畳んだ評価値の上位{RATING_ADOPT_COUNT}個の合計を出します
           （評価値＝（ルール難度点＋上乗せ）×確度＋ルールの加点×確度。加点は技術・手具操作・二つ投げの徒手動作で、
-          選択中の手具で数えます。採点には影響しません）。E難度を超える評価は、技そのものがF・Gか、
+          入力ごとに選んだ手具で数えます。手具無しは投げ・キャッチ・手具操作を持たない入力、共通はどの手具でも使える入力（二つ投げ・横投げ・手具を使った投げ／キャッチなど手具固有の入力を持たない）です。採点には影響しません）。E難度を超える評価は、技そのものがF・Gか、
           C以上だけの連続のうち上位2技の組み合わせが高いとき、または上乗せで認めます。同じ宙返りの連続は3つまで数えます。
         </p>
 
@@ -102,7 +89,7 @@ export function RatingScreen() {
         <div className="rating-list">
           {entries.map((e, i) => (
             <button key={i} className={i === curIdx ? "io-btn is-active" : "io-btn"} onClick={() => setSel(i)}>
-              {e.name || `入力${i + 1}`}（{e.grade}）
+              {e.name || `入力${i + 1}`}（{apparatusName(e.apparatus)}・{e.grade}）
             </button>
           ))}
           <button className="io-btn" onClick={add}>
@@ -112,6 +99,17 @@ export function RatingScreen() {
 
         {cur && (
           <div className="rating-edit">
+            <div className="rating-apparatus">
+              {RATING_APPARATUS_OPTIONS.map((o) => (
+                <button
+                  key={o.id}
+                  className={o.id === normalizeRatingApparatus(cur.apparatus) ? "io-btn is-active" : "io-btn"}
+                  onClick={() => patch(curIdx, { apparatus: o.id, series: seriesForApparatus(cur.series, o.id) })}
+                >
+                  {o.name}
+                </button>
+              ))}
+            </div>
             <div className="rating-fields">
               <input
                 placeholder="名前（任意）"
@@ -143,7 +141,9 @@ export function RatingScreen() {
             </div>
             <SeriesListEditor
               series={[cur.series]}
-              apparatus={apparatus}
+              apparatus={scoringApparatusOf(curApparatus)}
+              common={curApparatus === COMMON_RATING_APPARATUS}
+              noApparatus={curApparatus === NO_APPARATUS}
               junior={false}
               future={"G"}
               allowAdd={false}
@@ -168,7 +168,7 @@ export function RatingScreen() {
             {result.candidates.map((c, k) => (
               <tr key={k} className={c.adopted ? "" : "is-skipped"}>
                 <td>
-                  {c.label}
+                  {c.label}（{apparatusName(c.apparatus)}）
                   {c.part && `（投げタンの${c.part === "throw" ? "投げ" : "タンブリング"}）`}
                 </td>
                 <td>

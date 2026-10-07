@@ -9,6 +9,8 @@ import {
   clampBoost,
   computeRating,
   entryBonus,
+  seriesForApparatus,
+  stripForCommon,
   normalizeRatingEntries,
   type RatingEntry,
 } from "../rating";
@@ -19,7 +21,7 @@ const sk = (skillId: string, extra: Partial<Item> = {}): Item =>
 const back = (twist: number, posture: "tuck" | "pike" | "layout" = "layout") =>
   sk(buildTwistSkillId({ base: "back", twist, posture }));
 const series = (...items: Item[]): Series => ({ executionDeduction: 0, items });
-const entry = (s: Series, over: Partial<RatingEntry> = {}): RatingEntry => ({ series: s, grade: "A", ...over });
+const entry = (s: Series, over: Partial<RatingEntry> = {}): RatingEntry => ({ apparatus: "stick", series: s, grade: "A", ...over });
 
 describe("レーティング：難度の土台と E 超え", () => {
   it("後方2回半ひねり→つなぎ→後方1回半ひねりは F として評価する（ルールでは E 止め）", () => {
@@ -244,5 +246,58 @@ describe("レーティング：投げタンは投げとタンブリングの両�
     const throws = r.candidates.filter((c) => c.part === "throw");
     expect(throws).toHaveLength(2);
     expect(throws.filter((c) => c.adopted)).toHaveLength(1);
+  });
+});
+
+describe("レーティング：入力ごとの手具（手具無し・共通・4種）", () => {
+  const throwTum = (extra: Partial<Item> = {}): Series =>
+    series({ kind: "throw", throwTypes: ["noview"], ...extra } as Item, sk("b_front"), { kind: "catch", catchTypes: ["nonhand"] } as Item);
+
+  it("手具無しは投げ・キャッチ・手具操作を外し、タンブリングだけを評価する", () => {
+    const stripped = seriesForApparatus(throwTum(), "none");
+    expect(stripped.items.every((i) => i.kind === "skill")).toBe(true);
+    const r = computeRating([entry(throwTum(), { apparatus: "none" })]);
+    expect(r.candidates.map((c) => c.part)).toEqual([null]);
+    expect(r.candidates[0].isThrow).toBe(false);
+    expect(r.candidates[0].bonus).toBe(0);
+  });
+
+  it("手具無しでは、技の最中の投げ・受け・手具操作も落ちる", () => {
+    const s = series(sk("b_front", { hasApparatus: true, isThrow: true, throwTypes: ["noview"] } as Partial<Item>));
+    const out = seriesForApparatus(s, "none").items[0] as Extract<Item, { kind: "skill" }>;
+    expect(out.isThrow).toBe(false);
+    expect(out.hasApparatus).toBe(false);
+    expect(out.throwTypes).toBeUndefined();
+  });
+
+  it("共通は手具固有の入力（二つ投げ・横投げ・手具を使った投げ／キャッチ・2つ同時キャッチ）だけを外す", () => {
+    const s = series(
+      { kind: "throw", throwTypes: ["noview", "side", "useapp"], reqTypes: ["twothrow"] } as Item,
+      sk("b_front"),
+      { kind: "catch", catchTypes: ["nonhand", "useapp"], catchTwo: true } as Item,
+    );
+    const out = stripForCommon(s);
+    expect(out.items[0]).toMatchObject({ throwTypes: ["noview"], reqTypes: [] });
+    expect(out.items[2]).toMatchObject({ catchTypes: ["nonhand"], catchTwo: false });
+    // 投げ・キャッチ自体は残る（共通でも投げタンとして評価される）
+    expect(computeRating([entry(s, { apparatus: "common" })]).candidates[0].isThrow).toBe(true);
+  });
+
+  it("その手具で入力できない内容（スティックの手具を使った投げ）は評価に入らない", () => {
+    const withUse = series({ kind: "throw", throwTypes: ["useapp"] } as Item, sk("b_front"), { kind: "catch" } as Item);
+    const stick = computeRating([entry(withUse, { apparatus: "stick" })]);
+    expect(stick.candidates[0].bonus).toBe(entryBonus(seriesForApparatus(withUse, "stick"), "stick"));
+  });
+
+  it("重複は手具ごとに判定する（スティックとクラブの同じ技は別の実施）", () => {
+    const a = computeRating([entry(series(back(2.5)), { apparatus: "stick" }), entry(series(back(2.5)), { apparatus: "clubs" })]);
+    expect(a.candidates.filter((c) => c.adopted)).toHaveLength(2);
+    const b = computeRating([entry(series(back(2.5)), { apparatus: "stick" }), entry(series(back(2.5)), { apparatus: "stick" })]);
+    expect(b.candidates.filter((c) => c.adopted)).toHaveLength(1);
+  });
+
+  it("手具の指定が無い・不正な入力はスティック扱いで取り込む", () => {
+    const out = normalizeRatingEntries([{ series: series(back(1)) }, { series: series(back(1)), apparatus: "zzz" }, { series: series(back(1)), apparatus: "none" }]);
+    expect(out.map((e) => e.apparatus)).toEqual(["stick", "stick", "none"]);
   });
 });

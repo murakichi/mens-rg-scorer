@@ -16,16 +16,17 @@
 // =====================================================================
 
 import {
+  APPARATUS,
   DIFF_SCORE,
   DIFF_VALUE,
   VALUE_DIFF,
   skillDef,
   skillDifficulty,
 } from "./constants";
-import { analyzeSeries, tumblingFlags } from "./analysis";
+import { analyzeSeries, stripForApparatus, tumblingFlags } from "./analysis";
 import { computeScore } from "./score";
 import { describeSeries } from "./templates";
-import type { ApparatusKey, Difficulty, Series, Unit } from "./types";
+import type { ApparatusKey, Difficulty, Item, Series, Unit } from "./types";
 
 // ---- 調整値 ----
 
@@ -73,12 +74,80 @@ export function clampBoost(v: unknown): number {
   return Math.min(Math.max(n, 0), RATING_BOOST_MAX);
 }
 
+// ---- 手具 ----
+
+/** 手具無し（タンブリング・徒手だけ。投げ・キャッチ・手具操作を持たない） */
+export const NO_APPARATUS = "none";
+/** 共通（どの手具でも使える入力。手具固有の入力を持たず、スティック扱いで評価する。テンプレートの「共通」と同じ） */
+export const COMMON_RATING_APPARATUS = "common";
+export type RatingApparatus = ApparatusKey | typeof NO_APPARATUS | typeof COMMON_RATING_APPARATUS;
+
+export const RATING_APPARATUS_OPTIONS: { id: RatingApparatus; name: string }[] = [
+  { id: NO_APPARATUS, name: "手具無し" },
+  { id: COMMON_RATING_APPARATUS, name: "共通" },
+  ...(Object.keys(APPARATUS) as ApparatusKey[]).map((id) => ({ id, name: APPARATUS[id].name })),
+];
+
+export const DEFAULT_RATING_APPARATUS: RatingApparatus = "stick";
+
+export function normalizeRatingApparatus(v: unknown): RatingApparatus {
+  return v === NO_APPARATUS || v === COMMON_RATING_APPARATUS || (typeof v === "string" && v in APPARATUS)
+    ? (v as RatingApparatus)
+    : DEFAULT_RATING_APPARATUS;
+}
+
+/** 採点（加点の計算）に使う手具。手具無し・共通はスティック扱い。 */
+export const scoringApparatusOf = (a: RatingApparatus): ApparatusKey =>
+  a === NO_APPARATUS || a === COMMON_RATING_APPARATUS ? "stick" : a;
+
+/** 手具固有の入力（二つ投げ・左手投げ・横投げ・手具を使った投げ／キャッチ・2つ同時キャッチ・ロープ跳び）を外す。共通の入力にする。 */
+export function stripForCommon(series: Series): Series {
+  const tags = (ids?: string[]) => (ids || []).filter((id) => id !== "side" && id !== "useapp");
+  const items = series.items
+    .filter((item) => item.kind !== "ropeJump")
+    .map((item): Item => {
+      if (item.kind === "throw") return { ...item, throwTypes: tags(item.throwTypes), reqTypes: [] };
+      if (item.kind === "catch") return { ...item, catchTypes: tags(item.catchTypes), catchTwo: false };
+      if (item.kind === "skill")
+        return {
+          ...item,
+          throwTypes: tags(item.throwTypes),
+          reqTypes: [],
+          catchTypes: tags(item.catchTypes),
+          catchTwo: false,
+        };
+      return item;
+    });
+  return { ...series, items };
+}
+
+/** 手具に関わる入力（投げ・キャッチ・手具操作・技の最中の投げ受け）を外す。手具無しの入力にする。 */
+export function stripAllApparatus(series: Series): Series {
+  const items = series.items
+    .filter((item) => item.kind !== "throw" && item.kind !== "catch" && item.kind !== "ropeJump")
+    .map((item): Item => {
+      if (item.kind !== "skill") return item;
+      const { hasApparatus: _a, isThrow: _t, isCatch: _c, throwTypes: _tt, reqTypes: _r, catchTypes: _ct, catchTwo: _c2, ...rest } = item;
+      return { ...rest, hasApparatus: false, isThrow: false };
+    });
+  return { ...series, items: items.length ? items : [{ kind: "skill", skillId: "", hasApparatus: false, isThrow: false }] };
+}
+
+/** 入力をその手具で表せる形に直す（手具で入力できない内容を落とす）。 */
+export function seriesForApparatus(series: Series, apparatus: RatingApparatus): Series {
+  if (apparatus === NO_APPARATUS) return stripAllApparatus(series);
+  if (apparatus === COMMON_RATING_APPARATUS) return stripForCommon(series);
+  return stripForApparatus([series], apparatus)[0];
+}
+
 // ---- 入力 ----
 
 /** 入力1件。技ひとつもシリーズも `Series` で表す（技ひとつ＝アイテム1つのシリーズ）。 */
 export interface RatingEntry {
   /** 一覧で見分けるための名前（任意） */
   name?: string;
+  /** 手具（4種、または手具無し）。手具で入力できない内容は評価に入らず、重複もこの単位で判定する。 */
+  apparatus: RatingApparatus;
   series: Series;
   /** 技・シリーズを実施できる度合い */
   grade: PerformGrade;
@@ -96,6 +165,7 @@ export function normalizeRatingEntries(v: unknown): RatingEntry[] {
     return [
       {
         ...(typeof e.name === "string" && e.name ? { name: e.name } : {}),
+        apparatus: normalizeRatingApparatus(e.apparatus),
         series: e.series,
         grade: normalizePerformGrade(e.grade),
         ...(e.throwGrade ? { throwGrade: normalizePerformGrade(e.throwGrade) } : {}),
@@ -179,6 +249,8 @@ export interface RatingCandidate {
   unitIndex: number;
   /** 一覧に出す名前（入力に名前があればそれ、無ければ構成の要約） */
   label: string;
+  /** 手具（重複の判定はこの単位。手具が違えば別の実施として数える） */
+  apparatus: RatingApparatus;
   /** 投げを含む塊か */
   isThrow: boolean;
   /** 投げタンを投げ（徒手）と転回に分けたうちの、どちら側の候補か。投げタンでなければ null */
@@ -251,7 +323,8 @@ function adopt(
   const seen = new Set<string>();
   let taken = 0;
   order.forEach((c) => {
-    if (!c.neverDuplicate && c.signatures.some((s) => seen.has(s))) {
+    const key = (sig: string) => `${c.apparatus}|${sig}`;
+    if (!c.neverDuplicate && c.signatures.some((sig) => seen.has(key(sig)))) {
       result.set(c, "duplicate");
       return;
     }
@@ -259,14 +332,14 @@ function adopt(
     if (
       seq &&
       order.some((o) => {
-        const oseq = o === c ? null : tumSeq(o);
+        const oseq = o === c || o.apparatus !== c.apparatus ? null : tumSeq(o);
         return !!oseq && valueOf(o) >= valueOf(c) && isProperSublist(seq, oseq);
       })
     ) {
       result.set(c, "contained");
       return;
     }
-    if (!c.neverDuplicate) c.signatures.forEach((s) => seen.add(s));
+    if (!c.neverDuplicate) c.signatures.forEach((sig) => seen.add(key(sig)));
     if (taken >= count) {
       result.set(c, "over");
       return;
@@ -284,16 +357,14 @@ export function entryBonus(series: Series, apparatus: ApparatusKey): number {
 }
 
 /** 入力された技・シリーズからレーティングを計算する（採点とは独立）。 */
-export function computeRating(
-  entries: RatingEntry[],
-  count = RATING_ADOPT_COUNT,
-  apparatus: ApparatusKey = "stick",
-): RatingResult {
+export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT): RatingResult {
   const candidates: RatingCandidate[] = [];
   entries.forEach((entry, entryIndex) => {
     const first = candidates.length;
-    const { series, trimmed } = capRepeatedSaltos(entry.series);
-    const bonus = entryBonus(series, apparatus);
+    // 手具で入力できない内容は落とす。手具無しは手具に関わる入力を全部外す（採点はスティック扱い）
+    const entryApparatus = normalizeRatingApparatus(entry.apparatus);
+    const { series, trimmed } = capRepeatedSaltos(seriesForApparatus(entry.series, entryApparatus));
+    const bonus = entryBonus(series, scoringApparatusOf(entryApparatus));
     const hasThrowUnit = analyzeSeries(series, false, null).units.some((u) => u.isThrow);
     // 加点は投げ・操作の質。投げを含むシリーズでは、技と投げのうち低いほうの確度で割り引く
     const bonusConf = Math.min(
@@ -341,6 +412,7 @@ export function computeRating(
           entryIndex,
           unitIndex,
           label: entry.name || describeSeries(entry.series),
+          apparatus: entryApparatus,
           isThrow: unit.isThrow,
           part: p.part,
           grade,
