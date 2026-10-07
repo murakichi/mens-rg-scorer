@@ -35,7 +35,7 @@ describe("レーティング：難度の土台と E 超え", () => {
     expect(c.ruleDiff).toBe("E");
     expect(c.ratedDiff).toBe("F");
     expect(c.raise).toBe("chain");
-    // 後方2回半ひねり（+0.5）の加点が乗る（連続では最大の1つ）
+    // 後方2回半ひねり（+0.05）の加点が乗る（連続では最大の1つ）
     expect(r.total).toBeCloseTo(DIFF_SCORE.F + RATING_TWIST_PREMIUM_BY_TWIST[2.5], 5);
     expect(r.ruleTotal).toBeCloseTo(DIFF_SCORE.E, 5);
   });
@@ -336,7 +336,7 @@ describe("レーティング：同じ難度の中で難しい技を高く評価�
     expect(inChain.premiumSkillId).toBe("b_kirimomi");
   });
 
-  it("加点は基本は難度の刻み（0.1）未満で難度の順序は変えない。後方2回宙返り・2回半ひねりだけ意図的にそれ以上", () => {
+  it("加点は基本は難度の刻み（0.1）未満で難度の順序は変えない。後方2回宙返りだけ刻みと同じ大きさ", () => {
     const EXCEPTIONS = ["d_doubleback"];
     Object.keys(RATING_SKILL_PREMIUM).forEach((id) => {
       expect(skillDef(id)).toBeDefined();
@@ -413,24 +413,24 @@ describe("レーティング：n回半ひねりの差別化（整数回は加点
   });
 });
 
-describe("レーティング：2回半ひねり +0.5・後方2回宙返り +0.1", () => {
+describe("レーティング：2回半ひねり +0.05・後方2回宙返り +0.1", () => {
   const val = (id: string) => computeRating([entry(series(sk(id)))]).candidates[0];
   const twist25 = buildTwistSkillId({ base: "back", twist: 2.5, posture: "layout" });
 
-  it("2回半ひねりは +0.5（n回半ひねりの共通値 0.025 より優先）、他の n.5 は 0.025 のまま", () => {
-    expect(RATING_TWIST_PREMIUM_BY_TWIST[2.5]).toBe(0.5);
-    expect(skillPremiumOf(twist25)).toBe(0.5);
-    expect(skillPremiumOf(buildTwistSkillId({ base: "back", twist: 2.5, posture: "tuck" }))).toBe(0.5);
-    expect(skillPremiumOf(buildTwistSkillId({ base: "front", twist: 2.5, posture: "layout" }))).toBe(0.5);
+  it("2回半ひねりは +0.05（n回半ひねりの共通値 0.025 より優先）、他の n.5 は 0.025 のまま", () => {
+    expect(RATING_TWIST_PREMIUM_BY_TWIST[2.5]).toBe(0.05);
+    expect(skillPremiumOf(twist25)).toBe(0.05);
+    expect(skillPremiumOf(buildTwistSkillId({ base: "back", twist: 2.5, posture: "tuck" }))).toBe(0.05);
+    expect(skillPremiumOf(buildTwistSkillId({ base: "front", twist: 2.5, posture: "layout" }))).toBe(0.05);
     expect(skillPremiumOf(buildTwistSkillId({ base: "back", twist: 3.5, posture: "layout" }))).toBe(0.025);
     expect(skillPremiumOf(buildTwistSkillId({ base: "back", twist: 2, posture: "layout" }))).toBe(0);
   });
 
-  it("後方2回半ひねりは D 難度のまま、評価値は D＋0.5（E・F 相当を超える）", () => {
+  it("後方2回半ひねりは D 難度のまま、評価値は D＋0.05（難度の順序は変えない）", () => {
     const c = val(twist25);
     expect(c.ruleDiff).toBe("D");
-    expect(c.points).toBeCloseTo(DIFF_SCORE.D + 0.5, 5);
-    expect(c.points).toBeGreaterThan(DIFF_SCORE.F);
+    expect(c.points).toBeCloseTo(DIFF_SCORE.D + 0.05, 5);
+    expect(c.points).toBeLessThan(DIFF_SCORE.E);
   });
 
   it("後方2回宙返り（d_doubleback）は +0.1。他の D 難度の技より高い", () => {
@@ -442,14 +442,14 @@ describe("レーティング：2回半ひねり +0.5・後方2回宙返り +0.1"
     expect(c.value).toBeGreaterThan(val("d_frontlay1").value);
   });
 
-  it("連続では最大の1つだけ足す（2回半ひねり 0.5 ＋ 後方2回宙返り 0.1 でも 0.5）", () => {
+  it("連続では最大の1つだけ足す（後方2回宙返り 0.1 ＋ 2回半ひねり 0.05 でも 0.1）", () => {
     const r = computeRating([entry(series(sk("d_doubleback"), sk("a_roundoff"), sk(twist25)))]).candidates[0];
-    expect(r.premium).toBe(0.5);
+    expect(r.premium).toBe(0.1);
   });
 
   it("「ルールのみ」の合計には含めない", () => {
     const r = computeRating([entry(series(sk(twist25)))]);
     expect(r.ruleTotal).toBeCloseTo(DIFF_SCORE.D, 5);
-    expect(r.total).toBeCloseTo(DIFF_SCORE.D + 0.5, 5);
+    expect(r.total).toBeCloseTo(DIFF_SCORE.D + 0.05, 5);
   });
 });
