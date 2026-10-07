@@ -372,6 +372,8 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean, future: FutureLevel): Un
       hasDPlus: false,
     };
   }
+  // 投げタンは転回側のキーしか持たないので、投げ側（徒手）のキーも別に持つ（レーティング用）
+  const handSignatures = hasTumbling ? unitSignatures(buf, [], composition, junior, future) : undefined;
   const handV = handDiff ? DIFF_VALUE[handDiff] : 0;
   const tumbV = tumblingDiff ? DIFF_VALUE[tumblingDiff] : 0;
   const finalDiff = (handV >= tumbV ? handDiff : tumblingDiff) as Difficulty;
@@ -385,6 +387,7 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean, future: FutureLevel): Un
     skillThrow,
     isThrowTumbling: hasTumbling,
     signatures,
+    handSignatures,
     neverDuplicate,
     skills: buf.skills,
     handDiff,

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildTwistSkillId, DIFF_SCORE } from "../constants";
+import { computeScore } from "../score";
 import {
   RATING_ADOPT_COUNT,
   RATING_BOOST_MAX,
@@ -7,6 +8,7 @@ import {
   capRepeatedSaltos,
   clampBoost,
   computeRating,
+  entryBonus,
   normalizeRatingEntries,
   type RatingEntry,
 } from "../rating";
@@ -139,5 +141,108 @@ describe("レーティング：入力の取り込み", () => {
     expect(out[0].grade).toBe("A");
     expect(out[0].boost).toBe(RATING_BOOST_MAX);
     expect(normalizeRatingEntries("x")).toEqual([]);
+  });
+});
+
+describe("レーティング：ルールの加点", () => {
+  // 視野外の投げ・手以外のキャッチ（技術加点）を含む投げタン
+  const withTech = (): Series =>
+    series(
+      { kind: "throw", throwTypes: ["noview"] } as Item,
+      sk("b_front"),
+      { kind: "catch", catchTypes: ["nonhand"] } as Item,
+    );
+  const plain = (): Series => series({ kind: "throw" } as Item, sk("b_front"), { kind: "catch" } as Item);
+
+  it("加点は computeScore の技術・手具操作・二つ投げの徒手動作加点と一致する", () => {
+    const b = computeScore([withTech()], "stick").seriesBreakdowns[0];
+    expect(b.tech).toBeGreaterThan(0);
+    expect(entryBonus(withTech(), "stick")).toBeCloseTo(b.tech + b.appOp + b.twoMot, 5);
+    expect(entryBonus(plain(), "stick")).toBe(0);
+  });
+
+  it("加点が付く形は評価値が高く、確度を掛けて足される", () => {
+    const base = computeRating([entry(plain())]).total;
+    const tech = computeRating([entry(withTech())]);
+    expect(tech.candidates[0].bonus).toBeGreaterThan(0);
+    expect(tech.total).toBeCloseTo(base + entryBonus(withTech(), "stick"), 3);
+    const c = computeRating([entry(withTech(), { grade: "C" })]).total;
+    expect(c).toBeCloseTo(tech.total * 0.3, 3);
+  });
+
+  it("加点は投げの度合いが低いほうで割り引く", () => {
+    const full = computeRating([entry(withTech())]).total;
+    const weak = computeRating([entry(withTech(), { throwGrade: "C" })]).total;
+    expect(weak).toBeCloseTo(full * 0.3, 3);
+  });
+
+  it("加点は入力ごとに1回だけ（塊が複数でも二重に載らない）", () => {
+    const two = series(
+      { kind: "throw", throwTypes: ["noview"] } as Item,
+      sk("b_front"),
+      { kind: "catch", catchTypes: ["nonhand"] } as Item,
+      { kind: "throw", throwTypes: ["noview"] } as Item,
+      sk("b_back"),
+      { kind: "catch", catchTypes: ["nonhand"] } as Item,
+    );
+    const r = computeRating([entry(two)]);
+    const total = r.candidates.reduce((n, c) => n + c.bonus, 0);
+    expect(total).toBeCloseTo(entryBonus(two, "stick"), 5);
+    expect(r.candidates.filter((c) => c.bonus > 0)).toHaveLength(1);
+  });
+
+  it("「Aのみ」の合計にも加点が入り、A以外には入らない", () => {
+    const a = computeRating([entry(withTech(), { grade: "A" })]);
+    const c = computeRating([entry(withTech(), { grade: "C" })]);
+    expect(a.matchTotal).toBeCloseTo(a.total, 3);
+    expect(c.matchTotal).toBe(0);
+  });
+});
+
+describe("レーティング：投げタンは投げとタンブリングの両方を採用する", () => {
+  const chene = (n: number): Item => ({ kind: "motion", motionId: "chene", count: n }) as Item;
+  const throwTum = (n = 3): Series =>
+    series({ kind: "throw" } as Item, chene(n), sk("b_front"), { kind: "catch" } as Item);
+
+  it("投げタンは投げ（徒手）とタンブリングの2候補に分かれる", () => {
+    const r = computeRating([entry(throwTum())]);
+    const parts = r.candidates.map((c) => c.part).sort();
+    expect(parts).toEqual(["throw", "tumbling"]);
+    const t = r.candidates.find((c) => c.part === "throw")!;
+    const u = r.candidates.find((c) => c.part === "tumbling")!;
+    // 投げ側は徒手の動作数（シェネ3＝D）、タンブリング側は技の難度（前宙＋投げ）
+    expect(t.ruleDiff).toBe("D");
+    expect(u.ruleDiff).not.toBe("D");
+    expect(r.candidates.every((c) => c.adopted)).toBe(true);
+    expect(r.total).toBeCloseTo(t.value + u.value, 3);
+  });
+
+  it("両方を足すので、ルールの高いほうだけを数えるより大きい", () => {
+    const r = computeRating([entry(throwTum())]);
+    expect(r.total).toBeGreaterThan(Math.max(...r.candidates.map((c) => c.value)));
+  });
+
+  it("投げの度合いは投げ側に効き、タンブリング側は技との低いほうになる", () => {
+    const base = computeRating([entry(throwTum())]);
+    const weak = computeRating([entry(throwTum(), { grade: "A", throwGrade: "C" })]);
+    const get = (r: typeof base, part: string) => r.candidates.find((c) => c.part === part)!;
+    expect(get(weak, "throw").value).toBeCloseTo(get(base, "throw").value * 0.3, 3);
+    expect(get(weak, "tumbling").value).toBeCloseTo(get(base, "tumbling").value * 0.3, 3);
+    // 技のほうが低いときは、投げ側は投げの度合いのまま（技の度合いに引きずられない）
+    const weakSkill = computeRating([entry(throwTum(), { grade: "C", throwGrade: "A" })]);
+    expect(get(weakSkill, "throw").value).toBeCloseTo(get(base, "throw").value, 3);
+    expect(get(weakSkill, "tumbling").value).toBeCloseTo(get(base, "tumbling").value * 0.3, 3);
+  });
+
+  it("徒手の動作がない投げタンは投げ側を出さない", () => {
+    const r = computeRating([entry(series({ kind: "throw" } as Item, sk("b_front"), { kind: "catch" } as Item))]);
+    expect(r.candidates.map((c) => c.part)).toEqual(["tumbling"]);
+  });
+
+  it("同じ内訳の投げ側は重複として畳む", () => {
+    const r = computeRating([entry(throwTum()), entry(series({ kind: "throw" } as Item, chene(3), sk("b_backsalto"), { kind: "catch" } as Item))]);
+    const throws = r.candidates.filter((c) => c.part === "throw");
+    expect(throws).toHaveLength(2);
+    expect(throws.filter((c) => c.adopted)).toHaveLength(1);
   });
 });

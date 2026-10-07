@@ -36,7 +36,7 @@ export function RatingModal({ open, apparatus, onClose }: Props) {
   const [sel, setSel] = useState(0);
 
   useEffect(() => saveRatingEntries(entries), [entries]);
-  const result = useMemo(() => computeRating(entries), [entries]);
+  const result = useMemo(() => computeRating(entries, undefined, apparatus), [entries, apparatus]);
 
   if (!open) return null;
   const cur = entries[Math.min(sel, entries.length - 1)];
@@ -72,7 +72,8 @@ export function RatingModal({ open, apparatus, onClose }: Props) {
         </div>
         <p className="note">
           実施できる技・シリーズを好きなだけ入力すると、重複を畳んだ評価値の上位{RATING_ADOPT_COUNT}個の合計を出します
-          （評価値＝（ルール難度点＋上乗せ）×確度。採点には影響しません）。E難度を超える評価は、技そのものがF・Gか、
+          （評価値＝（ルール難度点＋上乗せ）×確度＋ルールの加点×確度。加点は技術・手具操作・二つ投げの徒手動作で、
+          選択中の手具で数えます。採点には影響しません）。E難度を超える評価は、技そのものがF・Gか、
           C以上だけの連続のうち上位2技の組み合わせが高いとき、または上乗せで認めます。同じ宙返りの連続は3つまで数えます。
         </p>
 
@@ -80,7 +81,7 @@ export function RatingModal({ open, apparatus, onClose }: Props) {
           <div>
             <strong>{fmt(result.total)}</strong> レーティング
           </div>
-          <div>ルール難度のみ {fmt(result.ruleTotal)}</div>
+          <div>ルールのみ（E超え・上乗せなし）{fmt(result.ruleTotal)}</div>
           <div>試合で実施できる（A）だけ {fmt(result.matchTotal)}</div>
         </div>
 
@@ -152,11 +153,15 @@ export function RatingModal({ open, apparatus, onClose }: Props) {
           <tbody>
             {result.candidates.map((c, k) => (
               <tr key={k} className={c.adopted ? "" : "is-skipped"}>
-                <td>{c.label}</td>
+                <td>
+                  {c.label}
+                  {c.part && `（投げタンの${c.part === "throw" ? "投げ" : "タンブリング"}）`}
+                </td>
                 <td>
                   {c.ruleDiff}
                   {c.ratedDiff !== c.ruleDiff && ` → ${c.ratedDiff}（${c.raise === "skill" ? "技そのもの" : "質の高い連続"}）`}
                   {c.boost > 0 && ` +${c.boost}段`}
+                  {c.bonus > 0 && ` ＋加点${c.bonus.toFixed(1)}`}
                 </td>
                 <td>
                   {c.grade}（×{c.confidence}）
