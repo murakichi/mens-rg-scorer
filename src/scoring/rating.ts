@@ -2,16 +2,16 @@
 // レーティング（実施できる技・シリーズの総合評価）
 //
 // 採点（`computeScore`）とは別物で、**ルールの難度を土台に、練習状況（実施できる確度）と
-// 独自の上乗せを足して**「いま実施できる技・シリーズの強さ」を1つの数字にする。
+// ルールの加点を足して**「いま実施できる技・シリーズの強さ」を1つの数字にする。
 // 採点側はここを一切読まない。調整値はこのファイルの先頭にまとめてある。
 //
-//   評価値 ＝ （ルール難度点 ＋ 上乗せ） × 確度  ＋  ルールの加点 × 確度
+//   評価値 ＝ （ルール難度点 ＋ ルールの加点） × 確度（難度・加点から機械的に決まり、人が点を足す入力は無い）
 //   ルールの加点 ＝ そのシリーズを `computeScore` に通した 技術加点・手具操作加点・二つ投げの徒手動作加点。
 //   演技全体で1回だけの加点（シリーズ加点・様々な跳び）は入力ごとの評価に足さない。
 //   加点は投げ・操作の質なので、投げを含むシリーズでは技と投げの確度の低いほうを掛ける。
 //   レーティング ＝ 重複を畳んだ評価値の上位 `RATING_ADOPT_COUNT` 個の合計
 //
-// E より上（F・G）に届く経路は **「技そのものがF・G」「質の高い連続（上位2技の組み合わせ）」「手動の上乗せ」** だけ。
+// E より上（F・G）に届く経路は **「技そのものがF・G」「質の高い連続（上位2技の組み合わせ）」** だけ。
 // 連続の長さ・動作数・同じ技の繰り返しでは E で止まる（低難度を並べて水増しできない）。
 // =====================================================================
 
@@ -20,6 +20,7 @@ import {
   DIFF_SCORE,
   DIFF_VALUE,
   VALUE_DIFF,
+  parseTwistSkillId,
   skillDef,
   skillDifficulty,
 } from "./constants";
@@ -33,22 +34,92 @@ import type { ApparatusKey, Difficulty, Item, Series, Unit } from "./types";
 /** 実施できる度合い（A＝試合で実施できる … E＝不可）。確度は評価値に掛ける。 */
 export type PerformGrade = "A" | "B" | "C" | "D" | "E";
 
-export const PERFORM_GRADES: { id: PerformGrade; name: string; note: string; confidence: number }[] = [
-  { id: "A", name: "A 試合で実施できる", note: "試合で実施できる", confidence: 1.0 },
-  { id: "B", name: "B フロアでできる", note: "フロアでできる", confidence: 0.6 },
-  { id: "C", name: "C エアマットでできる", note: "エアマットでできる", confidence: 0.3 },
-  { id: "D", name: "D トランポリンなら", note: "タントラ・トランポリンならできる・回ったことがある", confidence: 0.1 },
-  { id: "E", name: "E 不可", note: "不可", confidence: 0 },
+export const PERFORM_GRADES: {
+  id: PerformGrade;
+  name: string;
+  /** 技・タンブリングでの意味（どこでできるか） */
+  note: string;
+  /** 投げでの意味（どれだけ正確に決まるか。投げはトランポリン等で練習しないので場所では測らない） */
+  throwNote: string;
+  confidence: number;
+}[] = [
+  {
+    id: "A",
+    name: "A",
+    note: "試合で実施できる",
+    throwNote: "試合でも狙いどおりに決まる（ほぼ落とさない）",
+    confidence: 1.0,
+  },
+  {
+    id: "B",
+    name: "B",
+    note: "フロアでできる",
+    throwNote: "練習ではよく決まるが、試合では落とすことがある",
+    confidence: 0.6,
+  },
+  {
+    id: "C",
+    name: "C",
+    note: "エアマットでできる",
+    throwNote: "決まる・落とすが半々くらい",
+    confidence: 0.3,
+  },
+  {
+    id: "D",
+    name: "D",
+    note: "タントラ・トランポリンならできる・回ったことがある",
+    throwNote: "たまに決まる程度",
+    confidence: 0.1,
+  },
+  { id: "E", name: "E", note: "不可", throwNote: "投げられない・決まらない", confidence: 0 },
 ];
 
 export const DEFAULT_PERFORM_GRADE: PerformGrade = "A";
 
+
 /** 評価に採用する上位の数 */
 export const RATING_ADOPT_COUNT = 10;
-/** 上乗せ1段あたりの点数（難度表の E→F→G の刻みと同じ 0.2） */
-export const RATING_BOOST_STEP = 0.2;
-/** 上乗せの上限（段）。際限なく盛れると上位の比較が意味を失う。 */
-export const RATING_BOOST_MAX = 3;
+/**
+ * 同じ難度の中でも**難しい技**の差別化。難度点に足す小さな加点で、技ごとに表で持つ（`DIFF_SCORE` の刻み 0.1 未満にして、
+ * 難度の順序は変えない＝同じ難度の中でだけ効く）。ユニット（連続）には、含まれる技のうち最大の1つだけを足す
+ * （同じ技を並べても、難しい技を重ねても増えない）。対象は表の技（転宙・きりもみ系）とひねりのある宙返り（`RATING_TWIST_PREMIUM`）。きりもみ・きりもみ転回は宙返りの連続に含まれるときだけ（徒手動作の扱いのときは対象外）。
+ */
+export const RATING_SKILL_PREMIUM: Record<string, number> = {
+  b_tenchu: 0.05, // 転宙（B）
+  b_kirimomi: 0.05, // きりもみ（B）
+  c_kirimomiten: 0.05, // きりもみ転回（C）
+};
+
+/**
+ * ひねりのある宙返りの加点。**n回半ひねり**（n.5）は 0.025、**n回ひねり**（整数）は加点しない。
+ * 同じ難度の中では半ひねりが1つ多いほうが難しい（難度表は半ひねりごとに1段、2段で1難度。C＝1〜1.5回、D＝2〜2.5回…）ため。
+ * 技の表の `twist`・組み立て入力（`tw:` の id）のどちらでも、ひねり回数から機械的に決まる。
+ * 対象は1回ひねり以上（半ひねりだけの技は対象外）。難度の刻み（0.1）未満なので難度の順序は変えない。
+ */
+export const RATING_TWIST_PREMIUM = { whole: 0, half: 0.025 } as const;
+export const RATING_TWIST_MIN = 1;
+
+/** その技の難しさの加点（表の技 → ひねり回数、の順で引く） */
+export function skillPremiumOf(skillId: string): number {
+  const fixed = RATING_SKILL_PREMIUM[skillId];
+  if (fixed !== undefined) return fixed;
+  const twist = parseTwistSkillId(skillId)?.twist ?? 0;
+  if (twist < RATING_TWIST_MIN) return 0;
+  return Number.isInteger(twist) ? RATING_TWIST_PREMIUM.whole : RATING_TWIST_PREMIUM.half;
+}
+
+/** そのユニットの難しい技の加点（転回系として数える技のうち最大の1つ） */
+export function skillPremium(unit: Unit): { premium: number; skillId: string | null } {
+  const ids = unit.skills.map((s) => s.skillId);
+  const flags = tumblingFlags(ids);
+  let best = { premium: 0, skillId: null as string | null };
+  ids.forEach((id, i) => {
+    const v = flags[i] ? skillPremiumOf(id) : 0;
+    if (v > best.premium) best = { premium: v, skillId: id };
+  });
+  return best;
+}
+
 /** 同じ宙返りを続けて数える上限（4つ目からは連続に数えない） */
 export const RATING_SAME_SALTO_MAX = 3;
 /** 「質の高い連続」とみなすのに全員が満たすべき最低難度（連続に含まれる非A難度技すべて） */
@@ -66,12 +137,6 @@ export const performConfidence = (g: PerformGrade | undefined): number =>
 
 export function normalizePerformGrade(v: unknown, fallback: PerformGrade = DEFAULT_PERFORM_GRADE): PerformGrade {
   return PERFORM_GRADES.some((g) => g.id === v) ? (v as PerformGrade) : fallback;
-}
-
-export function clampBoost(v: unknown): number {
-  const n = Math.floor(Number(v));
-  if (!Number.isFinite(n)) return 0;
-  return Math.min(Math.max(n, 0), RATING_BOOST_MAX);
 }
 
 // ---- 手具 ----
@@ -151,10 +216,6 @@ export interface RatingEntry {
   series: Series;
   /** 技・シリーズを実施できる度合い */
   grade: PerformGrade;
-  /** 投げを含む塊だけに効く、投げの実施度合い。未指定は `grade` と同じ。低いほうが確度になる。 */
-  throwGrade?: PerformGrade;
-  /** ルール難度への段階上乗せ（0〜`RATING_BOOST_MAX`） */
-  boost?: number;
 }
 
 export function normalizeRatingEntries(v: unknown): RatingEntry[] {
@@ -168,8 +229,6 @@ export function normalizeRatingEntries(v: unknown): RatingEntry[] {
         apparatus: normalizeRatingApparatus(e.apparatus),
         series: e.series,
         grade: normalizePerformGrade(e.grade),
-        ...(e.throwGrade ? { throwGrade: normalizePerformGrade(e.throwGrade) } : {}),
-        boost: clampBoost(e.boost),
       },
     ];
   });
@@ -205,7 +264,7 @@ export function capRepeatedSaltos(series: Series): { series: Series; trimmed: nu
 
 export type RaiseSource = "skill" | "chain" | null;
 
-/** そのユニットの「E超え」の評価。ルール難度（E止め）に上乗せして返す。 */
+/** そのユニットの「E超え」の評価。ルール難度（E止め）の土台から引き上げて返す。 */
 export function ratedDifficulty(
   unit: Unit,
   /** ルール難度（E止め）の土台。投げタンの転回側を評価するときは転回側の難度を渡す。 */
@@ -255,7 +314,7 @@ export interface RatingCandidate {
   isThrow: boolean;
   /** 投げタンを投げ（徒手）と転回に分けたうちの、どちら側の候補か。投げタンでなければ null */
   part: "throw" | "tumbling" | null;
-  /** 実際に確度として使った度合い（投げを含む塊は技とのうち低いほう） */
+  /** 確度に使ったランク（入力のランク） */
   grade: PerformGrade;
   confidence: number;
   /** ルールどおりの難度（E止め） */
@@ -263,16 +322,19 @@ export interface RatingCandidate {
   /** E超えを認めた難度（認めなければ ruleDiff と同じ） */
   ratedDiff: Difficulty;
   raise: RaiseSource;
-  boost: number;
-  /** 難度点 ＋ 上乗せ（確度を掛ける前） */
+  /** 難しい技の加点（`RATING_SKILL_PREMIUM`。同じ難度の中での差別化）。0なら対象の技なし */
+  premium: number;
+  /** 難しい技の加点の元になった技のid */
+  premiumSkillId: string | null;
+  /** 難度点（確度を掛ける前。難しい技の加点を含み、ルールの加点は含まない） */
   points: number;
   /** ルールの加点（技術・手具操作・二つ投げの徒手動作）。入力ごとに1回、評価値がいちばん高い塊にだけ載せる。 */
   bonus: number;
   /** points × 確度 ＋ bonus × 加点の確度 */
   value: number;
-  /** 上乗せ・E超え無しの評価値（ルール難度＋加点のみ） */
+  /** E超え無しの評価値（ルール難度＋加点のみ） */
   ruleValue: number;
-  /** 試合で実施できる（A）ときの評価値（確度1.0、上乗せ込み） */
+  /** 試合で実施できる（A）ときの評価値（確度1.0） */
   matchValue: number;
   /** 同じ宙返りの繰り返しを数えなかった個数 */
   trimmed: number;
@@ -365,15 +427,10 @@ export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT
     const entryApparatus = normalizeRatingApparatus(entry.apparatus);
     const { series, trimmed } = capRepeatedSaltos(seriesForApparatus(entry.series, entryApparatus));
     const bonus = entryBonus(series, scoringApparatusOf(entryApparatus));
-    const hasThrowUnit = analyzeSeries(series, false, null).units.some((u) => u.isThrow);
-    // 加点は投げ・操作の質。投げを含むシリーズでは、技と投げのうち低いほうの確度で割り引く
-    const bonusConf = Math.min(
-      performConfidence(entry.grade),
-      hasThrowUnit ? performConfidence(entry.throwGrade ?? entry.grade) : 1,
-    );
+    // 加点も入力のランクの確度で割り引く
+    const bonusConf = performConfidence(entry.grade);
     // 現行規則（E止め）で解析し、E超えは ratedDifficulty が別に認める
     const analysis = analyzeSeries(series, false, null);
-    const boost = clampBoost(entry.boost);
     analysis.units.forEach((unit, unitIndex) => {
       // 投げタン（投げ＋転回系）は、投げ（徒手）と転回を**別々の候補**にして両方を評価する。
       // ルールでは両者の高いほうを1つの難度にするが、レーティングでは両方が上位を争える
@@ -398,16 +455,12 @@ export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT
       parts.forEach((p) => {
         // 転回側は転回系の質（F・G）を、投げ側は動作数なのでルール難度（E止め）のまま評価する
         const { diff, raise } = p.part === "throw" ? { diff: p.ruleDiff, raise: null as RaiseSource } : ratedDifficulty(unit, p.ruleDiff);
-        // 投げ側は投げの度合いだけで決まる。それ以外で投げを含む塊は、技と投げのうち実施しにくいほう
-        const throwGrade = entry.throwGrade ?? entry.grade;
-        const grade =
-          p.throwSide
-            ? throwGrade
-            : unit.isThrow && performConfidence(throwGrade) < performConfidence(entry.grade)
-              ? throwGrade
-              : entry.grade;
+        // 確度は入力のランク1つ。ランクの意味は技（どこでできるか）と投げ（どれだけ正確に決まるか）で読み替える
+        const grade = entry.grade;
         const confidence = performConfidence(grade);
-        const points = round(DIFF_SCORE[diff] + boost * RATING_BOOST_STEP);
+        // 同じ難度の中で難しい技（転宙・きりもみ・きりもみ転回）を高く評価する。投げ側（徒手）には付かない
+        const { premium, skillId: premiumSkillId } = p.throwSide ? { premium: 0, skillId: null } : skillPremium(unit);
+        const points = round(DIFF_SCORE[diff] + premium);
         candidates.push({
           entryIndex,
           unitIndex,
@@ -420,12 +473,13 @@ export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT
           ruleDiff: p.ruleDiff,
           ratedDiff: diff,
           raise,
-          boost,
           points,
+          premium,
+          premiumSkillId,
           bonus: 0,
           value: round(points * confidence),
           ruleValue: round(DIFF_SCORE[p.ruleDiff] * confidence),
-          matchValue: grade === "A" ? points : 0,
+          matchValue: confidence === 1 ? points : 0,
           trimmed,
           signatures: p.signatures,
           neverDuplicate: !!unit.neverDuplicate,
@@ -440,7 +494,7 @@ export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT
       host.bonus = bonus;
       host.value = round(host.value + bonus * bonusConf);
       host.ruleValue = round(host.ruleValue + bonus * bonusConf);
-      host.matchValue = host.grade === "A" ? round(host.matchValue + bonus) : 0;
+      host.matchValue = host.confidence === 1 ? round(host.matchValue + bonus) : 0;
     }
   });
 
