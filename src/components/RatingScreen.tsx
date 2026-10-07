@@ -17,6 +17,7 @@ import {
   type RatingApparatus,
   type RatingEntry,
 } from "../scoring/rating";
+import { skillDef } from "../scoring/constants";
 import type { Series } from "../scoring/types";
 
 const SKIP_LABEL = {
@@ -68,7 +69,7 @@ export function RatingScreen() {
           <div className="rating-total-sub">試合で実施できる（A）だけ {fmt(result.matchTotal)}</div>
         </div>
         <p className="hint">
-          評価値＝（ルール難度点＋ルールの加点）×確度。難度と加点から機械的に決まり、点数を人が足す入力はありません。加点は技術・手具操作・二つ投げの徒手動作で、入力ごとに選んだ手具で数えます。
+          評価値＝（ルール難度点＋ルールの加点）×確度。難度と加点から機械的に決まり、点数を人が足す入力はありません。同じ難度の中でも難しい技（転宙・きりもみ・きりもみ転回）は少し高く評価します。加点は技術・手具操作・二つ投げの徒手動作で、入力ごとに選んだ手具で数えます。
           E難度を超える評価（F・G）は、技そのものがF・Gか、C以上だけの連続のうち上位2技の組み合わせが高いときだけ認めます。
           同じ宙返りの連続は3つまで数えます。採点には影響しません。
         </p>
@@ -229,6 +230,8 @@ export function RatingScreen() {
                     {c.ruleDiff}
                     {c.ratedDiff !== c.ruleDiff &&
                       ` → ${c.ratedDiff}（${c.raise === "skill" ? "技そのもの" : "質の高い連続"}）`}
+                    {c.premium > 0 &&
+                      ` ＋${skillDef(c.premiumSkillId ?? "")?.name ?? "難しい技"}${c.premium.toFixed(2)}`}
                     {c.bonus > 0 && ` ＋加点${c.bonus.toFixed(1)}`}
                   </td>
                   <td>

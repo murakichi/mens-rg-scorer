@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildTwistSkillId, DIFF_SCORE } from "../constants";
+import { buildTwistSkillId, DIFF_SCORE, DIFF_VALUE, skillDef } from "../constants";
 import { computeScore } from "../score";
 import {
   PERFORM_GRADES,
   RATING_ADOPT_COUNT,
+  RATING_SKILL_PREMIUM,
   RATING_BOOST_MAX,
   RATING_BOOST_STEP,
   capRepeatedSaltos,
@@ -306,5 +307,60 @@ describe("レーティング：ランクは技と投げで意味を読み替え�
     const out = normalizeRatingEntries([{ series: series(back(1)), grade: "B", throwGrade: "E" }]);
     expect(out).toHaveLength(1);
     expect("throwGrade" in out[0]).toBe(false);
+  });
+});
+
+describe("レーティング：同じ難度の中で難しい技を高く評価する", () => {
+  const val = (id: string) => computeRating([entry(series(sk(id)))]).candidates[0];
+
+  it("転宙・きりもみ・きりもみ転回は、同じ難度の他の技より高い（難度は同じ）", () => {
+    // きりもみは単独だと徒手扱いなので、宙返りの連続に含めて比べる
+    const plainB = computeRating([entry(series(sk("b_front")))]).candidates[0];
+    expect(val("b_tenchu").ruleDiff).toBe(plainB.ruleDiff);
+    expect(val("b_tenchu").value).toBeGreaterThan(plainB.value);
+    const plainC = computeRating([entry(series(sk("c_back1full")))]).candidates[0];
+    const kirimomiTen = computeRating([entry(series(sk("b_front"), sk("c_kirimomiten")))]).candidates[0];
+    expect(kirimomiTen.premium).toBe(RATING_SKILL_PREMIUM.c_kirimomiten);
+    expect(plainC.premium).toBe(0);
+  });
+
+  it("きりもみは宙返りの連続に含まれるときだけ。単独（徒手動作の扱い）には付かない", () => {
+    const alone = computeRating([entry(series(sk("b_kirimomi")))]).candidates;
+    expect(alone.every((c) => c.premium === 0)).toBe(true);
+    const inChain = computeRating([entry(series(sk("b_front"), sk("b_kirimomi")))]).candidates[0];
+    expect(inChain.premium).toBe(RATING_SKILL_PREMIUM.b_kirimomi);
+    expect(inChain.premiumSkillId).toBe("b_kirimomi");
+  });
+
+  it("加点は難度の刻み（0.1）未満で、難度の順序は変えない", () => {
+    Object.keys(RATING_SKILL_PREMIUM).forEach((id) => {
+      expect(skillDef(id)).toBeDefined();
+      expect(RATING_SKILL_PREMIUM[id]).toBeGreaterThan(0);
+      expect(RATING_SKILL_PREMIUM[id]).toBeLessThan(0.1);
+    });
+    // 転宙（B＋加点）でも、C難度の技（加点なし）には届かない
+    expect(val("b_tenchu").points).toBeLessThan(val("c_back1full").points);
+    expect(DIFF_VALUE.B).toBeLessThan(DIFF_VALUE.C);
+  });
+
+  it("連続に含まれる対象の技は最大の1つだけ足す（重ねても、並べても増えない）", () => {
+    const one = computeRating([entry(series(sk("b_front"), sk("b_tenchu")))]).candidates[0];
+    const two = computeRating([entry(series(sk("b_front"), sk("b_tenchu"), sk("b_kirimomi")))]).candidates[0];
+    expect(one.premium).toBe(0.05);
+    expect(two.premium).toBe(0.05);
+  });
+
+  it("「ルールのみ」の合計には含めない（ルール難度だけ）", () => {
+    const r = computeRating([entry(series(sk("b_tenchu")))]);
+    expect(r.candidates[0].ruleValue).toBeCloseTo(DIFF_SCORE.B, 5);
+    expect(r.total).toBeCloseTo(DIFF_SCORE.B + RATING_SKILL_PREMIUM.b_tenchu, 5);
+    expect(r.ruleTotal).toBeCloseTo(DIFF_SCORE.B, 5);
+  });
+
+  it("投げタンの投げ側（徒手）には付かず、タンブリング側に付く", () => {
+    const chene: Item = { kind: "motion", motionId: "chene", count: 3 } as Item;
+    const r = computeRating([entry(series({ kind: "throw" } as Item, chene, sk("b_tenchu"), { kind: "catch" } as Item))]);
+    expect(r.candidates.find((c) => c.part === "throw")!.premium).toBe(0);
+    expect(r.candidates.find((c) => c.part === "tumbling")!.premium).toBe(RATING_SKILL_PREMIUM.b_tenchu);
   });
 });

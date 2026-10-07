@@ -78,6 +78,29 @@ export const DEFAULT_PERFORM_GRADE: PerformGrade = "A";
 
 /** 評価に採用する上位の数 */
 export const RATING_ADOPT_COUNT = 10;
+/**
+ * 同じ難度の中でも**難しい技**の差別化。難度点に足す小さな加点で、技ごとに表で持つ（`DIFF_SCORE` の刻み 0.1 未満にして、
+ * 難度の順序は変えない＝同じ難度の中でだけ効く）。ユニット（連続）には、含まれる技のうち最大の1つだけを足す
+ * （同じ技を並べても、難しい技を重ねても増えない）。きりもみ・きりもみ転回は宙返りの連続に含まれるときだけ（徒手動作の扱いのときは対象外）。
+ */
+export const RATING_SKILL_PREMIUM: Record<string, number> = {
+  b_tenchu: 0.05, // 転宙（B）
+  b_kirimomi: 0.05, // きりもみ（B）
+  c_kirimomiten: 0.05, // きりもみ転回（C）
+};
+
+/** そのユニットの難しい技の加点（転回系として数える技のうち最大の1つ） */
+export function skillPremium(unit: Unit): { premium: number; skillId: string | null } {
+  const ids = unit.skills.map((s) => s.skillId);
+  const flags = tumblingFlags(ids);
+  let best = { premium: 0, skillId: null as string | null };
+  ids.forEach((id, i) => {
+    const v = flags[i] ? (RATING_SKILL_PREMIUM[id] ?? 0) : 0;
+    if (v > best.premium) best = { premium: v, skillId: id };
+  });
+  return best;
+}
+
 /** 同じ宙返りを続けて数える上限（4つ目からは連続に数えない） */
 export const RATING_SAME_SALTO_MAX = 3;
 /** 「質の高い連続」とみなすのに全員が満たすべき最低難度（連続に含まれる非A難度技すべて） */
@@ -280,7 +303,11 @@ export interface RatingCandidate {
   /** E超えを認めた難度（認めなければ ruleDiff と同じ） */
   ratedDiff: Difficulty;
   raise: RaiseSource;
-  /** 難度点（確度を掛ける前。加点は含まない） */
+  /** 難しい技の加点（`RATING_SKILL_PREMIUM`。同じ難度の中での差別化）。0なら対象の技なし */
+  premium: number;
+  /** 難しい技の加点の元になった技のid */
+  premiumSkillId: string | null;
+  /** 難度点（確度を掛ける前。難しい技の加点を含み、ルールの加点は含まない） */
   points: number;
   /** ルールの加点（技術・手具操作・二つ投げの徒手動作）。入力ごとに1回、評価値がいちばん高い塊にだけ載せる。 */
   bonus: number;
@@ -412,7 +439,9 @@ export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT
         // 確度は入力のランク1つ。ランクの意味は技（どこでできるか）と投げ（どれだけ正確に決まるか）で読み替える
         const grade = entry.grade;
         const confidence = performConfidence(grade);
-        const points = round(DIFF_SCORE[diff]);
+        // 同じ難度の中で難しい技（転宙・きりもみ・きりもみ転回）を高く評価する。投げ側（徒手）には付かない
+        const { premium, skillId: premiumSkillId } = p.throwSide ? { premium: 0, skillId: null } : skillPremium(unit);
+        const points = round(DIFF_SCORE[diff] + premium);
         candidates.push({
           entryIndex,
           unitIndex,
@@ -426,6 +455,8 @@ export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT
           ratedDiff: diff,
           raise,
           points,
+          premium,
+          premiumSkillId,
           bonus: 0,
           value: round(points * confidence),
           ruleValue: round(DIFF_SCORE[p.ruleDiff] * confidence),
