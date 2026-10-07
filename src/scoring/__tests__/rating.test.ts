@@ -2,15 +2,14 @@ import { describe, it, expect } from "vitest";
 import { buildTwistSkillId, DIFF_SCORE } from "../constants";
 import { computeScore } from "../score";
 import {
+  PERFORM_GRADES,
   RATING_ADOPT_COUNT,
   RATING_BOOST_MAX,
   RATING_BOOST_STEP,
   capRepeatedSaltos,
   clampBoost,
-  THROW_GRADES,
   computeRating,
   entryBonus,
-  throwConfidence,
   seriesForApparatus,
   stripForCommon,
   normalizeRatingEntries,
@@ -84,7 +83,7 @@ describe("レーティング：同じ宙返りの連続は3つまで", () => {
   });
 });
 
-describe("レーティング：確度・上乗せ・投げ", () => {
+describe("レーティング：確度・投げ", () => {
   const one = series(back(2.5));
   it("確度を掛ける（A=1 / B=0.6 / C=0.3 / D=0.1 / E=0）", () => {
     const v = (grade: RatingEntry["grade"]) => computeRating([entry(one, { grade })]).total;
@@ -94,25 +93,17 @@ describe("レーティング：確度・上乗せ・投げ", () => {
     expect(v("D")).toBeCloseTo(a * 0.1, 3);
     expect(v("E")).toBe(0);
   });
-  it("上乗せは1段 0.2 点で、上限を超えない", () => {
+  it("人が点を足す入力は無い（旧データの boost は無視して読む）", () => {
     const base = computeRating([entry(one)]).total;
-    expect(computeRating([entry(one, { boost: 1 })]).total).toBeCloseTo(base + RATING_BOOST_STEP, 3);
-    expect(clampBoost(99)).toBe(RATING_BOOST_MAX);
-    expect(clampBoost(-2)).toBe(0);
-    expect(clampBoost("x")).toBe(0);
+    const out = normalizeRatingEntries([{ series: one, grade: "A", boost: 3 }]);
+    expect("boost" in out[0]).toBe(false);
+    expect(computeRating(out).total).toBeCloseTo(base, 3);
+    expect(base).toBeCloseTo(DIFF_SCORE.D, 3);
   });
-  it("投げを含む塊は、技の確度と投げの正確性のうち低いほうの確度になる", () => {
+  it("確度は入力のランク1つ。投げを含む塊にも同じランクが掛かる", () => {
     const thrown = series({ kind: "throw" } as Item, sk("b_front"), { kind: "catch" } as Item);
     const plain = computeRating([entry(thrown, { grade: "A" })]).total;
-    const weakThrow = computeRating([entry(thrown, { grade: "A", throwGrade: "C" })]).total;
-    expect(weakThrow).toBeCloseTo(plain * throwConfidence("C"), 3);
-    // 技のほうが低ければ技の確度（投げの正確性は未指定＝A）
-    const weakSkill = computeRating([entry(thrown, { grade: "C" })]).total;
-    expect(weakSkill).toBeCloseTo(plain * 0.3, 3);
-  });
-  it("投げの度合いは投げを含まない塊には効かない", () => {
-    const r = computeRating([entry(one, { grade: "A", throwGrade: "E" })]);
-    expect(r.total).toBeGreaterThan(0);
+    expect(computeRating([entry(thrown, { grade: "C" })]).total).toBeCloseTo(plain * 0.3, 3);
   });
 });
 
@@ -143,10 +134,9 @@ describe("レーティング：上位10個と重複", () => {
 
 describe("レーティング：入力の取り込み", () => {
   it("壊れた入力は落とし、不正な度合いは既定に戻す", () => {
-    const out = normalizeRatingEntries([null, { series: {} }, { series: series(back(1)), grade: "Z", boost: 9 }]);
+    const out = normalizeRatingEntries([null, { series: {} }, { series: series(back(1)), grade: "Z" }]);
     expect(out).toHaveLength(1);
     expect(out[0].grade).toBe("A");
-    expect(out[0].boost).toBe(RATING_BOOST_MAX);
     expect(normalizeRatingEntries("x")).toEqual([]);
   });
 });
@@ -177,10 +167,9 @@ describe("レーティング：ルールの加点", () => {
     expect(c).toBeCloseTo(tech.total * 0.3, 3);
   });
 
-  it("加点は投げの度合いが低いほうで割り引く", () => {
+  it("加点も入力のランクの確度で割り引く", () => {
     const full = computeRating([entry(withTech())]).total;
-    const weak = computeRating([entry(withTech(), { throwGrade: "C" })]).total;
-    expect(weak).toBeCloseTo(full * throwConfidence("C"), 3);
+    expect(computeRating([entry(withTech(), { grade: "C" })]).total).toBeCloseTo(full * 0.3, 3);
   });
 
   it("加点は入力ごとに1回だけ（塊が複数でも二重に載らない）", () => {
@@ -229,16 +218,12 @@ describe("レーティング：投げタンは投げとタンブリングの両�
     expect(r.total).toBeGreaterThan(Math.max(...r.candidates.map((c) => c.value)));
   });
 
-  it("投げの度合いは投げ側に効き、タンブリング側は技との低いほうになる", () => {
+  it("ランクは投げ側にもタンブリング側にも同じ確度で掛かる", () => {
     const base = computeRating([entry(throwTum())]);
-    const weak = computeRating([entry(throwTum(), { grade: "A", throwGrade: "C" })]);
+    const weak = computeRating([entry(throwTum(), { grade: "C" })]);
     const get = (r: typeof base, part: string) => r.candidates.find((c) => c.part === part)!;
-    expect(get(weak, "throw").value).toBeCloseTo(get(base, "throw").value * throwConfidence("C"), 3);
-    expect(get(weak, "tumbling").value).toBeCloseTo(get(base, "tumbling").value * throwConfidence("C"), 3);
-    // 技のほうが低いときは、投げ側は投げの度合いのまま（技の度合いに引きずられない）
-    const weakSkill = computeRating([entry(throwTum(), { grade: "C", throwGrade: "A" })]);
-    expect(get(weakSkill, "throw").value).toBeCloseTo(get(base, "throw").value, 3);
-    expect(get(weakSkill, "tumbling").value).toBeCloseTo(get(base, "tumbling").value * 0.3, 3);
+    expect(get(weak, "throw").value).toBeCloseTo(get(base, "throw").value * 0.3, 3);
+    expect(get(weak, "tumbling").value).toBeCloseTo(get(base, "tumbling").value * 0.3, 3);
   });
 
   it("徒手の動作がない投げタンは投げ側を出さない", () => {
@@ -307,36 +292,19 @@ describe("レーティング：入力ごとの手具（手具無し・共通・4
   });
 });
 
-describe("レーティング：投げは正確性で評価する", () => {
-  const chene = (n: number): Item => ({ kind: "motion", motionId: "chene", count: n }) as Item;
-  // 投げ→シェネ3→キャッチ（転回を含まない投げ）
-  const pureThrow = (): Series => series({ kind: "throw" } as Item, chene(3), { kind: "catch" } as Item);
-
-  it("投げの確度は成功率に近い別表（1.0/0.8/0.5/0.2/0）で、技の表とは別", () => {
-    expect(THROW_GRADES.map((g) => g.confidence)).toEqual([1, 0.8, 0.5, 0.2, 0]);
-    expect(throwConfidence(undefined)).toBe(1);
-    expect(THROW_GRADES.map((g) => g.id)).toEqual(["A", "B", "C", "D", "E"]);
+describe("レーティング：ランクは技と投げで意味を読み替える", () => {
+  it("各ランクに技の意味・投げの意味・確度がある（投げは練習場所ではなく正確性）", () => {
+    expect(PERFORM_GRADES.map((g) => g.id)).toEqual(["A", "B", "C", "D", "E"]);
+    expect(PERFORM_GRADES.map((g) => g.confidence)).toEqual([1, 0.6, 0.3, 0.1, 0]);
+    PERFORM_GRADES.forEach((g) => {
+      expect(g.note.length).toBeGreaterThan(0);
+      expect(g.throwNote.length).toBeGreaterThan(0);
+    });
+    expect(PERFORM_GRADES.some((g) => /トランポリン|エアマット|フロア/.test(g.throwNote))).toBe(false);
   });
-
-  it("転回を含まない投げは、技の確度に関係なく投げの正確性だけで決まる", () => {
-    const base = computeRating([entry(pureThrow())]).total;
-    const skillWeak = computeRating([entry(pureThrow(), { grade: "D" })]).total;
-    expect(skillWeak).toBeCloseTo(base, 3);
-    const throwWeak = computeRating([entry(pureThrow(), { throwGrade: "B" })]);
-    expect(throwWeak.total).toBeCloseTo(base * 0.8, 3);
-    expect(throwWeak.candidates[0].byThrow).toBe(true);
-  });
-
-  it("タンブリングだけの塊は投げの正確性を使わない", () => {
-    const r = computeRating([entry(series(back(2.5)), { throwGrade: "E" })]);
-    expect(r.total).toBeGreaterThan(0);
-    expect(r.candidates[0].byThrow).toBe(false);
-  });
-
-  it("「Aのみ」の合計は、技も投げも A（確度1.0）のものだけ", () => {
-    const a = computeRating([entry(pureThrow())]);
-    const b = computeRating([entry(pureThrow(), { throwGrade: "B" })]);
-    expect(a.matchTotal).toBeCloseTo(a.total, 3);
-    expect(b.matchTotal).toBe(0);
+  it("旧データの throwGrade は無視して読む", () => {
+    const out = normalizeRatingEntries([{ series: series(back(1)), grade: "B", throwGrade: "E" }]);
+    expect(out).toHaveLength(1);
+    expect("throwGrade" in out[0]).toBe(false);
   });
 });

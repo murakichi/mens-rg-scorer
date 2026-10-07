@@ -1913,8 +1913,6 @@ input[type="checkbox"] {
 .rating-table tr.is-skipped td { opacity: 0.55; text-decoration: line-through; }
 .rating-legend td { vertical-align: top; }
 .rating-legend-rank { font-weight: 800; color: var(--accent); width: 56px; }
-.rating-legend-conf { margin-left: 8px; font-size: 11px; color: var(--ink-mute); }
-.rating-grade-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 12px 0 4px; }
-.rating-grade-box { background: rgba(255, 255, 255, 0.55); border: 1px solid var(--glass-border); border-radius: var(--radius-xs); padding: 12px; }
+.rating-rank { margin: 12px 0 8px; }
+.rating-rank-meaning { margin: 10px 0 0; padding-left: 20px; font-size: 13px; color: var(--ink-soft); line-height: 1.8; }
 .rating-grade-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
-.rating-grade-box .hint { margin: 8px 0 0; }
