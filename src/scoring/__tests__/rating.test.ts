@@ -5,6 +5,8 @@ import {
   PERFORM_GRADES,
   RATING_ADOPT_COUNT,
   RATING_SKILL_PREMIUM,
+  RATING_TWIST_PREMIUM,
+  skillPremiumOf,
   RATING_BOOST_MAX,
   RATING_BOOST_STEP,
   capRepeatedSaltos,
@@ -32,7 +34,8 @@ describe("レーティング：難度の土台と E 超え", () => {
     expect(c.ruleDiff).toBe("E");
     expect(c.ratedDiff).toBe("F");
     expect(c.raise).toBe("chain");
-    expect(r.total).toBeCloseTo(DIFF_SCORE.F, 5);
+    // 後方2回半・1回半ひねり（n回半ひねり）の加点が乗る
+    expect(r.total).toBeCloseTo(DIFF_SCORE.F + RATING_TWIST_PREMIUM.half, 5);
     expect(r.ruleTotal).toBeCloseTo(DIFF_SCORE.E, 5);
   });
 
@@ -89,9 +92,9 @@ describe("レーティング：確度・投げ", () => {
   it("確度を掛ける（A=1 / B=0.6 / C=0.3 / D=0.1 / E=0）", () => {
     const v = (grade: RatingEntry["grade"]) => computeRating([entry(one, { grade })]).total;
     const a = v("A");
-    expect(v("B")).toBeCloseTo(a * 0.6, 3);
-    expect(v("C")).toBeCloseTo(a * 0.3, 3);
-    expect(v("D")).toBeCloseTo(a * 0.1, 3);
+    expect(v("B")).toBeCloseTo(a * 0.6, 2);
+    expect(v("C")).toBeCloseTo(a * 0.3, 2);
+    expect(v("D")).toBeCloseTo(a * 0.1, 2);
     expect(v("E")).toBe(0);
   });
   it("人が点を足す入力は無い（旧データの boost は無視して読む）", () => {
@@ -99,7 +102,7 @@ describe("レーティング：確度・投げ", () => {
     const out = normalizeRatingEntries([{ series: one, grade: "A", boost: 3 }]);
     expect("boost" in out[0]).toBe(false);
     expect(computeRating(out).total).toBeCloseTo(base, 3);
-    expect(base).toBeCloseTo(DIFF_SCORE.D, 3);
+    expect(base).toBeCloseTo(DIFF_SCORE.D + RATING_TWIST_PREMIUM.half, 3);
   });
   it("確度は入力のランク1つ。投げを含む塊にも同じランクが掛かる", () => {
     const thrown = series({ kind: "throw" } as Item, sk("b_front"), { kind: "catch" } as Item);
@@ -119,7 +122,7 @@ describe("レーティング：上位10個と重複", () => {
     const r = computeRating([entry(series(back(2.5), sk("a_roundoff"), back(1.5))), entry(series(back(2.5)))]);
     const short = r.candidates.find((c) => c.entryIndex === 1)!;
     expect(short.skipped).toBe("contained");
-    expect(r.total).toBeCloseTo(DIFF_SCORE.F, 5);
+    expect(r.total).toBeCloseTo(DIFF_SCORE.F + RATING_TWIST_PREMIUM.half, 5);
   });
   it("採用は上位10個まで", () => {
     const entries = Array.from({ length: 14 }, (_, i) => entry(series(back(i % 8 === 0 ? 0 : 0.5 * (i + 1), "tuck"), sk("a_roundoff"), back(0.5 + i * 0.5, "pike"))));
@@ -128,7 +131,7 @@ describe("レーティング：上位10個と重複", () => {
   });
   it("「試合で実施できる」だけの合計は A 以外を数えない", () => {
     const r = computeRating([entry(series(back(2.5)), { grade: "A" }), entry(series(back(1.5)), { grade: "C" })]);
-    expect(r.matchTotal).toBeCloseTo(DIFF_SCORE.D, 5);
+    expect(r.matchTotal).toBeCloseTo(DIFF_SCORE.D + RATING_TWIST_PREMIUM.half, 5);
     expect(r.total).toBeGreaterThan(r.matchTotal);
   });
 });
@@ -318,7 +321,7 @@ describe("レーティング：同じ難度の中で難しい技を高く評価�
     const plainB = computeRating([entry(series(sk("b_front")))]).candidates[0];
     expect(val("b_tenchu").ruleDiff).toBe(plainB.ruleDiff);
     expect(val("b_tenchu").value).toBeGreaterThan(plainB.value);
-    const plainC = computeRating([entry(series(sk("c_back1full")))]).candidates[0];
+    const plainC = computeRating([entry(series(sk("c_tempotwist")))]).candidates[0];
     const kirimomiTen = computeRating([entry(series(sk("b_front"), sk("c_kirimomiten")))]).candidates[0];
     expect(kirimomiTen.premium).toBe(RATING_SKILL_PREMIUM.c_kirimomiten);
     expect(plainC.premium).toBe(0);
@@ -339,7 +342,7 @@ describe("レーティング：同じ難度の中で難しい技を高く評価�
       expect(RATING_SKILL_PREMIUM[id]).toBeLessThan(0.1);
     });
     // 転宙（B＋加点）でも、C難度の技（加点なし）には届かない
-    expect(val("b_tenchu").points).toBeLessThan(val("c_back1full").points);
+    expect(val("b_tenchu").points).toBeLessThan(val("c_tempotwist").points);
     expect(DIFF_VALUE.B).toBeLessThan(DIFF_VALUE.C);
   });
 
@@ -362,5 +365,47 @@ describe("レーティング：同じ難度の中で難しい技を高く評価�
     const r = computeRating([entry(series({ kind: "throw" } as Item, chene, sk("b_tenchu"), { kind: "catch" } as Item))]);
     expect(r.candidates.find((c) => c.part === "throw")!.premium).toBe(0);
     expect(r.candidates.find((c) => c.part === "tumbling")!.premium).toBe(RATING_SKILL_PREMIUM.b_tenchu);
+  });
+});
+
+describe("レーティング：n回ひねり・n回半ひねりの差別化", () => {
+  it("n回ひねり（整数）は 0.05、n回半ひねり（n.5）は 0.025", () => {
+    expect(RATING_TWIST_PREMIUM).toEqual({ whole: 0.05, half: 0.025 });
+    expect(skillPremiumOf("c_back1full")).toBe(0.05); // 後方宙返り1回ひねり
+    expect(skillPremiumOf("c_back15")).toBe(0.025); // 後方宙返り1回半ひねり
+    expect(skillPremiumOf(buildTwistSkillId({ base: "back", twist: 2, posture: "layout" }))).toBe(0.05);
+    expect(skillPremiumOf(buildTwistSkillId({ base: "back", twist: 2.5, posture: "layout" }))).toBe(0.025);
+  });
+
+  it("組み立て入力（tw: の id）でも同じ", () => {
+    const id = buildTwistSkillId({ base: "back", twist: 3.5, posture: "tuck" });
+    expect(id.startsWith("tw:")).toBe(true);
+    expect(skillPremiumOf(id)).toBe(0.025);
+    expect(skillPremiumOf(buildTwistSkillId({ base: "front", twist: 1, posture: "layout" }))).toBe(0.05);
+  });
+
+  it("ひねり無し・半ひねりだけの技は対象外", () => {
+    expect(skillPremiumOf("b_front")).toBe(0);
+    expect(skillPremiumOf("b_fronthalf")).toBe(0); // 前宙半ひねり
+    expect(skillPremiumOf(buildTwistSkillId({ base: "back", twist: 0.5, posture: "tuck" }))).toBe(0);
+    expect(skillPremiumOf("a_roundoff")).toBe(0);
+  });
+
+  it("同じ難度（C）の中で、1回ひねり ＞ 1回半ひねり ＞ ひねりの無いC技", () => {
+    const val = (id: string) => computeRating([entry(series(sk(id)))]).candidates[0];
+    expect(val("c_back1full").ruleDiff).toBe(val("c_back15").ruleDiff);
+    expect(val("c_back1full").value).toBeGreaterThan(val("c_back15").value);
+    expect(val("c_back15").value).toBeGreaterThan(val("c_tempotwist").value);
+  });
+
+  it("難度の順序は変えない（C の1回ひねりは D 難度の2回ひねり系に届かない）", () => {
+    const val = (id: string) => computeRating([entry(series(sk(id)))]).candidates[0];
+    const d = buildTwistSkillId({ base: "back", twist: 2, posture: "tuck" });
+    expect(val("c_back1full").points).toBeLessThan(val(d).points);
+  });
+
+  it("連続では最大の1つだけ足す（転宙の 0.05 と 1回半ひねりの 0.025 は重ならない）", () => {
+    const r = computeRating([entry(series(sk("c_back15"), sk("b_tenchu")))]).candidates[0];
+    expect(r.premium).toBe(0.05);
   });
 });

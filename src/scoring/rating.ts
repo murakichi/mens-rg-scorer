@@ -20,6 +20,7 @@ import {
   DIFF_SCORE,
   DIFF_VALUE,
   VALUE_DIFF,
+  parseTwistSkillId,
   skillDef,
   skillDifficulty,
 } from "./constants";
@@ -81,7 +82,7 @@ export const RATING_ADOPT_COUNT = 10;
 /**
  * 同じ難度の中でも**難しい技**の差別化。難度点に足す小さな加点で、技ごとに表で持つ（`DIFF_SCORE` の刻み 0.1 未満にして、
  * 難度の順序は変えない＝同じ難度の中でだけ効く）。ユニット（連続）には、含まれる技のうち最大の1つだけを足す
- * （同じ技を並べても、難しい技を重ねても増えない）。きりもみ・きりもみ転回は宙返りの連続に含まれるときだけ（徒手動作の扱いのときは対象外）。
+ * （同じ技を並べても、難しい技を重ねても増えない）。対象は表の技（転宙・きりもみ系）とひねりのある宙返り（`RATING_TWIST_PREMIUM`）。きりもみ・きりもみ転回は宙返りの連続に含まれるときだけ（徒手動作の扱いのときは対象外）。
  */
 export const RATING_SKILL_PREMIUM: Record<string, number> = {
   b_tenchu: 0.05, // 転宙（B）
@@ -89,13 +90,30 @@ export const RATING_SKILL_PREMIUM: Record<string, number> = {
   c_kirimomiten: 0.05, // きりもみ転回（C）
 };
 
+/**
+ * ひねりのある宙返りの加点。**n回ひねり**（整数）は 0.05、**n回半ひねり**（n.5）は 0.025。
+ * 技の表の `twist`・組み立て入力（`tw:` の id）のどちらでも、ひねり回数から機械的に決まる。
+ * 対象は1回ひねり以上（半ひねりだけの技は対象外）。難度の刻み（0.1）未満なので難度の順序は変えない。
+ */
+export const RATING_TWIST_PREMIUM = { whole: 0.05, half: 0.025 } as const;
+export const RATING_TWIST_MIN = 1;
+
+/** その技の難しさの加点（表の技 → ひねり回数、の順で引く） */
+export function skillPremiumOf(skillId: string): number {
+  const fixed = RATING_SKILL_PREMIUM[skillId];
+  if (fixed !== undefined) return fixed;
+  const twist = parseTwistSkillId(skillId)?.twist ?? 0;
+  if (twist < RATING_TWIST_MIN) return 0;
+  return Number.isInteger(twist) ? RATING_TWIST_PREMIUM.whole : RATING_TWIST_PREMIUM.half;
+}
+
 /** そのユニットの難しい技の加点（転回系として数える技のうち最大の1つ） */
 export function skillPremium(unit: Unit): { premium: number; skillId: string | null } {
   const ids = unit.skills.map((s) => s.skillId);
   const flags = tumblingFlags(ids);
   let best = { premium: 0, skillId: null as string | null };
   ids.forEach((id, i) => {
-    const v = flags[i] ? (RATING_SKILL_PREMIUM[id] ?? 0) : 0;
+    const v = flags[i] ? skillPremiumOf(id) : 0;
     if (v > best.premium) best = { premium: v, skillId: id };
   });
   return best;
