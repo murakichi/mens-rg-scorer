@@ -80,14 +80,15 @@ export const DEFAULT_PERFORM_GRADE: PerformGrade = "A";
 /** 評価に採用する上位の数 */
 export const RATING_ADOPT_COUNT = 10;
 /**
- * 同じ難度の中でも**難しい技**の差別化。難度点に足す小さな加点で、技ごとに表で持つ（`DIFF_SCORE` の刻み 0.1 未満にして、
- * 難度の順序は変えない＝同じ難度の中でだけ効く）。ユニット（連続）には、含まれる技のうち最大の1つだけを足す
+ * 同じ難度の中でも**難しい技**の差別化。難度点に足す加点で、技ごとに表で持つ（基本は `DIFF_SCORE` の刻み 0.1 未満にして、
+ * 難度の順序は変えない＝同じ難度の中でだけ効く。**後方2回宙返り（+0.1）と2回半ひねり（+0.5）は意図的にそれ以上**）。ユニット（連続）には、含まれる技のうち最大の1つだけを足す
  * （同じ技を並べても、難しい技を重ねても増えない）。対象は表の技（転宙・きりもみ系）とひねりのある宙返り（`RATING_TWIST_PREMIUM`）。きりもみ・きりもみ転回は宙返りの連続に含まれるときだけ（徒手動作の扱いのときは対象外）。
  */
 export const RATING_SKILL_PREMIUM: Record<string, number> = {
   b_tenchu: 0.05, // 転宙（B）
   b_kirimomi: 0.05, // きりもみ（B）
   c_kirimomiten: 0.05, // きりもみ転回（C）
+  d_doubleback: 0.1, // 後方2回宙返り（D）。難度の刻み（0.1）と同じ大きさで、同じ難度の中の差別化を超える
 };
 
 /**
@@ -97,6 +98,11 @@ export const RATING_SKILL_PREMIUM: Record<string, number> = {
  * 対象は1回ひねり以上（半ひねりだけの技は対象外）。難度の刻み（0.1）未満なので難度の順序は変えない。
  */
 export const RATING_TWIST_PREMIUM = { whole: 0, half: 0.025 } as const;
+/**
+ * ひねり回数ごとの**個別の加点**（上の n回半ひねりの共通値より優先）。2回半ひねりは +0.5：
+ * 難度（D）の点そのものと同じ大きさで、E難度を超えて F 相当の評価になる。
+ */
+export const RATING_TWIST_PREMIUM_BY_TWIST: Record<number, number> = { 2.5: 0.5 };
 export const RATING_TWIST_MIN = 1;
 
 /** その技の難しさの加点（表の技 → ひねり回数、の順で引く） */
@@ -104,6 +110,8 @@ export function skillPremiumOf(skillId: string): number {
   const fixed = RATING_SKILL_PREMIUM[skillId];
   if (fixed !== undefined) return fixed;
   const twist = parseTwistSkillId(skillId)?.twist ?? 0;
+  const byTwist = RATING_TWIST_PREMIUM_BY_TWIST[twist];
+  if (byTwist !== undefined) return byTwist;
   if (twist < RATING_TWIST_MIN) return 0;
   return Number.isInteger(twist) ? RATING_TWIST_PREMIUM.whole : RATING_TWIST_PREMIUM.half;
 }
