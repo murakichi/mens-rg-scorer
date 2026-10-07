@@ -1897,3 +1897,12 @@ input[type="checkbox"] {
   font-weight: 600;
   opacity: 0.75;
 }
+
+/* レーティング */
+.rating-total { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; margin: 8px 0; }
+.rating-total strong { font-size: 1.6rem; }
+.rating-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.rating-fields { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.rating-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.85rem; }
+.rating-table th, .rating-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid rgba(128, 128, 128, 0.25); }
+.rating-table tr.is-skipped { opacity: 0.55; text-decoration: line-through; }

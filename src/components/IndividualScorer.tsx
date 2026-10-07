@@ -37,6 +37,7 @@ import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
 import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
 import { TemplateModal } from "./TemplateModal";
+import { RatingModal } from "./RatingModal";
 import { GenerateModal } from "./GenerateModal";
 import { SuggestModal } from "./SuggestModal";
 import { ScoreSummary } from "./ScoreSummary";
@@ -133,6 +134,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
   // ---- テンプレート（localStorage 保存）----
   const [templates, setTemplates] = useState<TemplateStore>(() => loadTemplates());
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [ratingOpen, setRatingOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const updateTemplates = (next: TemplateStore) => {
@@ -488,6 +490,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         onExport={exportTemplates}
         onImport={importTemplates}
       />
+      <RatingModal open={ratingOpen} apparatus={apparatus} onClose={() => setRatingOpen(false)} />
       <JsonModal
         mode={jsonModalMode}
         text={jsonText}
@@ -532,6 +535,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
         </button>
         <button className="io-btn" onClick={() => setTemplateOpen(true)}>
           <BookMarked size={14} /> テンプレート
+        </button>
+        <button className="io-btn" onClick={() => setRatingOpen(true)}>
+          レーティング
         </button>
         <button className="io-btn" onClick={() => setGenerateOpen(true)}>
           <Shuffle size={14} /> ランダム生成

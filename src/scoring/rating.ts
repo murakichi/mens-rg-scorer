@@ -1,0 +1,345 @@
+// =====================================================================
+// レーティング（実施できる技・シリーズの総合評価）
+//
+// 採点（`computeScore`）とは別物で、**ルールの難度を土台に、練習状況（実施できる確度）と
+// 独自の上乗せを足して**「いま実施できる技・シリーズの強さ」を1つの数字にする。
+// 採点側はここを一切読まない。調整値はこのファイルの先頭にまとめてある。
+//
+//   評価値 ＝ （ルール難度点 ＋ 上乗せ） × 確度
+//   レーティング ＝ 重複を畳んだ評価値の上位 `RATING_ADOPT_COUNT` 個の合計
+//
+// E より上（F・G）に届く経路は **「技そのものがF・G」「質の高い連続（上位2技の組み合わせ）」「手動の上乗せ」** だけ。
+// 連続の長さ・動作数・同じ技の繰り返しでは E で止まる（低難度を並べて水増しできない）。
+// =====================================================================
+
+import {
+  DIFF_SCORE,
+  DIFF_VALUE,
+  VALUE_DIFF,
+  skillDef,
+  skillDifficulty,
+} from "./constants";
+import { analyzeSeries, tumblingFlags } from "./analysis";
+import { describeSeries } from "./templates";
+import type { Difficulty, Series, Unit } from "./types";
+
+// ---- 調整値 ----
+
+/** 実施できる度合い（A＝試合で実施できる … E＝不可）。確度は評価値に掛ける。 */
+export type PerformGrade = "A" | "B" | "C" | "D" | "E";
+
+export const PERFORM_GRADES: { id: PerformGrade; name: string; note: string; confidence: number }[] = [
+  { id: "A", name: "A 試合で実施できる", note: "試合で実施できる", confidence: 1.0 },
+  { id: "B", name: "B フロアでできる", note: "フロアでできる", confidence: 0.6 },
+  { id: "C", name: "C エアマットでできる", note: "エアマットでできる", confidence: 0.3 },
+  { id: "D", name: "D トランポリンなら", note: "タントラ・トランポリンならできる・回ったことがある", confidence: 0.1 },
+  { id: "E", name: "E 不可", note: "不可", confidence: 0 },
+];
+
+export const DEFAULT_PERFORM_GRADE: PerformGrade = "A";
+
+/** 評価に採用する上位の数 */
+export const RATING_ADOPT_COUNT = 10;
+/** 上乗せ1段あたりの点数（難度表の E→F→G の刻みと同じ 0.2） */
+export const RATING_BOOST_STEP = 0.2;
+/** 上乗せの上限（段）。際限なく盛れると上位の比較が意味を失う。 */
+export const RATING_BOOST_MAX = 3;
+/** 同じ宙返りを続けて数える上限（4つ目からは連続に数えない） */
+export const RATING_SAME_SALTO_MAX = 3;
+/** 「質の高い連続」とみなすのに全員が満たすべき最低難度（連続に含まれる非A難度技すべて） */
+export const RATING_CHAIN_MIN_DIFF: Difficulty = "C";
+/**
+ * 質の高い連続の換算値の閾値。連続のうち**難度の高い上位2技**だけを、ルールの連続と同じ式
+ * （先頭＋以降は −1）で足した値。3つ目以降は足さないので、長く並べても上がらない。
+ *   D＋C＝6（F）／E＋C＝7（F）／D＋D＝7（F）／E＋D＝8（G）／C＋C＝5（E止まり）
+ */
+export const RATING_CHAIN_F_VALUE = 6;
+export const RATING_CHAIN_G_VALUE = 8;
+
+export const performConfidence = (g: PerformGrade | undefined): number =>
+  PERFORM_GRADES.find((x) => x.id === g)?.confidence ?? 0;
+
+export function normalizePerformGrade(v: unknown, fallback: PerformGrade = DEFAULT_PERFORM_GRADE): PerformGrade {
+  return PERFORM_GRADES.some((g) => g.id === v) ? (v as PerformGrade) : fallback;
+}
+
+export function clampBoost(v: unknown): number {
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(Math.max(n, 0), RATING_BOOST_MAX);
+}
+
+// ---- 入力 ----
+
+/** 入力1件。技ひとつもシリーズも `Series` で表す（技ひとつ＝アイテム1つのシリーズ）。 */
+export interface RatingEntry {
+  /** 一覧で見分けるための名前（任意） */
+  name?: string;
+  series: Series;
+  /** 技・シリーズを実施できる度合い */
+  grade: PerformGrade;
+  /** 投げを含む塊だけに効く、投げの実施度合い。未指定は `grade` と同じ。低いほうが確度になる。 */
+  throwGrade?: PerformGrade;
+  /** ルール難度への段階上乗せ（0〜`RATING_BOOST_MAX`） */
+  boost?: number;
+}
+
+export function normalizeRatingEntries(v: unknown): RatingEntry[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((raw): RatingEntry[] => {
+    const e = raw as Partial<RatingEntry> | null;
+    if (!e || typeof e !== "object" || !e.series || !Array.isArray(e.series.items)) return [];
+    return [
+      {
+        ...(typeof e.name === "string" && e.name ? { name: e.name } : {}),
+        series: e.series,
+        grade: normalizePerformGrade(e.grade),
+        ...(e.throwGrade ? { throwGrade: normalizePerformGrade(e.throwGrade) } : {}),
+        boost: clampBoost(e.boost),
+      },
+    ];
+  });
+}
+
+// ---- 難度の評価 ----
+
+/**
+ * 同じ宙返りが `RATING_SAME_SALTO_MAX` を超えて続く分を取り除く（水増し防止）。
+ * 隣り合うアイテム同士だけを見る（間に別の技・徒手が入れば別の連続）。
+ * 投げ・受けを伴うアイテムは落とさない（ユニットの区切りが変わるため）。
+ */
+export function capRepeatedSaltos(series: Series): { series: Series; trimmed: number } {
+  let run = 0;
+  let last = "";
+  let trimmed = 0;
+  const items = series.items.filter((item) => {
+    if (item.kind !== "skill" || !item.skillId || !skillDef(item.skillId)?.isSalto) {
+      run = 0;
+      last = "";
+      return true;
+    }
+    run = item.skillId === last ? run + 1 : 1;
+    last = item.skillId;
+    if (run > RATING_SAME_SALTO_MAX && !item.isThrow && !item.isCatch) {
+      trimmed += 1;
+      return false;
+    }
+    return true;
+  });
+  return trimmed === 0 ? { series, trimmed } : { series: { ...series, items }, trimmed };
+}
+
+export type RaiseSource = "skill" | "chain" | null;
+
+/** そのユニットの「E超え」の評価。ルール難度（E止め）に上乗せして返す。 */
+export function ratedDifficulty(unit: Unit): { diff: Difficulty; raise: RaiseSource } {
+  const base = unit.finalDiff;
+  const ids = unit.skills.map((s) => s.skillId);
+  const flags = tumblingFlags(ids);
+  // 評価の対象にするのは転回系の技だけ（徒手として数える技は動作数の側で評価済み）
+  const tumIds = ids.filter((_id, i) => flags[i]);
+  // 十年後の技を含めて引くため、上限なし（G）で難度を取る。ジュニアは対象外
+  const values = tumIds
+    .map((id) => skillDifficulty(id, false, "G"))
+    .filter((d): d is Difficulty => !!d && d !== "A")
+    .map((d) => DIFF_VALUE[d]);
+  if (values.length === 0) return { diff: base, raise: null };
+
+  // ① 技そのものがF・G
+  const inherent = Math.max(...values);
+  // ② 質の高い連続：非A難度技が2つ以上で、すべて C以上。上位2技の換算値で F／G
+  const quality = values.length >= 2 && values.every((v) => v >= DIFF_VALUE[RATING_CHAIN_MIN_DIFF]);
+  const [top1 = 0, top2 = 0] = [...values].sort((a, b) => b - a);
+  const folded = top1 + top2 - 1;
+  const chain = !quality
+    ? 0
+    : folded >= RATING_CHAIN_G_VALUE
+      ? DIFF_VALUE.G
+      : folded >= RATING_CHAIN_F_VALUE
+        ? DIFF_VALUE.F
+        : 0;
+
+  const best = Math.max(DIFF_VALUE[base], inherent, chain);
+  if (best <= DIFF_VALUE[base]) return { diff: base, raise: null };
+  return { diff: VALUE_DIFF[Math.min(best, DIFF_VALUE.G)], raise: inherent >= chain ? "skill" : "chain" };
+}
+
+// ---- 評価 ----
+
+export interface RatingCandidate {
+  entryIndex: number;
+  unitIndex: number;
+  /** 一覧に出す名前（入力に名前があればそれ、無ければ構成の要約） */
+  label: string;
+  /** 投げを含む塊か */
+  isThrow: boolean;
+  /** 実際に確度として使った度合い（投げを含む塊は技とのうち低いほう） */
+  grade: PerformGrade;
+  confidence: number;
+  /** ルールどおりの難度（E止め） */
+  ruleDiff: Difficulty;
+  /** E超えを認めた難度（認めなければ ruleDiff と同じ） */
+  ratedDiff: Difficulty;
+  raise: RaiseSource;
+  boost: number;
+  /** 難度点 ＋ 上乗せ（確度を掛ける前） */
+  points: number;
+  /** points × 確度 */
+  value: number;
+  /** 上乗せ・E超え無しの評価値（ルールのみ） */
+  ruleValue: number;
+  /** 同じ宙返りの繰り返しを数えなかった個数 */
+  trimmed: number;
+  signatures: string[];
+  neverDuplicate: boolean;
+  adopted: boolean;
+  /** 採用されなかった理由 */
+  skipped?: "duplicate" | "contained" | "over";
+}
+
+export interface RatingResult {
+  candidates: RatingCandidate[];
+  /** 採用した上位の評価値の合計 */
+  total: number;
+  /** 同じ候補を「ルール難度のみ」で数えた合計 */
+  ruleTotal: number;
+  /** 試合で実施できる（A）ものだけで数えた合計（確度1.0） */
+  matchTotal: number;
+}
+
+const round = (n: number): number => Math.round(n * 1000) / 1000;
+
+const tumSeq = (c: RatingCandidate): string[] | null => {
+  const s = c.signatures[0];
+  return s && s.startsWith("tum:") ? s.slice(4).split(">") : null;
+};
+
+/** `inner` が `outer` の連続した部分列か（同じ長さは含まない） */
+function isProperSublist(inner: string[], outer: string[]): boolean {
+  if (inner.length >= outer.length) return false;
+  for (let i = 0; i + inner.length <= outer.length; i++) {
+    if (inner.every((id, j) => outer[i + j] === id)) return true;
+  }
+  return false;
+}
+
+/**
+ * 評価値の降順に、重複（同じ内容・長い連続に含まれるだけの短い連続）を畳んで上位を採用する。
+ * 同点は先に入力したほうが残る。
+ */
+function adopt(
+  cands: RatingCandidate[],
+  valueOf: (c: RatingCandidate) => number,
+  count: number,
+): Map<RatingCandidate, RatingCandidate["skipped"] | null> {
+  const order = [...cands].sort((a, b) => valueOf(b) - valueOf(a) || cands.indexOf(a) - cands.indexOf(b));
+  const result = new Map<RatingCandidate, RatingCandidate["skipped"] | null>();
+  const seen = new Set<string>();
+  let taken = 0;
+  order.forEach((c) => {
+    if (!c.neverDuplicate && c.signatures.some((s) => seen.has(s))) {
+      result.set(c, "duplicate");
+      return;
+    }
+    const seq = tumSeq(c);
+    if (
+      seq &&
+      order.some((o) => {
+        const oseq = o === c ? null : tumSeq(o);
+        return !!oseq && valueOf(o) >= valueOf(c) && isProperSublist(seq, oseq);
+      })
+    ) {
+      result.set(c, "contained");
+      return;
+    }
+    if (!c.neverDuplicate) c.signatures.forEach((s) => seen.add(s));
+    if (taken >= count) {
+      result.set(c, "over");
+      return;
+    }
+    taken += 1;
+    result.set(c, null);
+  });
+  return result;
+}
+
+/** 入力された技・シリーズからレーティングを計算する（採点とは独立）。 */
+export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT): RatingResult {
+  const candidates: RatingCandidate[] = [];
+  entries.forEach((entry, entryIndex) => {
+    const { series, trimmed } = capRepeatedSaltos(entry.series);
+    // 現行規則（E止め）で解析し、E超えは ratedDifficulty が別に認める
+    const analysis = analyzeSeries(series, false, null);
+    const boost = clampBoost(entry.boost);
+    analysis.units.forEach((unit, unitIndex) => {
+      const { diff, raise } = ratedDifficulty(unit);
+      // 投げを含む塊は、技と投げのうち実施しにくいほうが確度を決める
+      const grade =
+        unit.isThrow && entry.throwGrade && performConfidence(entry.throwGrade) < performConfidence(entry.grade)
+          ? entry.throwGrade
+          : entry.grade;
+      const confidence = performConfidence(grade);
+      const points = round(DIFF_SCORE[diff] + boost * RATING_BOOST_STEP);
+      candidates.push({
+        entryIndex,
+        unitIndex,
+        label: entry.name || describeSeries(entry.series),
+        isThrow: unit.isThrow,
+        grade,
+        confidence,
+        ruleDiff: unit.finalDiff,
+        ratedDiff: diff,
+        raise,
+        boost,
+        points,
+        value: round(points * confidence),
+        ruleValue: round(DIFF_SCORE[unit.finalDiff] * confidence),
+        trimmed,
+        signatures: unit.signatures,
+        neverDuplicate: !!unit.neverDuplicate,
+        adopted: false,
+      });
+    });
+  });
+
+  const main = adopt(candidates, (c) => c.value, count);
+  candidates.forEach((c) => {
+    const skipped = main.get(c);
+    c.adopted = skipped === null;
+    if (skipped) c.skipped = skipped;
+  });
+  const sum = (m: Map<RatingCandidate, unknown>, valueOf: (c: RatingCandidate) => number): number =>
+    round([...m.entries()].filter(([, s]) => s === null).reduce((n, [c]) => n + valueOf(c), 0));
+
+  const ruleMap = adopt(candidates, (c) => c.ruleValue, count);
+  // 試合で実施できるものだけ（確度1.0）。A以外は0扱いなので採用の並びで自然に落ちる
+  const matchValue = (c: RatingCandidate) => (c.grade === "A" ? c.points : 0);
+  const matchMap = adopt(candidates, matchValue, count);
+  return {
+    candidates,
+    total: sum(main, (c) => c.value),
+    ruleTotal: sum(ruleMap, (c) => c.ruleValue),
+    matchTotal: sum(matchMap, matchValue),
+  };
+}
+
+// ---- 保存（端末ごとの localStorage。テンプレート・技の重みと同じ名前空間）----
+
+export const RATING_STORAGE_KEY = "mens-rg-scorer:rating:v1";
+
+export function loadRatingEntries(): RatingEntry[] {
+  try {
+    const raw = localStorage.getItem(RATING_STORAGE_KEY);
+    return raw ? normalizeRatingEntries(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveRatingEntries(entries: RatingEntry[]): void {
+  try {
+    localStorage.setItem(RATING_STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    // 保存できない環境（プライベートモード等）でも入力は続けられる
+  }
+}
