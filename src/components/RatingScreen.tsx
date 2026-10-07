@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus } from "lucide-react";
 import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
 import {
   PERFORM_GRADES,
@@ -14,12 +14,18 @@ import {
   type PerformGrade,
   type RatingEntry,
 } from "../scoring/rating";
+import { APPARATUS } from "../scoring/constants";
 import type { ApparatusKey, Series } from "../scoring/types";
 
-interface Props {
-  open: boolean;
-  apparatus: ApparatusKey;
-  onClose: () => void;
+const APPARATUS_STORAGE_KEY = "mens-rg-scorer:rating:apparatus:v1";
+
+function loadApparatus(): ApparatusKey {
+  try {
+    const v = localStorage.getItem(APPARATUS_STORAGE_KEY);
+    return v && v in APPARATUS ? (v as ApparatusKey) : "stick";
+  } catch {
+    return "stick";
+  }
 }
 
 const SKIP_LABEL = {
@@ -30,15 +36,22 @@ const SKIP_LABEL = {
 
 const fmt = (n: number) => n.toFixed(2);
 
-/** 実施できる技・シリーズを好きなだけ入力し、上位10個からレーティングを出す。採点には影響しない。 */
-export function RatingModal({ open, apparatus, onClose }: Props) {
+/** 実施できる技・シリーズを好きなだけ入力し、上位10個からレーティングを出す画面。採点には影響しない。 */
+export function RatingScreen() {
+  const [apparatus, setApparatus] = useState<ApparatusKey>(() => loadApparatus());
   const [entries, setEntries] = useState<RatingEntry[]>(() => loadRatingEntries());
   const [sel, setSel] = useState(0);
 
   useEffect(() => saveRatingEntries(entries), [entries]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(APPARATUS_STORAGE_KEY, apparatus);
+    } catch {
+      // 保存できなくても使える
+    }
+  }, [apparatus]);
   const result = useMemo(() => computeRating(entries, undefined, apparatus), [entries, apparatus]);
 
-  if (!open) return null;
   const cur = entries[Math.min(sel, entries.length - 1)];
   const curIdx = cur ? entries.indexOf(cur) : -1;
   const patch = (i: number, p: Partial<RatingEntry>) =>
@@ -62,14 +75,15 @@ export function RatingModal({ open, apparatus, onClose }: Props) {
   );
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <span>レーティング</span>
-          <button className="remove-btn-xs" onClick={onClose}>
-            <X size={16} />
+    <div className="rating-screen">
+      <div className="rating-apparatus">
+        {(Object.keys(APPARATUS) as ApparatusKey[]).map((k) => (
+          <button key={k} className={k === apparatus ? "io-btn is-active" : "io-btn"} onClick={() => setApparatus(k)}>
+            {APPARATUS[k].name}
           </button>
-        </div>
+        ))}
+      </div>
+      <div>
         <p className="note">
           実施できる技・シリーズを好きなだけ入力すると、重複を畳んだ評価値の上位{RATING_ADOPT_COUNT}個の合計を出します
           （評価値＝（ルール難度点＋上乗せ）×確度＋ルールの加点×確度。加点は技術・手具操作・二つ投げの徒手動作で、

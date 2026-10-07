@@ -95,6 +95,7 @@ body {
 
 .mode-wrap {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .mode-active {
@@ -1906,3 +1907,6 @@ input[type="checkbox"] {
 .rating-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.85rem; }
 .rating-table th, .rating-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid rgba(128, 128, 128, 0.25); }
 .rating-table tr.is-skipped { opacity: 0.55; text-decoration: line-through; }
+.rating-screen { display: flex; flex-direction: column; gap: 12px; }
+.rating-apparatus { display: flex; flex-wrap: wrap; gap: 6px; }
+.io-btn.is-active { background: var(--accent-grad); color: #fff; font-weight: 700; }
