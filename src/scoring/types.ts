@@ -193,6 +193,11 @@ export interface Unit {
    * ことがある（Q&A Q21）。表示や比較には先頭の要素を使う。
    */
   signatures: string[];
+  /**
+   * 投げタン（投げ＋転回系）の**投げ側（徒手）の内容キー**。`signatures` は転回側のキーなので、
+   * 投げと転回を別々に評価するレーティングが投げ側の重複を判定するのに使う。投げタン以外は持たない。
+   */
+  handSignatures?: string[];
   /** 「その他」の手ありシェネを含み、いくつあっても重複と見なさないユニットか */
   neverDuplicate?: boolean;
   skills: { skillId: string; hasApparatus: boolean; isThrow: boolean }[];

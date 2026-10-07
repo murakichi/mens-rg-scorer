@@ -95,6 +95,7 @@ body {
 
 .mode-wrap {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .mode-active {
@@ -1897,3 +1898,16 @@ input[type="checkbox"] {
   font-weight: 600;
   opacity: 0.75;
 }
+
+/* レーティング */
+.rating-total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 24px; margin-bottom: 8px; }
+.rating-total-main { display: flex; align-items: baseline; gap: 10px; }
+.rating-total-main strong { font-size: 32px; font-weight: 800; color: var(--accent); }
+.rating-total-main span { font-size: 13px; color: var(--ink-soft); }
+.rating-total-sub { font-size: 13px; color: var(--ink-soft); }
+.rating-name-input { width: 170px; }
+.rating-table-wrap { overflow-x: auto; }
+.rating-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rating-table th { text-align: left; padding: 8px 10px; font-weight: 700; color: var(--ink); background: rgba(255, 255, 255, 0.6); }
+.rating-table td { padding: 8px 10px; border-bottom: 1px solid rgba(150, 150, 190, 0.22); color: var(--ink-soft); }
+.rating-table tr.is-skipped td { opacity: 0.55; text-decoration: line-through; }

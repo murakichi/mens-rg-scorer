@@ -87,6 +87,8 @@ interface Props {
   showExec?: boolean;
   /** 共通テンプレートの編集か（手具固有の入力を出さない） */
   common?: boolean;
+  /** 手具無しの入力か（投げ・キャッチ・手具操作を出さない。レーティング用） */
+  noApparatus?: boolean;
   /** テンプレート読み込みプルダウンの選択肢（省略時はプルダウンを出さない） */
   templateOptions?: SeriesTemplateOption[];
   onLoadTemplate?: (templateId: string) => void;
@@ -139,6 +141,7 @@ function ItemEditor({
   junior,
   future,
   common,
+  noApparatus,
   twistMode,
   onTwistModeChange,
   flow,
@@ -154,6 +157,8 @@ function ItemEditor({
   future: FutureLevel;
   /** 共通テンプレートの編集か（手具固有の入力を出さない） */
   common?: boolean;
+  /** 手具無しの入力か（手具操作・技の最中の投げ／受けを出さない） */
+  noApparatus?: boolean;
   /** このブロックをひねり・姿勢で指定するモードか */
   twistMode: boolean;
   onTwistModeChange: (on: boolean) => void;
@@ -345,7 +350,7 @@ function ItemEditor({
         )}
         {/* 投げている間は手元に手具が無いので操作できない。
             きりもみ系は首から背中にかけて着地するので、実施中に操作できない */}
-        {!handsEmpty && canOperateApparatus(item.skillId) && (
+        {!noApparatus && !handsEmpty && canOperateApparatus(item.skillId) && (
           <label className="check">
             <input
               type="checkbox"
@@ -355,6 +360,8 @@ function ItemEditor({
             手具操作
           </label>
         )}
+        {!noApparatus && (
+          <>
         {/* 投げと受けは同じ技では実施できない。入っているほうは外せるように残す */}
         <label className={!item.isThrow && item.isCatch ? "check is-disabled" : "check"}>
           <input
@@ -454,6 +461,8 @@ function ItemEditor({
                 </label>
               );
             })}
+          </>
+        )}
       </>
     );
   }
@@ -564,6 +573,7 @@ export function SeriesCard({
   canRemove,
   showExec = true,
   common = false,
+  noApparatus = false,
   templateOptions,
   onLoadTemplate,
   onSaveTemplate,
@@ -771,6 +781,7 @@ export function SeriesCard({
               junior={junior}
               future={future}
               common={common}
+              noApparatus={noApparatus}
               twistMode={twistModeOf(iIdx, item)}
               onTwistModeChange={(on) => setTwistModeOf(iIdx, on)}
               flow={skillFlowAfter(prevSkillId(ser.items, iIdx))}
@@ -834,18 +845,22 @@ export function SeriesCard({
         </div>
       )}
       <div className="add-row">
-        <button className="add-btn-sm" onClick={() => onAddItem("throw")}>
-          ＋ 投げ
-        </button>
+        {!noApparatus && (
+          <button className="add-btn-sm" onClick={() => onAddItem("throw")}>
+            ＋ 投げ
+          </button>
+        )}
         <button className="add-btn-sm" onClick={() => onAddItem("skill")}>
           ＋ タンブリング技
         </button>
         <button className="add-btn-sm" onClick={() => onAddItem("motion")}>
           ＋ 徒手動作
         </button>
-        <button className="add-btn-sm" onClick={() => onAddItem("catch")}>
-          ＋ キャッチ
-        </button>
+        {!noApparatus && (
+          <button className="add-btn-sm" onClick={() => onAddItem("catch")}>
+            ＋ キャッチ
+          </button>
+        )}
       </div>
       {a.units.map((u, ui) => (
         <div key={ui} className="unit-result">

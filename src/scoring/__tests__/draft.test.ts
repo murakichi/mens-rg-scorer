@@ -316,6 +316,8 @@ describe("localStorage への保存と復元", () => {
     expect(loadDraftMode()).toBeNull();
     saveDraftMode("team");
     expect(loadDraftMode()).toBe("team");
+    saveDraftMode("rating");
+    expect(loadDraftMode()).toBe("rating");
     store.setItem(DRAFT_KEY_MODE, JSON.stringify("solo"));
     expect(loadDraftMode()).toBeNull();
   });
