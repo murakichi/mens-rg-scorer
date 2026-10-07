@@ -368,12 +368,12 @@ describe("レーティング：同じ難度の中で難しい技を高く評価�
   });
 });
 
-describe("レーティング：n回ひねり・n回半ひねりの差別化", () => {
-  it("n回ひねり（整数）は 0.05、n回半ひねり（n.5）は 0.025", () => {
-    expect(RATING_TWIST_PREMIUM).toEqual({ whole: 0.05, half: 0.025 });
-    expect(skillPremiumOf("c_back1full")).toBe(0.05); // 後方宙返り1回ひねり
+describe("レーティング：n回半ひねりの差別化（整数回は加点しない）", () => {
+  it("n回半ひねり（n.5）だけ 0.025。n回ひねり（整数）は加点なし", () => {
+    expect(RATING_TWIST_PREMIUM).toEqual({ whole: 0, half: 0.025 });
+    expect(skillPremiumOf("c_back1full")).toBe(0); // 後方宙返り1回ひねり
     expect(skillPremiumOf("c_back15")).toBe(0.025); // 後方宙返り1回半ひねり
-    expect(skillPremiumOf(buildTwistSkillId({ base: "back", twist: 2, posture: "layout" }))).toBe(0.05);
+    expect(skillPremiumOf(buildTwistSkillId({ base: "back", twist: 2, posture: "layout" }))).toBe(0);
     expect(skillPremiumOf(buildTwistSkillId({ base: "back", twist: 2.5, posture: "layout" }))).toBe(0.025);
   });
 
@@ -381,27 +381,28 @@ describe("レーティング：n回ひねり・n回半ひねりの差別化", ()
     const id = buildTwistSkillId({ base: "back", twist: 3.5, posture: "tuck" });
     expect(id.startsWith("tw:")).toBe(true);
     expect(skillPremiumOf(id)).toBe(0.025);
-    expect(skillPremiumOf(buildTwistSkillId({ base: "front", twist: 1, posture: "layout" }))).toBe(0.05);
+    expect(skillPremiumOf(buildTwistSkillId({ base: "front", twist: 1.5, posture: "layout" }))).toBe(0.025);
+    expect(skillPremiumOf(buildTwistSkillId({ base: "front", twist: 1, posture: "layout" }))).toBe(0);
   });
 
-  it("ひねり無し・半ひねりだけの技は対象外", () => {
+  it("ひねり無し・半ひねりだけ（0.5）の技は対象外", () => {
     expect(skillPremiumOf("b_front")).toBe(0);
     expect(skillPremiumOf("b_fronthalf")).toBe(0); // 前宙半ひねり
     expect(skillPremiumOf(buildTwistSkillId({ base: "back", twist: 0.5, posture: "tuck" }))).toBe(0);
     expect(skillPremiumOf("a_roundoff")).toBe(0);
   });
 
-  it("同じ難度（C）の中で、1回ひねり ＞ 1回半ひねり ＞ ひねりの無いC技", () => {
+  it("同じ難度（C）の中で、1回半ひねり ＞ 1回ひねり（同じ難度で半ひねりが多いほうが難しい）", () => {
     const val = (id: string) => computeRating([entry(series(sk(id)))]).candidates[0];
     expect(val("c_back1full").ruleDiff).toBe(val("c_back15").ruleDiff);
-    expect(val("c_back1full").value).toBeGreaterThan(val("c_back15").value);
-    expect(val("c_back15").value).toBeGreaterThan(val("c_tempotwist").value);
+    expect(val("c_back15").value).toBeGreaterThan(val("c_back1full").value);
+    expect(val("c_back1full").value).toBeCloseTo(val("c_tempotwist").value, 5);
   });
 
-  it("難度の順序は変えない（C の1回ひねりは D 難度の2回ひねり系に届かない）", () => {
+  it("難度の順序は変えない（C の1回半ひねりは D 難度の2回ひねり系に届かない）", () => {
     const val = (id: string) => computeRating([entry(series(sk(id)))]).candidates[0];
     const d = buildTwistSkillId({ base: "back", twist: 2, posture: "tuck" });
-    expect(val("c_back1full").points).toBeLessThan(val(d).points);
+    expect(val("c_back15").points).toBeLessThan(val(d).points);
   });
 
   it("連続では最大の1つだけ足す（転宙の 0.05 と 1回半ひねりの 0.025 は重ならない）", () => {

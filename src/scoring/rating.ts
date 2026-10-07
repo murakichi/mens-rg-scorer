@@ -91,11 +91,12 @@ export const RATING_SKILL_PREMIUM: Record<string, number> = {
 };
 
 /**
- * ひねりのある宙返りの加点。**n回ひねり**（整数）は 0.05、**n回半ひねり**（n.5）は 0.025。
+ * ひねりのある宙返りの加点。**n回半ひねり**（n.5）は 0.025、**n回ひねり**（整数）は加点しない。
+ * 同じ難度の中では半ひねりが1つ多いほうが難しい（難度表は半ひねりごとに1段、2段で1難度。C＝1〜1.5回、D＝2〜2.5回…）ため。
  * 技の表の `twist`・組み立て入力（`tw:` の id）のどちらでも、ひねり回数から機械的に決まる。
  * 対象は1回ひねり以上（半ひねりだけの技は対象外）。難度の刻み（0.1）未満なので難度の順序は変えない。
  */
-export const RATING_TWIST_PREMIUM = { whole: 0.05, half: 0.025 } as const;
+export const RATING_TWIST_PREMIUM = { whole: 0, half: 0.025 } as const;
 export const RATING_TWIST_MIN = 1;
 
 /** その技の難しさの加点（表の技 → ひねり回数、の順で引く） */
