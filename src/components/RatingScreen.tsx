@@ -59,7 +59,11 @@ export function RatingScreen() {
     setSel(0);
   };
   const gradeSelect = (value: PerformGrade, onChange: (g: PerformGrade) => void) => (
-    <select value={value} onChange={(e) => onChange(normalizePerformGrade(e.target.value))}>
+    <select
+      className="select tpl-select"
+      value={value}
+      onChange={(e) => onChange(normalizePerformGrade(e.target.value))}
+    >
       {PERFORM_GRADES.map((g) => (
         <option key={g.id} value={g.id} title={g.note}>
           {g.name}
@@ -69,65 +73,95 @@ export function RatingScreen() {
   );
 
   return (
-    <div className="rating-screen">
-      <div>
-        <p className="note">
-          実施できる技・シリーズを好きなだけ入力すると、重複を畳んだ評価値の上位{RATING_ADOPT_COUNT}個の合計を出します
-          （評価値＝（ルール難度点＋上乗せ）×確度＋ルールの加点×確度。加点は技術・手具操作・二つ投げの徒手動作で、
-          入力ごとに選んだ手具で数えます。手具無しは投げ・キャッチ・手具操作を持たない入力、共通はどの手具でも使える入力（二つ投げ・横投げ・手具を使った投げ／キャッチなど手具固有の入力を持たない）です。採点には影響しません）。E難度を超える評価は、技そのものがF・Gか、
-          C以上だけの連続のうち上位2技の組み合わせが高いとき、または上乗せで認めます。同じ宙返りの連続は3つまで数えます。
-        </p>
-
+    <>
+      <section className="card">
+        <div className="line-head">レーティング</div>
         <div className="rating-total">
-          <div>
-            <strong>{fmt(result.total)}</strong> レーティング
+          <div className="rating-total-main">
+            <strong>{fmt(result.total)}</strong>
+            <span>レーティング（上位{RATING_ADOPT_COUNT}個の合計）</span>
           </div>
-          <div>ルールのみ（E超え・上乗せなし）{fmt(result.ruleTotal)}</div>
-          <div>試合で実施できる（A）だけ {fmt(result.matchTotal)}</div>
+          <div className="rating-total-sub">ルールのみ（E超え・上乗せなし）{fmt(result.ruleTotal)}</div>
+          <div className="rating-total-sub">試合で実施できる（A）だけ {fmt(result.matchTotal)}</div>
         </div>
+        <p className="hint">
+          評価値＝（ルール難度点＋上乗せ）×確度＋ルールの加点×確度。加点は技術・手具操作・二つ投げの徒手動作で、入力ごとに選んだ手具で数えます。
+          E難度を超える評価は、技そのものがF・Gか、C以上だけの連続のうち上位2技の組み合わせが高いとき、または上乗せで認めます。
+          同じ宙返りの連続は3つまで数えます。採点には影響しません。
+        </p>
+      </section>
 
-        <div className="rating-list">
-          {entries.map((e, i) => (
-            <button key={i} className={i === curIdx ? "io-btn is-active" : "io-btn"} onClick={() => setSel(i)}>
-              {e.name || `入力${i + 1}`}（{apparatusName(e.apparatus)}・{e.grade}）
+      <section className="card">
+        <div className="line-head">
+          入力
+          <span className="line-head-right">
+            <button className="io-btn" onClick={add}>
+              <Plus size={14} /> 追加
             </button>
-          ))}
-          <button className="io-btn" onClick={add}>
-            <Plus size={14} /> 追加
-          </button>
+          </span>
         </div>
+        {entries.length === 0 ? (
+          <p className="hint">実施できる技・シリーズを「追加」で入力します（いくらでも入力できます）。</p>
+        ) : (
+          <div className="app-wrap">
+            {entries.map((e, i) => (
+              <button key={i} className={i === curIdx ? "app-btn is-active" : "app-btn"} onClick={() => setSel(i)}>
+                {e.name || `入力${i + 1}`}（{apparatusName(e.apparatus)}・{e.grade}）
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
 
-        {cur && (
-          <div className="rating-edit">
-            <div className="rating-apparatus">
+      {cur && (
+        <>
+          <section className="card">
+            <div className="line-head">手具</div>
+            <div className="app-wrap">
               {RATING_APPARATUS_OPTIONS.map((o) => (
                 <button
                   key={o.id}
-                  className={o.id === normalizeRatingApparatus(cur.apparatus) ? "io-btn is-active" : "io-btn"}
+                  className={o.id === curApparatus ? "app-btn is-active" : "app-btn"}
                   onClick={() => patch(curIdx, { apparatus: o.id, series: seriesForApparatus(cur.series, o.id) })}
                 >
                   {o.name}
                 </button>
               ))}
             </div>
-            <div className="rating-fields">
-              <input
-                placeholder="名前（任意）"
-                value={cur.name ?? ""}
-                onChange={(e) => patch(curIdx, { name: e.target.value || undefined })}
-              />
-              <label>
-                技・シリーズ {gradeSelect(cur.grade, (g) => patch(curIdx, { grade: g }))}
+            <p className="hint">
+              手具無しは投げ・キャッチ・手具操作を持たない入力、共通はどの手具でも使える入力（二つ投げ・横投げ・手具を使った投げ／キャッチなど
+              手具固有の入力を持たない）です。手具で入力できない内容は評価に入りません。
+            </p>
+          </section>
+
+          <section className="card">
+            <div className="line-head">評価</div>
+            <div className="exec-row">
+              <label className="exec-label">
+                名前（任意）
+                <input
+                  className="exec-input rating-name-input"
+                  value={cur.name ?? ""}
+                  onChange={(e) => patch(curIdx, { name: e.target.value || undefined })}
+                />
               </label>
-              <label>
-                投げ{" "}
+              <label className="exec-label">
+                技・シリーズ
+                {gradeSelect(cur.grade, (g) => patch(curIdx, { grade: g }))}
+              </label>
+              <label className="exec-label">
+                投げ
                 {gradeSelect(cur.throwGrade ?? cur.grade, (g) =>
                   patch(curIdx, { throwGrade: g === cur.grade ? undefined : g }),
                 )}
               </label>
-              <label>
+              <label className="exec-label">
                 上乗せ
-                <select value={cur.boost ?? 0} onChange={(e) => patch(curIdx, { boost: clampBoost(e.target.value) })}>
+                <select
+                  className="select tpl-select"
+                  value={cur.boost ?? 0}
+                  onChange={(e) => patch(curIdx, { boost: clampBoost(e.target.value) })}
+                >
                   {Array.from({ length: RATING_BOOST_MAX + 1 }, (_, n) => (
                     <option key={n} value={n}>
                       {n === 0 ? "なし" : `+${n}段（+${(n * RATING_BOOST_STEP).toFixed(1)}点）`}
@@ -139,57 +173,68 @@ export function RatingScreen() {
                 この入力を削除
               </button>
             </div>
-            <SeriesListEditor
-              series={[cur.series]}
-              apparatus={scoringApparatusOf(curApparatus)}
-              common={curApparatus === COMMON_RATING_APPARATUS}
-              noApparatus={curApparatus === NO_APPARATUS}
-              junior={false}
-              future={"G"}
-              allowAdd={false}
-              showExec={false}
-              autoInputEnabled={false}
-              onChange={(next: Series[]) => patch(curIdx, { series: next[0] ?? emptySeries() })}
-            />
-          </div>
-        )}
+            <p className="hint">
+              確度（A 1.0／B 0.6／C 0.3／D 0.1／E 0）を評価値に掛けます。投げは、投げを含む塊だけに効きます。
+            </p>
+          </section>
 
-        <table className="rating-table">
-          <thead>
-            <tr>
-              <th>入力</th>
-              <th>難度</th>
-              <th>確度</th>
-              <th>評価値</th>
-              <th>採用</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.candidates.map((c, k) => (
-              <tr key={k} className={c.adopted ? "" : "is-skipped"}>
-                <td>
-                  {c.label}（{apparatusName(c.apparatus)}）
-                  {c.part && `（投げタンの${c.part === "throw" ? "投げ" : "タンブリング"}）`}
-                </td>
-                <td>
-                  {c.ruleDiff}
-                  {c.ratedDiff !== c.ruleDiff && ` → ${c.ratedDiff}（${c.raise === "skill" ? "技そのもの" : "質の高い連続"}）`}
-                  {c.boost > 0 && ` +${c.boost}段`}
-                  {c.bonus > 0 && ` ＋加点${c.bonus.toFixed(1)}`}
-                </td>
-                <td>
-                  {c.grade}（×{c.confidence}）
-                </td>
-                <td>{fmt(c.value)}</td>
-                <td>
-                  {c.adopted ? "○" : c.skipped ? SKIP_LABEL[c.skipped] : ""}
-                  {c.trimmed > 0 && `（同じ宙返り${c.trimmed}個は不算入）`}
-                </td>
+          <SeriesListEditor
+            series={[cur.series]}
+            apparatus={scoringApparatusOf(curApparatus)}
+            common={curApparatus === COMMON_RATING_APPARATUS}
+            noApparatus={curApparatus === NO_APPARATUS}
+            junior={false}
+            future={"G"}
+            allowAdd={false}
+            showExec={false}
+            autoInputEnabled={false}
+            onChange={(next: Series[]) => patch(curIdx, { series: next[0] ?? emptySeries() })}
+          />
+        </>
+      )}
+
+      <section className="card">
+        <div className="line-head">採用の内訳</div>
+        <div className="rating-table-wrap">
+          <table className="rating-table">
+            <thead>
+              <tr>
+                <th>入力</th>
+                <th>難度</th>
+                <th>確度</th>
+                <th>評価値</th>
+                <th>採用</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+            </thead>
+            <tbody>
+              {result.candidates.map((c, k) => (
+                <tr key={k} className={c.adopted ? "" : "is-skipped"}>
+                  <td>
+                    {c.label}（{apparatusName(c.apparatus)}）
+                    {c.part && `（投げタンの${c.part === "throw" ? "投げ" : "タンブリング"}）`}
+                  </td>
+                  <td>
+                    {c.ruleDiff}
+                    {c.ratedDiff !== c.ruleDiff &&
+                      ` → ${c.ratedDiff}（${c.raise === "skill" ? "技そのもの" : "質の高い連続"}）`}
+                    {c.boost > 0 && ` +${c.boost}段`}
+                    {c.bonus > 0 && ` ＋加点${c.bonus.toFixed(1)}`}
+                  </td>
+                  <td>
+                    {c.grade}（×{c.confidence}）
+                  </td>
+                  <td>{fmt(c.value)}</td>
+                  <td>
+                    {c.adopted ? "○" : c.skipped ? SKIP_LABEL[c.skipped] : ""}
+                    {c.trimmed > 0 && `（同じ宙返り${c.trimmed}個は不算入）`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {result.candidates.length === 0 && <p className="hint">技を入力すると、ここに採用の内訳が出ます。</p>}
+      </section>
+    </>
   );
 }
