@@ -43,6 +43,23 @@ export const PERFORM_GRADES: { id: PerformGrade; name: string; note: string; con
 
 export const DEFAULT_PERFORM_GRADE: PerformGrade = "A";
 
+/**
+ * 投げの**正確性**（狙いどおりに投げて受けられるか）。投げはトランポリンやエアマットで練習する性質のものではないので、
+ * 技の「どこでできるか」ではなく**成功率**で段階を付ける。確度は成功率に近い値（技の A〜E とは別表）。
+ * 未指定は A（正確に決まる＝技の確度だけで決まる）。
+ */
+export const THROW_GRADES: { id: PerformGrade; name: string; note: string; confidence: number }[] = [
+  { id: "A", name: "A 試合で正確に決まる", note: "試合でも狙いどおりに決まる（ほぼ落とさない）", confidence: 1.0 },
+  { id: "B", name: "B ほぼ決まる", note: "練習ではほぼ決まる。たまに落とす・ずれる", confidence: 0.8 },
+  { id: "C", name: "C 半分ほど決まる", note: "決まるのは半分ほど", confidence: 0.5 },
+  { id: "D", name: "D あまり決まらない", note: "たまに決まる程度", confidence: 0.2 },
+  { id: "E", name: "E 不可", note: "投げられない・決まらない", confidence: 0 },
+];
+export const DEFAULT_THROW_GRADE: PerformGrade = "A";
+
+export const throwConfidence = (g: PerformGrade | undefined): number =>
+  THROW_GRADES.find((x) => x.id === (g ?? DEFAULT_THROW_GRADE))?.confidence ?? 0;
+
 /** 評価に採用する上位の数 */
 export const RATING_ADOPT_COUNT = 10;
 /** 上乗せ1段あたりの点数（難度表の E→F→G の刻みと同じ 0.2） */
@@ -151,7 +168,7 @@ export interface RatingEntry {
   series: Series;
   /** 技・シリーズを実施できる度合い */
   grade: PerformGrade;
-  /** 投げを含む塊だけに効く、投げの実施度合い。未指定は `grade` と同じ。低いほうが確度になる。 */
+  /** 投げの正確性（`THROW_GRADES`）。未指定は A。投げを含む塊だけに効く。 */
   throwGrade?: PerformGrade;
   /** ルール難度への段階上乗せ（0〜`RATING_BOOST_MAX`） */
   boost?: number;
@@ -255,8 +272,10 @@ export interface RatingCandidate {
   isThrow: boolean;
   /** 投げタンを投げ（徒手）と転回に分けたうちの、どちら側の候補か。投げタンでなければ null */
   part: "throw" | "tumbling" | null;
-  /** 実際に確度として使った度合い（投げを含む塊は技とのうち低いほう） */
+  /** 実際に確度として使った度合い（投げを含む塊は技と投げのうち低いほう） */
   grade: PerformGrade;
+  /** その度合いが投げの正確性（`THROW_GRADES`）か。false なら技の度合い（`PERFORM_GRADES`） */
+  byThrow: boolean;
   confidence: number;
   /** ルールどおりの難度（E止め） */
   ruleDiff: Difficulty;
@@ -366,11 +385,8 @@ export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT
     const { series, trimmed } = capRepeatedSaltos(seriesForApparatus(entry.series, entryApparatus));
     const bonus = entryBonus(series, scoringApparatusOf(entryApparatus));
     const hasThrowUnit = analyzeSeries(series, false, null).units.some((u) => u.isThrow);
-    // 加点は投げ・操作の質。投げを含むシリーズでは、技と投げのうち低いほうの確度で割り引く
-    const bonusConf = Math.min(
-      performConfidence(entry.grade),
-      hasThrowUnit ? performConfidence(entry.throwGrade ?? entry.grade) : 1,
-    );
+    // 加点は投げ・操作の質。投げを含むシリーズでは、技の確度と投げの正確性のうち低いほうで割り引く
+    const bonusConf = Math.min(performConfidence(entry.grade), hasThrowUnit ? throwConfidence(entry.throwGrade) : 1);
     // 現行規則（E止め）で解析し、E超えは ratedDifficulty が別に認める
     const analysis = analyzeSeries(series, false, null);
     const boost = clampBoost(entry.boost);
@@ -398,15 +414,18 @@ export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT
       parts.forEach((p) => {
         // 転回側は転回系の質（F・G）を、投げ側は動作数なのでルール難度（E止め）のまま評価する
         const { diff, raise } = p.part === "throw" ? { diff: p.ruleDiff, raise: null as RaiseSource } : ratedDifficulty(unit, p.ruleDiff);
-        // 投げ側は投げの度合いだけで決まる。それ以外で投げを含む塊は、技と投げのうち実施しにくいほう
-        const throwGrade = entry.throwGrade ?? entry.grade;
-        const grade =
-          p.throwSide
-            ? throwGrade
-            : unit.isThrow && performConfidence(throwGrade) < performConfidence(entry.grade)
-              ? throwGrade
-              : entry.grade;
-        const confidence = performConfidence(grade);
+        // 確度：投げ側（徒手）と、転回を含まない投げは**投げの正確性**だけ。投げタンのタンブリング側は技の確度と
+        // 投げの正確性の低いほう。投げを含まない塊は技の確度。技の確度は「どこでできるか」、投げは「どれだけ決まるか」で別の物差し
+        const throwGrade = entry.throwGrade ?? DEFAULT_THROW_GRADE;
+        const throwOnly = p.throwSide || (unit.isThrow && !unit.isThrowTumbling);
+        const byThrow =
+          throwOnly || (unit.isThrow && throwConfidence(throwGrade) < performConfidence(entry.grade));
+        const grade = byThrow ? throwGrade : entry.grade;
+        const confidence = throwOnly
+          ? throwConfidence(throwGrade)
+          : unit.isThrow
+            ? Math.min(performConfidence(entry.grade), throwConfidence(throwGrade))
+            : performConfidence(entry.grade);
         const points = round(DIFF_SCORE[diff] + boost * RATING_BOOST_STEP);
         candidates.push({
           entryIndex,
@@ -416,6 +435,7 @@ export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT
           isThrow: unit.isThrow,
           part: p.part,
           grade,
+          byThrow,
           confidence,
           ruleDiff: p.ruleDiff,
           ratedDiff: diff,
@@ -425,7 +445,7 @@ export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT
           bonus: 0,
           value: round(points * confidence),
           ruleValue: round(DIFF_SCORE[p.ruleDiff] * confidence),
-          matchValue: grade === "A" ? points : 0,
+          matchValue: confidence === 1 ? points : 0,
           trimmed,
           signatures: p.signatures,
           neverDuplicate: !!unit.neverDuplicate,
@@ -440,7 +460,7 @@ export function computeRating(entries: RatingEntry[], count = RATING_ADOPT_COUNT
       host.bonus = bonus;
       host.value = round(host.value + bonus * bonusConf);
       host.ruleValue = round(host.ruleValue + bonus * bonusConf);
-      host.matchValue = host.grade === "A" ? round(host.matchValue + bonus) : 0;
+      host.matchValue = host.confidence === 1 && bonusConf === 1 ? round(host.matchValue + bonus) : 0;
     }
   });
 

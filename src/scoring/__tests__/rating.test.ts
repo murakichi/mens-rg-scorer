@@ -7,8 +7,10 @@ import {
   RATING_BOOST_STEP,
   capRepeatedSaltos,
   clampBoost,
+  THROW_GRADES,
   computeRating,
   entryBonus,
+  throwConfidence,
   seriesForApparatus,
   stripForCommon,
   normalizeRatingEntries,
@@ -99,11 +101,14 @@ describe("レーティング：確度・上乗せ・投げ", () => {
     expect(clampBoost(-2)).toBe(0);
     expect(clampBoost("x")).toBe(0);
   });
-  it("投げを含む塊は、技と投げのうち低いほうの確度になる", () => {
+  it("投げを含む塊は、技の確度と投げの正確性のうち低いほうの確度になる", () => {
     const thrown = series({ kind: "throw" } as Item, sk("b_front"), { kind: "catch" } as Item);
     const plain = computeRating([entry(thrown, { grade: "A" })]).total;
     const weakThrow = computeRating([entry(thrown, { grade: "A", throwGrade: "C" })]).total;
-    expect(weakThrow).toBeCloseTo(plain * 0.3, 3);
+    expect(weakThrow).toBeCloseTo(plain * throwConfidence("C"), 3);
+    // 技のほうが低ければ技の確度（投げの正確性は未指定＝A）
+    const weakSkill = computeRating([entry(thrown, { grade: "C" })]).total;
+    expect(weakSkill).toBeCloseTo(plain * 0.3, 3);
   });
   it("投げの度合いは投げを含まない塊には効かない", () => {
     const r = computeRating([entry(one, { grade: "A", throwGrade: "E" })]);
@@ -175,7 +180,7 @@ describe("レーティング：ルールの加点", () => {
   it("加点は投げの度合いが低いほうで割り引く", () => {
     const full = computeRating([entry(withTech())]).total;
     const weak = computeRating([entry(withTech(), { throwGrade: "C" })]).total;
-    expect(weak).toBeCloseTo(full * 0.3, 3);
+    expect(weak).toBeCloseTo(full * throwConfidence("C"), 3);
   });
 
   it("加点は入力ごとに1回だけ（塊が複数でも二重に載らない）", () => {
@@ -228,8 +233,8 @@ describe("レーティング：投げタンは投げとタンブリングの両�
     const base = computeRating([entry(throwTum())]);
     const weak = computeRating([entry(throwTum(), { grade: "A", throwGrade: "C" })]);
     const get = (r: typeof base, part: string) => r.candidates.find((c) => c.part === part)!;
-    expect(get(weak, "throw").value).toBeCloseTo(get(base, "throw").value * 0.3, 3);
-    expect(get(weak, "tumbling").value).toBeCloseTo(get(base, "tumbling").value * 0.3, 3);
+    expect(get(weak, "throw").value).toBeCloseTo(get(base, "throw").value * throwConfidence("C"), 3);
+    expect(get(weak, "tumbling").value).toBeCloseTo(get(base, "tumbling").value * throwConfidence("C"), 3);
     // 技のほうが低いときは、投げ側は投げの度合いのまま（技の度合いに引きずられない）
     const weakSkill = computeRating([entry(throwTum(), { grade: "C", throwGrade: "A" })]);
     expect(get(weakSkill, "throw").value).toBeCloseTo(get(base, "throw").value, 3);
@@ -299,5 +304,39 @@ describe("レーティング：入力ごとの手具（手具無し・共通・4
   it("手具の指定が無い・不正な入力はスティック扱いで取り込む", () => {
     const out = normalizeRatingEntries([{ series: series(back(1)) }, { series: series(back(1)), apparatus: "zzz" }, { series: series(back(1)), apparatus: "none" }]);
     expect(out.map((e) => e.apparatus)).toEqual(["stick", "stick", "none"]);
+  });
+});
+
+describe("レーティング：投げは正確性で評価する", () => {
+  const chene = (n: number): Item => ({ kind: "motion", motionId: "chene", count: n }) as Item;
+  // 投げ→シェネ3→キャッチ（転回を含まない投げ）
+  const pureThrow = (): Series => series({ kind: "throw" } as Item, chene(3), { kind: "catch" } as Item);
+
+  it("投げの確度は成功率に近い別表（1.0/0.8/0.5/0.2/0）で、技の表とは別", () => {
+    expect(THROW_GRADES.map((g) => g.confidence)).toEqual([1, 0.8, 0.5, 0.2, 0]);
+    expect(throwConfidence(undefined)).toBe(1);
+    expect(THROW_GRADES.map((g) => g.id)).toEqual(["A", "B", "C", "D", "E"]);
+  });
+
+  it("転回を含まない投げは、技の確度に関係なく投げの正確性だけで決まる", () => {
+    const base = computeRating([entry(pureThrow())]).total;
+    const skillWeak = computeRating([entry(pureThrow(), { grade: "D" })]).total;
+    expect(skillWeak).toBeCloseTo(base, 3);
+    const throwWeak = computeRating([entry(pureThrow(), { throwGrade: "B" })]);
+    expect(throwWeak.total).toBeCloseTo(base * 0.8, 3);
+    expect(throwWeak.candidates[0].byThrow).toBe(true);
+  });
+
+  it("タンブリングだけの塊は投げの正確性を使わない", () => {
+    const r = computeRating([entry(series(back(2.5)), { throwGrade: "E" })]);
+    expect(r.total).toBeGreaterThan(0);
+    expect(r.candidates[0].byThrow).toBe(false);
+  });
+
+  it("「Aのみ」の合計は、技も投げも A（確度1.0）のものだけ", () => {
+    const a = computeRating([entry(pureThrow())]);
+    const b = computeRating([entry(pureThrow(), { throwGrade: "B" })]);
+    expect(a.matchTotal).toBeCloseTo(a.total, 3);
+    expect(b.matchTotal).toBe(0);
   });
 });

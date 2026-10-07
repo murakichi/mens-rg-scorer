@@ -3,10 +3,14 @@ import { Plus } from "lucide-react";
 import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
 import {
   PERFORM_GRADES,
+  THROW_GRADES,
+  DEFAULT_THROW_GRADE,
   RATING_ADOPT_COUNT,
   RATING_BOOST_MAX,
   RATING_BOOST_STEP,
   clampBoost,
+  performConfidence,
+  throwConfidence,
   computeRating,
   COMMON_RATING_APPARATUS,
   DEFAULT_RATING_APPARATUS,
@@ -44,6 +48,7 @@ export function RatingScreen() {
   const cur = entries[Math.min(sel, entries.length - 1)];
   const curIdx = cur ? entries.indexOf(cur) : -1;
   const curApparatus: RatingApparatus = normalizeRatingApparatus(cur?.apparatus);
+  const throwGradeNow = cur?.throwGrade ?? DEFAULT_THROW_GRADE;
   const patch = (i: number, p: Partial<RatingEntry>) =>
     setEntries((es) => es.map((e, j) => (j === i ? { ...e, ...p } : e)));
   const add = () => {
@@ -58,13 +63,17 @@ export function RatingScreen() {
     setEntries((es) => es.filter((_, j) => j !== i));
     setSel(0);
   };
-  const gradeSelect = (value: PerformGrade, onChange: (g: PerformGrade) => void) => (
+  const gradeSelect = (
+    grades: { id: PerformGrade; name: string; note: string }[],
+    value: PerformGrade,
+    onChange: (g: PerformGrade) => void,
+  ) => (
     <select
       className="select tpl-select"
       value={value}
       onChange={(e) => onChange(normalizePerformGrade(e.target.value))}
     >
-      {PERFORM_GRADES.map((g) => (
+      {grades.map((g) => (
         <option key={g.id} value={g.id} title={g.note}>
           {g.name}
         </option>
@@ -89,6 +98,40 @@ export function RatingScreen() {
           E難度を超える評価は、技そのものがF・Gか、C以上だけの連続のうち上位2技の組み合わせが高いとき、または上乗せで認めます。
           同じ宙返りの連続は3つまで数えます。採点には影響しません。
         </p>
+      </section>
+
+      <section className="card">
+        <div className="line-head">ランクの見方</div>
+        <p className="hint">
+          ランクは A〜E の5段階ですが、<b>技・シリーズ</b>と<b>投げ</b>で見る観点が違います。技は「どこでできるか」、
+          投げは練習場所ではなく「どれだけ正確に決まるか」で付けます。
+        </p>
+        <div className="rating-table-wrap">
+          <table className="rating-table rating-legend">
+            <thead>
+              <tr>
+                <th>ランク</th>
+                <th>技・シリーズ（どこでできるか）</th>
+                <th>投げ（どれだけ正確に決まるか）</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PERFORM_GRADES.map((g, i) => (
+                <tr key={g.id}>
+                  <td className="rating-legend-rank">{g.id}</td>
+                  <td>
+                    {g.note}
+                    <span className="rating-legend-conf">×{g.confidence}</span>
+                  </td>
+                  <td>
+                    {THROW_GRADES[i].note}
+                    <span className="rating-legend-conf">×{THROW_GRADES[i].confidence}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="card">
@@ -146,16 +189,6 @@ export function RatingScreen() {
                 />
               </label>
               <label className="exec-label">
-                技・シリーズ
-                {gradeSelect(cur.grade, (g) => patch(curIdx, { grade: g }))}
-              </label>
-              <label className="exec-label">
-                投げ
-                {gradeSelect(cur.throwGrade ?? cur.grade, (g) =>
-                  patch(curIdx, { throwGrade: g === cur.grade ? undefined : g }),
-                )}
-              </label>
-              <label className="exec-label">
                 上乗せ
                 <select
                   className="select tpl-select"
@@ -173,8 +206,32 @@ export function RatingScreen() {
                 この入力を削除
               </button>
             </div>
+            <div className="rating-grade-grid">
+              <div className="rating-grade-box">
+                <div className="rating-grade-title">技・シリーズ：どこでできるか</div>
+                {gradeSelect(PERFORM_GRADES, cur.grade, (g) => patch(curIdx, { grade: g }))}
+                <p className="hint">
+                  {PERFORM_GRADES.find((g) => g.id === cur.grade)?.note}（確度 ×{performConfidence(cur.grade)}）
+                </p>
+              </div>
+              <div className="rating-grade-box">
+                <div className="rating-grade-title">投げ：どれだけ正確に決まるか</div>
+                {gradeSelect(THROW_GRADES, throwGradeNow, (g) =>
+                  patch(curIdx, { throwGrade: g === DEFAULT_THROW_GRADE ? undefined : g }),
+                )}
+                <p className="hint">
+                  {THROW_GRADES.find((g) => g.id === throwGradeNow)?.note}（確度 ×{throwConfidence(throwGradeNow)}）
+                </p>
+              </div>
+            </div>
             <p className="hint">
-              確度（A 1.0／B 0.6／C 0.3／D 0.1／E 0）を評価値に掛けます。投げは、投げを含む塊だけに効きます。
+              <b>上乗せ</b>：ルールの難度点に、自分の見立てで難度を足す段階です（1段＝+{RATING_BOOST_STEP.toFixed(1)}点、最大{RATING_BOOST_MAX}段）。
+              ルールではE難度止まりでも実際はもっと難しい技・シリーズや、ルールの難度に表れない出来のよさを評価したいときに使います。
+              上乗せ分にも確度が掛かります。
+            </p>
+            <p className="hint">
+              投げの正確性は投げを含む塊だけに効き、投げタンのタンブリング側は技と投げの確度の低いほうを使います。
+              投げは練習場所の段階（フロア・エアマット・トランポリン）では評価しません。
             </p>
           </section>
 
@@ -221,6 +278,7 @@ export function RatingScreen() {
                     {c.bonus > 0 && ` ＋加点${c.bonus.toFixed(1)}`}
                   </td>
                   <td>
+                    {c.byThrow ? "投げの正確性 " : "技 "}
                     {c.grade}（×{c.confidence}）
                   </td>
                   <td>{fmt(c.value)}</td>
