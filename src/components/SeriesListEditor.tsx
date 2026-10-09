@@ -56,6 +56,8 @@ interface Props {
   showExec?: boolean;
   /** 共通テンプレートの編集か（手具固有の入力を出さない） */
   common?: boolean;
+  /** 手具無しの入力か（投げ・キャッチ・手具操作を出さない。レーティング用） */
+  noApparatus?: boolean;
 }
 
 /**
@@ -77,6 +79,7 @@ export function SeriesListEditor({
   allowAdd = true,
   showExec = true,
   common = false,
+  noApparatus = false,
 }: Props) {
   const score = result ?? computeScore(series, apparatus, { junior, future });
 
@@ -141,6 +144,7 @@ export function SeriesListEditor({
           canRemove={series.length > 1}
           showExec={showExec}
           common={common}
+          noApparatus={noApparatus}
           templateOptions={templateOptions}
           onLoadTemplate={onLoadTemplate && ((id) => onLoadTemplate(sIdx, id))}
           onSaveTemplate={onSaveTemplate && (() => onSaveTemplate(sIdx))}

@@ -27,7 +27,7 @@ export const DRAFT_KEY_MODE = "mens-rg-scorer:draft:mode:v1";
 /** 十年後モードの解放状態（ジュニアモードの切り替え回数）。構成とは別に端末ごとに覚える。 */
 export const FUTURE_UNLOCK_KEY = "mens-rg-scorer:future-unlock:v1";
 
-export type ScorerMode = "individual" | "team";
+export type ScorerMode = "individual" | "team" | "rating";
 
 /** 個人モードのドラフト。エクスポート／共有URLの `SaveData` と同じ形。 */
 export interface IndividualDraft {
@@ -303,7 +303,7 @@ export function saveFutureUnlock(state: FutureUnlockState): void {
 
 export function loadDraftMode(): ScorerMode | null {
   const v = readKey(DRAFT_KEY_MODE);
-  return v === "individual" || v === "team" ? v : null;
+  return v === "individual" || v === "team" || v === "rating" ? v : null;
 }
 
 export function saveDraftMode(mode: ScorerMode): void {
