@@ -274,8 +274,10 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     // 背面キャッチ（視野外）は、続く投げが**視野外でなければ**実施できる
     // （視野外で受けて視野外に投げることだけができない＝`canThrowAfterCatch`）。
     // 2つ同時キャッチを視野外で受けることはしない
+    // 前転でつないだ着地のあとに背面（視野外）キャッチはしない
     const back =
       draws.backCatch &&
+      !rolled &&
       !draws.twoThrow &&
       (!draws.secondThrow || canThrowAfterCatch({ id: NO_VIEW_TAG, name: "", catchTypes: [NO_VIEW_TAG] }, draws.secondThrow));
     // 押さえつけて受ける投げは**横投げ**（`draws.sideThrow`。クラブは必ず）。技の最中の投げが

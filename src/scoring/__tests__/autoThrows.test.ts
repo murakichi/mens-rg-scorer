@@ -743,7 +743,12 @@ describe("ランダム生成への組み込み", () => {
       autoThrowSpecs("clubs", { random: seeded(seed) })
         .filter(
           (sp) =>
-            rollFinishShape(sp.pattern) && !sp.pattern.verticalThree && !throwsAfterCatch(sp.pattern),
+            rollFinishShape(sp.pattern) &&
+            !sp.pattern.verticalThree &&
+            !throwsAfterCatch(sp.pattern) &&
+            // クラブは横投げにできる投げ方（視野外・手以外・二つ投げ以外）でしか押さえつけて受けない。
+            // 押さえつけられない投げ方は通常のキャッチ等になるので、比べる対象から外す
+            !(sp.throwStyle.two || (sp.throwStyle.throwTypes ?? []).some((t) => ["noview", "nonhand"].includes(t))),
         )
         .forEach((sp) => count.set(sp.catchStyle.id, (count.get(sp.catchStyle.id) ?? 0) + 1));
     const useapp = count.get(CATCH_USE_APPARATUS) ?? 0;
