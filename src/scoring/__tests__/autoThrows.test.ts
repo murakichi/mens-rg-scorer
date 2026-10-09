@@ -954,7 +954,7 @@ describe("2つを別々に投げる形（投げ→徒手→投げ→キャッチ
         const kinds = series.items.map((i) => i.kind);
         expect(kinds).toEqual(
           spec.pattern.overlap === "firstHigh"
-            ? ["throw", ...Array(1 + extra).fill("motion"), "throw", "catch", "motion", "catch"]
+            ? ["throw", "motion", "throw", "catch", "motion", "catch"]
             : ["throw", "motion", "throw", "catch", ...Array(1 + extra).fill("motion"), "catch"],
         );
         expect(checkApparatusFlow(series, apparatus)).toEqual([]);
@@ -975,28 +975,30 @@ describe("2つを別々に投げる形（投げ→徒手→投げ→キャッチ
     });
   });
 
-  it("高難度のほうをシェネ2〜3＋転がりまたは前転で終える形があり、前半・後半のどちらが高難度でも出る", () => {
+  it("後半が高難度のとき、シェネ2〜3＋転がりまたは前転で終える形がある。前半には転がり・前転を入れない", () => {
     const seen = new Set<string>();
     (["clubs", "ring"] as const).forEach((apparatus) =>
       overlapSpecs(apparatus, 120).forEach((spec) => {
-        if (!spec.closeRollId) return;
         const items = buildAutoThrowSeries(spec).items;
-        expect(["roll", "fwd_roll"]).toContain(spec.closeRollId);
         const secondThrowAt = items.findIndex((i, k) => i.kind === "throw" && k > 0);
-        // 高難度のほうの最後の徒手が転がり／前転（後半なら最後のキャッチの直前、前半なら2つ目の投げの直前）
-        const lastOfHigh = (spec.pattern.overlap === "firstHigh" ? items[secondThrowAt - 1] : items[items.length - 2]) as Extract<Item, { kind: "motion" }>;
+        // 前半（1つ目の投げ〜2つ目の投げ）に転がり・前転は無い
+        items.slice(1, secondThrowAt).forEach((i) => {
+          if (i.kind === "motion") expect(["roll", "fwd_roll"]).not.toContain(i.motionId);
+        });
+        if (spec.pattern.overlap === "firstHigh") expect(spec.closeRollId).toBeUndefined();
+        if (!spec.closeRollId) return;
+        expect(spec.pattern.overlap).toBe("secondHigh");
+        expect(["roll", "fwd_roll"]).toContain(spec.closeRollId);
+        // 後半の最後の徒手が転がり／前転（最後のキャッチの直前）、その前がシェネ2〜3
+        const lastOfHigh = items[items.length - 2] as Extract<Item, { kind: "motion" }>;
         expect(lastOfHigh.motionId).toBe(spec.closeRollId);
-        const cheneBefore = (spec.pattern.overlap === "firstHigh" ? items[secondThrowAt - 2] : items[items.length - 3]) as Extract<Item, { kind: "motion" }>;
+        const cheneBefore = items[items.length - 3] as Extract<Item, { kind: "motion" }>;
         expect(cheneBefore.motionId).toBe("chene");
         expect([2, 3]).toContain(Number(cheneBefore.count));
-        seen.add(`${apparatus}:${spec.pattern.overlap}:${spec.closeRollId}`);
+        seen.add(`${apparatus}:${spec.closeRollId}`);
       }),
     );
-    ["clubs", "ring"].forEach((app) =>
-      ["firstHigh", "secondHigh"].forEach((h) =>
-        ["roll", "fwd_roll"].forEach((m) => expect(seen).toContain(`${app}:${h}:${m}`)),
-      ),
-    );
+    ["clubs", "ring"].forEach((app) => ["roll", "fwd_roll"].forEach((m) => expect(seen).toContain(`${app}:${m}`)));
   });
 
   it("後半を低難度にする型：背面投げ＋背面キャッチ／横投げ＋転がり＋手具を使ったキャッチ（リングは背面＋手具を使ったキャッチも）", () => {
