@@ -146,6 +146,16 @@ export const AIR_PAIR_LOW_COUNTS: number[] = [0, 1];
 export const OVERLAP_LOW_HALF_WEIGHTS = { plain: 2, noViewSet: 1, sideRoll: 1 } as const;
 export type OverlapLowHalf = keyof typeof OVERLAP_LOW_HALF_WEIGHTS;
 
+/**
+ * `overlap` の高難度のほうの徒手を**「2〜3シェネ＋転がりまたは前転」**で終える確率。
+ * 動作数はシェネ3〜4と同じ3〜4動作（転がり・前転も1動作に数える）。前半・後半のどちらが高難度でも
+ * 同じ確率で引く（どちらが高難度かもランダム）。置く場所は高難度のほうの徒手の最後
+ * （後半なら手具を使ったキャッチなどの直前）。
+ */
+export const OVERLAP_CLOSE_ROLL_CHANCE = 0.5;
+/** そのときの終わりの徒手（転がり または 前転。半々） */
+export const OVERLAP_CLOSE_ROLL_MOTIONS: string[] = ["roll", "fwd_roll"];
+
 /** 後半を低難度にするときの徒手（シェネ以外に前転でもよい）。ふつうは1動作 */
 export const OVERLAP_LOW_MOTIONS: string[] = ["chene", "fwd_roll"];
 
@@ -684,6 +694,11 @@ export interface AutoThrowSpec {
   airLowCount?: number;
   /** `pattern.airPair` のとき、2つのキャッチの間に転がりを入れるか（`AIR_PAIR_ROLL_CHANCE`） */
   airRoll?: boolean;
+  /**
+   * `pattern.overlap` のとき、高難度のほうの徒手を「シェネ（`cheneCount`−1）＋この動作（転がり／前転）」
+   * で終えるか（`OVERLAP_CLOSE_ROLL_CHANCE`）。動作数は `cheneCount` のまま。
+   */
+  closeRollId?: string;
   /** `pattern.overlap === "firstHigh"` のときの後半（低難度）の型 */
   overlapLow?: OverlapLowHalf;
   /** `pattern.overlap === "firstHigh"` のときの、後半の低難度の徒手（`OVERLAP_LOW_MOTIONS` または転がり） */
@@ -756,14 +771,19 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
       kind: "throw",
       ...(first.throwTypes ? { throwTypes: [...first.throwTypes] } : {}),
     });
-    items.push(firstHigh ? mainChene(spec.cheneCount) : { kind: "motion", motionId: CHENE, count: LEAD_THROW_CHENE_COUNT, hands: false });
+    // 高難度のほう：シェネ `cheneCount` 動作、または「シェネ（`cheneCount`−1）＋転がり／前転」（動作数は同じ）
+    const highItems = (): Item[] =>
+      spec.closeRollId
+        ? [mainChene(spec.cheneCount - 1), { kind: "motion", motionId: spec.closeRollId, count: 1 }]
+        : [mainChene(spec.cheneCount)];
+    items.push(...(firstHigh ? highItems() : [{ kind: "motion", motionId: CHENE, count: LEAD_THROW_CHENE_COUNT, hands: false } as Item]));
     items.push({
       kind: "throw",
       ...(throwStyle.reqTypes ? { reqTypes: [...throwStyle.reqTypes] } : {}),
       ...(throwStyle.throwTypes ? { throwTypes: [...throwStyle.throwTypes] } : {}),
     });
     items.push({ kind: "catch" });
-    items.push(firstHigh ? lowMotion() : mainChene(spec.cheneCount));
+    items.push(...(firstHigh ? [lowMotion()] : highItems()));
     items.push({
       kind: "catch",
       ...(catchStyle.catchTypes ? { catchTypes: [...catchStyle.catchTypes] } : {}),
@@ -988,12 +1008,19 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     }
     if (pattern.overlap) {
       const hands = nextHands(cheneCount);
+      // 高難度のほうを「シェネ＋転がり／前転」で終えるか（前半・後半のどちらが高難度でも同じ確率）
+      const closeRollId =
+        rand() < chance(OVERLAP_CLOSE_ROLL_CHANCE)
+          ? OVERLAP_CLOSE_ROLL_MOTIONS[Math.min(OVERLAP_CLOSE_ROLL_MOTIONS.length - 1, Math.floor(rand() * OVERLAP_CLOSE_ROLL_MOTIONS.length))]
+          : undefined;
+      const closeProp = closeRollId ? { closeRollId } : {};
       if (pattern.overlap === "secondHigh") {
         const catchStyle = nextCatchFor(pattern, throwStyle, cheneCount);
         return {
           pattern,
           cheneCount,
           hands,
+          ...closeProp,
           firstThrowStyle: nextFirstThrow(),
           throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, cheneCount, rand, chance),
           catchStyle,
@@ -1020,6 +1047,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
           pattern,
           cheneCount,
           hands,
+          ...closeProp,
           firstThrowStyle: first[Math.min(first.length - 1, Math.floor(rand() * first.length))],
           throwStyle: noViewStyle,
           catchStyle: closing,
@@ -1033,6 +1061,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
           pattern,
           cheneCount,
           hands,
+          ...closeProp,
           firstThrowStyle: nextFirstThrow(),
           throwStyle: withSideThrow(sideBase),
           catchStyle: press,
@@ -1045,6 +1074,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
         pattern,
         cheneCount,
         hands,
+        ...closeProp,
         firstThrowStyle: nextFirstThrow(),
         throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, 1, rand, chance),
         catchStyle,
