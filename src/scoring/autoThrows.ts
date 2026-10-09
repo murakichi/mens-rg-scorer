@@ -79,6 +79,16 @@ export interface AutoThrowPattern {
    */
   overlap?: "firstHigh" | "secondHigh";
   /**
+   * **1つ目の投げ→徒手→2つ目の投げ（横投げ）→徒手→キャッチ→手具を使ったキャッチ**の形（クラブ・リング）。
+   * `overlap` と違い、2つ目を投げたあとも**2つとも空中にある**まま徒手をして、1つ目を通常のキャッチで受け、
+   * そのまま2つ目を手具で押さえつけて受ける（キャッチの間に徒手は入らない）。
+   * `chene` の回数は高難度にするほうの徒手（3〜4動作）で、もう一方は0〜1動作（`AutoThrowSpec.airLowCount`）。
+   * 空中時間が足りないので、両方を高難度にはしない。
+   *  - `firstHigh`：前半（1つ目と2つ目の投げの間）が高難度
+   *  - `secondHigh`：後半（2つ目の投げのあと、キャッチまで）が高難度
+   */
+  airPair?: "firstHigh" | "secondHigh";
+  /**
    * 十年後モード専用の形（その上限難度に届いていないと候補にしない）。
    * 現行規則では徒手はE止まり（4動作）なので、5〜6動作の形はここで区別する。
    */
@@ -100,6 +110,31 @@ export const LEAD_THROW_CHENE_COUNT = 1;
  * 実施は多くないので低めにする。
  */
 export const OVERLAP_PATTERN_CHANCE = 0.3;
+
+/**
+ * 2つとも空中にある2つの投げ（`airPair`）を候補に出す確率（クラブ・リングだけ。呼び出しごとに1回引く）。
+ * 通常の投げ受けより実施は少ないので、`overlap` よりさらに低くする（0.2）。
+ */
+export const AIR_PAIR_PATTERN_CHANCE = 0.2;
+
+/** `airPair` の1つ目の投げ方（通常の投げか背面＝視野外の投げ）。2つ目は横投げ */
+export const AIR_PAIR_FIRST_THROWS: string[] = ["normal", NO_VIEW_TAG];
+
+/**
+ * `airPair` の2つのキャッチの間に**転がり**を入れる確率。通常のキャッチで1つ目を受けたあと、
+ * 手具を使ったキャッチの前に転がりを入れてもよい（入れなくてもよい）。
+ */
+export const AIR_PAIR_ROLL_CHANCE = 0.5;
+
+/**
+ * `airPair` の最後の受けを**手以外のキャッチ**（首・足にはめる）にする確率（リングだけ）。
+ * 手具を使ったキャッチと手以外のキャッチは排他なので、どちらか一方。リングは手以外のキャッチで
+ * 受ける投げは横投げが前提で、2つ目の投げは横投げなのでそのまま組める。
+ */
+export const AIR_PAIR_NON_HAND_CATCH_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.3 };
+
+/** `airPair` で高難度でないほうの徒手の動作数（0 でも 1 でもよい） */
+export const AIR_PAIR_LOW_COUNTS: number[] = [0, 1];
 
 /**
  * `overlap` の前半を高難度にして**後半を低難度**にするときの後半の型の重み。
@@ -153,6 +188,9 @@ export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
   // 1つ目の投げ→徒手→2つ目の投げ→キャッチ→徒手→キャッチ（手具が二つの種目）。前半後半のどちらかが高難度
   { id: "overlapFirstHigh", chene: { min: 3, max: 4 }, after: [], noViewPair: false, overlap: "firstHigh" },
   { id: "overlapSecondHigh", chene: { min: 3, max: 4 }, after: [], noViewPair: false, overlap: "secondHigh" },
+  // 1つ目の投げ→徒手→2つ目の投げ（横投げ）→徒手→キャッチ→手具を使ったキャッチ（2つとも空中にある）
+  { id: "airPairFirstHigh", chene: { min: 3, max: 4 }, after: [], noViewPair: false, airPair: "firstHigh" },
+  { id: "airPairSecondHigh", chene: { min: 3, max: 4 }, after: [], noViewPair: false, airPair: "secondHigh" },
   // ---- 十年後モードでだけ実施する、5〜6動作の形（`HAND_MOTION_WEIGHT` の数え方）----
   // シェネ×5＝5.0（F）／シェネ×4→前転＝5.5（G）／前転×4＝6.0（G）／シェネ×6＝6.0（G）
   { id: "cheneFive", chene: { min: 5, max: 5 }, after: [], noViewPair: false, future: "F" },
@@ -582,6 +620,8 @@ export function throwStylesForPattern(
   if (pattern.splitCatch) return styles.filter((t) => t.two);
   // 2つを別々に投げる形：二つ投げ（1つの投げ）・手以外の投げ・実施例の無い投げ方は使わない
   if (pattern.overlap) return styles.filter((t) => !t.two && !t.rare && t.id !== NON_HAND_TAG);
+  // 2つとも空中にある形：2つ目は横投げ（通常の投げに横投げを付ける）。投げ方は1つに絞る
+  if (pattern.airPair) return styles.filter((t) => t.id === "normal");
   return pattern.leadPair ? styles.filter((t) => t.id !== NON_HAND_TAG && !t.two) : styles;
 }
 
@@ -640,6 +680,10 @@ export interface AutoThrowSpec {
   trailCatchStyle?: AutoCatchStyle;
   /** `pattern.overlap` のときの1つ目の投げ（2つ目の投げは `throwStyle`、最後のキャッチは `catchStyle`） */
   firstThrowStyle?: AutoThrowStyle;
+  /** `pattern.airPair` のときの、高難度でないほうの徒手の動作数（`AIR_PAIR_LOW_COUNTS`） */
+  airLowCount?: number;
+  /** `pattern.airPair` のとき、2つのキャッチの間に転がりを入れるか（`AIR_PAIR_ROLL_CHANCE`） */
+  airRoll?: boolean;
   /** `pattern.overlap === "firstHigh"` のときの後半（低難度）の型 */
   overlapLow?: OverlapLowHalf;
   /** `pattern.overlap === "firstHigh"` のときの、後半の低難度の徒手（`OVERLAP_LOW_MOTIONS` または転がり） */
@@ -659,6 +703,39 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
     // 連続投げの1回目が低難度になる形では、1シェネを挟む
     items.push({ kind: "motion", motionId: CHENE, count: LEAD_THROW_CHENE_COUNT, hands: false });
     items.push({ kind: "catch" });
+  }
+  if (pattern.airPair && spec.firstThrowStyle) {
+    // 1つ目の投げ→徒手→2つ目の投げ（横投げ）→徒手→キャッチ→手具を使ったキャッチ。
+    // 2つとも空中にあるので、徒手は2つ目を投げる前と投げたあと。高難度にするほうだけ `cheneCount` 動作
+    const firstHigh = pattern.airPair === "firstHigh";
+    const low = spec.airLowCount ?? 0;
+    const high = (): Item => ({
+      kind: "motion",
+      motionId: CHENE,
+      count: spec.cheneCount,
+      hands: spec.hands !== null,
+      ...(spec.hands !== null ? { handsType: spec.hands } : {}),
+    });
+    const lowItems = (): Item[] => (low > 0 ? [{ kind: "motion", motionId: CHENE, count: low, hands: false }] : []);
+    items.push({
+      kind: "throw",
+      ...(spec.firstThrowStyle.throwTypes ? { throwTypes: [...spec.firstThrowStyle.throwTypes] } : {}),
+    });
+    items.push(...(firstHigh ? [high()] : lowItems()));
+    items.push({
+      kind: "throw",
+      ...(throwStyle.reqTypes ? { reqTypes: [...throwStyle.reqTypes] } : {}),
+      ...(throwStyle.throwTypes ? { throwTypes: [...throwStyle.throwTypes] } : {}),
+    });
+    items.push(...(firstHigh ? lowItems() : [high()]));
+    items.push({ kind: "catch" });
+    // 手具を使ったキャッチの前に転がりを入れてもよい
+    if (spec.airRoll) items.push({ kind: "motion", motionId: ROLL, count: 1 });
+    items.push({
+      kind: "catch",
+      ...(catchStyle.catchTypes ? { catchTypes: [...catchStyle.catchTypes] } : {}),
+    });
+    return { executionDeduction: 0, items };
   }
   if (pattern.overlap && spec.firstThrowStyle) {
     // 1つ目の投げ→徒手→2つ目の投げ→キャッチ→徒手→キャッチ。高難度にするほうだけ `cheneCount` 動作
@@ -802,12 +879,16 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   const keepVerticalThree = rand() < chance(verticalThreeChance(opts.demandScore));
   // 2つを別々に投げる形は手具が二つの種目だけ。候補に入れるかも1回だけ引く
   const keepOverlap = hasTwoThrow(apparatus) && rand() < chance(OVERLAP_PATTERN_CHANCE);
+  // 2つとも空中にある形（2つ目は横投げ→手具を使ったキャッチ）。横投げをしない手具では出さない
+  const keepAirPair =
+    hasTwoThrow(apparatus) && canUseSideThrow(apparatus) && rand() < chance(AIR_PAIR_PATTERN_CHANCE);
   const combos = shuffled(
     AUTO_THROW_PATTERNS.filter(
       (pattern) =>
         throwPatternAllowed(pattern, opts.future ?? null) &&
         (!pattern.verticalThree || keepVerticalThree) &&
-        (!pattern.overlap || keepOverlap),
+        (!pattern.overlap || keepOverlap) &&
+        (!pattern.airPair || keepAirPair),
     )
       .flatMap((pattern) =>
         throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
@@ -886,6 +967,25 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     }
     const cheneCount = counts();
     const motions = patternMotions(pattern, cheneCount);
+    if (pattern.airPair) {
+      const press = autoCatchStyles(apparatus).find((c) => c.id === CATCH_USE_APPARATUS);
+      const first = firstThrowPool.filter((t) => AIR_PAIR_FIRST_THROWS.includes(t.id));
+      // 最後の受けは手具を使ったキャッチ（リングは手以外のキャッチでもよい。排他なのでどちらか）
+      const nonHandP = AIR_PAIR_NON_HAND_CATCH_CHANCE[apparatus] ?? 0;
+      const nonHandCatch = autoCatchStyles(apparatus).find((c) => c.id === NON_HAND_TAG);
+      const closing = nonHandP > 0 && nonHandCatch && rand() < chance(nonHandP) ? nonHandCatch : press;
+      if (closing && first.length > 0)
+        return {
+          pattern,
+          cheneCount,
+          hands: nextHands(cheneCount),
+          firstThrowStyle: first[Math.min(first.length - 1, Math.floor(rand() * first.length))],
+          throwStyle: withSideThrow(throwStyle),
+          catchStyle: closing,
+          airLowCount: AIR_PAIR_LOW_COUNTS[Math.min(AIR_PAIR_LOW_COUNTS.length - 1, Math.floor(rand() * AIR_PAIR_LOW_COUNTS.length))],
+          airRoll: rand() < chance(AIR_PAIR_ROLL_CHANCE),
+        };
+    }
     if (pattern.overlap) {
       const hands = nextHands(cheneCount);
       if (pattern.overlap === "secondHigh") {
