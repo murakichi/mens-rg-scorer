@@ -25,6 +25,7 @@ import {
   HANDS_TYPES,
   NO_VIEW_TAG,
   SIDE_THROW_TAG,
+  USE_APPARATUS_TAG,
   canUseSideThrow,
   REQUIRED_THROW_OPTIONS,
   hasLeftHandThrow,
@@ -121,6 +122,16 @@ export const AIR_PAIR_PATTERN_CHANCE = 0.2;
 export const AIR_PAIR_FIRST_THROWS: string[] = ["normal", NO_VIEW_TAG];
 
 /**
+ * `airPair` の1つ目の投げに**手具を使った投げ**も選べる手具（クラブ。もう一方の手具で押さえて投げる）。
+ * 2つ目は横投げで、押さえに使った手具で最後に受けるので矛盾しない。リングは含めない。
+ */
+export const AIR_PAIR_FIRST_THROWS_EXTRA: Partial<Record<ApparatusKey, string[]>> = { clubs: [USE_APPARATUS_TAG] };
+export const airPairFirstThrows = (apparatus: ApparatusKey): string[] => [
+  ...AIR_PAIR_FIRST_THROWS,
+  ...(AIR_PAIR_FIRST_THROWS_EXTRA[apparatus] ?? []),
+];
+
+/**
  * `airPair` の2つのキャッチの間に**転がり**を入れる確率。通常のキャッチで1つ目を受けたあと、
  * 手具を使ったキャッチの前に転がりを入れてもよい（入れなくてもよい）。
  */
@@ -145,6 +156,16 @@ export const AIR_PAIR_LOW_COUNTS: number[] = [0, 1];
  */
 export const OVERLAP_LOW_HALF_WEIGHTS = { plain: 2, noViewSet: 1, sideRoll: 1 } as const;
 export type OverlapLowHalf = keyof typeof OVERLAP_LOW_HALF_WEIGHTS;
+
+/**
+ * `overlap` の高難度のほうの徒手を**「2〜3シェネ＋転がりまたは前転」**で終える確率。
+ * 動作数はシェネ3〜4と同じ3〜4動作（転がり・前転も1動作に数える）。
+ * 後半が高難度のときだけ引く（前半＝2つ目の投げの前に転がり・前転は入れない）。置く場所は
+ * 後半の徒手の最後（手具を使ったキャッチなどの直前）。
+ */
+export const OVERLAP_CLOSE_ROLL_CHANCE = 0.5;
+/** そのときの終わりの徒手（転がり または 前転。半々） */
+export const OVERLAP_CLOSE_ROLL_MOTIONS: string[] = ["roll", "fwd_roll"];
 
 /** 後半を低難度にするときの徒手（シェネ以外に前転でもよい）。ふつうは1動作 */
 export const OVERLAP_LOW_MOTIONS: string[] = ["chene", "fwd_roll"];
@@ -684,6 +705,11 @@ export interface AutoThrowSpec {
   airLowCount?: number;
   /** `pattern.airPair` のとき、2つのキャッチの間に転がりを入れるか（`AIR_PAIR_ROLL_CHANCE`） */
   airRoll?: boolean;
+  /**
+   * `pattern.overlap` のとき、高難度のほうの徒手を「シェネ（`cheneCount`−1）＋この動作（転がり／前転）」
+   * で終えるか（`OVERLAP_CLOSE_ROLL_CHANCE`）。動作数は `cheneCount` のまま。
+   */
+  closeRollId?: string;
   /** `pattern.overlap === "firstHigh"` のときの後半（低難度）の型 */
   overlapLow?: OverlapLowHalf;
   /** `pattern.overlap === "firstHigh"` のときの、後半の低難度の徒手（`OVERLAP_LOW_MOTIONS` または転がり） */
@@ -756,14 +782,19 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
       kind: "throw",
       ...(first.throwTypes ? { throwTypes: [...first.throwTypes] } : {}),
     });
-    items.push(firstHigh ? mainChene(spec.cheneCount) : { kind: "motion", motionId: CHENE, count: LEAD_THROW_CHENE_COUNT, hands: false });
+    // 高難度のほう：シェネ `cheneCount` 動作、または「シェネ（`cheneCount`−1）＋転がり／前転」（動作数は同じ）
+    const highItems = (): Item[] =>
+      spec.closeRollId
+        ? [mainChene(spec.cheneCount - 1), { kind: "motion", motionId: spec.closeRollId, count: 1 }]
+        : [mainChene(spec.cheneCount)];
+    items.push(...(firstHigh ? highItems() : [{ kind: "motion", motionId: CHENE, count: LEAD_THROW_CHENE_COUNT, hands: false } as Item]));
     items.push({
       kind: "throw",
       ...(throwStyle.reqTypes ? { reqTypes: [...throwStyle.reqTypes] } : {}),
       ...(throwStyle.throwTypes ? { throwTypes: [...throwStyle.throwTypes] } : {}),
     });
     items.push({ kind: "catch" });
-    items.push(firstHigh ? lowMotion() : mainChene(spec.cheneCount));
+    items.push(...(firstHigh ? [lowMotion()] : highItems()));
     items.push({
       kind: "catch",
       ...(catchStyle.catchTypes ? { catchTypes: [...catchStyle.catchTypes] } : {}),
@@ -969,7 +1000,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     const motions = patternMotions(pattern, cheneCount);
     if (pattern.airPair) {
       const press = autoCatchStyles(apparatus).find((c) => c.id === CATCH_USE_APPARATUS);
-      const first = firstThrowPool.filter((t) => AIR_PAIR_FIRST_THROWS.includes(t.id));
+      const first = firstThrowPool.filter((t) => airPairFirstThrows(apparatus).includes(t.id));
       // 最後の受けは手具を使ったキャッチ（リングは手以外のキャッチでもよい。排他なのでどちらか）
       const nonHandP = AIR_PAIR_NON_HAND_CATCH_CHANCE[apparatus] ?? 0;
       const nonHandCatch = autoCatchStyles(apparatus).find((c) => c.id === NON_HAND_TAG);
@@ -988,12 +1019,20 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     }
     if (pattern.overlap) {
       const hands = nextHands(cheneCount);
+      // 高難度のほうを「シェネ＋転がり／前転」で終えるか（後半が高難度のときだけ）
+      // 転がり・前転は後半だけ（前半＝2つ目の投げの前には入れない）
+      const closeRollId =
+        pattern.overlap === "secondHigh" && rand() < chance(OVERLAP_CLOSE_ROLL_CHANCE)
+          ? OVERLAP_CLOSE_ROLL_MOTIONS[Math.min(OVERLAP_CLOSE_ROLL_MOTIONS.length - 1, Math.floor(rand() * OVERLAP_CLOSE_ROLL_MOTIONS.length))]
+          : undefined;
+      const closeProp = closeRollId ? { closeRollId } : {};
       if (pattern.overlap === "secondHigh") {
         const catchStyle = nextCatchFor(pattern, throwStyle, cheneCount);
         return {
           pattern,
           cheneCount,
           hands,
+          ...closeProp,
           firstThrowStyle: nextFirstThrow(),
           throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, cheneCount, rand, chance),
           catchStyle,
@@ -1020,6 +1059,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
           pattern,
           cheneCount,
           hands,
+          ...closeProp,
           firstThrowStyle: first[Math.min(first.length - 1, Math.floor(rand() * first.length))],
           throwStyle: noViewStyle,
           catchStyle: closing,
@@ -1033,6 +1073,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
           pattern,
           cheneCount,
           hands,
+          ...closeProp,
           firstThrowStyle: nextFirstThrow(),
           throwStyle: withSideThrow(sideBase),
           catchStyle: press,
@@ -1045,6 +1086,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
         pattern,
         cheneCount,
         hands,
+        ...closeProp,
         firstThrowStyle: nextFirstThrow(),
         throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, 1, rand, chance),
         catchStyle,

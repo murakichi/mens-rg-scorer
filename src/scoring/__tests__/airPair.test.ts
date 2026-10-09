@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   AIR_PAIR_FIRST_THROWS,
+  airPairFirstThrows,
   AIR_PAIR_LOW_COUNTS,
   AIR_PAIR_NON_HAND_CATCH_CHANCE,
   AIR_PAIR_PATTERN_CHANCE,
@@ -48,7 +49,7 @@ describe("2つとも空中にある2つの投げ（投げ→徒手→横投げ�
         const first = throws[0] as Extract<Item, { kind: "throw" }>;
         const second = throws[1] as Extract<Item, { kind: "throw" }>;
         const firstTypes = first.throwTypes ?? [];
-        expect(firstTypes.length === 0 || (firstTypes.length === 1 && AIR_PAIR_FIRST_THROWS.includes(firstTypes[0]))).toBe(true);
+        expect(firstTypes.length === 0 || (firstTypes.length === 1 && airPairFirstThrows(app).includes(firstTypes[0]))).toBe(true);
         expect(second.throwTypes ?? []).toContain("side");
         // 2つ目の投げのあとのキャッチは2つ（1つ目が通常、最後が手具を使った／リングは手以外）。間に入れてよい徒手は転がりだけ
         const secondAt = items.indexOf(second);
@@ -68,6 +69,19 @@ describe("2つとも空中にある2つの投げ（投げ→徒手→横投げ�
       });
     }),
   );
+
+  it("クラブは1つ目の投げに手具を使った投げも選べる（リングは通常と背面だけ）", () => {
+    expect(airPairFirstThrows("clubs")).toContain("useapp");
+    expect(airPairFirstThrows("ring")).toEqual(AIR_PAIR_FIRST_THROWS);
+    const firsts = (app: ApparatusKey) =>
+      new Set(airSeries(app, 200).map((t) => ((t.series.items[0] as Extract<Item, { kind: "throw" }>).throwTypes ?? ["通常"]).join("+")));
+    expect(firsts("clubs")).toContain("useapp");
+    expect(firsts("clubs")).toContain("noview");
+    expect(firsts("clubs")).toContain("通常");
+    expect(firsts("ring")).not.toContain("useapp");
+    // 手具を使った投げと二つ投げは同時に実施できない（1つ目に二つ投げは付けない）
+    airSeries("clubs", 200).forEach((t) => expect((t.series.items[0] as Extract<Item, { kind: "throw" }>).reqTypes ?? []).not.toContain("twothrow"));
+  });
 
   it("高難度は片方だけ（3〜4動作）で、もう一方は 0〜1 動作", () => {
     airSeries("ring").forEach((t) => {
