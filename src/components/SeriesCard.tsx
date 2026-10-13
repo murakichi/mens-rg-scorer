@@ -4,6 +4,8 @@ import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
   THROW_OPTIONS_SIDE,
+  SIDE_THROW_TAG,
+  NO_VIEW_TAG,
   canUseSideThrow,
   SKILL_THROW_OPTIONS_COMMON,
   CATCH_OPTIONS_COMMON,
@@ -136,6 +138,28 @@ function toggle(list: string[] | undefined, id: string, checked: boolean): strin
   return checked ? [...cur, id] : cur.filter((x) => x !== id);
 }
 
+/**
+ * 視野外の投げの方向（真後ろ／横）。横は既存の横投げタグ（`side`）で表すので、
+ * 点数の扱いは横投げと同じ（技術加点にはならず、投げ方の種類は真後ろと別に数える）。
+ * 視野外のときは通常の「横投げ」チェックの代わりにこの選択を出す。
+ */
+function NoViewDirection({ types, onChange }: { types: string[] | undefined; onChange: (next: string[]) => void }) {
+  const side = (types || []).includes(SIDE_THROW_TAG);
+  const set = (toSide: boolean) => onChange(toggle(types, SIDE_THROW_TAG, toSide));
+  return (
+    <span className="check-req">
+      視野外の方向
+      <label className="check">
+        <input type="radio" checked={!side} onChange={() => set(false)} />
+        真後ろ
+      </label>
+      <label className="check">
+        <input type="radio" checked={side} onChange={() => set(true)} />横
+      </label>
+    </span>
+  );
+}
+
 function ItemEditor({
   item,
   apparatus,
@@ -177,12 +201,14 @@ function ItemEditor({
     // 二つ投げ（両方を投げる）と手具を使った投げ（もう一方で押さえる）は排他
     const twoThrow = (item.reqTypes || []).includes(TWO_THROW_TAG);
     const useApparatusThrow = (item.throwTypes || []).includes(USE_APPARATUS_TAG);
+    const noView = (item.throwTypes || []).includes(NO_VIEW_TAG);
+    const sideDirection = !common && canUseSideThrow(apparatus);
     return (
       <>
         <div className="throw-tag">投げ</div>
         {[
           ...THROW_OPTIONS_COMMON,
-          ...(!common && canUseSideThrow(apparatus) ? THROW_OPTIONS_SIDE : []),
+          ...(sideDirection && !noView ? THROW_OPTIONS_SIDE : []),
           ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
         ].map((opt) => {
           const on = (item.throwTypes || []).includes(opt.id);
@@ -200,6 +226,9 @@ function ItemEditor({
             </label>
           );
         })}
+        {sideDirection && noView && (
+          <NoViewDirection types={item.throwTypes} onChange={(throwTypes) => onUpdate({ throwTypes })} />
+        )}
         {(common ? [] : REQUIRED_THROW_OPTIONS[apparatus]).map((opt) => {
           const on = (item.reqTypes || []).includes(opt.id);
           const blocked = opt.id === TWO_THROW_TAG && !on && useApparatusThrow;
@@ -431,7 +460,9 @@ function ItemEditor({
         {item.isThrow &&
           [
             ...SKILL_THROW_OPTIONS_COMMON,
-            ...(!common && canUseSideThrow(apparatus) ? THROW_OPTIONS_SIDE : []),
+            ...(!common && canUseSideThrow(apparatus) && !(item.throwTypes || []).includes(NO_VIEW_TAG)
+              ? THROW_OPTIONS_SIDE
+              : []),
             ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
           ].map(
             (opt) => {
@@ -451,6 +482,9 @@ function ItemEditor({
               );
             },
           )}
+        {item.isThrow && !common && canUseSideThrow(apparatus) && (item.throwTypes || []).includes(NO_VIEW_TAG) && (
+          <NoViewDirection types={item.throwTypes} onChange={(throwTypes) => onUpdate({ throwTypes })} />
+        )}
         {/* 技の最中の投げでも二つ投げ（両方を投げる）は実施できる */}
         {item.isThrow &&
           !common &&

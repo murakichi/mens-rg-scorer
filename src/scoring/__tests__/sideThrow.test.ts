@@ -62,16 +62,21 @@ describe("横投げ", () => {
     expect(ropeSide).toBe(0);
   });
 
-  it("自動生成：横投げと視野外の投げは組み合わせない", () => {
+  it("自動生成：視野外の投げは真後ろも横も作る（横は手以外の投げと組まない。ロープは横なし）", () => {
     (["stick", "clubs", "ring"] as const).forEach((apparatus) => {
+      let both = 0;
       for (let k = 0; k < 20; k++)
         autoThrowSpecs(apparatus).forEach((spec) => {
           buildAutoThrowSeries(spec).items.forEach((item) => {
             if (item.kind !== "throw") return;
             const types = item.throwTypes || [];
-            expect(types.includes(SIDE_THROW_TAG) && types.includes("noview")).toBe(false);
+            if (types.includes(SIDE_THROW_TAG) && types.includes("noview")) {
+              both += 1;
+              expect(types).not.toContain("nonhand");
+            }
           });
         });
+      expect(both).toBeGreaterThan(0);
     });
   });
 
@@ -81,7 +86,8 @@ describe("横投げ", () => {
     for (let k = 0; k < 30; k++)
       autoThrowSpecs("stick").forEach((spec) => {
         const left = (spec.throwStyle.reqTypes || []).includes("lefthand");
-        if (!left) return;
+        // 視野外の左手投げの横は方向の指定（NO_VIEW_SIDE_CHANCE）なので、ここでは見ない
+        if (!left || (spec.throwStyle.throwTypes || []).includes("noview")) return;
         const motions = spec.cheneCount + spec.pattern.after.reduce((n, m) => n + m.count, 0);
         const side = (spec.throwStyle.throwTypes || []).includes(SIDE_THROW_TAG);
         if (motions <= 1) {
@@ -97,7 +103,9 @@ describe("横投げ", () => {
     const check = (series: Series) => {
       let thrown: string[] | null = null;
       series.items.forEach((item) => {
-        if (item.kind === "throw" || (item.kind === "skill" && item.isThrow)) thrown = item.throwTypes || [];
+        // 視野外の投げ（背面の連続投げ）は押さえつけて受けない。押さえつけの相手は先に投げた横投げ
+        if ((item.kind === "throw" || (item.kind === "skill" && item.isThrow)) && !(item.throwTypes || []).includes("noview"))
+          thrown = item.throwTypes || [];
         if (item.kind === "catch" && (item.catchTypes || []).includes("useapp")) {
           expect(thrown).not.toBeNull();
           expect(thrown).toContain(SIDE_THROW_TAG);
@@ -166,7 +174,11 @@ describe("横投げ", () => {
         for (const spec of autoThrowSpecs(apparatus)) {
           const [t, ...rest] = buildAutoThrowSeries(spec).items as any[];
           const c = rest.find((i) => i.kind === "catch");
-          if ((c?.catchTypes || []).includes("nonhand") && (t.throwTypes || []).includes(SIDE_THROW_TAG)) {
+          if (
+            (c?.catchTypes || []).includes("nonhand") &&
+            (t.throwTypes || []).includes(SIDE_THROW_TAG) &&
+            !(t.throwTypes || []).includes("noview")
+          ) {
             n++;
             expect(t.throwTypes).not.toContain("nonhand");
           }

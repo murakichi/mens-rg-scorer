@@ -133,8 +133,10 @@ describe("自動生成の投げの形", () => {
     // 徒手なし（通常・視野外投げ→手以外のキャッチ など）
     expect(shape(buildAutoThrowSeries(spec("minimalNone")))).toEqual(["投げ", "キャッチ"]);
     expect(
-      autoThrowSpecs("stick", { random: seeded(5) }).some(
-        (sp) => sp.pattern.id === "minimalNone" && sp.catchStyle.id === "nonhand",
+      [5, 6, 7, 8, 9].some((seed) =>
+        autoThrowSpecs("stick", { random: seeded(seed) }).some(
+          (sp) => sp.pattern.id === "minimalNone" && sp.catchStyle.id === "nonhand",
+        ),
       ),
     ).toBe(true);
     // 手具の必須投げ（左手投げ・二つ投げ）とも組み合わせて出る
@@ -743,7 +745,12 @@ describe("ランダム生成への組み込み", () => {
       autoThrowSpecs("clubs", { random: seeded(seed) })
         .filter(
           (sp) =>
-            rollFinishShape(sp.pattern) && !sp.pattern.verticalThree && !throwsAfterCatch(sp.pattern),
+            rollFinishShape(sp.pattern) &&
+            !sp.pattern.verticalThree &&
+            !throwsAfterCatch(sp.pattern) &&
+            // クラブは横投げにできる投げ方（視野外・手以外・二つ投げ以外）でしか押さえつけて受けない。
+            // 押さえつけられない投げ方は通常のキャッチ等になるので、比べる対象から外す
+            !(sp.throwStyle.two || (sp.throwStyle.throwTypes ?? []).some((t) => ["noview", "nonhand"].includes(t))),
         )
         .forEach((sp) => count.set(sp.catchStyle.id, (count.get(sp.catchStyle.id) ?? 0) + 1));
     const useapp = count.get(CATCH_USE_APPARATUS) ?? 0;

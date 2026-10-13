@@ -171,6 +171,47 @@ export const throwInSkillChance = (targetScore?: number | null): number =>
   targetScore != null && targetScore < THROW_IN_SKILL_MIN_SCORE ? 0 : THROW_IN_SKILL_CHANCE;
 
 /**
+ * **2つ投げてから跳ぶ投げタン（`airPairSide`）**：投げ→横投げ→前方系→（前転）→キャッチ→
+ * 手具を使ったキャッチ。クラブ・リングだけ。**宙返りは投げタンの補正（+1）無しでC難度以上の
+ * 前方系**（`AIR_PAIR_TUM_MIN_DIFF`）で、上級者の形なので要求する上限が
+ * `AIR_PAIR_TUM_MIN_SCORE`（4.0。オーナー指定）未満では出さない。候補に混ぜるかは生成ごとに1回
+ * 引く（形ごとに引くと生き残りを貪欲法が拾う）。2つ目の投げのあとは前転を入れる／入れないが半々。
+ */
+export const AIR_PAIR_TUM_MIN_SCORE = 4.0;
+export const AIR_PAIR_TUM_CHANCE = 0.6;
+export const AIR_PAIR_TUM_MIN_DIFF = "C" as const;
+export const AIR_PAIR_TUM_ROLL_CHANCE = 0.5;
+/**
+ * 最後の受けを手具を使ったキャッチ以外にする確率（リングだけ）。手具を使ったキャッチ・手以外のキャッチ・
+ * 視野外のキャッチは同時に実施できない組（手具を使った×手以外は排他）か実施しない組なので、
+ * 3つのうち1つを選ぶ。視野外は前転の直後には受けない（`noViewCatchAfterRoll`）ので前転なしのときだけ。
+ */
+export const AIR_PAIR_TUM_LAST_CATCH: Partial<Record<ApparatusKey, { nonhand: number; noview: number }>> = {
+  ring: { nonhand: 0.25, noview: 0.25 },
+};
+/**
+ * 上限が高く、基本の形では上限を満たせないときの**延長形**（5.0以上で徐々に。オーナー指定）：
+ *  - `regrab`：1つ目を受けたあと、2つ目を受ける前に、1つ目を背面投げ→背面キャッチ（連続投げ）してから
+ *    手具を使ったキャッチ。投げ→横投げ→前方系→（前転）→キャッチ→背面投げ→背面キャッチ→手具を使ったキャッチ
+ *  - `plain`：2つ目を横投げでなく通常の投げにして、通常のキャッチで2つとも受け、
+ *    そのまま背面投げ→背面キャッチ
+ * 次々に投げる加点と連続投げの加点は同じ「難易度の高い連続した投げ受け」（最大0.10点）なので
+ * 重ならない（`seriesBonus` は演技全体で1回）。確率は `AIR_PAIR_TUM_EXTRA_MIN_SCORE` から
+ * `AIR_PAIR_TUM_EXTRA_FULL_SCORE` にかけて 0 → `AIR_PAIR_TUM_EXTRA_CHANCE` に上げる（上限なしは満額）。
+ */
+export const AIR_PAIR_TUM_EXTRA_MIN_SCORE = 5.0;
+export const AIR_PAIR_TUM_EXTRA_FULL_SCORE = 7.0;
+export const AIR_PAIR_TUM_EXTRA_CHANCE = 0.5;
+export const airPairTumExtraChance = (targetScore?: number | null): number => {
+  if (targetScore == null) return AIR_PAIR_TUM_EXTRA_CHANCE;
+  if (targetScore < AIR_PAIR_TUM_EXTRA_MIN_SCORE) return 0;
+  const t = Math.min(1, (targetScore - AIR_PAIR_TUM_EXTRA_MIN_SCORE) / (AIR_PAIR_TUM_EXTRA_FULL_SCORE - AIR_PAIR_TUM_EXTRA_MIN_SCORE));
+  return AIR_PAIR_TUM_EXTRA_CHANCE * Math.max(0.2, t);
+};
+export const airPairTumChance = (targetScore?: number | null): number =>
+  targetScore != null && targetScore < AIR_PAIR_TUM_MIN_SCORE ? 0 : AIR_PAIR_TUM_CHANCE;
+
+/**
  * **タンブリング中に受ける投げタン（`catchInSkill`）**。実施する水準はタンブリング中の投げと
  * 同じ（`THROW_IN_SKILL_MIN_SCORE` 以上）で、**頻度はそれより低い**（オーナー指定）。
  * 抽選の形も同じ — 候補に混ぜるかどうかを生成ごとに1回だけ引く。
@@ -398,6 +439,14 @@ export const BACK_TO_FORWARD_THROW_CHANCE = 0.15;
 
 export const DIFFICULTY_RISE_WEIGHT = 0.3;
 
+/**
+ * 前方系の宙返りのあと（前宙→きりもみ転回）にきりもみ転回を選ぶ重みの倍率。
+ * きりもみ転回は**切り返しからの実施のほうが簡単**（オーナー指定）なので、使うときは
+ * 後方伸身宙返りのあと（`AFTER_BACK_LAYOUT_SALTOS`）を優先する。
+ */
+export const KIRIMOMITEN_AFTER_FORWARD_FACTOR = 0.7;
+const KIRIMOMITEN_ID = "c_kirimomiten";
+
 /** 実施する技の選ばれやすさ（直前の技で変わる。表に無い技は1） */
 export function saltoWeights(
   prevId: string,
@@ -416,7 +465,13 @@ export function saltoWeights(
     return withHarderThanRated({ ...weights, [TEMPO_SKILL_ID]: AFTER_TEMPO_TWIST_WEIGHT }, userWeights, [
       TEMPO_SKILL_ID,
     ]);
-  if (!isBackLayoutSalto(prevId)) return withHarderThanRated(weights);
+  // きりもみ転回は切り返し（後方伸身宙返り→きりもみ転回）のほうが前宙のあとより簡単なので、
+  // 使うときは切り返しを優先する（前宙→きりもみ転回は選ばれにくくする）
+  if (!isBackLayoutSalto(prevId)) {
+    if (weights[KIRIMOMITEN_ID] !== undefined)
+      weights[KIRIMOMITEN_ID] *= KIRIMOMITEN_AFTER_FORWARD_FACTOR;
+    return withHarderThanRated(weights);
+  }
   // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）。
   // 後方系を続ける形（抱え込みの半ひねり系）はさらに少ない
   const listed = [...AFTER_BACK_LAYOUT_SALTOS, ...AFTER_BACK_LAYOUT_BACKWARD_SALTOS];

@@ -153,7 +153,7 @@ export const THROW_FINISH_SALTOS: string[] = [SIDE_SALTO_ID, TENCHU_SKILL_ID, "c
 export const AFTER_BACK_LAYOUT_SALTOS: { id: string; weight: number }[] = [
   { id: "b_front", weight: 5 },
   { id: "b_kirimomi", weight: 3 },
-  { id: "c_kirimomiten", weight: 1 },
+  { id: "c_kirimomiten", weight: 1.3 },
 ];
 
 /**

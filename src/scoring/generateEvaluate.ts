@@ -56,6 +56,7 @@ import {
   REPEATABLE_SALTOS,
   REQUIRED_ELEMENT_WEIGHT,
   SALTO_VARIETY_WEIGHT,
+  SERIES_BONUS_WEIGHT,
   SHAPE_PRIORITY_WEIGHT,
   THROW_ORDER_WEIGHT,
   preferenceWeights,
@@ -542,6 +543,8 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
   // 実施例の無い形（`unseenShapes.ts` に宣言）。稼ぐ点数をそのまま打ち消すので、
   // 出現率は候補を出す確率（要求Dスコアのカーブ）だけで決まる
   const rareStyle = unseenPenalty(series);
+  // 1シリーズの中の加点は少ないほうを優先する（2つ目の加点から嫌う）
+  const seriesBonusExtra = seriesBonusExcess(r) * SERIES_BONUS_WEIGHT;
   // 二つ投げのシリーズは1構成に1本まで（必須投げを1回満たせば足りる）
   const twoThrowExtra = extraTwoThrowSeriesCount(series) * TWO_THROW_EXTRA_WEIGHT;
   // 二つ投げの投げタンは通常の二つ投げより優先度を下げる（禁止ではない）
@@ -589,6 +592,7 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
       otherStyle -
       rareStyle -
       twoThrowExtra -
+      seriesBonusExtra -
       twoThrowTumbling -
       finishCatch -
       hardThrow -
@@ -604,6 +608,17 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
     diffSpread: adoptedDiffSpread(r),
     spreadCost,
   };
+}
+
+/**
+ * 1シリーズの中で、2つ目以降の加点の数（技術加点・次々に投げる加点・手具操作加点・二つ投げの徒手動作加点。
+ * 加点は 0.1 刻み）。重複シリーズは加点が 0 なので数えない。
+ */
+export function seriesBonusExcess(r: ScoreResult): number {
+  return r.seriesBreakdowns.reduce((n, b) => {
+    const count = Math.round((b.sBonus + b.tech + b.appOp + b.twoMot) / 0.1);
+    return n + Math.max(0, count - 1);
+  }, 0);
 }
 
 /**

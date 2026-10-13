@@ -35,6 +35,12 @@ export interface AutoTumblingPattern {
   catchInSkill?: boolean;
   /** 最後に前転でつなぐか（投げ受けの着地） */
   rollFinish: boolean;
+  /**
+   * 投げの直後に**横投げをもう1つ**投げ、2つとも空中にあるうちに宙返りをして、
+   * 通常のキャッチ→手具を使ったキャッチの順に受ける形（クラブ・リング。`throwRoll` から派生させる）。
+   * 専用の形は持たず、`autoTumblings.ts` が候補から派生させる。
+   */
+  airPairSide?: boolean;
 }
 
 export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [

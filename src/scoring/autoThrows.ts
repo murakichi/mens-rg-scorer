@@ -445,6 +445,12 @@ export const SIDE_THROW_TWO_THROW_CHANCE: Partial<Record<ApparatusKey, number>> 
  */
 export const SIDE_THROW_TWO_THROW_NON_HAND_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.6 };
 export const SIDE_LEFT_HAND_CHANCE = 0.8;
+/**
+ * **視野外の投げを横に投げる**確率（ロープは横投げをしないので除く）。視野外の投げは真後ろへ投げるのが
+ * 主流なので半分より少なくするが、エディタで選べる以上は両方を生成する。横は技術加点にならず、
+ * 真後ろとは別の投げ方の種類として数える。
+ */
+export const NO_VIEW_SIDE_CHANCE = 0.4;
 export const SIDE_LEFT_HAND_MAX_MOTIONS = 1;
 
 /**
@@ -486,6 +492,14 @@ export function maybeSideThrow(
     const blocked = [SIDE_THROW_TAG, NON_HAND_TAG, NO_VIEW_TAG].some((t) => types.includes(t));
     return pTwo > 0 && !blocked && rand() < chance(pTwo)
       ? { ...throwStyle, throwTypes: [...types, SIDE_THROW_TAG] }
+      : throwStyle;
+  }
+  // 視野外の投げ：真後ろか横かを引く（二つ投げ・手以外の投げは視野外と組まない）
+  const types0 = throwStyle.throwTypes || [];
+  if (types0.includes(NO_VIEW_TAG)) {
+    const free = !types0.includes(SIDE_THROW_TAG) && !types0.includes(NON_HAND_TAG);
+    return free && rand() < chance(NO_VIEW_SIDE_CHANCE)
+      ? { ...throwStyle, throwTypes: [...types0, SIDE_THROW_TAG] }
       : throwStyle;
   }
   if (!canAddSideThrow(throwStyle)) return throwStyle;
@@ -542,6 +556,8 @@ export function catchStyleWeight({
   // クラブは横投げ以外の投げを手具で押さえつけて受けない（視野外・手以外・二つ投げは横投げにできない）
   if (apparatus === "clubs" && has(CATCH_USE_APPARATUS) && !canAddSideThrow(throwStyle))
     return CLUBS_PRESS_WITHOUT_SIDE_WEIGHT;
+  // 転がり・前転のあとに背面（視野外）キャッチはしない（体の向きが変わって手具を見失う）
+  if (rollFinishShape(pattern) && has(NO_VIEW_TAG)) return 0;
   const nonHandRule = NON_HAND_CATCH_RULE[apparatus];
   // 手以外のキャッチを低難度の投げでしか実施しない手具では、徒手が多い形では実施しない
   if (has(NON_HAND_TAG) && nonHandRule.lowDifficultyOnly && motions > NON_HAND_CATCH_MAX_MOTIONS)
@@ -1032,7 +1048,8 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
           pattern,
           cheneCount,
           hands,
-          ...closeProp,
+          // 転がり・前転のあとに背面（視野外）キャッチはしない
+          ...(catchHasTag(catchStyle, NO_VIEW_TAG) ? {} : closeProp),
           firstThrowStyle: nextFirstThrow(),
           throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, cheneCount, rand, chance),
           catchStyle,
@@ -1064,7 +1081,8 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
           throwStyle: noViewStyle,
           catchStyle: closing,
           overlapLow: "noViewSet",
-          lowMotionId: pickLowMotion(),
+          // 背面キャッチの前は1シェネ（前転・転がりのあとに背面キャッチはしない）
+          lowMotionId: CHENE,
         };
       }
       if (kind === "sideRoll" && sideBase && press) {
@@ -1091,7 +1109,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
         throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, 1, rand, chance),
         catchStyle,
         overlapLow: "plain",
-        lowMotionId: pickLowMotion(),
+        lowMotionId: catchHasTag(catchStyle, NO_VIEW_TAG) ? CHENE : pickLowMotion(),
       };
     }
     if (pattern.splitCatch) {
