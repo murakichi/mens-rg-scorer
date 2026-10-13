@@ -1841,3 +1841,17 @@ describe("技の最中の投げに付ける手具を使った投げ（クラブ�
     combo.forEach((x) => expect(checkApparatusFlow(x.series, "clubs")).toEqual([]));
   });
 });
+
+import { saltoWeights, KIRIMOMITEN_AFTER_FORWARD_FACTOR } from "../tumblingWeights";
+import { nextSaltoOptions } from "../tumblingChain";
+
+describe("きりもみ転回は切り返し（後方伸身宙返りのあと）を優先する", () => {
+  it("前宙のあとのきりもみ転回は、後方伸身宙返りのあとより選ばれにくい", () => {
+    expect(nextSaltoOptions("b_front")).toContain("c_kirimomiten");
+    expect(nextSaltoOptions("b_backlayout")).toContain("c_kirimomiten");
+    const afterFront = saltoWeights("b_front")["c_kirimomiten"];
+    const afterBackLayout = saltoWeights("b_backlayout")["c_kirimomiten"];
+    expect(KIRIMOMITEN_AFTER_FORWARD_FACTOR).toBeLessThan(1);
+    expect(afterBackLayout).toBeGreaterThan(afterFront);
+  });
+});

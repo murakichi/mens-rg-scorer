@@ -439,6 +439,14 @@ export const BACK_TO_FORWARD_THROW_CHANCE = 0.15;
 
 export const DIFFICULTY_RISE_WEIGHT = 0.3;
 
+/**
+ * 前方系の宙返りのあと（前宙→きりもみ転回）にきりもみ転回を選ぶ重みの倍率。
+ * きりもみ転回は**切り返しからの実施のほうが簡単**（オーナー指定）なので、使うときは
+ * 後方伸身宙返りのあと（`AFTER_BACK_LAYOUT_SALTOS`）を優先する。
+ */
+export const KIRIMOMITEN_AFTER_FORWARD_FACTOR = 0.7;
+const KIRIMOMITEN_ID = "c_kirimomiten";
+
 /** 実施する技の選ばれやすさ（直前の技で変わる。表に無い技は1） */
 export function saltoWeights(
   prevId: string,
@@ -457,7 +465,13 @@ export function saltoWeights(
     return withHarderThanRated({ ...weights, [TEMPO_SKILL_ID]: AFTER_TEMPO_TWIST_WEIGHT }, userWeights, [
       TEMPO_SKILL_ID,
     ]);
-  if (!isBackLayoutSalto(prevId)) return withHarderThanRated(weights);
+  // きりもみ転回は切り返し（後方伸身宙返り→きりもみ転回）のほうが前宙のあとより簡単なので、
+  // 使うときは切り返しを優先する（前宙→きりもみ転回は選ばれにくくする）
+  if (!isBackLayoutSalto(prevId)) {
+    if (weights[KIRIMOMITEN_ID] !== undefined)
+      weights[KIRIMOMITEN_ID] *= KIRIMOMITEN_AFTER_FORWARD_FACTOR;
+    return withHarderThanRated(weights);
+  }
   // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）。
   // 後方系を続ける形（抱え込みの半ひねり系）はさらに少ない
   const listed = [...AFTER_BACK_LAYOUT_SALTOS, ...AFTER_BACK_LAYOUT_BACKWARD_SALTOS];
