@@ -25,3 +25,35 @@ describe("視野外の投げ — 真後ろ／横", () => {
     expect(rope.techniqueBonus).toBe(plain.techniqueBonus);
   });
 });
+
+import { autoThrowTemplates } from "../autoThrows";
+import { seededRandom } from "../probe";
+
+describe("視野外の投げ — 自動生成は真後ろも横も作る", () => {
+  const noViewThrows = (app: "stick" | "clubs" | "ring" | "rope") => {
+    let back = 0;
+    let side = 0;
+    for (let seed = 1; seed <= 20; seed++)
+      autoThrowTemplates(app, { random: seededRandom(seed) }).forEach((t) =>
+        t.series.items.forEach((it) => {
+          const types = it.kind === "throw" ? it.throwTypes ?? [] : [];
+          if (!types.includes("noview")) return;
+          if (types.includes("side")) side++;
+          else back++;
+        }),
+      );
+    return { back, side };
+  };
+
+  it.each(["stick", "clubs", "ring"] as const)("%s：両方出て、真後ろのほうが多い", (app) => {
+    const { back, side } = noViewThrows(app);
+    expect(side).toBeGreaterThan(0);
+    expect(back).toBeGreaterThan(side);
+  });
+
+  it("ロープは横投げをしないので真後ろだけ", () => {
+    const { back, side } = noViewThrows("rope");
+    expect(back).toBeGreaterThan(0);
+    expect(side).toBe(0);
+  });
+});

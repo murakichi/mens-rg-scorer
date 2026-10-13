@@ -133,8 +133,10 @@ describe("自動生成の投げの形", () => {
     // 徒手なし（通常・視野外投げ→手以外のキャッチ など）
     expect(shape(buildAutoThrowSeries(spec("minimalNone")))).toEqual(["投げ", "キャッチ"]);
     expect(
-      autoThrowSpecs("stick", { random: seeded(5) }).some(
-        (sp) => sp.pattern.id === "minimalNone" && sp.catchStyle.id === "nonhand",
+      [5, 6, 7, 8, 9].some((seed) =>
+        autoThrowSpecs("stick", { random: seeded(seed) }).some(
+          (sp) => sp.pattern.id === "minimalNone" && sp.catchStyle.id === "nonhand",
+        ),
       ),
     ).toBe(true);
     // 手具の必須投げ（左手投げ・二つ投げ）とも組み合わせて出る

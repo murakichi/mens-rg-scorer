@@ -445,6 +445,12 @@ export const SIDE_THROW_TWO_THROW_CHANCE: Partial<Record<ApparatusKey, number>> 
  */
 export const SIDE_THROW_TWO_THROW_NON_HAND_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.6 };
 export const SIDE_LEFT_HAND_CHANCE = 0.8;
+/**
+ * **視野外の投げを横に投げる**確率（ロープは横投げをしないので除く）。視野外の投げは真後ろへ投げるのが
+ * 主流なので半分より少なくするが、エディタで選べる以上は両方を生成する。横は技術加点にならず、
+ * 真後ろとは別の投げ方の種類として数える。
+ */
+export const NO_VIEW_SIDE_CHANCE = 0.4;
 export const SIDE_LEFT_HAND_MAX_MOTIONS = 1;
 
 /**
@@ -486,6 +492,14 @@ export function maybeSideThrow(
     const blocked = [SIDE_THROW_TAG, NON_HAND_TAG, NO_VIEW_TAG].some((t) => types.includes(t));
     return pTwo > 0 && !blocked && rand() < chance(pTwo)
       ? { ...throwStyle, throwTypes: [...types, SIDE_THROW_TAG] }
+      : throwStyle;
+  }
+  // 視野外の投げ：真後ろか横かを引く（二つ投げ・手以外の投げは視野外と組まない）
+  const types0 = throwStyle.throwTypes || [];
+  if (types0.includes(NO_VIEW_TAG)) {
+    const free = !types0.includes(SIDE_THROW_TAG) && !types0.includes(NON_HAND_TAG);
+    return free && rand() < chance(NO_VIEW_SIDE_CHANCE)
+      ? { ...throwStyle, throwTypes: [...types0, SIDE_THROW_TAG] }
       : throwStyle;
   }
   if (!canAddSideThrow(throwStyle)) return throwStyle;

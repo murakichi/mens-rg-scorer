@@ -9,6 +9,9 @@ import type { ApparatusKey } from "../types";
 const hasTwo = (s: Series) =>
   s.items.some((it) => (it.kind === "throw" || (it.kind === "skill" && !!it.isThrow)) && (it.reqTypes ?? []).includes("twothrow"));
 const hasSide = (s: Series) => s.items.some((it) => (it.throwTypes ?? []).includes("side"));
+/** 二つ投げ自体に横投げが付いているか（別の視野外の投げに付く横は数えない） */
+const twoThrowIsSide = (s: Series) =>
+  s.items.some((it) => (it.reqTypes ?? []).includes("twothrow") && (it.throwTypes ?? []).includes("side"));
 const isSplit = (s: Series) => s.items.some((it) => it.kind === "catch" && (it.catchTypes ?? []).includes("useapp"));
 const twoStyle = (apparatus: ApparatusKey) => autoThrowStyles(apparatus).find((t) => t.two)!;
 const catchStyle = { id: "normal", name: "通常のキャッチ" };
@@ -58,7 +61,7 @@ describe("リングの二つ投げは横投げで行うことがある", () => {
       autoThrowTemplates("ring", { random: seededRandom(seed) }).forEach((t) => {
         if (!hasTwo(t.series) || isSplit(t.series)) return;
         all += 1;
-        if (hasSide(t.series)) side += 1;
+        if (twoThrowIsSide(t.series)) side += 1;
       });
     expect(all).toBeGreaterThan(50);
     expect(side / all).toBeGreaterThan(0.3);
@@ -69,7 +72,7 @@ describe("リングの二つ投げは横投げで行うことがある", () => {
     for (let seed = 1; seed <= 10; seed++)
       autoThrowTemplates("clubs", { random: seededRandom(seed) }).forEach((t) => {
         if (!hasTwo(t.series) || isSplit(t.series)) return;
-        expect(hasSide(t.series)).toBe(false);
+        expect(twoThrowIsSide(t.series)).toBe(false);
       });
   }, 60_000);
 
@@ -82,7 +85,7 @@ describe("リングの二つ投げは横投げで行うことがある", () => {
           if (!hasTwo(t.series)) return;
           if (!analyzeSeries(t.series, false, null).units.some((u) => u.isThrowTumbling)) return;
           all += 1;
-          if (hasSide(t.series)) side += 1;
+          if (twoThrowIsSide(t.series)) side += 1;
         });
       return { all, side };
     };
