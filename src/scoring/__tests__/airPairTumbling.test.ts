@@ -1,17 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { autoTumblingTemplates, airPairTumChance, AIR_PAIR_TUM_MIN_SCORE } from "../autoTumblings";
+import { autoTumblingTemplates, airPairTumChance, airPairTumExtraChance, AIR_PAIR_TUM_MIN_SCORE } from "../autoTumblings";
 import { computeScore } from "../score";
 import { skillDef, skillDifficulty, DIFF_VALUE, CATEGORY } from "../constants";
 import { seededRandom } from "../probe";
 import type { ApparatusKey } from "../types";
 
 // 投げ→横投げ→(C以上の前方系)→(前転)→キャッチ→手具を使ったキャッチ
-const collect = (app: ApparatusKey, targetScore: number | null) => {
+const collect = (app: ApparatusKey, targetScore: number | null, id = "throwRollAirPair") => {
   const out: ReturnType<typeof autoTumblingTemplates> = [];
   for (let seed = 1; seed <= 40; seed++)
     out.push(
       ...autoTumblingTemplates(app, { random: seededRandom(seed), apparatus: app, targetScore }).filter(
-        (t) => t.spec.pattern.airPairSide,
+        (t) => t.spec.pattern.airPairSide && t.spec.pattern.id === id,
       ),
     );
   return out;
@@ -79,6 +79,49 @@ describe("2つ投げてから跳ぶ投げタン（airPairSide）", () => {
       const r = computeScore([t.series], "ring");
       expect(r.seriesBonus).toBe(0.1);
       expect(r.techniqueBonus).toBeCloseTo(0.1, 5);
+    });
+  });
+});
+
+describe("延長形（上限5.0以上で徐々に）", () => {
+  const extras = (app: ApparatusKey, target: number | null, kind: "regrab" | "plain") =>
+    collect(app, target, "throwRollAirPairExtra").filter((t) => t.spec.draws.airExtra === kind);
+  const label = (t: { series: { items: { kind: string; throwTypes?: string[]; catchTypes?: string[] }[] } }) =>
+    t.series.items.map((i) => `${i.kind}${(i.throwTypes ?? i.catchTypes ?? []).length ? "[" + (i.throwTypes ?? i.catchTypes)!.join(",") + "]" : ""}`);
+
+  it("5.0未満では出ない。上限が高いほど確率が上がる", () => {
+    expect(airPairTumExtraChance(4.9)).toBe(0);
+    expect(airPairTumExtraChance(5.5)).toBeGreaterThan(0);
+    expect(airPairTumExtraChance(6.5)).toBeGreaterThan(airPairTumExtraChance(5.5));
+    expect(extras("clubs", 4.5, "regrab")).toHaveLength(0);
+    expect(extras("clubs", 4.5, "plain")).toHaveLength(0);
+  });
+
+  it.each(["clubs", "ring"] as const)("%s：受ける前に背面の連続投げ", (app) => {
+    const list = extras(app, null, "regrab");
+    expect(list.length).toBeGreaterThan(0);
+    list.forEach((t) => {
+      const l = label(t);
+      const i = l.indexOf("catch");
+      expect(l.slice(i)).toEqual(["catch", "throw[noview]", "catch[noview]", "catch[useapp]"]);
+      expect(l[1]).toBe("throw[side]");
+    });
+  });
+
+  it.each(["clubs", "ring"] as const)("%s：通常の投げ・通常キャッチ→背面の連続投げ", (app) => {
+    const list = extras(app, null, "plain");
+    expect(list.length).toBeGreaterThan(0);
+    list.forEach((t) => {
+      const l = label(t);
+      expect(l[1]).toBe("throw");
+      expect(l.slice(-4)).toEqual(["catch", "catch", "throw[noview]", "catch[noview]"]);
+    });
+  });
+
+  it("次々に投げる加点と連続投げの加点は重ならず、最大0.1", () => {
+    [...extras("clubs", null, "regrab"), ...extras("clubs", null, "plain")].forEach((t) => {
+      const r = computeScore([t.series], "clubs");
+      expect(r.seriesBonus).toBe(0.1);
     });
   });
 });

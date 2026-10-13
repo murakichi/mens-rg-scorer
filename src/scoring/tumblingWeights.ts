@@ -189,6 +189,25 @@ export const AIR_PAIR_TUM_ROLL_CHANCE = 0.5;
 export const AIR_PAIR_TUM_LAST_CATCH: Partial<Record<ApparatusKey, { nonhand: number; noview: number }>> = {
   ring: { nonhand: 0.25, noview: 0.25 },
 };
+/**
+ * 上限が高く、基本の形では上限を満たせないときの**延長形**（5.0以上で徐々に。オーナー指定）：
+ *  - `regrab`：1つ目を受けたあと、2つ目を受ける前に、1つ目を背面投げ→背面キャッチ（連続投げ）してから
+ *    手具を使ったキャッチ。投げ→横投げ→前方系→（前転）→キャッチ→背面投げ→背面キャッチ→手具を使ったキャッチ
+ *  - `plain`：2つ目を横投げでなく通常の投げにして、通常のキャッチで2つとも受け、
+ *    そのまま背面投げ→背面キャッチ
+ * 次々に投げる加点と連続投げの加点は同じ「難易度の高い連続した投げ受け」（最大0.10点）なので
+ * 重ならない（`seriesBonus` は演技全体で1回）。確率は `AIR_PAIR_TUM_EXTRA_MIN_SCORE` から
+ * `AIR_PAIR_TUM_EXTRA_FULL_SCORE` にかけて 0 → `AIR_PAIR_TUM_EXTRA_CHANCE` に上げる（上限なしは満額）。
+ */
+export const AIR_PAIR_TUM_EXTRA_MIN_SCORE = 5.0;
+export const AIR_PAIR_TUM_EXTRA_FULL_SCORE = 7.0;
+export const AIR_PAIR_TUM_EXTRA_CHANCE = 0.5;
+export const airPairTumExtraChance = (targetScore?: number | null): number => {
+  if (targetScore == null) return AIR_PAIR_TUM_EXTRA_CHANCE;
+  if (targetScore < AIR_PAIR_TUM_EXTRA_MIN_SCORE) return 0;
+  const t = Math.min(1, (targetScore - AIR_PAIR_TUM_EXTRA_MIN_SCORE) / (AIR_PAIR_TUM_EXTRA_FULL_SCORE - AIR_PAIR_TUM_EXTRA_MIN_SCORE));
+  return AIR_PAIR_TUM_EXTRA_CHANCE * Math.max(0.2, t);
+};
 export const airPairTumChance = (targetScore?: number | null): number =>
   targetScore != null && targetScore < AIR_PAIR_TUM_MIN_SCORE ? 0 : AIR_PAIR_TUM_CHANCE;
 

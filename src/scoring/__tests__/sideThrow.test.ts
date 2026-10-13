@@ -103,7 +103,9 @@ describe("横投げ", () => {
     const check = (series: Series) => {
       let thrown: string[] | null = null;
       series.items.forEach((item) => {
-        if (item.kind === "throw" || (item.kind === "skill" && item.isThrow)) thrown = item.throwTypes || [];
+        // 視野外の投げ（背面の連続投げ）は押さえつけて受けない。押さえつけの相手は先に投げた横投げ
+        if ((item.kind === "throw" || (item.kind === "skill" && item.isThrow)) && !(item.throwTypes || []).includes("noview"))
+          thrown = item.throwTypes || [];
         if (item.kind === "catch" && (item.catchTypes || []).includes("useapp")) {
           expect(thrown).not.toBeNull();
           expect(thrown).toContain(SIDE_THROW_TAG);

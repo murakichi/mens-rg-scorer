@@ -600,3 +600,11 @@ export const ALL_E_SHORTFALL_WEIGHT = 0.5;
 export function aimsAllE(opts: { minScore?: number | null; future?: FutureLevel }): boolean {
   return (opts.minScore ?? 0) >= allEScore(opts.future ?? null) - 1e-9;
 }
+
+/**
+ * **1シリーズの中の加点は少ないほうを優先する**（オーナー指定）。技術加点・次々に投げる加点・手具操作加点・
+ * 二つ投げの徒手動作加点を数え、**1つ目は嫌わず、2つ目から**1つにつきこの重みを引く。
+ * 加点1つは +0.1 なので、これを少し上回らせて（現実志向の重み 0.1〜0.9 の下側）、
+ * 加点を重ねた形より少ない形が同点以上なら選ばれるようにする。範囲外（×100）・必須要素の不足（10）には勝てない。
+ */
+export const SERIES_BONUS_WEIGHT = 0.15;

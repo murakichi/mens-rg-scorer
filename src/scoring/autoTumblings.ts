@@ -75,6 +75,7 @@ import {
   AIR_PAIR_TUM_ROLL_CHANCE,
   airPairTumChance,
   AIR_PAIR_TUM_LAST_CATCH,
+  airPairTumExtraChance,
 } from "./tumblingWeights";
 import {
   buildTransitions,
@@ -157,6 +158,8 @@ export interface TumblingDraws {
   backCatch: boolean;
   /** `airPairSide` の最後の受け（未指定＝手具を使ったキャッチ。リングは手以外・視野外のこともある） */
   airLastCatch?: "nonhand" | "noview";
+  /** `airPairSide` の延長形（`airPairTumExtraChance`）：`regrab`＝受ける前に背面の連続投げ／`plain`＝通常の投げ・通常キャッチ→背面の連続投げ */
+  airExtra?: "regrab" | "plain";
   /** 投げタンのキャッチのあとに続ける投げ受けの投げ方（未指定なら続けない） */
   secondThrow?: AutoThrowStyle;
 }
@@ -250,7 +253,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
         : [];
     items.push({ kind: "throw", ...(reqTypes.length > 0 ? { reqTypes } : {}) });
     // 2つ目の投げ（横投げ）をすぐに投げる。2つとも空中にあるうちに宙返りをする
-    if (pattern.airPairSide) items.push({ kind: "throw", throwTypes: [SIDE_THROW_TAG] });
+    if (pattern.airPairSide)
+      items.push(draws.airExtra === "plain" ? { kind: "throw" } : { kind: "throw", throwTypes: [SIDE_THROW_TAG] });
   }
   // 技の最中に受ける形：先頭に投げを置く（受けるのは連鎖の1本目の技。下で `isCatch` を付ける）
   if (pattern.catchInSkill) items.push({ kind: "throw" });
@@ -337,11 +341,19 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     });
   }
   // 2つ投げた形：1つ目を通常のキャッチで受け、続けて手具を使ったキャッチ（押さえつけ）で受ける
-  if (pattern.airPairSide)
-    items.push({
+  if (pattern.airPairSide) {
+    const lastCatch: Item = {
       kind: "catch",
       catchTypes: [draws.airLastCatch === "nonhand" ? NON_HAND_TAG : draws.airLastCatch === "noview" ? NO_VIEW_TAG : CATCH_USE_APPARATUS],
-    });
+    };
+    if (draws.airExtra === "regrab") {
+      // 1つ目を受けたあと、2つ目を受ける前に、1つ目を背面投げ→背面キャッチ
+      items.push({ kind: "throw", throwTypes: [NO_VIEW_TAG] }, { kind: "catch", catchTypes: [NO_VIEW_TAG] }, lastCatch);
+    } else if (draws.airExtra === "plain") {
+      // 2つとも通常のキャッチで受け、そのまま背面投げ→背面キャッチ
+      items.push({ kind: "catch" }, { kind: "throw", throwTypes: [NO_VIEW_TAG] }, { kind: "catch", catchTypes: [NO_VIEW_TAG] });
+    } else items.push(lastCatch);
+  }
   // 投げタンのキャッチのあとに連続投げを続ける形
   if (pattern.throwCatch && !pattern.catchInSkill && draws.secondThrow) {
     const style = draws.secondThrow;
@@ -730,6 +742,16 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       ];
     });
     specs.push(...derived);
+    // 延長形（上限5.0以上で徐々に）：同じ元の候補から、背面の連続投げを足した別案も候補にする
+    if (rand() < chance(airPairTumExtraChance(opts.targetScore))) {
+      specs.push(
+        ...derived.map((d, i) => ({
+          ...d,
+          pattern: { ...d.pattern, id: "throwRollAirPairExtra" },
+          draws: { ...d.draws, airLastCatch: undefined, airExtra: i % 2 === 0 ? ("regrab" as const) : ("plain" as const) },
+        })),
+      );
+    }
   }
 
   const limit = Math.max(0, opts.limit ?? specs.length);
