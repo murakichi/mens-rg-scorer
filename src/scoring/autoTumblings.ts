@@ -71,6 +71,10 @@ import {
   CATCH_IN_SKILL_SKILLS,
   catchInSkillChance,
   throwInSkillChance,
+  AIR_PAIR_TUM_MIN_DIFF,
+  AIR_PAIR_TUM_ROLL_CHANCE,
+  airPairTumChance,
+  AIR_PAIR_TUM_LAST_CATCH,
 } from "./tumblingWeights";
 import {
   buildTransitions,
@@ -81,7 +85,14 @@ import {
   usableSkills,
 } from "./tumblingTransitions";
 import { newTemplateId, type SeriesTemplate } from "./templates";
-import { CATEGORY, SIDE_THROW_TAG, USE_APPARATUS_TAG, hasTwoThrow } from "./constants";
+import {
+  CATEGORY,
+  DIFF_VALUE,
+  SIDE_THROW_TAG,
+  USE_APPARATUS_TAG,
+  canUseSideThrow,
+  hasTwoThrow,
+} from "./constants";
 import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 
 // 入力画面・生成側から今までどおり `autoTumblings` 1か所で参照できるようにしておく
@@ -144,6 +155,8 @@ export interface TumblingDraws {
    * こちらも実施例が無い形なので `unseenShapes.ts` の `throwTumBackCatch` で引く。
    */
   backCatch: boolean;
+  /** `airPairSide` の最後の受け（未指定＝手具を使ったキャッチ。リングは手以外・視野外のこともある） */
+  airLastCatch?: "nonhand" | "noview";
   /** 投げタンのキャッチのあとに続ける投げ受けの投げ方（未指定なら続けない） */
   secondThrow?: AutoThrowStyle;
 }
@@ -236,6 +249,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
         ? [LEFT_HAND_THROW_TAG]
         : [];
     items.push({ kind: "throw", ...(reqTypes.length > 0 ? { reqTypes } : {}) });
+    // 2つ目の投げ（横投げ）をすぐに投げる。2つとも空中にあるうちに宙返りをする
+    if (pattern.airPairSide) items.push({ kind: "throw", throwTypes: [SIDE_THROW_TAG] });
   }
   // 技の最中に受ける形：先頭に投げを置く（受けるのは連鎖の1本目の技。下で `isCatch` を付ける）
   if (pattern.catchInSkill) items.push({ kind: "throw" });
@@ -321,6 +336,12 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       ...(draws.twoThrow ? { catchTwo: true } : {}),
     });
   }
+  // 2つ投げた形：1つ目を通常のキャッチで受け、続けて手具を使ったキャッチ（押さえつけ）で受ける
+  if (pattern.airPairSide)
+    items.push({
+      kind: "catch",
+      catchTypes: [draws.airLastCatch === "nonhand" ? NON_HAND_TAG : draws.airLastCatch === "noview" ? NO_VIEW_TAG : CATCH_USE_APPARATUS],
+    });
   // 投げタンのキャッチのあとに連続投げを続ける形
   if (pattern.throwCatch && !pattern.catchInSkill && draws.secondThrow) {
     const style = draws.secondThrow;
@@ -654,6 +675,56 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
             backCatch: false,
             nonHandCatch: false,
             secondThrow: undefined,
+          },
+        },
+      ];
+    });
+    specs.push(...derived);
+  }
+
+  // **2つ投げてから跳ぶ形は、投げてから前転で着地する投げタンの候補から派生させる**。
+  // 投げタンの補正（+1）無しでC難度以上の前方系が1本目の候補だけ（技の重み・連鎖のルールは派生元のまま）
+  if (
+    apparatus &&
+    hasTwoThrow(apparatus) &&
+    canUseSideThrow(apparatus) &&
+    rand() < chance(airPairTumChance(opts.targetScore))
+  ) {
+    const minValue = DIFF_VALUE[AIR_PAIR_TUM_MIN_DIFF];
+    const derived = specs.flatMap((spec) => {
+      if (spec.pattern.id !== "throwRoll" || spec.pattern.catchInSkill) return [];
+      const id = spec.saltoIds[0] ?? "";
+      if (skillDef(id)?.category !== CATEGORY.FORWARD) return [];
+      if (DIFF_VALUE[skillDifficulty(id, junior, opts.future ?? null) ?? "A"] < minValue) return [];
+      // 前転でつなぐかは半々（つながないときはそのままキャッチ）
+      const roll = rand() < chance(AIR_PAIR_TUM_ROLL_CHANCE);
+      // 最後の受け：リングは手以外・視野外もある（引かない手具では乱数を使わない）
+      const lastP = AIR_PAIR_TUM_LAST_CATCH[apparatus];
+      const lastDraw = lastP ? rand() : 1;
+      const airLastCatch =
+        lastP && lastDraw < chance(lastP.nonhand)
+          ? ("nonhand" as const)
+          : lastP && !roll && lastDraw < chance(lastP.nonhand) + chance(lastP.noview)
+            ? ("noview" as const)
+            : undefined;
+      return [
+        {
+          ...spec,
+          pattern: { ...spec.pattern, id: "throwRollAirPair", airPairSide: true, rollFinish: roll },
+          draws: {
+            ...spec.draws,
+            // 受け方はこの形で決まっている（通常のキャッチ→手具を使ったキャッチ）。
+            // 二つ投げ・左手投げ・背面・手以外・連続投げは付けない
+            pressCatch: false,
+            sideThrow: false,
+            twoThrow: false,
+            twoThrowSide: false,
+            leftHandThrow: false,
+            backCatch: false,
+            nonHandCatch: false,
+            nonHandSide: false,
+            secondThrow: undefined,
+            ...(airLastCatch ? { airLastCatch } : {}),
           },
         },
       ];
