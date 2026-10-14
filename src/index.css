@@ -354,6 +354,25 @@ button {
   background: rgba(255, 255, 255, 0.65);
 }
 
+/* シリーズの複製（削除の隣。目立たせず、削除と見分けが付くようにする） */
+.dup-btn-sm {
+  border: none;
+  background: var(--glass-strong);
+  color: var(--ink-soft);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.dup-btn-sm:hover {
+  background: #fff;
+  color: var(--accent);
+}
+
 .remove-btn-sm {
   border: none;
   background: var(--red-soft);
