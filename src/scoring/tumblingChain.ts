@@ -132,7 +132,7 @@ export const KIRIMOMI_THROW_SKILL_ID = "b_kirimomi";
 
 /** 技の最中の投げに付ける技術タグ（後ろ向き→前方系のきりもみは視野外投げ） */
 export const throwInSkillTypes = (prevId: string | undefined, skillId: string): string[] | undefined =>
-  isBackToForwardThrow(prevId, skillId) ? [NO_VIEW_TAG] : undefined;
+  isBackToForwardThrow(prevId, skillId) || skillId === KIRIMOMI_THROW_SKILL_ID ? [NO_VIEW_TAG] : undefined;
 
 /**
  * 投げ受け（投げてから跳ぶ形）で前方系の宙返りに続けて実施する技。
@@ -252,7 +252,7 @@ export const difficultyValue = (id: string, junior: boolean, future: FutureLevel
  * きりもみは入れない：首から背中にかけて着地するので、そのまま受けには繋げられない
  * （後方伸身のあとだけは連続の技として実施するので `AFTER_BACK_LAYOUT_SALTOS` にある）。
  */
-export const AFTER_FORWARD_KIRIMOMI: string[] = ["c_kirimomiten"];
+export const AFTER_FORWARD_KIRIMOMI: string[] = ["b_kirimomi", "c_kirimomiten"];
 
 /** 連続に使う宙返り（きりもみ系は宙返りの連続の中でだけ宙返りになるので使わない） */
 function saltoList(

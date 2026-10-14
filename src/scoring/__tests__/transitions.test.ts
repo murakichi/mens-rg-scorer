@@ -395,12 +395,15 @@ describe("つなぎの後の宙返りで投げる形（`connectThrowInSkill`）"
 });
 
 describe("前方系のあとのきりもみ転回", () => {
-  it("前宙のあとに出て、側宙より選ばれにくい（きりもみは出ない）", () => {
+  it("前宙のあとに出て、側宙より選ばれにくい（きりもみも出るが控えめ）", () => {
     const tr = table("chain");
     const after = tr.next("b_front");
     expect(ids(after)).toContain("c_kirimomiten");
-    // きりもみは首から背中にかけて着地するので、ここには出さない
-    expect(ids(after)).not.toContain("b_kirimomi");
+    // きりもみは首から背中にかけて着地するのであとに技は続かないが、何のあとでも実施できる
+    // （切り返しのあとが主流なので前方系のあとは控えめ）
+    expect(ids(after)).toContain("b_kirimomi");
+    expect(find(after, "b_kirimomi")!.weight).toBeLessThan(find(after, SIDE_SALTO_ID)!.weight);
+    expect(table("chain").next("b_kirimomi")).toHaveLength(0);
     // 難度は上がる（前宙B→きりもみ転回C）が、きりもみ系は連続の中でだけ宙返りになるので許す
     expect(value("c_kirimomiten")).toBeGreaterThan(value("b_front"));
     // 側宙 ＞ きりもみ転回 ＞ 転宙

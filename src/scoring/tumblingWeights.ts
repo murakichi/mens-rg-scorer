@@ -470,6 +470,13 @@ export const DIFFICULTY_RISE_WEIGHT = 0.3;
  */
 export const KIRIMOMITEN_AFTER_FORWARD_FACTOR = 0.7;
 const KIRIMOMITEN_ID = "c_kirimomiten";
+/**
+ * 前方系の宙返りのあとにきりもみを選ぶ重みの倍率。きりもみは首から背中に着地するので
+ * あとに技は続かないが、何のあとでも実施できる。主流は後方伸身宙返りのあと（切り返し）なので、
+ * 前方系のあとは控えめにする。
+ */
+export const KIRIMOMI_AFTER_FORWARD_FACTOR = 0.5;
+const KIRIMOMI_ID = "b_kirimomi";
 
 /** 実施する技の選ばれやすさ（直前の技で変わる。表に無い技は1） */
 export function saltoWeights(
@@ -494,6 +501,7 @@ export function saltoWeights(
   if (!isBackLayoutSalto(prevId)) {
     if (weights[KIRIMOMITEN_ID] !== undefined)
       weights[KIRIMOMITEN_ID] *= KIRIMOMITEN_AFTER_FORWARD_FACTOR;
+    if (weights[KIRIMOMI_ID] !== undefined) weights[KIRIMOMI_ID] *= KIRIMOMI_AFTER_FORWARD_FACTOR;
     return withHarderThanRated(weights);
   }
   // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）。
