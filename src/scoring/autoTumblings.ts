@@ -52,6 +52,7 @@ import {
   layoutOnlyAfterConnect,
   noRollAfter,
   throwInSkillTypes,
+  nextSaltoOptions,
 } from "./tumblingChain";
 import {
   BACK_TO_FORWARD_THROW_CHANCE,
@@ -76,6 +77,10 @@ import {
   airPairTumChance,
   AIR_PAIR_TUM_LAST_CATCH,
   airPairTumExtraChance,
+  airThrowInSkillChance,
+  saltoWeights,
+  AIR_THROW_IN_SKILL_VARIANTS,
+  AIR_THROW_IN_SKILL_ALSO,
 } from "./tumblingWeights";
 import {
   buildTransitions,
@@ -265,7 +270,10 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       items.push(skillItem(spec.connectId));
     // 入力画面と同じで、そのままでは後方系に入れない位置ではロンダートを補う
     const throwsHere = !!pattern.throwInSkill && i === saltos.length - 1;
-    const next = skillItem(id, throwsHere);
+    // 2つ投げる形：1本目の前宙の最中に、2つ目を視野外で投げる
+    const airThrowHere = !!pattern.airThrowInSkill && i === 0;
+    const next = skillItem(id, throwsHere || airThrowHere);
+    if (airThrowHere) next.throwTypes = [NO_VIEW_TAG];
     // 後ろ向きで終わる宙返りのあとに前方系で投げるのは、きりもみの視野外投げだけ
     if (throwsHere) {
       // 直前の技は並びから取る（つなぎ技が間に入るとそこで向きが変わる）
@@ -340,6 +348,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       ...(draws.twoThrow ? { catchTwo: true } : {}),
     });
   }
+  // 前宙の最中に2つ目を投げた形：通常のキャッチで2つ受ける
+  if (pattern.airThrowInSkill) items.push({ kind: "catch" });
   // 2つ投げた形：1つ目を通常のキャッチで受け、続けて手具を使ったキャッチ（押さえつけ）で受ける
   if (pattern.airPairSide) {
     const lastCatch: Item = {
@@ -751,6 +761,60 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           draws: { ...d.draws, airLastCatch: undefined, airExtra: i % 2 === 0 ? ("regrab" as const) : ("plain" as const) },
         })),
       );
+    }
+  }
+
+  // **前宙の最中に2つ目を視野外で投げる形**（投げ→前宙（視野外投げ）→B難度の前方系・側方系→
+  // キャッチ→キャッチ）。前宙の前には何も入れず、2本目は前宙のあとに続けられるB難度から引く
+  if (
+    apparatus &&
+    hasTwoThrow(apparatus) &&
+    rand() < chance(airThrowInSkillChance(opts.targetScore))
+  ) {
+    const FIRST = "b_front";
+    const usableIds = usableSkills(ctxBase);
+    const weights = saltoWeights(FIRST, junior, apparatus, opts.future ?? null, opts.skillWeights);
+    const seconds = nextSaltoOptions(FIRST, junior, opts.future ?? null).filter(
+      (id) =>
+        // B難度の前方系・側方系、またはきりもみ転回（オーナー指定）
+        (id === AIR_THROW_IN_SKILL_ALSO ||
+          (skillDifficulty(id, junior, opts.future ?? null) === "B" &&
+            [CATEGORY.FORWARD, CATEGORY.SIDE].includes(skillDef(id)?.category as never))) &&
+        usableIds([FIRST, id]).length === 2,
+    );
+    if (usableIds([FIRST]).length === 1 && seconds.length > 0) {
+      const pattern: AutoTumblingPattern = {
+        id: "airThrowInSkill",
+        saltos: { min: 2, max: 2 },
+        connect: false,
+        throwCatch: true,
+        rollFinish: false,
+        airThrowInSkill: true,
+      };
+      const used: string[] = [];
+      for (let v = 0; v < AIR_THROW_IN_SKILL_VARIANTS; v++) {
+        const second = pickDifferent(seconds, used, rand, weights, exp);
+        if (!second) break;
+        used.push(second);
+        specs.push({
+          pattern,
+          saltoCount: 2,
+          entry: [],
+          saltoIds: [FIRST, second],
+          connectId: "",
+          draws: {
+            backwardEnd: true,
+            rareEnd: true,
+            layoutAfterConnect: true,
+            backToForwardThrow: false,
+            roll: 1,
+            pressCatch: false,
+            twoThrow: false,
+            leftHandThrow: false,
+            backCatch: false,
+          },
+        });
+      }
     }
   }
 

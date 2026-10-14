@@ -208,6 +208,21 @@ export const airPairTumExtraChance = (targetScore?: number | null): number => {
   const t = Math.min(1, (targetScore - AIR_PAIR_TUM_EXTRA_MIN_SCORE) / (AIR_PAIR_TUM_EXTRA_FULL_SCORE - AIR_PAIR_TUM_EXTRA_MIN_SCORE));
   return AIR_PAIR_TUM_EXTRA_CHANCE * Math.max(0.2, t);
 };
+/**
+ * **前宙の最中に2つ目を視野外で投げる形**（`airThrowInSkill`）：投げ→前宙（視野外投げ）→
+ * B難度の前方系・側方系→キャッチ→キャッチ。クラブ・リングだけ、要求する上限が
+ * `AIR_THROW_IN_SKILL_MIN_SCORE`（4.0。オーナー指定）以上のとき、生成ごとに1回
+ * `AIR_THROW_IN_SKILL_CHANCE` で候補に混ぜる。前宙の前には何も入れない。
+ */
+export const AIR_THROW_IN_SKILL_MIN_SCORE = 4.0;
+export const AIR_THROW_IN_SKILL_CHANCE = 1;
+/** 前宙の最中の視野外投げの候補の数（B難度の2本目は技ごとに別案） */
+export const AIR_THROW_IN_SKILL_VARIANTS = 4;
+/** 2本目はB難度の前方系・側方系のほか、きりもみ転回でもよい（オーナー指定） */
+export const AIR_THROW_IN_SKILL_ALSO = "c_kirimomiten";
+export const airThrowInSkillChance = (targetScore?: number | null): number =>
+  targetScore != null && targetScore < AIR_THROW_IN_SKILL_MIN_SCORE ? 0 : AIR_THROW_IN_SKILL_CHANCE;
+
 export const airPairTumChance = (targetScore?: number | null): number =>
   targetScore != null && targetScore < AIR_PAIR_TUM_MIN_SCORE ? 0 : AIR_PAIR_TUM_CHANCE;
 

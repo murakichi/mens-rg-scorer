@@ -41,6 +41,11 @@ export interface AutoTumblingPattern {
    * 専用の形は持たず、`autoTumblings.ts` が候補から派生させる。
    */
   airPairSide?: boolean;
+  /**
+   * 投げの直後に**前宙の最中に視野外で2つ目を投げ**、続けてB難度の前方系・側方系を1本実施して、
+   * 通常のキャッチで2つ受ける形（クラブ・リング。要求する上限4.0以上）。専用の遷移表は持たない。
+   */
+  airThrowInSkill?: boolean;
 }
 
 export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [
