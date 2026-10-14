@@ -1440,6 +1440,11 @@ input[type="radio"] {
   .action-bar-btns {
     flex-wrap: nowrap;
   }
+  /* 操作バーのボタンが増えたので、狭い画面では文字を落としてアイコンだけにする
+     （1行に収める方針を保ったまま横スクロールを出さない） */
+  .action-bar .btn-label {
+    display: none;
+  }
   .action-bar .io-btn {
     padding: 7px 10px;
     font-size: 12px;
