@@ -6,12 +6,17 @@ import { apparatusName, loadTemplates } from "../scoring/templates";
 import { APPARATUS } from "../scoring/constants";
 import { compareScores, type CompareRow } from "./compare";
 import { useNarrow } from "./useNarrow";
-import type { ApparatusKey, Series } from "../scoring/types";
+import type { ScoreResult } from "../scoring/score";
+import type { ApparatusKey } from "../scoring/types";
 
 interface Props {
   open: boolean;
-  /** 左側＝いま編集している構成 */
-  series: Series[];
+  /**
+   * 左側＝いま編集している構成の採点結果。
+   * **ここで採点し直さない** — 実施減点・違反・芸術の欠点・ロープ跳びなど、
+   * 画面が渡している入力を取りこぼして画面と違う数字を出してしまうため。
+   */
+  result: ScoreResult;
   apparatus: ApparatusKey;
   junior: boolean;
   onClose: () => void;
@@ -31,7 +36,8 @@ function Delta({ value, better = true }: { value: number; better?: boolean }) {
 
 function Rows({ rows, better, negate }: { rows: CompareRow[]; better: boolean; negate?: boolean }) {
   if (rows.length === 0) return <p className="hint">差はありません。</p>;
-  const show = (n: number) => `${negate ? "-" : ""}${n.toFixed(1)}`;
+  // 0 に符号を付けない（A側は片方だけ0の行が多いので目立つ）
+  const show = (n: number) => `${negate && n !== 0 ? "-" : ""}${n.toFixed(1)}`;
   return (
     <div className="cmp-rows">
       {rows.map((r) => (
@@ -51,7 +57,7 @@ function Rows({ rows, better, negate }: { rows: CompareRow[]; better: boolean; n
  * 採点はしない — `computeScore` を2回呼んで引き算するだけ。
  * シリーズ単位の対応づけはしない（順序が変わると破綻するため）。
  */
-export function CompareModal({ open, series, apparatus, junior, onClose }: Props) {
+export function CompareModal({ open, result, apparatus, junior, onClose }: Props) {
   const [text, setText] = useState("");
   const [picked, setPicked] = useState<IndividualDraft | null>(null);
   const [note, setNote] = useState("");
@@ -59,12 +65,26 @@ export function CompareModal({ open, series, apparatus, junior, onClose }: Props
   // 構成テンプレートは開いたときに読む（localStorage なので毎回でよい）
   const routines = useMemo(() => (open ? loadTemplates().routines : []), [open]);
 
-  const left = useMemo(
-    () => (open ? computeScore(series, apparatus, { junior }) : null),
-    [open, series, apparatus, junior],
-  );
+  const left = open ? result : null;
+  // 右は読み取った構成が持っている入力を**全部**渡して採点する。
+  // 一部だけ渡すと「比べた相手が勝手に減点されている」ことになる。
   const right = useMemo(
-    () => (picked ? computeScore(picked.series, picked.apparatus, { junior: picked.junior }) : null),
+    () =>
+      picked
+        ? computeScore(picked.series, picked.apparatus, {
+            overallExecutionDeduction: picked.executionDeduction,
+            apparatusElements: picked.apparatusElements,
+            violations: picked.violations,
+            junior: picked.junior,
+            future: picked.future,
+            artDeductions: picked.artDeductions,
+            basicHands: picked.basicHands,
+            handOps: picked.handOps,
+            offBodyCount: picked.offBodyCount,
+            handElements: picked.handElements,
+            ropeJumps: picked.ropeJumps,
+          })
+        : null,
     [picked],
   );
   const diff = useMemo(() => (left && right ? compareScores(left, right) : null), [left, right]);

@@ -40,13 +40,25 @@ export interface RequiredDiff {
   rightPassed: boolean | null;
 }
 
-/** 必須要素のうち、**片方だけ満たしている**ものを拾う */
+/**
+ * 必須要素のうち、**片方だけ満たしている**ものを拾う。
+ *
+ * 左右の**和集合**で見る — 項目は適用規則で増減する（ジュニアだけに出る投げ上限など）ので、
+ * 片方にしか無い項目も「片方だけの要求」として見せる。表示名も、その項目を持っている側のものを使う
+ * （必要回数が規則で違う項目があるため、左の名前を右に当てると嘘になる）。
+ */
 export function requiredDiffs(left: ScoreResult, right: ScoreResult): RequiredDiff[] {
+  const leftByKey = new Map(left.required.map((c) => [c.key, c]));
   const rightByKey = new Map(right.required.map((c) => [c.key, c]));
-  return left.required.flatMap((c) => {
-    const other = rightByKey.get(c.key);
-    if (!other || other.passed === c.passed) return [];
-    return [{ key: c.key, label: c.label, leftPassed: c.passed, rightPassed: other.passed }];
+  const keys = [...leftByKey.keys(), ...[...rightByKey.keys()].filter((k) => !leftByKey.has(k))];
+  return keys.flatMap((key) => {
+    const l = leftByKey.get(key);
+    const r = rightByKey.get(key);
+    const leftPassed = l ? l.passed : null;
+    const rightPassed = r ? r.passed : null;
+    if (l && r && l.passed === r.passed) return [];
+    const label = l && r && l.label !== r.label ? `${l.label}／${r.label}` : (l ?? r)!.label;
+    return [{ key, label, leftPassed, rightPassed }];
   });
 }
 

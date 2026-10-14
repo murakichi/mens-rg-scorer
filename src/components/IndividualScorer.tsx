@@ -486,7 +486,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
       />
       <CompareModal
         open={compareOpen}
-        series={series}
+        result={result}
         apparatus={apparatus}
         junior={junior}
         onClose={() => setCompareOpen(false)}

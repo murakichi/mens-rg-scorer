@@ -72,6 +72,27 @@ describe("2構成の突き合わせ", () => {
     expect(c.a.every((row) => row.left !== 0 || row.right !== 0)).toBe(true);
   });
 
+  it("【回帰】片方にしか無い項目も拾い、名前はその側のものを使う", () => {
+    // ジュニアだけに出る項目（投げ上限）があるので、左右で項目の集合が違う
+    const series = [throwSeries(2), tumbling()];
+    const normal = computeScore(series, "stick", {});
+    const junior = computeScore(series, "stick", { junior: true });
+    const keysOf = (r: typeof normal) => new Set(r.required.map((c) => c.key));
+    const onlyJunior = [...keysOf(junior)].filter((k) => !keysOf(normal).has(k));
+    expect(onlyJunior.length).toBeGreaterThan(0); // 前提：集合が違う
+
+    const diffs = requiredDiffs(normal, junior);
+    // 右にしか無い項目も結果に出てくる
+    onlyJunior.forEach((k) => expect(diffs.some((d) => d.key === k)).toBe(true));
+    // 必要回数が規則で違う項目は、両方の名前を併記する（左の名前を右に当てない）
+    const count3 = diffs.find((d) => d.key === "count3");
+    if (count3) {
+      const l = normal.required.find((c) => c.key === "count3")!;
+      const r = junior.required.find((c) => c.key === "count3")!;
+      if (l.label !== r.label) expect(count3.label).toContain(r.label);
+    }
+  });
+
   it("片方だけ満たしている必須要素を拾う", () => {
     const left = score([throwSeries(2)]);
     const right = score([throwSeries(2), tumbling(), throwSeries(3), throwSeries(4)]);

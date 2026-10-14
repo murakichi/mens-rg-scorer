@@ -48,8 +48,6 @@ type Selection = { kind: TemplateKind; id: string } | null;
 
 const stamp = (t: number) => new Date(t).toLocaleDateString("ja-JP");
 
-/** 画面が狭いか（狭いときは一覧だけを出し、編集は上に重ねる） */
-
 /**
  * テンプレート管理画面。テンプレートはカードで並べ、
  * 広い画面では右側、狭い画面では重ねたシートで、採点画面と同じ入力欄で編集する。
