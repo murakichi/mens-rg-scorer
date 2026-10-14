@@ -107,8 +107,8 @@ interface Props {
   /** 技を隣の技と入れ替える（dir: -1 で前、+1 で後ろ） */
   onMoveItem: (iIdx: number, dir: -1 | 1) => void;
   onRemoveSeries: () => void;
-  /** このシリーズをコピーして直後に挿す */
-  onDuplicateSeries: () => void;
+  /** このシリーズをコピーして直後に挿す。省略時は複製ボタンを出さない。 */
+  onDuplicateSeries?: () => void;
 }
 
 /** 難度点の内訳1行。採用されなかった行は斜線＋理由バッジで表示する。 */
@@ -741,9 +741,11 @@ export function SeriesCard({
           {collapsed && <span className="collapsed-summary">{describeSeries(ser)}｜D寄与 {b.dPart.toFixed(1)} 点</span>}
         </span>
         <span className="line-head-right">
-          <button className="dup-btn-sm" onClick={onDuplicateSeries} title="このシリーズをコピーして下に挿す">
-            <Copy size={13} /> 複製
-          </button>
+          {onDuplicateSeries && (
+            <button className="dup-btn-sm" onClick={onDuplicateSeries} title="このシリーズをコピーして下に挿す">
+              <Copy size={13} /> 複製
+            </button>
+          )}
           {canRemove && (
             <button className="remove-btn-sm" onClick={onRemoveSeries}>
               <Trash2 size={13} /> 削除

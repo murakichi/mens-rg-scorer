@@ -159,7 +159,9 @@ export function SeriesListEditor({
           onRemoveItem={(iIdx) => removeItem(sIdx, iIdx)}
           onMoveItem={(iIdx, dir) => moveItem(sIdx, iIdx, dir)}
           onRemoveSeries={() => removeSeries(sIdx)}
-          onDuplicateSeries={() => duplicateSeries(sIdx)}
+          /* シリーズを増やせない画面（シリーズテンプレート・レーティング）では出さない。
+             親が先頭1本しか受け取らないので、押しても何も起きないボタンになる。 */
+          onDuplicateSeries={allowAdd ? () => duplicateSeries(sIdx) : undefined}
         />
       ))}
       {allowAdd && (
