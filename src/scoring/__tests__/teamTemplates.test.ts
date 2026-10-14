@@ -6,6 +6,8 @@ import {
   emptyTeamTemplateStore,
   loadTeamTemplates,
   normalizeTeamTemplateStore,
+  defaultTeamTemplateName,
+  mergeTeamTemplates,
   removeTeamTemplate,
   renameTeamTemplate,
   saveTeamTemplates,
@@ -158,5 +160,63 @@ describe("カードの説明", () => {
     const d = describeTeam(t);
     expect(d).toContain("徒手1");
     expect(d).toContain("ジュニア");
+  });
+});
+
+describe("取り込みと既定名（セルフレビュー指摘の回帰）", () => {
+  it("取り込んだテンプレートは id を振り直す（書き出し→取り込みで id が被らない）", () => {
+    const original = addTeamTemplate(emptyTeamTemplateStore(), "A", filled());
+    // 書き出したものをそのまま取り込み直す
+    const merged = mergeTeamTemplates(original, normalizeTeamTemplateStore(JSON.parse(JSON.stringify(original))));
+    const ids = merged.routines.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("同じ名前は取り込んだほうで上書きする（増えない）", () => {
+    const store = addTeamTemplate(emptyTeamTemplateStore(), "A", filled());
+    const incoming = addTeamTemplate(emptyTeamTemplateStore(), "A", initialTeamState());
+    const merged = mergeTeamTemplates(store, incoming);
+    expect(merged.routines).toHaveLength(1);
+    // 取り込んだほう（技が無い初期状態）が残る
+    expect(merged.routines[0].team.series[0].lanes[0][0].type).toBe("empty");
+  });
+
+  it("違う名前は両方残る", () => {
+    const store = addTeamTemplate(emptyTeamTemplateStore(), "A", filled());
+    const incoming = addTeamTemplate(emptyTeamTemplateStore(), "B", initialTeamState());
+    expect(mergeTeamTemplates(store, incoming).routines.map((t) => t.name).sort()).toEqual(["A", "B"]);
+  });
+
+  it("既定の保存名は既にある名前を避ける", () => {
+    let s = emptyTeamTemplateStore();
+    expect(defaultTeamTemplateName(s)).toBe("団体の構成1");
+    s = addTeamTemplate(s, "団体の構成1", filled());
+    s = addTeamTemplate(s, "団体の構成2", filled());
+    // 1つ消しても、残っている名前とはぶつからない
+    s = removeTeamTemplate(s, s.routines.find((t) => t.name === "団体の構成1")!.id);
+    const name = defaultTeamTemplateName(s);
+    expect(s.routines.some((t) => t.name === name)).toBe(false);
+  });
+});
+
+describe("テンプレートに入れる／入れないもの", () => {
+  it("十年後モードは保存しない（規則の切り替えであって構成ではない）", () => {
+    const t = filled();
+    t.future = "F";
+    const s = addTeamTemplate(emptyTeamTemplateStore(), "x", t);
+    expect(s.routines[0].team.future).toBeUndefined();
+    expect(t.future).toBe("F"); // 元は変えない
+  });
+
+  it("ジュニア適用規則は保存する（その構成がどの規則で組まれたかは構成の一部）", () => {
+    const t = filled();
+    t.junior = true;
+    expect(addTeamTemplate(emptyTeamTemplateStore(), "x", t).routines[0].team.junior).toBe(true);
+  });
+
+  it("着ピタは保存する（計画する要素で、実施の結果ではない）", () => {
+    const t = filled();
+    t.series[0].lanes[0][0] = { type: "skill", skillId: "b_front", stuck: true };
+    expect(addTeamTemplate(emptyTeamTemplateStore(), "x", t).routines[0].team.series[0].lanes[0][0].stuck).toBe(true);
   });
 });

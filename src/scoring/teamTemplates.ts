@@ -29,11 +29,24 @@ export const emptyTeamTemplateStore = (): TeamTemplateStore => ({ version: 1, ro
 export const newTeamTemplateId = (): string =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `tt${Date.now()}${Math.random()}`;
 
-/** 実施減点を落とした構成（テンプレートは構成だけを持つ） */
+/**
+ * テンプレートに入れる形に整える。
+ *
+ * 落とすもの:
+ * - 実施減点（全体・シリーズとも）— 採点のたびに入れるもので、構成ではない。
+ * - 十年後モード（`future`）— F・G難度を認定する仮想ルールの切り替えで、構成ではない。
+ *   読み込んだだけで難度の上限が変わると、スイッチを出していない人には何が起きたか分からない。
+ *
+ * 残すもの:
+ * - ジュニア適用規則（`junior`）— その構成がどの規則で組まれたかは構成の一部。カードにも出す。
+ * - セルの `stuck`（着ピタ）— 個人の `hasApparatus` と同じく**計画する要素**で、
+ *   実施の結果ではない。落とすと「着地を止める前提の構成」が別物になる。
+ */
 export function stripTeamExec(team: TeamState): TeamState {
   const copy = structuredClone(team);
   copy.executionDeduction = 0;
   copy.series = copy.series.map((s) => ({ ...s, executionDeduction: 0 }));
+  delete copy.future;
   return copy;
 }
 
@@ -117,4 +130,26 @@ export function describeTeam(team: TeamState): string {
   if (motions > 0) parts.push(`徒手${motions}`);
   if (team.junior) parts.push("ジュニア");
   return parts.join("・");
+}
+
+/**
+ * 取り込んだテンプレートを既存のストアに足す。
+ * **id は振り直す** — 書き出したものを取り込み直したときに同じ id が並ぶと、
+ * 削除や名前変更が2件まとめて効いてしまう。
+ * 同じ名前は取り込んだほうで上書きする（保存時と同じ「同名は上書き」の扱い）。
+ */
+export function mergeTeamTemplates(store: TeamTemplateStore, incoming: TeamTemplateStore): TeamTemplateStore {
+  const added = incoming.routines.map((t) => ({ ...t, id: newTeamTemplateId() }));
+  const names = new Set(added.map((t) => t.name));
+  const kept = store.routines.filter((t) => !names.has(t.name));
+  return { version: 1, routines: [...added, ...kept].sort((a, b) => b.updatedAt - a.updatedAt) };
+}
+
+/** 既定の保存名。既にある名前は避ける（黙って上書きしないため） */
+export function defaultTeamTemplateName(store: TeamTemplateStore): string {
+  const used = new Set(store.routines.map((t) => t.name));
+  for (let i = store.routines.length + 1; ; i++) {
+    const name = `団体の構成${i}`;
+    if (!used.has(name)) return name;
+  }
 }

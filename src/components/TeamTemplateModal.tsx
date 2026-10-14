@@ -1,7 +1,9 @@
 import { X, Trash2, Download, Upload, BookMarked } from "lucide-react";
 import {
   addTeamTemplate,
+  defaultTeamTemplateName,
   describeTeam,
+  mergeTeamTemplates,
   normalizeTeamTemplateStore,
   removeTeamTemplate,
   renameTeamTemplate,
@@ -29,9 +31,13 @@ export function TeamTemplateModal({ open, store, team, onChange, onLoad, onClose
   if (!open) return null;
 
   const save = () => {
-    const name = window.prompt("テンプレート名", `団体の構成${store.routines.length + 1}`);
-    if (!name?.trim()) return;
-    onChange(addTeamTemplate(store, name, team));
+    const name = window.prompt("テンプレート名", defaultTeamTemplateName(store));
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    // 同じ名前は上書きになるので、黙って消さずに確認する
+    if (store.routines.some((t) => t.name === trimmed) && !window.confirm(`「${trimmed}」を上書きしますか？`))
+      return;
+    onChange(addTeamTemplate(store, trimmed, team));
   };
 
   const load = (t: TeamTemplateStore["routines"][number]) => {
@@ -59,7 +65,7 @@ export function TeamTemplateModal({ open, store, team, onChange, onLoad, onClose
         alert("テンプレートが見つかりませんでした");
         return;
       }
-      onChange({ version: 1, routines: [...next.routines, ...store.routines] });
+      onChange(mergeTeamTemplates(store, next));
     } catch {
       alert("JSONの読み込みに失敗しました");
     }
