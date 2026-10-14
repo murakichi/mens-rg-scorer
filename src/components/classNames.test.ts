@@ -53,6 +53,17 @@ describe("クラス名が意味ごとに分かれている", () => {
     expect(topLevelRuleCount(css, "twist-mode-btn")).toBe(1);
   });
 
+  it("ひねり切替は、名前を分ける前に効いていた見た目を自前で持つ", () => {
+    // 分ける前は、ヘッダー用 `.mode-btn` の指定（ぼかし・ホバーの浮き上がり）も
+    // このボタンに効いていた。名前を分けた拍子に黙って消えたので、宣言を固定する。
+    const block = css.slice(css.indexOf(".twist-mode-btn {"));
+    const base = block.slice(0, block.indexOf("}"));
+    expect(base).toContain("backdrop-filter");
+    const hover = block.slice(block.indexOf(".twist-mode-btn:hover {"));
+    const hoverBody = hover.slice(0, hover.indexOf("}"));
+    ["transform", "background", "box-shadow"].forEach((p) => expect(hoverBody).toContain(p));
+  });
+
   it("使っているクラスはCSSに定義がある", () => {
     ["mode-btn", "mode-active", "twist-mode-btn"].forEach((c) =>
       expect(topLevelRuleCount(css, c)).toBeGreaterThan(0),
