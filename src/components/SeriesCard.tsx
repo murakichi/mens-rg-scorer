@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Trash2, X, Copy } from "lucide-react";
 import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
@@ -107,6 +107,8 @@ interface Props {
   /** 技を隣の技と入れ替える（dir: -1 で前、+1 で後ろ） */
   onMoveItem: (iIdx: number, dir: -1 | 1) => void;
   onRemoveSeries: () => void;
+  /** このシリーズをコピーして直後に挿す。省略時は複製ボタンを出さない。 */
+  onDuplicateSeries?: () => void;
 }
 
 /** 難度点の内訳1行。採用されなかった行は斜線＋理由バッジで表示する。 */
@@ -629,6 +631,7 @@ export function SeriesCard({
   onRemoveItem,
   onMoveItem,
   onRemoveSeries,
+  onDuplicateSeries,
 }: Props) {
   // シリーズを畳む（見出しだけ残す）。表示だけの状態で、採点や保存には関わらない
   const nickname = seriesNickname(ser);
@@ -737,11 +740,18 @@ export function SeriesCard({
           <SeriesTags series={ser} junior={junior} />
           {collapsed && <span className="collapsed-summary">{describeSeries(ser)}｜D寄与 {b.dPart.toFixed(1)} 点</span>}
         </span>
-        {canRemove && (
-          <button className="remove-btn-sm" onClick={onRemoveSeries}>
-            <Trash2 size={13} /> 削除
-          </button>
-        )}
+        <span className="line-head-right">
+          {onDuplicateSeries && (
+            <button className="dup-btn-sm" onClick={onDuplicateSeries} title="このシリーズをコピーして下に挿す">
+              <Copy size={13} /> 複製
+            </button>
+          )}
+          {canRemove && (
+            <button className="remove-btn-sm" onClick={onRemoveSeries}>
+              <Trash2 size={13} /> 削除
+            </button>
+          )}
+        </span>
       </div>
       {!collapsed && (
         <>
