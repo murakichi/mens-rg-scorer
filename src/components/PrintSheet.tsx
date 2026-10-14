@@ -1,5 +1,6 @@
 import { APPARATUS } from "../scoring/constants";
 import { describeSeries } from "../scoring/templates";
+import { aRows, dRows, nonZero } from "./scoreRows";
 import type { DiffRow, ScoreResult } from "../scoring/score";
 import type { ApparatusKey, Series } from "../scoring/types";
 
@@ -36,60 +37,14 @@ export function PrintSheet({ result, apparatus, junior, series }: Props) {
     missing,
     apparatusElementChecks,
     violationChecks,
-    artDeduction,
     aDeduction,
-    noApparatusDeduction,
-    deepMotionDeduction,
-    flexDeduction,
-    handOpDeduction,
-    missingDirCount,
-    directionDeduction,
-    totalThrowCount,
-    performedThrowCount,
-    requiredThrowCount,
-    maxThrowCount,
-    throwCountDeduction,
-    throwCountOverDeduction,
-    maxChainAll,
-    saltoChainDeduction,
-    throwKindCount,
-    catchKindCount,
-    varietyDeduction,
-    missingElementDeduction,
-    apparatusElementDeduction,
-    violationDeduction,
     executionDeduction,
-    tumblingScore,
-    handScore,
-    seriesBonus,
-    techniqueCount,
-    techniqueBonus,
-    apparatusOpBonus,
-    twoThrowMotionBonus,
-    jumpVarietyBonus,
     dScore,
     aScore,
     eScore,
     grandTotal,
   } = result;
   const stamp = new Date().toLocaleDateString("ja-JP");
-  // 内訳に並べた分の合計。採点側に新しい減点が増えたとき、紙面の明細と
-  // A減点 合計 が黙ってずれるのを防ぐ（差分は「その他の減点」として出す）。
-  const listedA =
-    noApparatusDeduction +
-    directionDeduction +
-    throwCountDeduction +
-    throwCountOverDeduction +
-    saltoChainDeduction +
-    varietyDeduction +
-    missingElementDeduction +
-    deepMotionDeduction +
-    flexDeduction +
-    handOpDeduction +
-    apparatusElementDeduction +
-    violationDeduction +
-    artDeduction;
-  const otherADeduction = Math.max(0, Math.round((aDeduction - listedA) * 10) / 10);
 
   return (
     <div className="print-sheet" hidden>
@@ -145,22 +100,12 @@ export function PrintSheet({ result, apparatus, junior, series }: Props) {
 
       <div className="print-section">
         <h3 className="print-h">D（難度点）の合計</h3>
-        {[
-          ["タンブリング難度点", tumblingScore],
-          ["徒手難度点", handScore],
-          ["連続投げ加点", seriesBonus],
-          [`投げ受けの技術加点（${techniqueCount}種）`, techniqueBonus],
-          ["手具操作加点", apparatusOpBonus],
-          ["二つ投げ徒手加点", twoThrowMotionBonus],
-          ["様々な跳び加点", jumpVarietyBonus],
-        ]
-          .filter(([, v]) => (v as number) > 0)
-          .map(([label, v]) => (
-            <div key={label as string} className="print-row">
-              <span>{label}</span>
-              <span>{(v as number).toFixed(1)}</span>
-            </div>
-          ))}
+        {nonZero(dRows(result)).map((row) => (
+          <div key={row.label} className="print-row">
+            <span>{row.label}</span>
+            <span>{row.value.toFixed(1)}</span>
+          </div>
+        ))}
         <div className="print-row print-sum">
           <span>D 合計</span>
           <span>{dScore.toFixed(1)}</span>
@@ -216,33 +161,14 @@ export function PrintSheet({ result, apparatus, junior, series }: Props) {
 
       <div className="print-section">
         <h3 className="print-h">A（減点）の内訳</h3>
-        {/* 画面（ScoreSummary）と同じ分類。これを全部足すと aDeduction になる。
-            0点の項目は紙を詰めるため省く。 */}
-        {[
-          ["手具操作不足（投げなしタンブリング＋つなぎ技）", noApparatusDeduction],
-          [`方向系不足（不足 ${missingDirCount} 系統）`, directionDeduction],
-          [`投げ回数不足（${totalThrowCount}回／必要 ${requiredThrowCount}回）`, throwCountDeduction],
-          [`投げ回数超過（${performedThrowCount}回／上限 ${maxThrowCount ?? "—"}回）`, throwCountOverDeduction],
-          [`連続宙返り（最大 ${maxChainAll} 回連続）`, saltoChainDeduction],
-          [`投げ方・受け方の種類不足（投げ${throwKindCount}/3・受け${catchKindCount}/3）`, varietyDeduction],
-          ["必須要素の欠如（投げタン・つなぎ技・タンブリング本数）", missingElementDeduction],
-          ["深い徒手動作の不足", deepMotionDeduction],
-          ["柔軟の徒手の不足", flexDeduction],
-          ["手具操作の不足", handOpDeduction],
-          ["手具別必須要素の欠如（§3.2）", apparatusElementDeduction],
-          ["違反・欠如（§3.5.6.3）", violationDeduction],
-          ["芸術と多様性の欠点（§3.5.6.4）", artDeduction],
-          // 採点側に分類が増えても紙の上で辻褄が合うようにする保険。
-          // 上を全部足して aDeduction に届かない分をここで出す（通常は0）。
-          ["その他の減点", otherADeduction],
-        ]
-          .filter(([, v]) => (v as number) > 0)
-          .map(([label, v]) => (
-            <div key={label as string} className="print-row">
-              <span>{label}</span>
-              <span>-{(v as number).toFixed(1)}</span>
-            </div>
-          ))}
+        {/* 分類の一覧は `scoreRows.ts` に1つだけ置く（印刷と比較で同じものを使う）。
+            「その他の減点」が出たら、採点側に増えた分類をそこへ足す合図。 */}
+        {nonZero(aRows(result)).map((row) => (
+          <div key={row.label} className="print-row">
+            <span>{row.label}</span>
+            <span>-{row.value.toFixed(1)}</span>
+          </div>
+        ))}
         <div className="print-row print-sum">
           <span>A減点 合計（A残点 {aScore.toFixed(1)}）</span>
           <span>-{aDeduction.toFixed(1)}</span>

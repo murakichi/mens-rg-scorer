@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useAutoInputSetting } from "./useAutoInputSetting";
 import { useEditHistory } from "./useEditHistory";
-import { Download, Upload, Link2, BookMarked, Save, Shuffle, Lightbulb, Plus, X, Printer, Undo2, Redo2 } from "lucide-react";
+import { Download, Upload, Link2, BookMarked, Save, Shuffle, Lightbulb, Plus, X, Printer, Undo2, Redo2, GitCompare } from "lucide-react";
 import {
   APPARATUS,
   APPARATUS_REQUIRED_ELEMENTS,
@@ -41,6 +41,7 @@ import { TemplateModal } from "./TemplateModal";
 import { GenerateModal } from "./GenerateModal";
 import { SuggestModal } from "./SuggestModal";
 import { PrintSheet } from "./PrintSheet";
+import { CompareModal } from "./CompareModal";
 import { ScoreSummary } from "./ScoreSummary";
 import { RopeJumpList } from "./RopeJumpList";
 import { useFutureUnlock } from "./useFutureUnlock";
@@ -137,6 +138,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [templateOpen, setTemplateOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const updateTemplates = (next: TemplateStore) => {
     setTemplates(next);
     if (!saveTemplates(next)) alert("テンプレートを保存できませんでした（ブラウザの設定をご確認ください）");
@@ -482,6 +484,13 @@ export function IndividualScorer({ initialData }: Props = {}) {
           setGenerateOpen(false);
         }}
       />
+      <CompareModal
+        open={compareOpen}
+        series={series}
+        apparatus={apparatus}
+        junior={junior}
+        onClose={() => setCompareOpen(false)}
+      />
       <SuggestModal
         open={suggestOpen}
         series={series}
@@ -557,6 +566,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
         </button>
         <button className="io-btn" onClick={() => setSuggestOpen(true)}>
           <Lightbulb size={14} /> 改善提案
+        </button>
+        <button className="io-btn" onClick={() => setCompareOpen(true)}>
+          <GitCompare size={14} /> 比べる
         </button>
         <button className="io-btn" onClick={() => window.print()}>
           <Printer size={14} /> 印刷・PDF

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { X, Trash2, Download, Upload, Plus, ChevronLeft } from "lucide-react";
 import {
   addRoutineTemplate,
@@ -19,6 +19,7 @@ import {
 import { DIFF_VALUE } from "../scoring/constants";
 import type { Difficulty } from "../scoring/types";
 import { SeriesListEditor } from "./SeriesListEditor";
+import { useNarrow } from "./useNarrow";
 import { SeriesTags } from "./SeriesCard";
 import { SERIES_TAGS, seriesTags, type SeriesTagId } from "../scoring/analysis";
 import type { ApparatusKey, FutureLevel, Series } from "../scoring/types";
@@ -48,16 +49,6 @@ type Selection = { kind: TemplateKind; id: string } | null;
 const stamp = (t: number) => new Date(t).toLocaleDateString("ja-JP");
 
 /** 画面が狭いか（狭いときは一覧だけを出し、編集は上に重ねる） */
-function useNarrow(query = "(max-width: 900px)") {
-  const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const onChange = () => setNarrow(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, [query]);
-  return narrow;
-}
 
 /**
  * テンプレート管理画面。テンプレートはカードで並べ、
