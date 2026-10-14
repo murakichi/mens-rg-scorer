@@ -491,7 +491,7 @@ describe("ランダム生成への組み込み", () => {
     expect(computeScore(r.series, "stick", { junior: true }).totalThrowCount).toBeLessThanOrEqual(5);
   });
 
-  slowIt("Dスコアの上限を指定すると、シェネの回数を減らして収める", () => {
+  it("Dスコアの上限を指定すると、シェネの回数を減らして収める", () => {
     const seeds = [3, 7, 11, 19, 23];
     const run = (maxScore: number | null) =>
       seeds.map((seed) => generateRoutine(tumblingOnly(), { apparatus: "stick", ...noTumblings, maxScore, random: seeded(seed) })!);
@@ -503,7 +503,7 @@ describe("ランダム生成への組み込み", () => {
     expect(sum(capped.map(cheneCounts).map(sum))).toBeLessThan(sum(free.map(cheneCounts).map(sum)));
   }, 60_000);
 
-  slowIt("シェネの回数は形ごとの範囲から外れない（調整後も）", () => {
+  it("シェネの回数は形ごとの範囲から外れない（調整後も）", () => {
     [null, 3.0, 2.0].forEach((maxScore) => {
       [3, 7, 11].forEach((seed) => {
         const r = generateRoutine(tumblingOnly(), { apparatus: "stick", ...noTumblings, maxScore, random: seeded(seed) })!;

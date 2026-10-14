@@ -141,7 +141,7 @@ describe("使えるテンプレートの絞り込み", () => {
 });
 
 describe("ランダム生成", () => {
-  slowIt("大会レベルのDスコアの目安から範囲を選べる", () => {
+  it("大会レベルのDスコアの目安から範囲を選べる", () => {
     // 表そのもの（配布資料の値をそのまま持つ）
     expect(COMPETITION_LEVELS.length).toBeGreaterThan(0);
     COMPETITION_LEVELS.forEach((lv) => {
@@ -177,7 +177,7 @@ describe("ランダム生成", () => {
     });
   }, 120_000);
 
-  slowIt("Dスコア4.2以上を狙うときは、採点される6ユニットを全部E難度にしてから加点を積む", () => {
+  it("Dスコア4.2以上を狙うときは、採点される6ユニットを全部E難度にしてから加点を積む", () => {
     // 4.2 は「E難度 × 上位3タンブリング＋上位3徒手」ちょうど。定数から導いている
     expect(allEScore()).toBeCloseTo(DIFF_SCORE.E * ADOPT_COUNT * 2, 10);
     expect(allEScore()).toBeCloseTo(4.2, 10);
@@ -284,7 +284,7 @@ describe("ランダム生成", () => {
     expect(handLean.hand).toBeGreaterThan(0);
   }, 120_000);
 
-  slowIt("上限3.0点の構成は単発D難度を実施せず、投げの本数で満たす", () => {
+  it("上限3.0点の構成は単発D難度を実施せず、投げの本数で満たす", () => {
     // 上限は上から抑える値なので、3.0点を指定した構成が実際に取るのは2.9点台＝2点台の選手。
     // 以前はこの位置でD難度が解禁されていて、「投げを最低限にして高難度タンブリングで
     // 効率よく満たす」構成になっていた（実測：D難度以上の技 0.57個・投げ3本が15%）
@@ -458,7 +458,7 @@ describe("DとAの損失の比較", () => {
 });
 
 describe("実施が少ない技（ハンドスプリング・転宙）", () => {
-  slowIt("演技内で1回まで", () => {
+  it("演技内で1回まで", () => {
     [3, 7, 11, 19].forEach((seed) => {
       [null, 3.0, 4.5].forEach((maxScore) => {
         const r = generateRoutine([], { apparatus: "stick", maxScore, random: seeded(seed) })!;
@@ -497,7 +497,7 @@ describe("タンブリングの本数", () => {
   const tumblingCount = (list: Series[], apparatus: ApparatusKey = "stick") =>
     computeScore(list, apparatus).nonDupTumblingCount;
 
-  slowIt("投げタンを含めて3本まで（4本目は評価されないので入れない）", () => {
+  it("投げタンを含めて3本まで（4本目は評価されないので入れない）", () => {
     [3, 7, 11, 19].forEach((seed) => {
       const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
       expect(tumblingCount(r.series)).toBeLessThanOrEqual(3);
@@ -571,7 +571,7 @@ describe("必須要素を必ず満たす構成", () => {
     expect(requiresAllElements({ maxScore: REQUIRE_ALL_ELEMENTS_MIN_SCORE - 0.1 })).toBe(false);
   });
 
-  slowIt("3点以上を狙うと必須要素をすべて満たす", () => {
+  it("3点以上を狙うと必須要素をすべて満たす", () => {
     // Dスコアの上限いっぱいでも満たす（足す代わりに抜く必要がある形でも組み直して詰める）
     [3.5, 4.5].forEach((maxScore) => {
       [3, 7, 11, 13, 17].forEach((seed) => {
@@ -676,7 +676,7 @@ describe("採用される難度のばらつき", () => {
     });
   });
 
-  slowIt("生成した構成に『高難度の投げ→高難度の投げ』が出ない", () => {
+  it("生成した構成に『高難度の投げ→高難度の投げ』が出ない", () => {
     // 連続する投げの徒手ユニットが両方D難度以上になっていないこと
     // （実測：上限3.5／3.5〜4.0 で手具ごとに 5〜22組 あったものが、4手具 × 6条件すべて0）
     let pairs = 0;
@@ -720,7 +720,7 @@ describe("採用される難度のばらつき", () => {
     expect(ADOPTED_OVER_CEILING_WEIGHT).toBeLessThan(REQUIRED_ELEMENT_WEIGHT);
   });
 
-  slowIt("均しても投げの回数・必須要素・Dスコアの範囲は落とさない", () => {
+  it("均しても投げの回数・必須要素・Dスコアの範囲は落とさない", () => {
     // 均す詰め直しは「安い投げをやめる」方向には動かない（加点のための投げは残す）
     [[null, 2.5], [null, 3.0], [null, 3.5], [3.5, 4.0]].forEach(([min, max]) => {
       let n = 0;
@@ -794,14 +794,14 @@ describe("並び順", () => {
     analyzeSeries(ser).units.some((u) => u.type === "tumbling" || u.isThrowTumbling);
   const kinds = (list: Series[]) => list.map((s) => (isTum(s) ? "T" : "H")).join("");
 
-  slowIt("投げとタンブリングが交互に並ぶ（投げが続かない）", () => {
+  it("投げとタンブリングが交互に並ぶ（投げが続かない）", () => {
     [3, 7, 11, 19, 23].forEach((seed) => {
       const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
       expect(kinds(r.series)).not.toMatch(/HH/);
     });
   });
 
-  slowIt("並べ替えても返す点数は実際の採点と一致する（ジュニアも）", () => {
+  it("並べ替えても返す点数は実際の採点と一致する（ジュニアも）", () => {
     [false, true].forEach((junior) => {
       [5, 13, 29].forEach((seed) => {
         const r = generateRoutine(pool(), { apparatus: "stick", junior, random: seeded(seed) })!;
@@ -1146,7 +1146,7 @@ describe("自動生成の割合（ユーザー指定）", () => {
     expect(r.used.some((t) => t.auto)).toBe(false);
   }, 60_000);
 
-  slowIt("指定した割合ぶんの本数までしか自動生成を入れない", () => {
+  it("指定した割合ぶんの本数までしか自動生成を入れない", () => {
     [0.25, 0.5].forEach((autoRatio) => {
       const max = autoSeriesMax({ apparatus: "stick", autoRatio })!;
       [3, 7, 11].forEach((seed) => {

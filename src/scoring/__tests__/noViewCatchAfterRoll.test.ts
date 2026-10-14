@@ -46,7 +46,7 @@ describe("転がり・前転のあとに背面（視野外）キャッチはし�
     });
   }, 180_000);
 
-  slowIt("生成した構成にも無い", () => {
+  it("生成した構成にも無い", () => {
     APPARATUSES.forEach((apparatus) => {
       const rand = seededRandom(5);
       for (let i = 0; i < 4; i++) {

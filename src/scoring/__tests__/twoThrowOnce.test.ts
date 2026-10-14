@@ -54,7 +54,7 @@ describe("二つ投げのシリーズは1構成に1本まで", () => {
   });
 
   for (const apparatus of ["clubs", "ring"] as ApparatusKey[]) {
-    slowIt(`${apparatus}：生成した構成は二つ投げのシリーズが1本以下で、必須投げは満たす`, () => {
+    it(`${apparatus}：生成した構成は二つ投げのシリーズが1本以下で、必須投げは満たす`, () => {
       const rand = seededRandom(77);
       for (const maxScore of [3.0, null]) {
         for (let i = 0; i < 4; i++) {
