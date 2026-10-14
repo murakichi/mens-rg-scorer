@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   COALESCE_MS,
+  observeChange,
   emptyHistory,
   recordEdit,
   redoStep,
@@ -125,5 +126,29 @@ describe("スタックの操作", () => {
     const after = recordEdit(back.history, back.value, false); // v1 から別の編集
     expect(after.future).toEqual([]);
     expect(after.past).toEqual(["v0", "v1"]);
+  });
+});
+
+describe("変化を観測したときの判断（順番が肝心）", () => {
+  it("初回は基準を覚えるだけ", () => {
+    expect(observeChange({ hasPrevious: false, sameJson: false, applying: false })).toBe("init");
+  });
+
+  it("ふつうの編集は記録する", () => {
+    expect(observeChange({ hasPrevious: true, sameJson: false, applying: false })).toBe("record");
+  });
+
+  it("中身が変わっていなければ何もしない", () => {
+    expect(observeChange({ hasPrevious: true, sameJson: true, applying: false })).toBe("ignore");
+  });
+
+  it("undo/redo による変化は記録しない", () => {
+    expect(observeChange({ hasPrevious: true, sameJson: false, applying: true })).toBe("applied");
+  });
+
+  it("【回帰】戻した先が今と同じ中身でも applied を優先する", () => {
+    // まとめ（coalesce）のせいで「戻した先 == 今の値」になることがある。
+    // ここで ignore にすると applying のフラグが下りず、次の本物の編集が記録されない。
+    expect(observeChange({ hasPrevious: true, sameJson: true, applying: true })).toBe("applied");
   });
 });

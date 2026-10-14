@@ -87,3 +87,26 @@ export function redoStep<T>(
     value,
   };
 }
+
+/**
+ * 値の変化を観測したときに何をするか。**順番が肝心**なので関数にして固定する。
+ *
+ * - `init`: 初回。基準を覚えるだけ。
+ * - `applied`: undo/redo による変化。履歴には積まず、フラグを下ろす。
+ * - `ignore`: 中身が変わっていない（再レンダーだけ）。
+ * - `record`: ふつうの編集。履歴に積む。
+ *
+ * `applied` の判定は `ignore` より**先**でなければならない。まとめ（coalesce）の結果、
+ * 戻した先が今と同じ JSON になることがあり、そこで `ignore` にするとフラグが立ったまま
+ * 残って、次の本物の編集が記録されなくなる。
+ */
+export function observeChange(opts: {
+  hasPrevious: boolean;
+  sameJson: boolean;
+  applying: boolean;
+}): "init" | "applied" | "ignore" | "record" {
+  if (!opts.hasPrevious) return "init";
+  if (opts.applying) return "applied";
+  if (opts.sameJson) return "ignore";
+  return "record";
+}

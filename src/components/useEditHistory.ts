@@ -3,6 +3,7 @@ import {
   COALESCE_MS,
   HISTORY_LIMIT,
   emptyHistory,
+  observeChange,
   recordEdit,
   redoStep,
   shapeOf,
@@ -21,6 +22,16 @@ import {
  *
  * スタックの操作そのものは `editHistory.ts`（Reactに依存しない）に置いてテストしている。
  */
+
+/** 文字を打つ欄か（ブラウザ本来の取り消しが効く相手） */
+const TEXT_INPUT_TYPES = new Set(["text", "search", "url", "email", "password", "tel"]);
+function isTextEntry(el: HTMLElement | null): boolean {
+  if (!el) return false;
+  if (el.tagName === "TEXTAREA") return true;
+  if (el.tagName !== "INPUT") return false;
+  const type = (el as HTMLInputElement).type?.toLowerCase() || "text";
+  return TEXT_INPUT_TYPES.has(type);
+}
 
 export interface EditHistory {
   canUndo: boolean;
@@ -51,20 +62,23 @@ export function useEditHistory<T>(
     const prev = current.current;
     const snap = { value, json, shape: shapeOf(value), at: Date.now() };
 
-    // 初回は基準を覚えるだけ
-    if (!prev) {
+    const action = observeChange({
+      hasPrevious: !!prev,
+      sameJson: !!prev && prev.json === json,
+      applying: applying.current,
+    });
+    if (action === "ignore") return;
+    if (action === "init") {
       current.current = snap;
       return;
     }
-    // 中身が同じなら何もしない（再レンダーだけの回）
-    if (prev.json === json) return;
-    // undo/redo による変化は積まない
-    if (applying.current) {
+    if (action === "applied") {
       applying.current = false;
       current.current = snap;
       bump();
       return;
     }
+    if (!prev) return; // action === "record" なら prev はあるが、型のために明示する
     stacks.current = recordEdit(
       stacks.current,
       prev.value,
@@ -99,13 +113,17 @@ export function useEditHistory<T>(
   }, []);
 
   // Ctrl/Cmd+Z で戻す、Ctrl/Cmd+Shift+Z と Ctrl+Y でやり直す。
-  // 入力欄の中ではブラウザ本来の取り消しに譲る（文字単位で戻せたほうがよい）。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      // モーダルが開いている間は裏の構成を触らない（テンプレート編集中に
+      // 裏の演技が黙って戻る、という見えない事故を防ぐ）
+      if (document.querySelector(".modal-overlay")) return;
       const el = e.target as HTMLElement | null;
-      const tag = el?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      // **文字を打つ欄の中だけ**ブラウザ本来の取り消しに譲る。
+      // プルダウン・チェックボックス・数値入力には本来の取り消しが無いので、
+      // ここで譲ると「技を選んだ直後の Ctrl+Z が何も起きない」になってしまう。
+      if (el?.isContentEditable || isTextEntry(el)) return;
       const key = e.key.toLowerCase();
       if (key === "z" && !e.shiftKey) {
         e.preventDefault();

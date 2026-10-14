@@ -239,6 +239,8 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setOffBodyCount(0);
     setHandElements([]);
     setRopeJumps([]);
+    // 採点ごとの入力まで含めて最初からにするので、構成だけ戻せても辻褄が合わない
+    history.clear();
     clearDraft(DRAFT_KEY_INDIVIDUAL);
     setDraftNotice(false);
   };
@@ -282,6 +284,10 @@ export function IndividualScorer({ initialData }: Props = {}) {
 
   const applyImportedData = (raw: string): boolean => {
     const data = JSON.parse(raw);
+    // 読み込みは構成だけでなくジュニア・違反・欠点まで差し替える。
+    // 構成だけ戻せると「古い構成 × 読み込んだ適用規則」という存在しない状態になるので、
+    // ここで履歴を切って読み込んだ内容を新しい出発点にする。
+    history.clear();
     const ap: ApparatusKey =
       data.apparatus && APPARATUS[data.apparatus as ApparatusKey] ? (data.apparatus as ApparatusKey) : apparatus;
     if (ap !== apparatus) setApparatus(ap);
