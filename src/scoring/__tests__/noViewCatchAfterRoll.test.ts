@@ -5,6 +5,7 @@ import { autoVariants } from "../generateSearch";
 import { generateRoutine } from "../generate";
 import { seededRandom } from "../probe";
 import type { ApparatusKey, Series } from "../types";
+import { slowIt } from "./slow";
 
 const APPARATUSES: ApparatusKey[] = ["stick", "clubs", "ring", "rope"];
 const isRoll = (it: Series["items"][number] | undefined) =>
@@ -45,7 +46,7 @@ describe("転がり・前転のあとに背面（視野外）キャッチはし�
     });
   }, 180_000);
 
-  it("生成した構成にも無い", () => {
+  slowIt("生成した構成にも無い", () => {
     APPARATUSES.forEach((apparatus) => {
       const rand = seededRandom(5);
       for (let i = 0; i < 4; i++) {

@@ -1607,7 +1607,7 @@ describe("ランダム生成への組み込み", () => {
     usedSkillIds(r.series).forEach((id) => expect([...allowed, ROUNDOFF_SKILL_ID]).toContain(id));
   });
 
-  it("テンプレートを先に使い、足りないところを自動生成が補う", () => {
+  slowIt("テンプレートを先に使い、足りないところを自動生成が補う", () => {
     // 同点ならテンプレートを優先する（`AUTO_SERIES_WEIGHT`）だけなので、
     // 自動生成のほうが点数が高ければ自動生成だけの構成にもなる（実測で6割弱が
     // テンプレートを使う）。どちらも使われることを見る
@@ -1844,6 +1844,7 @@ describe("技の最中の投げに付ける手具を使った投げ（クラブ�
 
 import { saltoWeights, KIRIMOMITEN_AFTER_FORWARD_FACTOR } from "../tumblingWeights";
 import { nextSaltoOptions } from "../tumblingChain";
+import { slowIt } from "./slow";
 
 describe("きりもみ転回は切り返し（後方伸身宙返りのあと）を優先する", () => {
   it("前宙のあとのきりもみ転回は、後方伸身宙返りのあとより選ばれにくい", () => {

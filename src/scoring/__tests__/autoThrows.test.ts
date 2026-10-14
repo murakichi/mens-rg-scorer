@@ -51,6 +51,7 @@ import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../t
 import type { ApparatusKey, Item, Series } from "../types";
 import { DIFF_VALUE, TECHNIQUE_BONUS, TWO_THROW_TAG } from "../constants";
 import { UNSEEN_SHAPES, unseenPenalty, unseenShapeChance } from "../unseenShapes";
+import { slowIt } from "./slow";
 
 const APPARATUS_KEYS: ApparatusKey[] = ["stick", "clubs", "ring", "rope"];
 
@@ -490,7 +491,7 @@ describe("ランダム生成への組み込み", () => {
     expect(computeScore(r.series, "stick", { junior: true }).totalThrowCount).toBeLessThanOrEqual(5);
   });
 
-  it("Dスコアの上限を指定すると、シェネの回数を減らして収める", () => {
+  slowIt("Dスコアの上限を指定すると、シェネの回数を減らして収める", () => {
     const seeds = [3, 7, 11, 19, 23];
     const run = (maxScore: number | null) =>
       seeds.map((seed) => generateRoutine(tumblingOnly(), { apparatus: "stick", ...noTumblings, maxScore, random: seeded(seed) })!);
@@ -502,7 +503,7 @@ describe("ランダム生成への組み込み", () => {
     expect(sum(capped.map(cheneCounts).map(sum))).toBeLessThan(sum(free.map(cheneCounts).map(sum)));
   }, 60_000);
 
-  it("シェネの回数は形ごとの範囲から外れない（調整後も）", () => {
+  slowIt("シェネの回数は形ごとの範囲から外れない（調整後も）", () => {
     [null, 3.0, 2.0].forEach((maxScore) => {
       [3, 7, 11].forEach((seed) => {
         const r = generateRoutine(tumblingOnly(), { apparatus: "stick", ...noTumblings, maxScore, random: seeded(seed) })!;

@@ -4,6 +4,7 @@ import { throwTumblingToFront, THROW_TUMBLING_POSITIONS } from "../generateSearc
 import { analyzeSeries } from "../analysis";
 import { newTemplateId, type SeriesTemplate } from "../templates";
 import type { Item, Series } from "../types";
+import { slowIt } from "./slow";
 
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 const sk = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: false, isThrow: false });
@@ -60,7 +61,7 @@ describe("投げタンを前半に置く", () => {
     expect(throwTumblingToFront(noTt, "stick", false)).toBe(noTt);
   });
 
-  it("生成した構成では、投げタンが前半（4つ目まで）にある", () => {
+  slowIt("生成した構成では、投げタンが前半（4つ目まで）にある", () => {
     let seen = 0;
     for (let k = 0; k < 20; k++) {
       const r = generateRoutine([tpl("投げ", S(th, ct))], { apparatus: "stick", junior: false });
