@@ -1051,11 +1051,16 @@ export function IndividualScorer({ initialData }: Props = {}) {
           >
             <Redo2 size={14} />
           </button>
-          <button className="io-btn" onClick={saveCurrentRoutine}>
-            <Save size={14} /> 構成を保存
+          <button className="io-btn" onClick={saveCurrentRoutine} aria-label="構成を保存" title="構成を保存">
+            <Save size={14} /> <span className="btn-label">構成を保存</span>
           </button>
-          <button className="io-btn" onClick={() => setTemplateOpen(true)}>
-            <BookMarked size={14} /> テンプレート
+          <button
+            className="io-btn"
+            onClick={() => setTemplateOpen(true)}
+            aria-label="テンプレート"
+            title="テンプレート"
+          >
+            <BookMarked size={14} /> <span className="btn-label">テンプレート</span>
           </button>
         </span>
       </div>
