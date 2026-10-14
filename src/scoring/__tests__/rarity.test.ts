@@ -20,6 +20,7 @@ import {
   generateRoutine,
 } from "../generate";
 import type { ApparatusKey, Item, Series } from "../types";
+import { slowIt } from "./slow";
 
 const seeded = (seed: number) => () => {
   seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -215,9 +216,11 @@ describe("種類を埋めていないその他のタグは外す", () => {
     ).toBe(series);
   });
 
+  // 不変条件（どの構成でも0）の確認なので、サンプルを減らしても系統的な違反は捕まえられる。
+  // 8シード→4シードで 4手具 × 3レアリティ × 4シード = 48構成（#76）。
   it("生成結果には飾りのその他も『最初がその他』も残らない", () => {
     for (const app of APPS)
-      for (let seed = 1; seed <= 8; seed++)
+      for (let seed = 1; seed <= 4; seed++)
         for (const rarity of [0, DEFAULT_RARITY, 100]) {
           const r = generateRoutine([], { apparatus: app, random: seeded(seed), rarity });
           if (!r) continue;

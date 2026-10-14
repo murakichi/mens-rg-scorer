@@ -75,6 +75,8 @@ npm test
 npm run build
 ```
 両方緑になるまで直す。テストが落ちたまま次へ進まない。
+**生成器（`generate.ts` / `autoThrows.ts` / `autoTumblings.ts`）を触ったら `npm run test:slow` も走らせる**
+— 生成の「傾向」を測るテストは重いので通常スイートでは飛ばしている（`slowIt`、#76）。
 
 ### 5. コミットして PR
 

@@ -1844,6 +1844,7 @@ describe("技の最中の投げに付ける手具を使った投げ（クラブ�
 
 import { saltoWeights, KIRIMOMITEN_AFTER_FORWARD_FACTOR } from "../tumblingWeights";
 import { nextSaltoOptions } from "../tumblingChain";
+import { slowIt } from "./slow";
 
 describe("きりもみ転回は切り返し（後方伸身宙返りのあと）を優先する", () => {
   it("前宙のあとのきりもみ転回は、後方伸身宙返りのあとより選ばれにくい", () => {

@@ -4,6 +4,7 @@ import { throwTumblingToFront, THROW_TUMBLING_POSITIONS } from "../generateSearc
 import { analyzeSeries } from "../analysis";
 import { newTemplateId, type SeriesTemplate } from "../templates";
 import type { Item, Series } from "../types";
+import { slowIt } from "./slow";
 
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 const sk = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: false, isThrow: false });

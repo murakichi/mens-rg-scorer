@@ -10,6 +10,7 @@ import {
 import { computeScore } from "../score";
 import { seededRandom } from "../probe";
 import type { ApparatusKey, Series } from "../types";
+import { slowIt } from "./slow";
 
 const twoThrowSeries = (): Series =>
   ({

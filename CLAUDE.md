@@ -16,10 +16,12 @@ Two rule documents live at the repo root — keep both and `src/scoring/constant
 - `npm run build` — `tsc -b` typecheck (strict) then `vite build` to `dist/`.
 - `npm run typecheck` — types only, no emit.
 - `npm run preview` — serve the production build locally.
-- `npm test` — vitest (single run); `npm run test:watch` to keep it running.
+- `npm test` — vitest (single run). **Skips the heavy generator-trend tests** (~46s instead of ~6min).
+- `npm run test:slow` — the same suite *including* those heavy tests (`SLOW_TESTS=1`, ~6min). **Run this after touching the generator** (`generate.ts` / `autoThrows.ts` / `autoTumblings.ts`).
+- `npm run test:watch` — vitest in watch mode.
 - `npm run probe -- "<技名 or 前宙→きりもみ転回>" [--apparatus clubs] [--max 3.5,none] [--min 4] [--rarity 0,50,100] [-n 12] [--junior] [--future F]` — 「○○は生成される？」を一度に確かめる（`src/scoring/probe.ts`、`scripts/probe.mjs`）。候補（`autoPool`＋本数違い）に当たる数と、実際に生成した構成に出た数、その技が各上限で候補に入れるか（`usableSkills`）を表で出し、「候補にない」か「候補にはあるが評価で負けている」かを切り分ける。生成に形を足してもこのコマンドは変えなくてよい（`autoPool` と `generateRoutine` を呼ぶだけ）。シリーズごと指定するなら `--exact`（`*` は任意の1アイテム）。`--seed` で再現できる。
 
-The scoring logic is covered by vitest suites in `src/scoring/__tests__/` (analysis / score / aside / team / junior / templates / generate / tags / options / twist ほか). **After changing scoring logic, add or update a test there and run `npm test` plus `npm run build`.** `test-reports/` holds the reports written by the `scoring-test` skill (`.claude/skills/scoring-test`), which walks one rule-compliance pass: compare `mens-rg-rules.md` against `src/scoring/`, add tests for an angle no past report covered, and file an issue for anything wrong.
+The scoring logic is covered by vitest suites in `src/scoring/__tests__/` (analysis / score / aside / team / junior / templates / generate / tags / options / twist ほか). **After changing scoring logic, add or update a test there and run `npm test` plus `npm run build`** (and `npm run test:slow` as well if you touched the generator). Tests that measure a *trend* rather than a rule — "X% of routines throw five times", "this almost never appears" — are marked `slowIt` (`src/scoring/__tests__/slow.ts`): 29 such tests were 85% of the suite's runtime, so they only run under `test:slow`. They show as `skipped` in the normal run, so nothing is hidden. **Never put a correctness test behind `slowIt`** — only distribution measurements belong there. `test-reports/` holds the reports written by the `scoring-test` skill (`.claude/skills/scoring-test`), which walks one rule-compliance pass: compare `mens-rg-rules.md` against `src/scoring/`, add tests for an angle no past report covered, and file an issue for anything wrong.
 
 ## 作業中の気づきは issue にする
 

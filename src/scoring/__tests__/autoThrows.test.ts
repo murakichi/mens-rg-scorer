@@ -51,6 +51,7 @@ import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../t
 import type { ApparatusKey, Item, Series } from "../types";
 import { DIFF_VALUE, TECHNIQUE_BONUS, TWO_THROW_TAG } from "../constants";
 import { UNSEEN_SHAPES, unseenPenalty, unseenShapeChance } from "../unseenShapes";
+import { slowIt } from "./slow";
 
 const APPARATUS_KEYS: ApparatusKey[] = ["stick", "clubs", "ring", "rope"];
 

@@ -65,6 +65,7 @@ import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
 import type { ApparatusKey, Item, Series } from "../types";
 import type { TemplateApparatus } from "../templates";
+import { slowIt } from "./slow";
 
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 const skill = (skillId: string, hasApparatus = true): Item => ({ kind: "skill", skillId, hasApparatus, isThrow: false });
@@ -220,7 +221,7 @@ describe("ランダム生成", () => {
     expect(shortfall / n).toBeLessThan(1);
   }, 120_000);
 
-  it("難度をタンブリングと徒手のどちらで取るかの比重はユーザーが選ぶ", () => {
+  slowIt("難度をタンブリングと徒手のどちらで取るかの比重はユーザーが選ぶ", () => {
     // 既定（50）は今までどおり：タンブリングにだけ `TUMBLING_PREFERENCE_WEIGHT` が乗る
     expect(preferenceWeights(DEFAULT_TUMBLING_BALANCE)).toEqual({
       tumbling: TUMBLING_PREFERENCE_WEIGHT,
@@ -742,7 +743,7 @@ describe("採用される難度のばらつき", () => {
     });
   }, 120_000);
 
-  it("生成すると難度がある程度揃う（実測：幅2以上が 25/25 → 15〜22/25）", () => {
+  slowIt("生成すると難度がある程度揃う（実測：幅2以上が 25/25 → 15〜22/25）", () => {
     // 上限いっぱいの構成ではDスコアが張り付くので完全には揃わない。
     // 「絶対に揃っていなければならないわけではないが可能な限り」という方針なので割合で見る。
     // **連続投げの安いほうを厚くするのは取り下げた**（高難度の投げが2本続くため）ので、
@@ -934,7 +935,7 @@ describe("投げ上げの回数", () => {
     expect(throwCountPenalty(7, 5.0)).toBeGreaterThan(throwCountPenalty(6, 5.0) * 2);
   });
 
-  it("加点のための投げは本数を増やしてよい（最頻値は5のまま）", () => {
+  slowIt("加点のための投げは本数を増やしてよい（最頻値は5のまま）", () => {
     // 難度に採用されるのは投げタン＋上位3本だけ。自動生成の投げの本数の上限は
     // それより多く取れるようにしてあり、本数は最頻値の重みで決まる
     expect(DEFAULT_MAX_AUTO_THROWS).toBeGreaterThan(ADOPT_COUNT);
@@ -1010,7 +1011,7 @@ describe("手以外の投げ・手具を使った投げのあと", () => {
     expect(HARD_THROW_WEIGHT).toBeGreaterThan(DIFF_SCORE.E);
   });
 
-  it("要求値が無ければほとんど生成せず、5.0を超える要求では実施する", () => {
+  slowIt("要求値が無ければほとんど生成せず、5.0を超える要求では実施する", () => {
     const hard = (minScore: number | null) => {
       let n = 0;
       for (let seed = 1; seed <= 5; seed++) {
@@ -1047,7 +1048,7 @@ describe("転回系の多様性の減点（自動計算）", () => {
     expect(withInput.artDeduction).toBe(r.tumVariety.deduction);
   });
 
-  it("上級者の構成ほど宙返りの種類が増えて減点が小さくなる", () => {
+  slowIt("上級者の構成ほど宙返りの種類が増えて減点が小さくなる", () => {
     const run = (maxScore: number | null) => {
       const ded: number[] = [];
       const totals: number[] = [];
@@ -1107,7 +1108,7 @@ describe("演技の締め方（クラブ＝押さえてキャッチ／ロープ�
     expect(FINISH_CATCH_WEIGHT).toBeLessThan(0.1);
   });
 
-  it("クラブ・ロープの構成は締めの受け方で終わる", () => {
+  slowIt("クラブ・ロープの構成は締めの受け方で終わる", () => {
     (["clubs", "rope"] as ApparatusKey[]).forEach((apparatus) => {
       let finished = 0;
       let routines = 0;
@@ -1155,7 +1156,7 @@ describe("自動生成の割合（ユーザー指定）", () => {
     });
   }, 120_000);
 
-  it("割合を上げるほど自動生成のシリーズが増える（減ることはない）", () => {
+  slowIt("割合を上げるほど自動生成のシリーズが増える（減ることはない）", () => {
     const autoCount = (autoRatio: number) =>
       [3, 7, 11]
         .map((seed) => {
@@ -1191,7 +1192,7 @@ describe("その他の投げ・その他のキャッチ", () => {
     expect(OTHER_STYLE_WEIGHT).toBeGreaterThan(TECHNIQUE_BONUS);
   });
 
-  it("生成される構成にはほとんど出ない", () => {
+  slowIt("生成される構成にはほとんど出ない", () => {
     let others = 0;
     let routines = 0;
     for (let seed = 1; seed <= 24; seed++) {
@@ -1242,7 +1243,7 @@ describe("前転3回（縦3動作）の投げ", () => {
     expect(VERTICAL_THREE_THROW_WEIGHT).toBeLessThan(1);
   });
 
-  it("基本的には構成に入らない", () => {
+  slowIt("基本的には構成に入らない", () => {
     let count = 0;
     const seeds = [3, 7, 11, 13, 17, 19, 23, 29];
     seeds.forEach((seed) => {
@@ -1293,7 +1294,7 @@ describe("難度点と加点の優先度", () => {
     });
   });
 
-  it("タンブリングの難度点は徒手より優先する（上級者のタンブリングはほぼE難度）", () => {
+  slowIt("タンブリングの難度点は徒手より優先する（上級者のタンブリングはほぼE難度）", () => {
     // タンブリング1点＝0.6、徒手1点＝0.3
     expect(TUMBLING_PREFERENCE_WEIGHT).toBeGreaterThan(0);
     expect(DIFFICULTY_PREFERENCE_WEIGHT + TUMBLING_PREFERENCE_WEIGHT).toBeGreaterThan(
