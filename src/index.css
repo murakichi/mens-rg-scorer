@@ -2031,3 +2031,14 @@ input[type="radio"] {
   margin-top: 3pt;
   font-weight: 700;
 }
+
+/* 戻せない／やり直せないときのボタン */
+.io-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.io-btn:disabled:hover {
+  transform: none;
+  box-shadow: none;
+  background: var(--glass-strong);
+}

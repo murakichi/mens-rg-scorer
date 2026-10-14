@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef, useEffect } from "react";
-import { Plus, X, Trash2, Download, Upload, Link2 } from "lucide-react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { Plus, X, Trash2, Download, Upload, Link2, Undo2, Redo2 } from "lucide-react";
 import {
   DEFAULT_FUTURE_LEVEL,
   FUTURE_LEVELS,
@@ -32,6 +32,7 @@ import { buildShareUrl } from "../scoring/share";
 import { DRAFT_KEY_TEAM, clearDraft, loadTeamDraft, saveTeamDraft } from "../scoring/draft";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
 import { useFutureUnlock } from "./useFutureUnlock";
+import { useEditHistory } from "./useEditHistory";
 
 const newId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `g${Date.now()}${Math.random()}`;
@@ -62,6 +63,14 @@ export function TeamScorer({ initialData }: Props = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
   const [jsonText, setJsonText] = useState("");
+
+  // ---- Undo / Redo（団体も個人と同じ仕組み。構成＝TeamState だけを履歴に持つ）----
+  const restoreTeam = useCallback((t: TeamState) => {
+    setTeam(t);
+    // 戻した構成にはもう存在しないセルを掴んだままにしない
+    setPick(null);
+  }, []);
+  const history = useEditHistory(team, restoreTeam);
 
   // ---- 入力中の構成を自動保存する ----
   // 起動時の内容と同じあいだは書き込まない：共有URLを開いただけで自分のドラフトを
@@ -371,6 +380,12 @@ export function TeamScorer({ initialData }: Props = {}) {
       )}
 
       <div className="io-wrap">
+        <button className="io-btn" onClick={history.undo} disabled={!history.canUndo} title="元に戻す（Ctrl/Cmd+Z）">
+          <Undo2 size={14} /> 元に戻す
+        </button>
+        <button className="io-btn" onClick={history.redo} disabled={!history.canRedo} title="やり直す（Ctrl/Cmd+Shift+Z）">
+          <Redo2 size={14} /> やり直す
+        </button>
         <button className="io-btn" onClick={handleExport}>
           <Download size={14} /> エクスポート
         </button>

@@ -1,6 +1,7 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useAutoInputSetting } from "./useAutoInputSetting";
-import { Download, Upload, Link2, BookMarked, Save, Shuffle, Lightbulb, Plus, X, Printer } from "lucide-react";
+import { useEditHistory } from "./useEditHistory";
+import { Download, Upload, Link2, BookMarked, Save, Shuffle, Lightbulb, Plus, X, Printer, Undo2, Redo2 } from "lucide-react";
 import {
   APPARATUS,
   APPARATUS_REQUIRED_ELEMENTS,
@@ -141,6 +142,17 @@ export function IndividualScorer({ initialData }: Props = {}) {
     if (!saveTemplates(next)) alert("テンプレートを保存できませんでした（ブラウザの設定をご確認ください）");
   };
 
+  // ---- Undo / Redo（構成の編集だけ。採点ごとの入力は履歴に入れない）----
+  // 手具も一緒に戻す：手具を切り替えるとその手具で入力できない内容が落ちるので、
+  // シリーズだけ戻すと画面に出ない入力が残ってしまう。
+  const construction = useMemo(() => ({ apparatus, series, ropeJumps }), [apparatus, series, ropeJumps]);
+  const restoreConstruction = useCallback((c: typeof construction) => {
+    setApparatus(c.apparatus);
+    setSeries(c.series);
+    setRopeJumps(c.ropeJumps);
+  }, []);
+  const history = useEditHistory(construction, restoreConstruction);
+
   // ---- 採点（純粋関数に委譲）----
   const result = useMemo(
     () =>
@@ -227,6 +239,8 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setOffBodyCount(0);
     setHandElements([]);
     setRopeJumps([]);
+    // 採点ごとの入力まで含めて最初からにするので、構成だけ戻せても辻褄が合わない
+    history.clear();
     clearDraft(DRAFT_KEY_INDIVIDUAL);
     setDraftNotice(false);
   };
@@ -270,6 +284,10 @@ export function IndividualScorer({ initialData }: Props = {}) {
 
   const applyImportedData = (raw: string): boolean => {
     const data = JSON.parse(raw);
+    // 読み込みは構成だけでなくジュニア・違反・欠点まで差し替える。
+    // 構成だけ戻せると「古い構成 × 読み込んだ適用規則」という存在しない状態になるので、
+    // ここで履歴を切って読み込んだ内容を新しい出発点にする。
+    history.clear();
     const ap: ApparatusKey =
       data.apparatus && APPARATUS[data.apparatus as ApparatusKey] ? (data.apparatus as ApparatusKey) : apparatus;
     if (ap !== apparatus) setApparatus(ap);
@@ -542,6 +560,12 @@ export function IndividualScorer({ initialData }: Props = {}) {
         </button>
         <button className="io-btn" onClick={() => window.print()}>
           <Printer size={14} /> 印刷・PDF
+        </button>
+        <button className="io-btn" onClick={history.undo} disabled={!history.canUndo} title="元に戻す（Ctrl/Cmd+Z）">
+          <Undo2 size={14} /> 元に戻す
+        </button>
+        <button className="io-btn" onClick={history.redo} disabled={!history.canRedo} title="やり直す（Ctrl/Cmd+Shift+Z）">
+          <Redo2 size={14} /> やり直す
         </button>
         <input
           ref={fileInputRef}
@@ -1009,6 +1033,24 @@ export function IndividualScorer({ initialData }: Props = {}) {
           </span>
         </span>
         <span className="action-bar-btns">
+          <button
+            className="io-btn"
+            onClick={history.undo}
+            disabled={!history.canUndo}
+            aria-label="元に戻す"
+            title="元に戻す（Ctrl/Cmd+Z）"
+          >
+            <Undo2 size={14} />
+          </button>
+          <button
+            className="io-btn"
+            onClick={history.redo}
+            disabled={!history.canRedo}
+            aria-label="やり直す"
+            title="やり直す（Ctrl/Cmd+Shift+Z）"
+          >
+            <Redo2 size={14} />
+          </button>
           <button className="io-btn" onClick={saveCurrentRoutine}>
             <Save size={14} /> 構成を保存
           </button>
