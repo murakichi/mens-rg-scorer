@@ -39,6 +39,9 @@ export function PrintSheet({ result, apparatus, junior, series }: Props) {
     artDeduction,
     aDeduction,
     noApparatusDeduction,
+    deepMotionDeduction,
+    flexDeduction,
+    handOpDeduction,
     missingDirCount,
     directionDeduction,
     totalThrowCount,
@@ -70,6 +73,23 @@ export function PrintSheet({ result, apparatus, junior, series }: Props) {
     grandTotal,
   } = result;
   const stamp = new Date().toLocaleDateString("ja-JP");
+  // 内訳に並べた分の合計。採点側に新しい減点が増えたとき、紙面の明細と
+  // A減点 合計 が黙ってずれるのを防ぐ（差分は「その他の減点」として出す）。
+  const listedA =
+    noApparatusDeduction +
+    directionDeduction +
+    throwCountDeduction +
+    throwCountOverDeduction +
+    saltoChainDeduction +
+    varietyDeduction +
+    missingElementDeduction +
+    deepMotionDeduction +
+    flexDeduction +
+    handOpDeduction +
+    apparatusElementDeduction +
+    violationDeduction +
+    artDeduction;
+  const otherADeduction = Math.max(0, Math.round((aDeduction - listedA) * 10) / 10);
 
   return (
     <div className="print-sheet" hidden>
@@ -206,9 +226,15 @@ export function PrintSheet({ result, apparatus, junior, series }: Props) {
           [`連続宙返り（最大 ${maxChainAll} 回連続）`, saltoChainDeduction],
           [`投げ方・受け方の種類不足（投げ${throwKindCount}/3・受け${catchKindCount}/3）`, varietyDeduction],
           ["必須要素の欠如（投げタン・つなぎ技・タンブリング本数）", missingElementDeduction],
+          ["深い徒手動作の不足", deepMotionDeduction],
+          ["柔軟の徒手の不足", flexDeduction],
+          ["手具操作の不足", handOpDeduction],
           ["手具別必須要素の欠如（§3.2）", apparatusElementDeduction],
           ["違反・欠如（§3.5.6.3）", violationDeduction],
           ["芸術と多様性の欠点（§3.5.6.4）", artDeduction],
+          // 採点側に分類が増えても紙の上で辻褄が合うようにする保険。
+          // 上を全部足して aDeduction に届かない分をここで出す（通常は0）。
+          ["その他の減点", otherADeduction],
         ]
           .filter(([, v]) => (v as number) > 0)
           .map(([label, v]) => (
