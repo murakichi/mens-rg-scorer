@@ -306,7 +306,7 @@ function ItemEditor({
         <div className="sel-wrap">
           <button
             type="button"
-            className="mode-btn"
+            className="twist-mode-btn"
             title={twistMode ? "一覧から技を選ぶ" : "ひねり回数と姿勢を指定して技を組み立てる"}
             onClick={() => {
               // ひねり指定に切り替えるとき、ひねりで表せない技（ロンダート等）だけ既定値に置き換える。

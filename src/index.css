@@ -1641,7 +1641,9 @@ input[type="radio"] {
 
 
 /* ---- タンブリング技のひねり指定 ---- */
-.mode-btn {
+/* ヘッダーのモード切替（`.mode-btn`）とは別物。同じ名前だったころは後勝ちで
+   ヘッダーの非選択ボタンまでこの小さい見た目になっていた（#91）。 */
+.twist-mode-btn {
   font-size: 11px;
   font-weight: 600;
   padding: 5px 9px;
@@ -1651,11 +1653,18 @@ input[type="radio"] {
   color: var(--ink-soft);
   cursor: pointer;
   white-space: nowrap;
+  /* 名前を分ける前は、ヘッダー用 `.mode-btn` の指定もこのボタンに効いていた。
+     見た目を変えないよう、そこから来ていたぼかしと浮き上がりをここに持ってくる。 */
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   transition: border-color 0.16s ease, color 0.16s ease;
 }
-.mode-btn:hover {
+.twist-mode-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+  transform: translateY(-1px);
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-soft);
 }
 .twist-row {
   display: flex;
