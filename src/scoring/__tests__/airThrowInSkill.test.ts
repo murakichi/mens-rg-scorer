@@ -55,3 +55,38 @@ describe("前宙の最中に2つ目を視野外で投げる形（airThrowInSkill
     });
   });
 });
+
+describe("きりもみの最中に2つ目を視野外で投げる形（airThrowAtKirimomi）", () => {
+  const collectK = (app: ApparatusKey, target: number | null) => {
+    const out: ReturnType<typeof autoTumblingTemplates> = [];
+    for (let seed = 1; seed <= 30; seed++)
+      out.push(
+        ...autoTumblingTemplates(app, { random: seededRandom(seed), apparatus: app, targetScore: target }).filter(
+          (t) => t.spec.pattern.airThrowAtKirimomi,
+        ),
+      );
+    return out;
+  };
+
+  it("上限4.0未満・スティック・ロープでは出さない", () => {
+    expect(collectK("clubs", 3.5)).toHaveLength(0);
+    expect(collectK("stick", null)).toHaveLength(0);
+    expect(collectK("rope", null)).toHaveLength(0);
+  });
+
+  it.each(["clubs", "ring"] as const)("%s：投げ→C難度の前方系→きりもみ(視野外投げ)→キャッチ→キャッチ。1本目はきりもみ転回にしない", (app) => {
+    const list = collectK(app, null);
+    expect(list.length).toBeGreaterThan(0);
+    list.forEach((t) => {
+      const items = t.series.items;
+      expect(items.map((i) => i.kind)).toEqual(["throw", "skill", "skill", "catch", "catch"]);
+      const [, a, b] = items;
+      const first = a.kind === "skill" ? a.skillId : "";
+      expect(first).not.toBe("c_kirimomiten");
+      expect(skillDifficulty(first, false, null)).toBe("C");
+      expect(skillDef(first)?.category).toBe(CATEGORY.FORWARD);
+      expect(b).toMatchObject({ skillId: "b_kirimomi", isThrow: true, throwTypes: ["noview"] });
+      expect(checkApparatusFlow(t.series, app)).toEqual([]);
+    });
+  });
+});

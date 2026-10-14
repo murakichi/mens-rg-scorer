@@ -46,6 +46,11 @@ export interface AutoTumblingPattern {
    * 通常のキャッチで2つ受ける形（クラブ・リング。要求する上限4.0以上）。専用の遷移表は持たない。
    */
   airThrowInSkill?: boolean;
+  /**
+   * 投げの直後にC難度の前方系を1本実施し、続く**きりもみの最中に2つ目を視野外で投げて**
+   * 通常のキャッチで2つ受ける形（クラブ・リング。要求する上限4.0以上）。専用の遷移表は持たない。
+   */
+  airThrowAtKirimomi?: boolean;
 }
 
 export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [

@@ -220,6 +220,15 @@ export const AIR_THROW_IN_SKILL_CHANCE = 1;
 export const AIR_THROW_IN_SKILL_VARIANTS = 4;
 /** 2本目はB難度の前方系・側方系のほか、きりもみ転回でもよい（オーナー指定） */
 export const AIR_THROW_IN_SKILL_ALSO = "c_kirimomiten";
+/**
+ * **きりもみの最中に2つ目を視野外で投げる形**（`airThrowAtKirimomi`）：投げ→C難度の前方系
+ * （補正無し）→きりもみ（視野外投げ）→キャッチ→キャッチ。条件と抽選は `airThrowInSkill` と同じ
+ * （クラブ・リング、要求する上限4.0以上）。1本目は**きりもみ転回にしない**（オーナー指定）。
+ */
+export const AIR_KIRIMOMI_SKILL_ID = "b_kirimomi";
+export const AIR_KIRIMOMI_FIRST_MIN_DIFF = "C" as const;
+export const AIR_KIRIMOMI_FIRST_EXCLUDED = ["c_kirimomiten"];
+export const AIR_KIRIMOMI_VARIANTS = 3;
 export const airThrowInSkillChance = (targetScore?: number | null): number =>
   targetScore != null && targetScore < AIR_THROW_IN_SKILL_MIN_SCORE ? 0 : AIR_THROW_IN_SKILL_CHANCE;
 

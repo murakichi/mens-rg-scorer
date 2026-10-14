@@ -21,6 +21,7 @@ import {
   TWO_THROW_TAG,
   hasLeftHandThrow,
   skillDef,
+  SKILL_LIST,
   skillDifficulty,
   canOperateApparatus,
 } from "./constants";
@@ -81,6 +82,10 @@ import {
   saltoWeights,
   AIR_THROW_IN_SKILL_VARIANTS,
   AIR_THROW_IN_SKILL_ALSO,
+  AIR_KIRIMOMI_SKILL_ID,
+  AIR_KIRIMOMI_FIRST_MIN_DIFF,
+  AIR_KIRIMOMI_FIRST_EXCLUDED,
+  AIR_KIRIMOMI_VARIANTS,
 } from "./tumblingWeights";
 import {
   buildTransitions,
@@ -271,7 +276,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     // 入力画面と同じで、そのままでは後方系に入れない位置ではロンダートを補う
     const throwsHere = !!pattern.throwInSkill && i === saltos.length - 1;
     // 2つ投げる形：1本目の前宙の最中に、2つ目を視野外で投げる
-    const airThrowHere = !!pattern.airThrowInSkill && i === 0;
+    const airThrowHere =
+      (!!pattern.airThrowInSkill && i === 0) || (!!pattern.airThrowAtKirimomi && i === saltos.length - 1);
     const next = skillItem(id, throwsHere || airThrowHere);
     if (airThrowHere) next.throwTypes = [NO_VIEW_TAG];
     // 後ろ向きで終わる宙返りのあとに前方系で投げるのは、きりもみの視野外投げだけ
@@ -349,7 +355,7 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     });
   }
   // 前宙の最中に2つ目を投げた形：通常のキャッチで2つ受ける
-  if (pattern.airThrowInSkill) items.push({ kind: "catch" });
+  if (pattern.airThrowInSkill || pattern.airThrowAtKirimomi) items.push({ kind: "catch" });
   // 2つ投げた形：1つ目を通常のキャッチで受け、続けて手具を使ったキャッチ（押さえつけ）で受ける
   if (pattern.airPairSide) {
     const lastCatch: Item = {
@@ -801,6 +807,51 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           saltoCount: 2,
           entry: [],
           saltoIds: [FIRST, second],
+          connectId: "",
+          draws: {
+            backwardEnd: true,
+            rareEnd: true,
+            layoutAfterConnect: true,
+            backToForwardThrow: false,
+            roll: 1,
+            pressCatch: false,
+            twoThrow: false,
+            leftHandThrow: false,
+            backCatch: false,
+          },
+        });
+      }
+    }
+    // 投げ→C難度の前方系→きりもみ（視野外投げ）→キャッチ→キャッチ。1本目はきりもみ転回にしない
+    const firstWeights = saltoWeights("", junior, apparatus, opts.future ?? null, opts.skillWeights);
+    const firsts = SKILL_LIST.filter(
+      (sk) =>
+        sk.category === CATEGORY.FORWARD &&
+        sk.isSalto &&
+        !AIR_KIRIMOMI_FIRST_EXCLUDED.includes(sk.id) &&
+        DIFF_VALUE[skillDifficulty(sk.id, junior, opts.future ?? null) ?? "A"] ===
+          DIFF_VALUE[AIR_KIRIMOMI_FIRST_MIN_DIFF] &&
+        usableIds([sk.id, AIR_KIRIMOMI_SKILL_ID]).length === 2,
+    ).map((sk) => sk.id);
+    if (firsts.length > 0) {
+      const pattern: AutoTumblingPattern = {
+        id: "airThrowAtKirimomi",
+        saltos: { min: 2, max: 2 },
+        connect: false,
+        throwCatch: true,
+        rollFinish: false,
+        airThrowAtKirimomi: true,
+      };
+      const usedFirsts: string[] = [];
+      for (let v = 0; v < AIR_KIRIMOMI_VARIANTS; v++) {
+        const first = pickDifferent(firsts, usedFirsts, rand, firstWeights, exp);
+        if (!first) break;
+        usedFirsts.push(first);
+        specs.push({
+          pattern,
+          saltoCount: 2,
+          entry: [],
+          saltoIds: [first, AIR_KIRIMOMI_SKILL_ID],
           connectId: "",
           draws: {
             backwardEnd: true,

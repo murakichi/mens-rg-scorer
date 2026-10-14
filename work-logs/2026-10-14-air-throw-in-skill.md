@@ -9,6 +9,8 @@
 - `tumblingPatterns.ts` / `tumblingWeights.ts` / `autoTumblings.ts`: `airThrowInSkill`（投げ→前宙(視野外投げ)→B難度の前方・側方系／きりもみ転回→キャッチ→キャッチ）。上限4.0以上、クラブ・リング。
 - `__tests__/airThrowInSkill.test.ts`、`CLAUDE.md`、`docs/generator-notes.md`。
 
+- 追加：きりもみの最中に投げる版 `airThrowAtKirimomi`（1本目はC難度の前方系、きりもみ転回は除く）。
+
 ## 判断
 
 - 前宙の前には何も入れない／2本目はB難度の前方・側方系かきりもみ転回（オーナー指定）。
@@ -16,7 +18,7 @@
 
 ## 確認
 
-- `npm test` / `npm run build`: テスト 925 件通過（4 件は既存のスキップ）、ビルド成功。
+- `npm test` / `npm run build`: テスト 928 件通過（4 件は既存のスキップ）、ビルド成功。
 
 ## 結果
 
