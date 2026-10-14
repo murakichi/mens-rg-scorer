@@ -2121,3 +2121,22 @@ input[type="radio"] {
 .cmp-body.is-narrow .cmp-head {
   font-size: 10px;
 }
+
+/* 団体のテンプレート一覧（#71）。カードは押せる見た目にしない（中のボタンで操作する） */
+.tpl-cards .tpl-card.is-static {
+  cursor: default;
+}
+.tpl-cards .tpl-card.is-static:hover {
+  transform: none;
+  border-color: var(--glass-border);
+}
+.tpl-card-desc {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.tpl-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}

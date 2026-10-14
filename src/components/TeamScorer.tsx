@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { Plus, X, Trash2, Download, Upload, Link2, Undo2, Redo2 } from "lucide-react";
+import { Plus, X, Trash2, Download, Upload, Link2, Undo2, Redo2, BookMarked } from "lucide-react";
 import {
   DEFAULT_FUTURE_LEVEL,
   FUTURE_LEVELS,
@@ -31,6 +31,8 @@ import {
 import { buildShareUrl } from "../scoring/share";
 import { DRAFT_KEY_TEAM, clearDraft, loadTeamDraft, saveTeamDraft } from "../scoring/draft";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
+import { TeamTemplateModal } from "./TeamTemplateModal";
+import { loadTeamTemplates, saveTeamTemplates, type TeamTemplateStore } from "../scoring/teamTemplates";
 import { useFutureUnlock } from "./useFutureUnlock";
 import { useEditHistory } from "./useEditHistory";
 
@@ -63,6 +65,13 @@ export function TeamScorer({ initialData }: Props = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
   const [jsonText, setJsonText] = useState("");
+  // ---- 構成テンプレート（localStorage。個人とは別のキー）----
+  const [templates, setTemplates] = useState<TeamTemplateStore>(() => loadTeamTemplates());
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const updateTemplates = (next: TeamTemplateStore) => {
+    setTemplates(next);
+    if (!saveTeamTemplates(next)) alert("テンプレートを保存できませんでした（ブラウザの設定をご確認ください）");
+  };
 
   // ---- Undo / Redo（団体も個人と同じ仕組み。構成＝TeamState だけを履歴に持つ）----
   const restoreTeam = useCallback((t: TeamState) => {
@@ -356,6 +365,17 @@ export function TeamScorer({ initialData }: Props = {}) {
 
   return (
     <>
+      <TeamTemplateModal
+        open={templateOpen}
+        store={templates}
+        team={team}
+        onChange={updateTemplates}
+        onLoad={(t) => {
+          setTeam(t);
+          setPick(null);
+        }}
+        onClose={() => setTemplateOpen(false)}
+      />
       <JsonModal
         mode={jsonModalMode}
         text={jsonText}
@@ -385,6 +405,9 @@ export function TeamScorer({ initialData }: Props = {}) {
         </button>
         <button className="io-btn" onClick={history.redo} disabled={!history.canRedo} title="やり直す（Ctrl/Cmd+Shift+Z）">
           <Redo2 size={14} /> やり直す
+        </button>
+        <button className="io-btn" onClick={() => setTemplateOpen(true)}>
+          <BookMarked size={14} /> テンプレート
         </button>
         <button className="io-btn" onClick={handleExport}>
           <Download size={14} /> エクスポート
