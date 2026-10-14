@@ -1,16 +1,38 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Download, Upload, Link2, BookMarked, Save, Shuffle, Lightbulb, Printer } from "lucide-react";
+import { useAutoInputSetting } from "./useAutoInputSetting";
+import { Download, Upload, Link2, BookMarked, Save, Shuffle, Lightbulb, Plus, X, Printer } from "lucide-react";
 import {
   APPARATUS,
   APPARATUS_REQUIRED_ELEMENTS,
   ART_DEDUCTION_ITEMS,
+  BASIC_HAND_ELEMENTS,
+  DEEP_MOTION_DEDUCTION,
+  DEEP_MOTION_PARTS,
+  HAND_OP_CHECKS,
+  handOpChecksFor,
+  HAND_OP_CHARACTER_ID,
+  HAND_OP_CHECK_DEDUCTION,
+  OFF_BODY_REQUIRED_COUNT,
+  OFF_BODY_DEDUCTION_STEP,
+  SOLO_HAND_ELEMENT_GROUPS,
+  SOLO_ELEMENT_TIPS,
+  FLEX_ELEMENT_DEDUCTION,
+  APPARATUS_CHARACTER_HINTS,
+  OFF_BODY_TIP,
+  TUM_VARIETY_ITEM_ID,
+  APP_IN_TUM_ITEM_ID,
   ART_DEDUCTION_STEP,
+  DEFAULT_FUTURE_LEVEL,
+  FUTURE_LEVELS,
   VIOLATION_OPTIONS,
   clampArtDeduction,
+  withJuniorArtDefaults,
+  JUNIOR_MAX_ART_ITEMS,
+  normalizeFutureLevel,
 } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
-import { apparatusBlockers, stripForApparatus } from "../scoring/analysis";
-import type { ApparatusKey, Series } from "../scoring/types";
+import { apparatusBlockers, hoistRopeJumps, stripForApparatus } from "../scoring/analysis";
+import type { ApparatusKey, FutureLevel, RopeJumpItem, Series } from "../scoring/types";
 import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
 import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
@@ -19,6 +41,8 @@ import { GenerateModal } from "./GenerateModal";
 import { SuggestModal } from "./SuggestModal";
 import { PrintSheet } from "./PrintSheet";
 import { ScoreSummary } from "./ScoreSummary";
+import { RopeJumpList } from "./RopeJumpList";
+import { useFutureUnlock } from "./useFutureUnlock";
 import {
   DRAFT_KEY_INDIVIDUAL,
   asStringArray,
@@ -26,6 +50,9 @@ import {
   loadIndividualDraft,
   normalizeArtDeductions,
   normalizeIndividualDraft,
+  normalizeOffBodyCount,
+  normalizeHandElements,
+  normalizeRopeJumps,
   saveIndividualDraft,
   type IndividualDraft,
 } from "../scoring/draft";
@@ -50,7 +77,13 @@ interface Props {
     apparatusElements?: unknown;
     violations?: unknown;
     junior?: unknown;
+    future?: unknown;
     artDeductions?: unknown;
+    basicHands?: unknown;
+    handOps?: unknown;
+    offBodyCount?: unknown;
+    handElements?: unknown;
+    ropeJumps?: unknown;
     series?: unknown;
   };
 }
@@ -60,6 +93,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
   // 共有URLで開いたときは、他人の構成で自分のドラフトを踏まないよう復元しない。
   const [restored] = useState(() => (initialData ? null : loadIndividualDraft()));
   const [init] = useState<IndividualDraft | null>(() => restored ?? normalizeIndividualDraft(initialData));
+  const [autoInput, setAutoInput] = useAutoInputSetting();
   const [draftNotice, setDraftNotice] = useState(!!restored);
 
   const [apparatus, setApparatus] = useState<ApparatusKey>(init?.apparatus ?? "stick");
@@ -70,7 +104,30 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [apparatusElements, setApparatusElements] = useState<string[]>(() => init?.apparatusElements ?? []);
   const [violations, setViolations] = useState<string[]>(() => init?.violations ?? []);
   const [junior, setJunior] = useState<boolean>(init?.junior ?? false);
+  // 十年後モード（F・G難度を認定する仮想ルール）。既定は非表示で、ジュニアモードを
+  // 何度も切り替えると切り替え自体が出てくる（`useFutureUnlock`）。
+  const [future, setFuture] = useState<FutureLevel>(init?.future ?? null);
+  const futureUnlock = useFutureUnlock();
+  const toggleJunior = () => {
+    setJunior((p) => {
+      const next = !p;
+      // ジュニアでは一部のトップクラスしか達成できない項目を既定で上限まで引く
+      setArtDeductions((d) => withJuniorArtDefaults(d, next));
+      return next;
+    });
+    futureUnlock.countJuniorToggle();
+  };
   const [artDeductions, setArtDeductions] = useState<Record<string, number>>(() => init?.artDeductions ?? {});
+  // A（芸術と多様性）側の入力：基本徒手と手具操作のチェック
+  const [basicHands, setBasicHands] = useState<string[]>(() => init?.basicHands ?? []);
+  const [handOps, setHandOps] = useState<string[]>(() => init?.handOps ?? []);
+  const [offBodyCount, setOffBodyCount] = useState<number>(() => init?.offBodyCount ?? 0);
+  // 単独で実施した徒手系要素（跳躍・柔軟）。手具操作を伴うものが徒手系難度に入る（§3.5.5.3(1)）
+  const [handElements, setHandElements] = useState<string[]>(() => init?.handElements ?? []);
+  // ロープの跳びシリーズ。同じシリーズで隣り合う跳びが連続した跳び
+  const [ropeJumps, setRopeJumps] = useState<RopeJumpItem[][]>(() => init?.ropeJumps ?? []);
+  /** 画面のタブ（D＝構成の入力、A＝芸術と多様性の入力） */
+  const [tab, setTab] = useState<"d" | "a">("d");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonModalMode, setJsonModalMode] = useState<JsonModalMode>(null);
   const [jsonText, setJsonText] = useState("");
@@ -92,9 +149,29 @@ export function IndividualScorer({ initialData }: Props = {}) {
         apparatusElements,
         violations,
         junior,
+        future,
         artDeductions,
+        basicHands,
+        handOps,
+        offBodyCount,
+        handElements,
+        ropeJumps,
       }),
-    [series, apparatus, overallExecution, apparatusElements, violations, junior, artDeductions],
+    [
+      series,
+      apparatus,
+      overallExecution,
+      apparatusElements,
+      violations,
+      junior,
+      future,
+      artDeductions,
+      basicHands,
+      handOps,
+      offBodyCount,
+      handElements,
+      ropeJumps,
+    ],
   );
 
   // ---- 入力中の構成を自動保存する ----
@@ -119,7 +196,21 @@ export function IndividualScorer({ initialData }: Props = {}) {
       alert("入力内容を自動保存できませんでした（ブラウザの設定・空き容量をご確認ください）。\nエクスポートか共有URLで控えを取ってください。");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apparatus, series, overallExecution, apparatusElements, violations, junior, artDeductions]);
+  }, [
+    apparatus,
+    series,
+    overallExecution,
+    apparatusElements,
+    violations,
+    junior,
+    future,
+    artDeductions,
+    basicHands,
+    handOps,
+    offBodyCount,
+    handElements,
+    ropeJumps,
+  ]);
 
   /** 復元した内容を破棄して最初からにする */
   const discardDraft = () => {
@@ -129,13 +220,21 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setApparatusElements([]);
     setViolations([]);
     setJunior(false);
+    setFuture(null);
     setArtDeductions({});
+    setBasicHands([]);
+    setHandOps([]);
+    setOffBodyCount(0);
+    setHandElements([]);
+    setRopeJumps([]);
     clearDraft(DRAFT_KEY_INDIVIDUAL);
     setDraftNotice(false);
   };
 
   // 自動判定の要素（auto付き）は手動チェック欄に出さない
   const manualElements = APPARATUS_REQUIRED_ELEMENTS[apparatus].filter((el) => !el.auto);
+
+  const deepMotionName = (id: string) => DEEP_MOTION_PARTS.find((p) => p.id === id)?.name ?? id;
 
   const toggleId = (list: string[], id: string, on: boolean) => (on ? [...list, id] : list.filter((x) => x !== id));
 
@@ -148,7 +247,13 @@ export function IndividualScorer({ initialData }: Props = {}) {
     apparatusElements,
     violations,
     junior,
+    future,
     artDeductions,
+    basicHands,
+    handOps,
+    offBodyCount,
+    handElements,
+    ropeJumps,
     series,
   });
   const handleExport = () => {
@@ -172,10 +277,22 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setApparatusElements(asStringArray(data.apparatusElements));
     setViolations(asStringArray(data.violations));
     setJunior(!!data.junior);
+    setFuture(normalizeFutureLevel(data.future));
     setArtDeductions(normalizeArtDeductions(data.artDeductions));
+    setBasicHands(asStringArray(data.basicHands).filter((id) => BASIC_HAND_ELEMENTS.some((x) => x.id === id)));
+    setHandOps(asStringArray(data.handOps).filter((id) => HAND_OP_CHECKS.some((x) => x.id === id)));
+    setOffBodyCount(normalizeOffBodyCount(data.offBodyCount));
+    setHandElements(normalizeHandElements(data.handElements));
+    // 旧データでシリーズの中にあったロープ跳びは、跳びリストへ移す
+    const hoisted = hoistRopeJumps(Array.isArray(data.series) ? data.series : []);
+    setRopeJumps(
+      ap === "rope"
+        ? [...normalizeRopeJumps(data.ropeJumps), ...hoisted.jumps.map((g) => normalizeRopeJumps(g)[0] ?? [])]
+        : [],
+    );
     if (Array.isArray(data.series) && data.series.length > 0) {
       // 読み込んだ内容のうち、その手具で入力できないものは落とす
-      setSeries(stripForApparatus(data.series, ap));
+      setSeries(stripForApparatus(hoisted.series, ap));
       return true;
     }
     return false;
@@ -235,10 +352,13 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const changeApparatus = (k: ApparatusKey) => {
     if (k === apparatus) return;
     const blockers = apparatusBlockers(series, k);
+    const dropJumps = k !== "rope" && ropeJumps.length > 0;
+    if (dropJumps) blockers.push("ロープ跳び");
     if (blockers.length > 0) {
       const msg = `${APPARATUS[k].name}では入力できない内容（${blockers.join("・")}）があります。外して切り替えますか？`;
       if (!window.confirm(msg)) return;
       setSeries((p) => stripForApparatus(p, k));
+      if (dropJumps) setRopeJumps([]);
     }
     setApparatus(k);
   };
@@ -258,11 +378,18 @@ export function IndividualScorer({ initialData }: Props = {}) {
       addSeriesTemplate(templates, name, defaultTemplateApparatus([series[sIdx]], apparatus), series[sIdx]),
     );
   };
+  /** 旧テンプレートのシリーズに入っていたロープ跳びを、跳びシリーズとして後ろへ足す（ロープのときだけ） */
+  const addHoistedJumps = (jumps: RopeJumpItem[][]) => {
+    if (apparatus === "rope" && jumps.length > 0)
+      setRopeJumps((p) => [...p, ...jumps.map((g) => normalizeRopeJumps(g)[0] ?? [])]);
+  };
   const loadSeriesTemplate = (sIdx: number, id: string) => {
     const t = templates.series.find((x) => x.id === id);
     if (!t) return;
     // 他の手具のテンプレートを読み込んだときは、今の手具で入力できない内容を落とす
-    const [loaded] = stripForApparatus([structuredClone(t.series)], apparatus);
+    const hoisted = hoistRopeJumps([structuredClone(t.series)]);
+    addHoistedJumps(hoisted.jumps);
+    const [loaded] = stripForApparatus(hoisted.series, apparatus);
     // 実施減点は採点ごとの入力なので、読み込んでも今の値を残す
     setSeries((p) =>
       p.map((ser, i) => (i === sIdx ? { ...loaded, executionDeduction: ser.executionDeduction } : ser)),
@@ -280,13 +407,17 @@ export function IndividualScorer({ initialData }: Props = {}) {
     // 共通テンプレートは手具を選ばないので、今の手具のまま読み込む
     const ap = isCommonApparatus(t.apparatus) ? apparatus : t.apparatus;
     if (ap !== apparatus) setApparatus(ap);
-    setSeries(stripForApparatus(structuredClone(t.series), ap));
+    const hoisted = hoistRopeJumps(structuredClone(t.series));
+    setRopeJumps(ap === "rope" ? hoisted.jumps.map((g) => normalizeRopeJumps(g)[0] ?? []) : []);
+    setSeries(stripForApparatus(hoisted.series, ap));
     setTemplateOpen(false);
   };
   const appendSeriesTemplate = (id: string) => {
     const t = templates.series.find((x) => x.id === id);
     if (!t) return;
-    setSeries((p) => [...p, ...stripForApparatus([structuredClone(t.series)], apparatus)]);
+    const hoisted = hoistRopeJumps([structuredClone(t.series)]);
+    addHoistedJumps(hoisted.jumps);
+    setSeries((p) => [...p, ...stripForApparatus(hoisted.series, apparatus)]);
     setTemplateOpen(false);
   };
   const exportTemplates = () => {
@@ -324,6 +455,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         templates={templates.series}
         apparatus={apparatus}
         junior={junior}
+        future={future}
         onClose={() => setGenerateOpen(false)}
         onApply={(ap, r) => {
           if (!window.confirm("生成した構成を反映します。編集中の構成は置き換わります。")) return;
@@ -337,6 +469,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         series={series}
         apparatus={apparatus}
         junior={junior}
+        future={future}
         apparatusElements={apparatusElements}
         violations={violations}
         artDeductions={artDeductions}
@@ -347,6 +480,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         store={templates}
         apparatus={apparatus}
         junior={junior}
+        future={future}
         onChange={updateTemplates}
         onClose={() => setTemplateOpen(false)}
         onSaveCurrentRoutine={saveCurrentRoutine}
@@ -418,6 +552,29 @@ export function IndividualScorer({ initialData }: Props = {}) {
         />
       </div>
 
+      <div className="tab-bar" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "d"}
+          className={tab === "d" ? "tab-btn is-active" : "tab-btn"}
+          onClick={() => setTab("d")}
+        >
+          投げ・タンブリング
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "a"}
+          className={tab === "a" ? "tab-btn is-active" : "tab-btn"}
+          onClick={() => setTab("a")}
+        >
+          徒手・構成
+        </button>
+      </div>
+
+      {tab === "d" && (
+        <>
       <section className="card">
         <div className="line-head">適用規則</div>
         <div className="switch-row">
@@ -426,7 +583,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
             role="switch"
             aria-checked={junior}
             className={junior ? "switch is-on" : "switch"}
-            onClick={() => setJunior((p) => !p)}
+            onClick={toggleJunior}
           >
             <span className="switch-knob" />
           </button>
@@ -436,6 +593,56 @@ export function IndividualScorer({ initialData }: Props = {}) {
           ジュニア適用規則（§10 変更規則1）で採点します。ダイビング前宙・後方宙返り半ひねりをC難度で認定し、
           投げ上げの最低回数を2回とします。
         </p>
+        <div className="switch-row">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoInput}
+            className={autoInput ? "switch is-on" : "switch"}
+            onClick={() => setAutoInput(!autoInput)}
+          >
+            <span className="switch-knob" />
+          </button>
+          <span className="switch-label">おすすめ表示（自動入力）{autoInput ? "：ON" : "：OFF"}</span>
+        </div>
+        <p className="hint">
+          入力の続きを半透明で提案します。確定ボタン・Enter・Tab で追加、却下ボタンや手入力で消えます。
+        </p>
+        {futureUnlock.unlocked && (
+          <>
+            <div className="switch-row">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!!future}
+                className={future ? "switch is-on" : "switch"}
+                onClick={() => setFuture((p) => (p ? null : DEFAULT_FUTURE_LEVEL))}
+              >
+                <span className="switch-knob" />
+              </button>
+              <span className="switch-label">十年後モード{future ? "：ON" : "：OFF"}</span>
+              {future && (
+                <select
+                  className="select switch-select"
+                  value={future}
+                  aria-label="十年後モードの上限難度"
+                  onChange={(e) => setFuture(normalizeFutureLevel(e.target.value))}
+                >
+                  {FUTURE_LEVELS.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <p className="hint">
+              {futureUnlock.justUnlocked && <b>十年後モードが使えるようになりました。</b>}
+              現行規則には無いF難度（0.9点）・G難度（1.1点）まで認定する、十年後を想像するためのモードです。
+              上限をF・Gのどちらにするかを選べます（ランダム生成のタンブリングも、その上限を前提に組みます）。
+            </p>
+          </>
+        )}
       </section>
 
       <section className="card">
@@ -464,6 +671,8 @@ export function IndividualScorer({ initialData }: Props = {}) {
         series={series}
         apparatus={apparatus}
         junior={junior}
+        future={future}
+        autoInputEnabled={autoInput}
         result={result}
         onChange={setSeries}
         templateOptions={seriesTemplateOptions}
@@ -487,6 +696,170 @@ export function IndividualScorer({ initialData }: Props = {}) {
         </label>
         <p className="hint">
           各シリーズの実施減点とは別に、演技全体に対する実施減点を入力します（E残点は両方を合算して算出）。
+        </p>
+      </section>
+
+        </>
+      )}
+
+      {tab === "a" && (
+        <>
+      <section className="card">
+        <div className="line-head">基本徒手（§3.5.2 各種徒手）</div>
+        {basicHands.map((id, i) => (
+          <div key={i} className="basic-hand-row">
+            <select
+              className="select"
+              value={id}
+              aria-label={`基本徒手 ${i + 1}`}
+              onChange={(e) => setBasicHands((p) => p.map((x, k) => (k === i ? e.target.value : x)))}
+            >
+              <option value="">基本徒手</option>
+              {BASIC_HAND_ELEMENTS.map((el) => (
+                <option key={el.id} value={el.id}>
+                  {el.name}（{el.parts.map(deepMotionName).join("・")}）
+                </option>
+              ))}
+            </select>
+            <button
+              className="remove-btn-xs"
+              aria-label="削除"
+              onClick={() => setBasicHands((p) => p.filter((_, k) => k !== i))}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+        <button className="add-btn" onClick={() => setBasicHands((p) => [...p, ""])}>
+          <Plus size={14} /> 基本徒手を追加
+        </button>
+        <div className="check-result-row">
+          {result.deepMotionChecks.map((c, i) => (
+            <span
+              key={c.key}
+              className={c.passed ? "check-ok" : "check-ng"}
+              title={DEEP_MOTION_PARTS[i]?.tip}
+            >
+              {c.passed ? "✓" : "×"} {c.label}
+            </span>
+          ))}
+        </div>
+        <p className="hint">
+          実施した基本徒手を選ぶと、上半身・下半身の深い運動を満たしているかを判定します。
+          不足1つにつき −{DEEP_MOTION_DEDUCTION.toFixed(1)}点（A減点）。
+        </p>
+        <ul className="tip-list">
+          {DEEP_MOTION_PARTS.map((part) => (
+            <li key={part.id}>
+              <b>{part.name}</b>：{part.tip}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="card">
+        <div className="line-head">徒手系要素（跳躍・柔軟）</div>
+        {handElements.map((id, i) => {
+          const row = result.handElementRows.find((r) => r.index === i);
+          return (
+            <div key={i} className="basic-hand-row">
+              <select
+                className="select"
+                value={id}
+                aria-label={`徒手系要素 ${i + 1}`}
+                onChange={(ev) => setHandElements((p) => p.map((x, k) => (k === i ? ev.target.value : x)))}
+              >
+                <option value="">徒手系要素</option>
+                {SOLO_HAND_ELEMENT_GROUPS.map((g) => (
+                  <optgroup key={g.id} label={g.name}>
+                    {g.items.map((h) => (
+                      <option key={h.id} value={h.id} title={SOLO_ELEMENT_TIPS[h.id]}>
+                        {h.name}
+                        {g.scored ? `（${h.solo}）` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {row && (
+                <span className={row.inTop || !row.scored ? "check-ok" : "check-ng"}>
+                  {!row.scored
+                    ? "実施（難度には数えない）"
+                    : row.inTop
+                      ? `難度${row.difficulty}（+${row.score.toFixed(1)}）`
+                      : row.duplicate
+                        ? "同じ要素は1回のみ"
+                        : "上位3つ外"}
+                </span>
+              )}
+              <button
+                className="remove-btn-xs"
+                aria-label="削除"
+                onClick={() => setHandElements((p) => p.filter((_, k) => k !== i))}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          );
+        })}
+        <button className="add-btn" onClick={() => setHandElements((p) => [...p, ""])}>
+          <Plus size={14} /> 徒手系要素を追加
+        </button>
+        <p className="hint">
+          単独で実施した跳躍・柔軟を入力します。<b>跳躍</b>は §3.6.1 の個人難度を徒手系難度として採用するので、
+          <b>難度（D）に入ります</b>（投げ受けの徒手と合わせて上位3つ。同じ要素は何度実施しても1回だけ）。
+          <b>柔軟</b>は難度に数えず、実施したかどうかだけをA側で見ます
+          （1つも無ければ −{FLEX_ELEMENT_DEDUCTION.toFixed(1)}点。反り身の跳躍も柔軟性として数えます）。
+        </p>
+        <div className="check-result-row">
+          <span className={result.flexCheck.passed ? "check-ok" : "check-ng"} title={result.flexCheck.tip}>
+            {result.flexCheck.passed ? "✓" : "×"} {result.flexCheck.label}
+          </span>
+        </div>
+      </section>
+
+      {apparatus === "rope" && (
+        <RopeJumpList series={ropeJumps} rows={result.ropeJumpRows} onChange={setRopeJumps} />
+      )}
+
+      <section className="card">
+        <div className="line-head">手具操作の多様性</div>
+        {handOpChecksFor(apparatus).map((c) => {
+          const examples = c.id === HAND_OP_CHARACTER_ID ? APPARATUS_CHARACTER_HINTS[apparatus] : null;
+          const note = examples ? `${c.tip}（例：${examples.join("／")}）` : c.tip;
+          return (
+            <div key={c.id}>
+              <label className="check" title={note}>
+                <input
+                  type="checkbox"
+                  checked={handOps.includes(c.id)}
+                  onChange={(e) => setHandOps((p) => toggleId(p, c.id, e.target.checked))}
+                />
+                {c.name}
+                <span className="check-note">{note}</span>
+              </label>
+            </div>
+          );
+        })}
+        <label className="exec-label" title={OFF_BODY_TIP}>
+          身体を離れる手具操作：
+          <input
+            className="exec-input"
+            type="number"
+            step="1"
+            min="0"
+            value={offBodyCount || 0}
+            onChange={(e) => setOffBodyCount(normalizeOffBodyCount(e.target.value))}
+          />
+          回
+          {result.offBodyShort > 0 && (
+            <span className="check-ng">（{OFF_BODY_REQUIRED_COUNT}回に{result.offBodyShort}回不足）</span>
+          )}
+        </label>
+        <p className="hint">
+          実施した操作にチェックします。未チェック1つにつき −{HAND_OP_CHECK_DEDUCTION.toFixed(1)}点（A減点）。
+          身体を離れる手具操作（{OFF_BODY_TIP}）は{OFF_BODY_REQUIRED_COUNT}回必要で、
+          不足1回につき −{OFF_BODY_DEDUCTION_STEP.toFixed(1)}点。
         </p>
       </section>
 
@@ -521,16 +894,58 @@ export function IndividualScorer({ initialData }: Props = {}) {
         {ART_DEDUCTION_ITEMS.map((item, i) => {
           const prev = ART_DEDUCTION_ITEMS[i - 1];
           const value = artDeductions[item.id] ?? 0;
+          // 自動計算できる項目（ボタンで手入力欄に入れる。入れた後は手で直せる）
+          const auto =
+            item.id === TUM_VARIETY_ITEM_ID
+              ? {
+                  value: result.tumVariety.deduction,
+                  note: `宙返り${result.tumVariety.total}個・${result.tumVariety.distinct}種類`,
+                  title: "実施した宙返りの種類から自動計算します（全部違う技なら減点なし）",
+                }
+              : item.id === APP_IN_TUM_ITEM_ID
+                ? {
+                    value: result.tumOperation.deduction,
+                    note: `操作 ${result.tumOperation.withOp}/${result.tumOperation.total}技`,
+                    title:
+                      "手具操作を付けられる技のうち、実際に操作した割合から自動計算します（8割以上で減点なし／2割未満で0.4）",
+                  }
+                : null;
           return (
             <div key={item.id}>
               {item.group !== prev?.group && <div className="art-group">{item.group}</div>}
-              <label className="art-row">
+              <label className="art-row" title={item.tip}>
                 <span className="art-row-name">
                   {item.name}
                   <span className="art-row-note">
                     上限 {item.max.toFixed(2)}／減点幅 {item.note}
+                    {auto && <> ／{auto.note}</>}
+                    {junior && JUNIOR_MAX_ART_ITEMS.includes(item.id) && (
+                      <span className="check-note">
+                        ジュニアは既定で上限まで引く（この水準では一部のトップクラスしか達成できないため）。手で下げられます
+                      </span>
+                    )}
+                    {item.tip && <span className="check-note">{item.tip}</span>}
                   </span>
                 </span>
+                {auto && (
+                  <button
+                    type="button"
+                    className="io-btn art-auto-btn"
+                    title={auto.title}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const v = auto.value;
+                      setArtDeductions((p) => {
+                        const n = { ...p };
+                        if (v > 0) n[item.id] = v;
+                        else delete n[item.id];
+                        return n;
+                      });
+                    }}
+                  >
+                    自動計算
+                  </button>
+                )}
                 <select
                   className="select art-select"
                   value={value}
@@ -578,6 +993,8 @@ export function IndividualScorer({ initialData }: Props = {}) {
         ))}
         <p className="hint">該当する違反・欠如にチェックします。各1つにつき −0.30点（A減点）。</p>
       </section>
+        </>
+      )}
 
       <ScoreSummary result={result} apparatus={apparatus} />
 

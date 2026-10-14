@@ -95,6 +95,7 @@ body {
 
 .mode-wrap {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .mode-active {
@@ -476,7 +477,14 @@ button {
   color: var(--accent);
   font-weight: 600;
 }
-input[type="checkbox"] {
+/* 同時に実施できない組み合わせ（二つ投げ × 手具を使った投げ）で選べない側 */
+.check.is-disabled,
+.check-req.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+input[type="checkbox"],
+input[type="radio"] {
   accent-color: var(--accent);
   width: 15px;
   height: 15px;
@@ -707,6 +715,21 @@ input[type="checkbox"] {
   font-size: 12px;
   color: var(--ink-soft);
 }
+.rope-series {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+}
+.rope-series-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
 .count-input {
   width: 48px;
   padding: 3px 6px;
@@ -744,6 +767,8 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* 上限難度のプルダウンを添えても、狭い画面では折り返して label を潰さない */
+  flex-wrap: wrap;
 }
 .switch {
   position: relative;
@@ -783,6 +808,13 @@ input[type="checkbox"] {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-soft);
+  white-space: nowrap;
+}
+/** 切り替えの横に添えるプルダウン（十年後モードの上限難度） */
+.switch-select {
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
 }
 
 .exec-label {
@@ -827,6 +859,10 @@ input[type="checkbox"] {
   z-index: 1000;
   padding: 20px;
   animation: fade-in 0.18s ease;
+}
+/* モーダルの中から開くモーダル（生成モーダル → 技ごとの出やすさ）は前に出す */
+.modal-overlay.is-nested {
+  z-index: 1100;
 }
 .modal {
   background: var(--glass-strong);
@@ -1456,6 +1492,13 @@ input[type="checkbox"] {
   border-color: var(--accent);
   box-shadow: var(--ring);
 }
+/* 欠点テーブルの自動計算ボタン（転回系の多様性） */
+.art-auto-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* 自動生成の割合（ランダム生成ダイアログ） */
 .gen-ratio {
   display: flex;
@@ -1463,6 +1506,13 @@ input[type="checkbox"] {
   gap: 8px;
   flex-wrap: wrap;
   margin: 2px 0 4px;
+}
+/* 大会レベルからDスコアの範囲を選ぶプルダウン */
+.gen-level {
+  margin: 2px 0 6px;
+}
+.gen-level .skill-select {
+  width: 100%;
 }
 .gen-ratio-range {
   flex: 1;
@@ -1655,6 +1705,218 @@ input[type="checkbox"] {
   outline: none;
   box-shadow: var(--ring);
 }
+
+/* 技ごとの出やすさ（`SkillWeightModal`） */
+.weight-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.weight-head .tpl-search-input {
+  flex: 1 1 auto;
+}
+/* 1行 */
+.weight-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.weight-name {
+  flex: 0 0 13rem;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.weight-row .gen-ratio-range {
+  flex: 1 1 auto;
+  min-width: 80px;
+}
+.weight-value {
+  flex: 0 0 3rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-mute);
+}
+.weight-value.is-changed {
+  color: var(--accent);
+  font-weight: 600;
+}
+@media (max-width: 720px) {
+  .weight-name {
+    flex-basis: 8rem;
+  }
+}
+
+
+/* ---- D／A のタブ ---- */
+.tab-bar {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0 4px;
+}
+.tab-btn {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 11px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-soft);
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+.tab-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tab-btn.is-active {
+  background: var(--glass-strong);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: var(--shadow-soft);
+}
+
+/* ---- 基本徒手の入力 ---- */
+.basic-hand-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.basic-hand-row .select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.check-result-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.check-ok {
+  color: var(--teal);
+}
+.check-ng {
+  color: var(--red);
+}
+
+.check-note {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--ink-mute);
+}
+/* 欠点テーブルの行では注記を折り返して次の行に出す */
+.art-row-note .check-note {
+  display: block;
+  margin-left: 0;
+  margin-top: 2px;
+  line-height: 1.6;
+}
+
+.tip-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.7;
+}
+
+/* 自動入力：予測した続きを半透明で見せる */
+.skill-block.is-ghost {
+  opacity: 0.45;
+  border-style: dashed;
+  justify-content: center;
+  min-width: 90px;
+  pointer-events: none;
+}
+.skill-block.is-ghost .ghost-label {
+  font-weight: 600;
+  color: var(--accent);
+}
+.auto-input-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px dashed rgba(109, 106, 240, 0.5);
+  border-radius: var(--radius-xs);
+  background: rgba(109, 106, 240, 0.08);
+  font-size: 13px;
+}
+.auto-input-bar .auto-input-text {
+  flex: 1 1 200px;
+}
+.auto-input-bar .hint-inline {
+  margin-left: 6px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* ---- シリーズを畳むボタン ---- */
+.collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 6px;
+  padding: 0;
+  vertical-align: middle;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.3));
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+.collapse-btn.is-collapsed svg {
+  transform: rotate(-90deg);
+}
+.collapsed-summary {
+  margin-left: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+/* ---- シリーズの略称 ---- */
+.series-nickname {
+  margin-left: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+/* レーティング */
+.rating-total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 24px; margin-bottom: 8px; }
+.rating-total-main { display: flex; align-items: baseline; gap: 10px; }
+.rating-total-main strong { font-size: 32px; font-weight: 800; color: var(--accent); }
+.rating-total-main span { font-size: 13px; color: var(--ink-soft); }
+.rating-total-sub { font-size: 13px; color: var(--ink-soft); }
+.rating-name-input { width: 170px; }
+.rating-table-wrap { overflow-x: auto; }
+.rating-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rating-table th { text-align: left; padding: 8px 10px; font-weight: 700; color: var(--ink); background: rgba(255, 255, 255, 0.6); }
+.rating-table td { padding: 8px 10px; border-bottom: 1px solid rgba(150, 150, 190, 0.22); color: var(--ink-soft); }
+.rating-table tr.is-skipped td { opacity: 0.55; text-decoration: line-through; }
+.rating-legend td { vertical-align: top; }
+.rating-legend-rank { font-weight: 800; color: var(--accent); width: 56px; }
+.rating-rank { margin: 12px 0 8px; }
+.rating-rank-meaning { margin: 10px 0 0; padding-left: 20px; font-size: 13px; color: var(--ink-soft); line-height: 1.8; }
+.rating-grade-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
 
 /* =====================================================================
    印刷（ブラウザの「PDFとして保存」も同じ）

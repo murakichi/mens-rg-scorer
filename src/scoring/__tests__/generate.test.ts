@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { LIMITED_SKILL_MAX } from "../autoTumblings";
+import { LEAD_THROW_CHENE_COUNT, autoThrowTemplates } from "../autoThrows";
 import {
   A_PRIORITY,
   limitedSkillCounts,
@@ -7,6 +8,15 @@ import {
   REQUIRE_ALL_ELEMENTS_MIN_SCORE,
   generateRoutine,
   DEFAULT_MAX_AUTO_THROWS,
+  hardThrowCount,
+  suppressHardThrow,
+  HARD_THROW_WEIGHT,
+  HARD_THROW_FREE_SCORE,
+  HARD_THROW_MAX_MOTIONS,
+  endsWithFinishCatch,
+  missesFinishCatch,
+  FINISH_CATCH_TAG,
+  FINISH_CATCH_WEIGHT,
   DEFAULT_MAX_SERIES,
   autoSeriesMax,
   otherStyleCount,
@@ -18,15 +28,38 @@ import {
   THROW_ORDER_WEIGHT,
   reversedThrowOrderCount,
   preferredThrowCount,
+  preferenceWeights,
+  allEScore,
+  allEShortfall,
+  aimsAllE,
+  topDifficulty,
+  ALL_E_SHORTFALL_WEIGHT,
+  THROW_COUNT_FAR_OVER_WEIGHT,
+  COMPETITION_LEVELS,
+  competitionLevelGroups,
+  DEFAULT_TUMBLING_BALANCE,
+  TUMBLING_BALANCE_MIN,
+  TUMBLING_BALANCE_MAX,
+  TUMBLING_PREFERENCE_WEIGHT,
   throwCountPenalty,
   extraThrowOperation,
   verticalThreeThrowCount,
   DIFFICULTY_PREFERENCE_WEIGHT,
+  TUMBLING_PREFERENCE_WEIGHT,
   VERTICAL_THREE_THROW_WEIGHT,
   shortfallPenalty,
   usableTemplates,
+  adoptedDifficulties,
+  adoptedDiffSpread,
+  adoptedSpreadCost,
+  adoptedOverCeiling,
+  unitDifficultyCeiling,
+  levelAdoptedDiffs,
+  MAX_ADOPTED_DIFF_SPREAD,
+  ADOPTED_OVER_CEILING_WEIGHT,
+  REQUIRED_ELEMENT_WEIGHT,
 } from "../generate";
-import { ADOPT_COUNT, DIFF_SCORE, TECHNIQUE_BONUS } from "../constants";
+import { ADOPT_COUNT, DIFF_SCORE, DIFF_VALUE, TECHNIQUE_BONUS, skillDifficulty } from "../constants";
 import { analyzeSeries, seriesSignature } from "../analysis";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate } from "../templates";
@@ -107,6 +140,183 @@ describe("使えるテンプレートの絞り込み", () => {
 });
 
 describe("ランダム生成", () => {
+  it("大会レベルのDスコアの目安から範囲を選べる", () => {
+    // 表そのもの（配布資料の値をそのまま持つ）
+    expect(COMPETITION_LEVELS.length).toBeGreaterThan(0);
+    COMPETITION_LEVELS.forEach((lv) => {
+      expect(lv.min).toBeLessThan(lv.max);
+      expect(lv.min).toBeGreaterThan(0);
+      expect(lv.max).toBeLessThanOrEqual(DIFF_SCORE.E * 10);
+    });
+    // 大会名＋順位帯で一意（プルダウンの value に使う）
+    const keys = COMPETITION_LEVELS.map((lv) => `${lv.meet}:${lv.rank}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    // ジュニア大会だけ `junior` が付く
+    COMPETITION_LEVELS.forEach((lv) => {
+      expect(!!lv.junior).toBe(lv.meet.includes("ジュニア"));
+    });
+    // 大会ごとにまとまり、表の並びが保たれる
+    const groups = competitionLevelGroups();
+    expect(groups.map((g) => g.meet)).toEqual([...new Set(COMPETITION_LEVELS.map((lv) => lv.meet))]);
+    expect(groups.reduce((n, g) => n + g.levels.length, 0)).toBe(COMPETITION_LEVELS.length);
+
+    // どのレベルでも、その範囲に収まる構成が組める（実測：どれも20/20）
+    COMPETITION_LEVELS.forEach((lv) => {
+      const r = generateRoutine([], {
+        apparatus: "stick",
+        junior: !!lv.junior,
+        minScore: lv.min,
+        maxScore: lv.max,
+        random: seeded(7),
+      });
+      expect(r).not.toBeNull();
+      const d = computeScore(r!.series, "stick", { junior: !!lv.junior }).dScore;
+      expect(d).toBeGreaterThanOrEqual(lv.min - 1e-9);
+      expect(d).toBeLessThanOrEqual(lv.max + 1e-9);
+    });
+  }, 120_000);
+
+  it("Dスコア4.2以上を狙うときは、採点される6ユニットを全部E難度にしてから加点を積む", () => {
+    // 4.2 は「E難度 × 上位3タンブリング＋上位3徒手」ちょうど。定数から導いている
+    expect(allEScore()).toBeCloseTo(DIFF_SCORE.E * ADOPT_COUNT * 2, 10);
+    expect(allEScore()).toBeCloseTo(4.2, 10);
+    expect(topDifficulty()).toBe("E");
+    // 十年後モードでは「その時代の最高難度 × 6」に上がる
+    expect(topDifficulty("G")).toBe("G");
+    expect(allEScore("G")).toBeCloseTo(DIFF_SCORE.G * ADOPT_COUNT * 2, 10);
+
+    // 狙う水準かどうかは**要求した下限**で決める（上限だけの指定では狙わない）
+    expect(aimsAllE({ minScore: allEScore() })).toBe(true);
+    expect(aimsAllE({ minScore: allEScore() + 0.5 })).toBe(true);
+    expect(aimsAllE({ minScore: allEScore() - 0.1 })).toBe(false);
+    expect(aimsAllE({ maxScore: 5.0 })).toBe(false);
+    expect(aimsAllE({})).toBe(false);
+    // 加点1つ（技術加点0.1）より重く、投げ本数の重みも上回る
+    expect(ALL_E_SHORTFALL_WEIGHT).toBeGreaterThan(TECHNIQUE_BONUS);
+    expect(ALL_E_SHORTFALL_WEIGHT).toBeGreaterThan(THROW_COUNT_FAR_OVER_WEIGHT);
+
+    // 生成に通る：下限4.2で、ほとんどの構成が6つ全部E難度になる
+    // （実測：スティック20/25・クラブ24/25・リング18/25・ロープ22/25。
+    //   直す前は 14/12/10/9）
+    let allSix = 0, n = 0, shortfall = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const r = generateRoutine([], {
+        apparatus: "clubs",
+        minScore: allEScore(),
+        random: seeded(seed * 7919 + 13),
+      });
+      if (!r) continue;
+      n += 1;
+      const sc = computeScore(r.series, "clubs");
+      const miss = allEShortfall(sc);
+      shortfall += miss;
+      if (miss === 0) allSix += 1;
+      // 6つ全部Eなら難度点だけで 4.2 に届いている
+      if (miss === 0) expect(sc.tumblingScore + sc.handScore).toBeGreaterThanOrEqual(allEScore() - 1e-9);
+    }
+    expect(n).toBeGreaterThan(0);
+    expect(allSix / n).toBeGreaterThan(0.7);
+    // 届かない構成でも、足りないのはせいぜい1〜2ユニット
+    expect(shortfall / n).toBeLessThan(1);
+  }, 120_000);
+
+  it("難度をタンブリングと徒手のどちらで取るかの比重はユーザーが選ぶ", () => {
+    // 既定（50）は今までどおり：タンブリングにだけ `TUMBLING_PREFERENCE_WEIGHT` が乗る
+    expect(preferenceWeights(DEFAULT_TUMBLING_BALANCE)).toEqual({
+      tumbling: TUMBLING_PREFERENCE_WEIGHT,
+      hand: 0,
+    });
+    expect(preferenceWeights()).toEqual(preferenceWeights(DEFAULT_TUMBLING_BALANCE));
+    // 0 は徒手寄り、100 はタンブリング寄り
+    expect(preferenceWeights(TUMBLING_BALANCE_MIN)).toEqual({
+      tumbling: 0,
+      hand: TUMBLING_PREFERENCE_WEIGHT,
+    });
+    expect(preferenceWeights(TUMBLING_BALANCE_MAX)).toEqual({
+      tumbling: TUMBLING_PREFERENCE_WEIGHT * 2,
+      hand: 0,
+    });
+    // 片寄り（タンブリング − 徒手）は単調に増える
+    const lean = [0, 25, 50, 75, 100].map((b) => {
+      const w = preferenceWeights(b);
+      return w.tumbling - w.hand;
+    });
+    lean.forEach((v, i) => i > 0 && expect(v).toBeGreaterThan(lean[i - 1]));
+    // 範囲外・壊れた値は丸める（古い保存データやURLから来ても落ちない）
+    expect(preferenceWeights(-50)).toEqual(preferenceWeights(TUMBLING_BALANCE_MIN));
+    expect(preferenceWeights(500)).toEqual(preferenceWeights(TUMBLING_BALANCE_MAX));
+    expect(preferenceWeights(NaN)).toEqual(preferenceWeights(DEFAULT_TUMBLING_BALANCE));
+
+    // 生成に通る：Dスコアは比重で動かない。
+    // 必須要素（三宙・つなぎ・投げタン）が別々のシリーズを要求するのでタンブリングは3本で固定され、
+    // **効き幅は極小**。この上限（2.5〜3.0）での実測は種80で
+    // 比重0 → タン1.480/徒手1.090、50 → 1.490/1.077、100 → 1.493/1.072 で、差は 0.013 程度。
+    // 種10では1構成の揺れ（±0.1）に埋もれて符号が反転するので、**向きは主張しない**
+    // （向きの保証は決定的な `preferenceWeights` のほうで取ってある）。
+    const run = (tumblingBalance: number) => {
+      let tum = 0, hand = 0, d = 0, n = 0;
+      for (let seed = 1; seed <= 10; seed++) {
+        const r = generateRoutine([], {
+          apparatus: "stick",
+          tumblingBalance,
+          minScore: 2.5,
+          maxScore: 3.0,
+          random: seeded(seed * 7919 + 13),
+        });
+        if (!r) continue;
+        const sc = computeScore(r.series, "stick");
+        tum += sc.tumblingScore;
+        hand += sc.handScore;
+        d += sc.dScore;
+        n += 1;
+      }
+      return { tum: tum / n, hand: hand / n, d: d / n };
+    };
+    const handLean = run(TUMBLING_BALANCE_MIN);
+    const base = run(DEFAULT_TUMBLING_BALANCE);
+    // Dスコアは比重で動かない（点の取り方を選ぶだけで、点数そのものは変えない）
+    // （種の少ない標本なので 1構成の揺れが ±0.07 ほど出る。生成の乱数の並びが変わると動くので 0.1 未満で見る）
+    expect(Math.abs(handLean.d - base.d)).toBeLessThan(0.1);
+    // 難度の合計は種10では ±0.06 ほど揺れる（1構成の揺れがそのまま出る）ので主張しない。
+    // 比重で動かないと言えるのは**Dスコア**（上の行）だけ
+    expect(handLean.tum).toBeGreaterThan(0);
+    expect(handLean.hand).toBeGreaterThan(0);
+  }, 120_000);
+
+  it("上限3.0点の構成は単発D難度を実施せず、投げの本数で満たす", () => {
+    // 上限は上から抑える値なので、3.0点を指定した構成が実際に取るのは2.9点台＝2点台の選手。
+    // 以前はこの位置でD難度が解禁されていて、「投げを最低限にして高難度タンブリングで
+    // 効率よく満たす」構成になっていた（実測：D難度以上の技 0.57個・投げ3本が15%）
+    let hard = 0;
+    const throwCounts: number[] = [];
+    for (let seed = 1; seed <= 12; seed++) {
+      const r = generateRoutine([], {
+        apparatus: "stick",
+        minScore: 2.5,
+        maxScore: 3.0,
+        random: seeded(seed * 7919 + 13),
+      });
+      if (!r) continue;
+      const score = computeScore(r.series, "stick");
+      throwCounts.push(score.totalThrowCount);
+      r.series.forEach((ser) =>
+        ser.items.forEach((it) => {
+          if (it.kind !== "skill") return;
+          const d = skillDifficulty(it.skillId);
+          if (d && DIFF_VALUE[d] >= DIFF_VALUE.D) hard += 1;
+        }),
+      );
+    }
+    expect(throwCounts.length).toBeGreaterThan(0);
+    // 2点台の選手は単発でD難度を実施しない（段の判定は決定的なので必ず0）
+    expect(hard).toBe(0);
+    // 投げは規則の最低限（3回）で済ませず、その水準の最頻値まで出す。
+    // 貪欲法は乱択なので本数は分布で見る（実測：4本85% / 5本10%）
+    expect(preferredThrowCount(2.9)).toBe(4);
+    const atMode = throwCounts.filter((n) => n >= 4).length;
+    expect(atMode / throwCounts.length).toBeGreaterThan(0.7);
+  }, 60_000);
+
   it("必須要素をできるだけ満たす（投げ3回・投げタン・三宙・つなぎ・方向系）", () => {
     const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(7) })!;
     expect(r).not.toBeNull();
@@ -266,8 +476,9 @@ describe("実施が少ない技（ハンドスプリング・転宙）", () => {
   });
 
   it("同じ点数なら使わない構成を選ぶ", () => {
-    // 前宙2連続（D 0.3）と 転宙→前宙（同じくD 0.3）なら、転宙を使わないほうを採る
-    const plain = tpl("前宙2連続", "common", S(skill("b_front"), skill("b_front")));
+    // 前宙→側宙（D 0.3）と 転宙→前宙（同じくD 0.3）なら、転宙を使わないほうを採る
+    // （どちらも別の技の組み合わせなので、転回系の多様性の減点は両方0）
+    const plain = tpl("前宙側宙", "common", S(skill("b_front"), skill("b_sidesalto")));
     const limited = tpl("転宙入り", "common", S(skill("b_tenchu"), skill("b_front")));
     [3, 7, 11].forEach((seed) => {
       const r = generateRoutine([plain, limited], {
@@ -276,7 +487,7 @@ describe("実施が少ない技（ハンドスプリング・転宙）", () => {
         ...noAuto,
         random: seeded(seed),
       })!;
-      expect(r.used.map((t) => t.name)).toEqual(["前宙2連続"]);
+      expect(r.used.map((t) => t.name)).toEqual(["前宙側宙"]);
     });
   });
 });
@@ -393,6 +604,186 @@ describe("必須要素を必ず満たす構成", () => {
   it("低いDスコアを狙うときは満たせなくてもよい（範囲を優先する）", () => {
     const r = generateRoutine([], { apparatus: "stick", maxScore: 1.5, random: seeded(5) })!;
     expect(r.dScore).toBeLessThanOrEqual(1.5 + 1e-9);
+  });
+});
+
+describe("採用される難度のばらつき", () => {
+  /** 採点される上位3タンブリング＋上位3徒手の難度（段数） */
+  const adopted = (series: Series[], apparatus: ApparatusKey = "stick") =>
+    adoptedDifficulties(computeScore(series, apparatus)).map((d) => DIFF_VALUE[d]);
+
+  it("その水準の天井は『6ユニットでそのDスコアに届く最小の難度』", () => {
+    // 採点されるのは `ADOPT_COUNT * 2` ＝6ユニットなので、Dスコア X は1ユニット X/6 を担う
+    expect(unitDifficultyCeiling(1.5)).toBe(DIFF_VALUE.C);
+    expect(unitDifficultyCeiling(2.5)).toBe(DIFF_VALUE.D);
+    expect(unitDifficultyCeiling(3.0)).toBe(DIFF_VALUE.D);
+    expect(unitDifficultyCeiling(3.5)).toBe(DIFF_VALUE.E);
+    expect(unitDifficultyCeiling(4.0)).toBe(DIFF_VALUE.E);
+    // 4.2 ＝ E×6 ちょうど（`allEScore`）なので、天井もEでぴったり合う
+    expect(unitDifficultyCeiling(allEScore())).toBe(DIFF_VALUE.E);
+    // 上限の指定が無ければ天井なし（最大を目指す）
+    expect(unitDifficultyCeiling(null)).toBeNull();
+    expect(unitDifficultyCeiling(undefined)).toBeNull();
+    // 十年後モードでは天井そのものが上がる
+    expect(unitDifficultyCeiling(DIFF_SCORE.G * ADOPT_COUNT * 2, "G")).toBe(DIFF_VALUE.G);
+  });
+
+  it("はみ出しの合計は『1段の窓』からの距離（どの1本を寄せても必ず減る）", () => {
+    const of = (...v: number[]) =>
+      adoptedSpreadCost({
+        seriesBreakdowns: [
+          { tumRows: v.map((d) => ({ diff: (Object.keys(DIFF_VALUE) as Difficulty[]).find((k) => DIFF_VALUE[k] === d)!, adopted: true, inTop: true })), handRows: [] },
+        ],
+        handElementRows: [],
+        ropeJumpRows: [],
+      } as never);
+    expect(MAX_ADOPTED_DIFF_SPREAD).toBe(1);
+    // 1段以内なら0
+    expect(of(DIFF_VALUE.C, DIFF_VALUE.D)).toBe(0);
+    expect(of(DIFF_VALUE.D, DIFF_VALUE.D, DIFF_VALUE.E)).toBe(0);
+    // C と E が並ぶ＝窓から1段はみ出す
+    expect(of(DIFF_VALUE.C, DIFF_VALUE.D, DIFF_VALUE.E)).toBe(1);
+    // B以下が混ざるとその距離ぶん
+    expect(of(DIFF_VALUE.B, DIFF_VALUE.E)).toBe(2);
+    expect(of(DIFF_VALUE.A, DIFF_VALUE.E, DIFF_VALUE.E)).toBe(3);
+    // **幅ではなく合計**なので、幅が動かない1手でも減る（探索の足場）。
+    // {C,C,E,E} → Cを1本Dに上げても幅は2のままだが、はみ出しは 2 → 1 に減る
+    expect(of(DIFF_VALUE.C, DIFF_VALUE.C, DIFF_VALUE.E, DIFF_VALUE.E)).toBe(2);
+    expect(of(DIFF_VALUE.C, DIFF_VALUE.D, DIFF_VALUE.E, DIFF_VALUE.E)).toBe(1);
+  });
+
+  it("連続投げの『安いほう』は水準に関係なく安いまま（高難度が2本続かない）", () => {
+    // この形は 多様な投げ受け の種類を**操作をほとんど足さずに**1つ稼ぐためのもので、
+    // 連続投げは1回目で難度を採る。水準に合わせて厚くすると「高難度の投げ→高難度の投げ」に
+    // なってしまう（実測：上限3.5で「投げ→シェネ×3→キャッチ→投げ→シェネ×3→キャッチ」が
+    // 連続投げ22組のうち18組）ので、回数は水準で変えない
+    expect(LEAD_THROW_CHENE_COUNT).toBe(1);
+    const built = autoThrowTemplates("stick", { random: seeded(11) });
+    const leads = built.filter((t) => t.spec.pattern.leadPair);
+    const trails = built.filter((t) => t.spec.pattern.trailPair);
+    expect(leads.length).toBeGreaterThan(0);
+    expect(trails.length).toBeGreaterThan(0);
+    leads.forEach((t) => {
+      const first = t.series.items.find((it) => it.kind === "motion");
+      expect(first && first.kind === "motion" ? first.count : 0).toBe(LEAD_THROW_CHENE_COUNT);
+    });
+    // `trailPair` の2本目は徒手なし（キャッチの直前は投げのまま）
+    trails.forEach((t) => {
+      const items = t.series.items;
+      expect(items[items.length - 1].kind).toBe("catch");
+      expect(items[items.length - 2].kind).toBe("throw");
+    });
+  });
+
+  it("生成した構成に『高難度の投げ→高難度の投げ』が出ない", () => {
+    // 連続する投げの徒手ユニットが両方D難度以上になっていないこと
+    // （実測：上限3.5／3.5〜4.0 で手具ごとに 5〜22組 あったものが、4手具 × 6条件すべて0）
+    let pairs = 0;
+    ([[null, 3.5], [3.5, 4.0]] as [number | null, number | null][]).forEach(([min, max]) => {
+      [3, 11, 19, 27, 35].forEach((seed) => {
+        const r = generateRoutine([], {
+          apparatus: "stick",
+          ...(min != null ? { minScore: min } : {}),
+          ...(max != null ? { maxScore: max } : {}),
+          random: seeded(seed),
+        });
+        if (!r) return;
+        r.series.forEach((ser) => {
+          const units = analyzeSeries(ser).units.filter((u) => u.type === "throw" && !u.isThrowTumbling);
+          for (let k = 0; k + 1 < units.length; k++) {
+            pairs += 1;
+            const both =
+              DIFF_VALUE[units[k].finalDiff] >= DIFF_VALUE.D &&
+              DIFF_VALUE[units[k + 1].finalDiff] >= DIFF_VALUE.D;
+            expect(both).toBe(false);
+          }
+        });
+      });
+    });
+    expect(pairs).toBeGreaterThan(0);
+  }, 120_000);
+
+  it("天井を超えたぶんだけを罰する（低いほうを罰すると投げをやめてしまう）", () => {
+    const over = (ds: Difficulty[], ceiling: number | null) =>
+      adoptedOverCeiling({
+        seriesBreakdowns: [{ tumRows: ds.map((diff) => ({ diff, adopted: true, inTop: true })), handRows: [] }],
+        handElementRows: [],
+        ropeJumpRows: [],
+      } as never, ceiling);
+    expect(over(["E", "D"], DIFF_VALUE.D)).toBe(1);
+    expect(over(["E", "E"], DIFF_VALUE.D)).toBe(2);
+    expect(over(["C", "B"], DIFF_VALUE.D)).toBe(0); // 低いほうは数えない
+    expect(over(["E", "E"], null)).toBe(0); // 上限なし＝天井なし
+    // 難度1段ぶん（D→E は 0.2、比重の上乗せを足して 0.32 ほど）より重く、必須要素より軽い
+    expect(ADOPTED_OVER_CEILING_WEIGHT).toBeGreaterThan(DIFF_SCORE.E - DIFF_SCORE.D);
+    expect(ADOPTED_OVER_CEILING_WEIGHT).toBeLessThan(REQUIRED_ELEMENT_WEIGHT);
+  });
+
+  it("均しても投げの回数・必須要素・Dスコアの範囲は落とさない", () => {
+    // 均す詰め直しは「安い投げをやめる」方向には動かない（加点のための投げは残す）
+    [[null, 2.5], [null, 3.0], [null, 3.5], [3.5, 4.0]].forEach(([min, max]) => {
+      let n = 0;
+      [3, 11, 19, 27].forEach((seed) => {
+        const r = generateRoutine([], {
+          apparatus: "stick",
+          ...(min != null ? { minScore: min } : {}),
+          ...(max != null ? { maxScore: max } : {}),
+          random: seeded(seed),
+        });
+        if (!r) return;
+        n += 1;
+        const sc = computeScore(r.series, "stick");
+        if (max != null) expect(sc.dScore).toBeLessThanOrEqual(max + 1e-9);
+        if (min != null) expect(sc.dScore).toBeGreaterThanOrEqual(min - 1e-9);
+        // 規則の最低限（3回）は必ず満たす
+        expect(sc.performedThrowCount).toBeGreaterThanOrEqual(3);
+      });
+      expect(n).toBeGreaterThan(0);
+    });
+  }, 120_000);
+
+  it("生成すると難度がある程度揃う（実測：幅2以上が 25/25 → 15〜22/25）", () => {
+    // 上限いっぱいの構成ではDスコアが張り付くので完全には揃わない。
+    // 「絶対に揃っていなければならないわけではないが可能な限り」という方針なので割合で見る。
+    // **連続投げの安いほうを厚くするのは取り下げた**（高難度の投げが2本続くため）ので、
+    // ここは一度 5〜14/25 まで下がったあと 15〜22/25 に戻っている。残りの低いユニットは
+    // 単独の最小形の投げ（必須投げをいちばん安く満たす形）で、これは加点のための投げと
+    // 同じ形なので潰していない
+    let over = 0, n = 0;
+    [[null, 2.5], [null, 3.0], [3.5, 4.0]].forEach(([min, max]) => {
+      [3, 11, 19, 27, 35, 43].forEach((seed) => {
+        const r = generateRoutine([], {
+          apparatus: "stick",
+          ...(min != null ? { minScore: min } : {}),
+          ...(max != null ? { maxScore: max } : {}),
+          random: seeded(seed),
+        });
+        if (!r) return;
+        n += 1;
+        if (adoptedDiffSpread(computeScore(r.series, "stick")) > MAX_ADOPTED_DIFF_SPREAD) over += 1;
+      });
+    });
+    expect(n).toBeGreaterThan(0);
+    // 直す前はこの3条件すべてで 100%（幅2以上）だった
+    expect(over / n).toBeLessThan(0.8);
+    // 採用ユニットが1つ以下なら幅は0
+    expect(adoptedDiffSpread({ seriesBreakdowns: [], handElementRows: [], ropeJumpRows: [] } as never)).toBe(0);
+  }, 120_000);
+
+  it("下限4.2（6つ全部E）では完全に揃う", () => {
+    [5, 13].forEach((seed) => {
+      const r = generateRoutine([], { apparatus: "clubs", minScore: allEScore(), random: seeded(seed) })!;
+      expect(r).not.toBeNull();
+      const vals = adopted(r.series, "clubs");
+      expect(Math.max(...vals) - Math.min(...vals)).toBeLessThanOrEqual(MAX_ADOPTED_DIFF_SPREAD);
+    });
+  }, 120_000);
+
+  it("均しの詰め直しは、はみ出しが0なら何もしない", () => {
+    const used = [tpl("投げ4シェネ", "common", throwMotion("chene", 4))];
+    const ev = { value: 1, dScore: 1, aScore: 1, missing: [], throwCountUnmet: false, throwCount: 1, diffSpread: 0, spreadCost: 0 };
+    const best = { used, ev };
+    expect(levelAdoptedDiffs(best, used, { apparatus: "stick" }, DEFAULT_MAX_SERIES)).toBe(best);
   });
 });
 
@@ -586,6 +977,155 @@ describe("投げ上げの回数", () => {
   });
 });
 
+describe("手以外の投げ・手具を使った投げのあと", () => {
+  const after = (throwTypes: string[], motions: number, skills = 0): Series =>
+    S(
+      { kind: "throw", throwTypes },
+      { kind: "motion", motionId: "chene", count: motions },
+      ...Array.from({ length: skills }, () => skill("b_front")),
+      { kind: "catch" },
+    );
+
+  it("2動作以上か転回系を挟む形だけを数える", () => {
+    // 手以外の投げ・手具を使った投げのあとに実施できるのは徒手0〜1動作まで
+    expect(HARD_THROW_MAX_MOTIONS).toBe(1);
+    expect(hardThrowCount([after(["nonhand"], 0)])).toBe(0);
+    expect(hardThrowCount([after(["nonhand"], HARD_THROW_MAX_MOTIONS)])).toBe(0);
+    expect(hardThrowCount([after(["nonhand"], HARD_THROW_MAX_MOTIONS + 1)])).toBe(1);
+    expect(hardThrowCount([after(["useapp"], 3)])).toBe(1);
+    // 転回系を挟むのも難しい（動作が少なくても数える）
+    expect(hardThrowCount([after(["nonhand"], 0, 1)])).toBe(1);
+    // 通常の投げ・視野外の投げは対象外
+    expect(hardThrowCount([after([], 4)])).toBe(0);
+    expect(hardThrowCount([after(["noview"], 4)])).toBe(0);
+    // シリーズごとに数える
+    expect(hardThrowCount([after(["nonhand"], 3), after(["useapp"], 3)])).toBe(2);
+  });
+
+  it("Dスコアの要求値が5.0を超えるまでは嫌う（その形が足せる点数より強い重み）", () => {
+    expect(suppressHardThrow({ apparatus: "ring" })).toBe(true);
+    expect(suppressHardThrow({ apparatus: "ring", minScore: HARD_THROW_FREE_SCORE })).toBe(true);
+    expect(suppressHardThrow({ apparatus: "ring", minScore: HARD_THROW_FREE_SCORE + 0.1 })).toBe(false);
+    // 徒手系の最高難度（E＝0.7）より強いので、点数のためだけには実施しない
+    expect(HARD_THROW_WEIGHT).toBeGreaterThan(DIFF_SCORE.E);
+  });
+
+  it("要求値が無ければほとんど生成せず、5.0を超える要求では実施する", () => {
+    const hard = (minScore: number | null) => {
+      let n = 0;
+      for (let seed = 1; seed <= 5; seed++) {
+        const r = generateRoutine(pool(), {
+          apparatus: "ring",
+          minScore,
+          autoTumblingSkills: [],
+          random: seeded(seed * 13 + 5),
+        });
+        if (r) n += hardThrowCount(r.series);
+      }
+      return n;
+    };
+    // 要求値なし＝かなり稀（1構成あたり0.5本未満）
+    expect(hard(null) / 5).toBeLessThan(0.5);
+    // 5.0を超える要求では点数を稼ぐために実施する
+    expect(hard(HARD_THROW_FREE_SCORE + 0.1)).toBeGreaterThan(hard(null));
+  }, 180_000);
+});
+
+describe("転回系の多様性の減点（自動計算）", () => {
+  it("A減点には自動では入れない（手動入力の値だけを見る）", () => {
+    const repeated = [
+      S(skill("a_roundoff"), skill("b_front"), skill("b_front"), skill("b_front")),
+    ];
+    const r = computeScore(repeated, "stick");
+    // 自動計算の結果は返すが、A減点には入っていない
+    expect(r.tumVariety.deduction).toBeGreaterThan(0);
+    expect(r.artDeduction).toBe(0);
+    // 入力すればA減点に入る
+    const withInput = computeScore(repeated, "stick", {
+      artDeductions: { tumVariety: r.tumVariety.deduction },
+    });
+    expect(withInput.artDeduction).toBe(r.tumVariety.deduction);
+  });
+
+  it("上級者の構成ほど宙返りの種類が増えて減点が小さくなる", () => {
+    const run = (maxScore: number | null) => {
+      const ded: number[] = [];
+      const totals: number[] = [];
+      for (let seed = 1; seed <= 8; seed++) {
+        const r = generateRoutine(pool(), {
+          apparatus: "stick",
+          maxScore,
+          autoTumblingSkills: [],
+          random: seeded(seed * 13 + 5),
+        });
+        if (!r) continue;
+        const sc = computeScore(r.series, "stick");
+        ded.push(sc.tumVariety.deduction);
+        totals.push(sc.tumVariety.total);
+      }
+      const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+      return { deduction: avg(ded), total: avg(totals), n: ded.length };
+    };
+    const mid = run(3.5);
+    const top = run(null);
+    expect(mid.n).toBeGreaterThan(0);
+    // 上限なし（難度を狙いきる構成）は宙返りが6〜10個入り、種類が増えるので減点が小さい
+    expect(top.total).toBeGreaterThanOrEqual(6);
+    expect(top.total).toBeLessThanOrEqual(10);
+    expect(top.deduction).toBeLessThanOrEqual(mid.deduction);
+    // どのレベルでも上限（0.5）に張り付くことはない
+    expect(top.deduction).toBeLessThan(0.3);
+  }, 180_000);
+});
+
+describe("演技の締め方（クラブ＝押さえてキャッチ／ロープ＝足に絡めたキャッチ）", () => {
+  const press = (): Series => S({ kind: "throw" }, { kind: "catch", catchTypes: ["useapp"] });
+  const foot = (): Series => S({ kind: "throw" }, { kind: "catch", catchTypes: ["nonhand"] });
+  const plain = (): Series => S({ kind: "throw" }, { kind: "catch" });
+
+  it("手具ごとの締めの受け方だけを締めとみなす", () => {
+    expect(FINISH_CATCH_TAG.clubs).toBe("useapp");
+    expect(FINISH_CATCH_TAG.rope).toBe("nonhand");
+    // スティック・リングには決まった締め方が無い
+    expect(FINISH_CATCH_TAG.stick).toBeUndefined();
+    expect(FINISH_CATCH_TAG.ring).toBeUndefined();
+    expect(endsWithFinishCatch(press(), "clubs")).toBe(true);
+    expect(endsWithFinishCatch(foot(), "clubs")).toBe(false);
+    expect(endsWithFinishCatch(foot(), "rope")).toBe(true);
+    expect(endsWithFinishCatch(press(), "stick")).toBe(false);
+    // キャッチで終わらないシリーズは締めにならない
+    expect(endsWithFinishCatch(S(skill("b_front")), "clubs")).toBe(false);
+    // 締め方の無い手具では「締めていない」とも判定しない
+    expect(missesFinishCatch([plain()], "stick")).toBe(false);
+    expect(missesFinishCatch([plain()], "clubs")).toBe(true);
+    expect(missesFinishCatch([plain(), press()], "clubs")).toBe(false);
+    // 締めのシリーズが最後でなければ締めていない
+    expect(missesFinishCatch([press(), plain()], "clubs")).toBe(true);
+  });
+
+  it("難度を捨ててまで締めの形にはしない（重みは難度の刻みより小さい）", () => {
+    expect(FINISH_CATCH_WEIGHT).toBeLessThan(0.1);
+  });
+
+  it("クラブ・ロープの構成は締めの受け方で終わる", () => {
+    (["clubs", "rope"] as ApparatusKey[]).forEach((apparatus) => {
+      let finished = 0;
+      let routines = 0;
+      for (let seed = 1; seed <= 10; seed++) {
+        const r = generateRoutine(pool(), { apparatus, random: seeded(seed * 13 + 5) });
+        if (!r) continue;
+        routines += 1;
+        if (endsWithFinishCatch(r.series[r.series.length - 1], apparatus)) finished += 1;
+      }
+      expect(routines).toBeGreaterThan(0);
+      // だいたい締めの形で終わる。登録テンプレートが締めの形を持たないと、
+      // テンプレート優先（`AUTO_SERIES_WEIGHT`）で外れることもある
+      // （実測：締めの形を作れる候補が入る構成では25/25、この pool では6割）
+      expect(finished / routines).toBeGreaterThanOrEqual(0.5);
+    });
+  }, 120_000);
+});
+
 describe("自動生成の割合（ユーザー指定）", () => {
   it("割合をシリーズ数の上限に対する本数に換算する", () => {
     // 既定（1）は割合では制限しない
@@ -654,14 +1194,17 @@ describe("その他の投げ・その他のキャッチ", () => {
   it("生成される構成にはほとんど出ない", () => {
     let others = 0;
     let routines = 0;
-    for (let seed = 1; seed <= 8; seed++) {
+    for (let seed = 1; seed <= 24; seed++) {
       const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed * 13 + 5) });
       if (!r) continue;
       routines += 1;
       others += otherStyleCount(r.series);
     }
     expect(routines).toBeGreaterThan(0);
-    expect(others).toBeLessThanOrEqual(routines);
+    // 1構成に平均1つ強（「その他」は種類を埋めるときだけ使う）。転がり・前転のあとの背面キャッチを
+    // やめて受け方の種類が減ったぶん、種類を埋める「その他」が増えた（スティック40構成で 0.78 → 1.28/構成）。
+    // 標本が小さいので揺れを見込んで 1.5 まで
+    expect(others).toBeLessThanOrEqual(routines * 1.5);
   }, 120_000);
 });
 
@@ -701,11 +1244,13 @@ describe("前転3回（縦3動作）の投げ", () => {
 
   it("基本的には構成に入らない", () => {
     let count = 0;
-    [3, 7, 11, 13].forEach((seed) => {
+    const seeds = [3, 7, 11, 13, 17, 19, 23, 29];
+    seeds.forEach((seed) => {
       const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
       count += verticalThreeThrowCount(r.series);
     });
-    expect(count).toBe(0);
+    // Dスコアの範囲に必要なときだけなので、稀にしか入らない（実測20構成に0〜2本）
+    expect(count / seeds.length).toBeLessThanOrEqual(0.25);
   }, 60_000);
 });
 
@@ -747,6 +1292,36 @@ describe("難度点と加点の優先度", () => {
       expect(r.used.map((t) => t.name)).toEqual(["難度点で取る"]);
     });
   });
+
+  it("タンブリングの難度点は徒手より優先する（上級者のタンブリングはほぼE難度）", () => {
+    // タンブリング1点＝0.6、徒手1点＝0.3
+    expect(TUMBLING_PREFERENCE_WEIGHT).toBeGreaterThan(0);
+    expect(DIFFICULTY_PREFERENCE_WEIGHT + TUMBLING_PREFERENCE_WEIGHT).toBeGreaterThan(
+      DIFFICULTY_PREFERENCE_WEIGHT,
+    );
+    // Dスコアの上限を指定しない＝難度を狙いきる構成では、タンブリングはほぼE難度になる
+    let e = 0;
+    let all = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const r = generateRoutine(pool(), {
+        apparatus: "stick",
+        autoTumblingSkills: [],
+        random: seeded(seed * 13 + 5),
+      });
+      if (!r) continue;
+      computeScore(r.series, "stick").analysis.forEach((a) =>
+        a.units.forEach((u) => {
+          if (u.type !== "tumbling" && !u.isThrowTumbling) return;
+          all += 1;
+          if (u.finalDiff === "E") e += 1;
+        }),
+      );
+    }
+    expect(all).toBeGreaterThan(0);
+    // 登録テンプレート自体が低難度なら残ることもあるので、ほぼE難度＝7割以上で見る
+    // （実測：この pool で20構成なら88%、自動生成だけで組めば100%）
+    expect(e / all).toBeGreaterThanOrEqual(0.7);
+  }, 120_000);
 
   it("難度点の上乗せはDスコアの刻みより小さい（Dを下げてまで難度点は取らない）", () => {
     // 難度点0.1ぶんの上乗せ（0.03）＜ Dスコア0.1

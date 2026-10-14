@@ -3,6 +3,13 @@ import { X, Shuffle } from "lucide-react";
 import { APPARATUS } from "../scoring/constants";
 import {
   DEFAULT_MAX_AUTO_THROWS,
+  COMPETITION_LEVELS,
+  competitionLevelGroups,
+  DEFAULT_RARITY,
+  DEFAULT_TUMBLING_BALANCE,
+  TUMBLING_BALANCE_MIN,
+  TUMBLING_BALANCE_MAX,
+  TUMBLING_BALANCE_STEP,
   DEFAULT_MAX_AUTO_TUMBLINGS,
   DEFAULT_MAX_SERIES,
   generateForApparatus,
@@ -10,7 +17,14 @@ import {
   type GenerateResult,
 } from "../scoring/generate";
 import { apparatusName, describeSeries, type SeriesTemplate } from "../scoring/templates";
-import type { ApparatusKey } from "../scoring/types";
+import {
+  changedSkillCount,
+  loadSkillWeights,
+  saveSkillWeights,
+  type SkillWeightStore,
+} from "../scoring/skillWeights";
+import SkillWeightModal from "./SkillWeightModal";
+import type { ApparatusKey, FutureLevel } from "../scoring/types";
 
 interface Props {
   open: boolean;
@@ -19,19 +33,45 @@ interface Props {
   /** 採点画面で選択中の手具（既定値） */
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 十年後モードの上限難度（null＝OFF）。F・G難度を前提にタンブリングを組む。 */
+  future?: FutureLevel;
   onClose: () => void;
   onApply: (apparatus: ApparatusKey, result: GenerateResult) => void;
 }
 
 /** テンプレートから演技構成をランダムに組み立てるダイアログ */
-export function GenerateModal({ open, templates, apparatus, junior, onClose, onApply }: Props) {
+export function GenerateModal({ open, templates, apparatus, junior, future = null, onClose, onApply }: Props) {
   const [target, setTarget] = useState<ApparatusKey | "">(apparatus);
   const [minScore, setMinScore] = useState("");
   const [maxScore, setMaxScore] = useState("");
+  /** 大会レベルのプリセット（`大会名:順位帯`。手で範囲を変えたら選択は外す） */
+  const [levelKey, setLevelKey] = useState("");
+  const applyLevel = (key: string) => {
+    setLevelKey(key);
+    const lv = COMPETITION_LEVELS.find((x) => `${x.meet}:${x.rank}` === key);
+    if (!lv) return;
+    setMinScore(String(lv.min));
+    setMaxScore(String(lv.max));
+  };
+  /** ジュニア大会を選んだのに採点画面がジュニアでないときの注意（大会名） */
+  const juniorMismatch = (() => {
+    const lv = COMPETITION_LEVELS.find((x) => `${x.meet}:${x.rank}` === levelKey);
+    return lv?.junior && !junior ? lv.meet : "";
+  })();
   const [autoThrows, setAutoThrows] = useState(true);
   const [autoTumblings, setAutoTumblings] = useState(true);
   /** 自動生成にしてよい割合（%）。100%＝種類ごとの上限だけ */
   const [autoPercent, setAutoPercent] = useState(100);
+  /** 生成する形の珍しさ（0＝ありふれた形だけ／50＝実測どおり／100＝珍しい形を優先） */
+  const [rarity, setRarity] = useState(DEFAULT_RARITY);
+  const [tumblingBalance, setTumblingBalance] = useState(DEFAULT_TUMBLING_BALANCE);
+  /** 技ごとの出やすさ（端末に保存。既定から変えた技だけ入っている） */
+  const [skillWeights, setSkillWeights] = useState<SkillWeightStore>(() => loadSkillWeights());
+  const [weightOpen, setWeightOpen] = useState(false);
+  const changeWeights = (next: SkillWeightStore) => {
+    setSkillWeights(next);
+    saveSkillWeights(next);
+  };
   const [result, setResult] = useState<(GenerateResult & { apparatus: ApparatusKey }) | null>(null);
   const [note, setNote] = useState("");
   if (!open) return null;
@@ -44,9 +84,13 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
     const r = generateForApparatus(templates, {
       apparatus: target || null,
       junior,
+      future,
       autoThrows,
       autoTumblings,
       autoRatio: autoPercent / 100,
+      rarity,
+      tumblingBalance,
+      skillWeights,
       minScore: minScore ? parseFloat(minScore) : null,
       maxScore: maxScore ? parseFloat(maxScore) : null,
     });
@@ -59,6 +103,7 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
   };
 
   return (
+    <>
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
@@ -110,6 +155,52 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
               {autoPercent === 0 ? "（テンプレートだけで組む）" : `（最大${autoMax}本）`}
             </span>
           </div>
+          <div className="gen-ratio">
+            <input
+              className="gen-ratio-range"
+              type="range"
+              min={0}
+              max={100}
+              step={25}
+              value={rarity}
+              onChange={(e) => setRarity(parseInt(e.target.value, 10))}
+              aria-label="形の珍しさ"
+            />
+            <span className="gen-ratio-value">
+              形の珍しさ {rarity}
+              {rarity === DEFAULT_RARITY
+                ? "（実際の演技での多さどおり）"
+                : rarity < DEFAULT_RARITY
+                  ? "（よく実施される形に寄せる）"
+                  : "（珍しい形を優先する）"}
+            </span>
+          </div>
+          <div className="gen-ratio">
+            <input
+              className="gen-ratio-range"
+              type="range"
+              min={TUMBLING_BALANCE_MIN}
+              max={TUMBLING_BALANCE_MAX}
+              step={TUMBLING_BALANCE_STEP}
+              value={tumblingBalance}
+              onChange={(e) => setTumblingBalance(parseInt(e.target.value, 10))}
+              aria-label="難度をどちらで取るか"
+            />
+            <span className="gen-ratio-value">
+              難度の比重 {tumblingBalance}
+              {tumblingBalance === DEFAULT_TUMBLING_BALANCE
+                ? "（実際の演技どおり：タンブリング寄り）"
+                : tumblingBalance < DEFAULT_TUMBLING_BALANCE
+                  ? "（投げ・徒手で取る）"
+                  : "（タンブリングで取る）"}
+            </span>
+          </div>
+          <div className="weight-head">
+            <button className="io-btn" onClick={() => setWeightOpen(true)}>
+              技ごとの出やすさ
+              {changedSkillCount(skillWeights) > 0 ? `（${changedSkillCount(skillWeights)}件変更）` : ""}
+            </button>
+          </div>
           <p className="hint">
             テンプレートを先に使い、足りないところをシステム側で組んだシリーズで補います（点数が上がらなければ使われません）。
             投げは 投げ→シェネ→前転→キャッチ などの形を、投げ方（左手投げ・二つ投げ・視野外・手以外…）と
@@ -122,6 +213,30 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
           </p>
 
           <div className="line-head">Dスコアの範囲</div>
+          <div className="gen-level">
+            <select
+              className="skill-select"
+              value={levelKey}
+              onChange={(e) => applyLevel(e.target.value)}
+              aria-label="大会レベルから選ぶ"
+            >
+              <option value="">大会レベルから選ぶ…</option>
+              {competitionLevelGroups().map((g) => (
+                <optgroup key={g.meet} label={g.meet}>
+                  {g.levels.map((lv) => (
+                    <option key={`${lv.meet}:${lv.rank}`} value={`${lv.meet}:${lv.rank}`}>
+                      {lv.rank}（{lv.min.toFixed(1)}〜{lv.max.toFixed(1)}）
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+          {juniorMismatch && (
+            <p className="hint">
+              {juniorMismatch}はジュニア適用規則で採点される大会です。採点画面の「ジュニア」も入れてください。
+            </p>
+          )}
           <div className="tpl-range">
             <input
               className="tpl-range-input"
@@ -129,7 +244,10 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
               step="0.1"
               min="0"
               value={minScore}
-              onChange={(e) => setMinScore(e.target.value)}
+              onChange={(e) => {
+                setMinScore(e.target.value);
+                setLevelKey("");
+              }}
               placeholder="下限"
             />
             〜
@@ -139,7 +257,10 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
               step="0.1"
               min="0"
               value={maxScore}
-              onChange={(e) => setMaxScore(e.target.value)}
+              onChange={(e) => {
+                setMaxScore(e.target.value);
+                setLevelKey("");
+              }}
               placeholder="上限"
             />
           </div>
@@ -198,5 +319,14 @@ export function GenerateModal({ open, templates, apparatus, junior, onClose, onA
         </div>
       </div>
     </div>
+      <SkillWeightModal
+        open={weightOpen}
+        store={skillWeights}
+        junior={junior}
+        future={future}
+        onChange={changeWeights}
+        onClose={() => setWeightOpen(false)}
+      />
+    </>
   );
 }

@@ -6,28 +6,51 @@
 // 壊れたデータ・localStorage が使えない環境でも起動が止まらないこと。
 // =====================================================================
 
-import { stripForApparatus } from "./analysis";
-import { APPARATUS, ART_DEDUCTION_ITEMS, clampArtDeduction } from "./constants";
+import { hoistRopeJumps, stripForApparatus } from "./analysis";
+import {
+  APPARATUS,
+  ART_DEDUCTION_ITEMS,
+  BASIC_HAND_ELEMENTS,
+  HAND_OP_CHECKS,
+  soloHandElementDef,
+  clampArtDeduction,
+  normalizeFutureLevel,
+  ropeJumpTimes,
+} from "./constants";
 import { initialTeamState, normalizeTeamState, type TeamState } from "./team";
-import type { ApparatusKey, Item, Series } from "./types";
+import type { ApparatusKey, FutureLevel, Item, RopeJumpItem, Series } from "./types";
 
 export const DRAFT_KEY_INDIVIDUAL = "mens-rg-scorer:draft:individual:v1";
 export const DRAFT_KEY_TEAM = "mens-rg-scorer:draft:team:v1";
 /** 最後に使っていたモード（個人／団体）。どちらのドラフトを見せるかを決める。 */
 export const DRAFT_KEY_MODE = "mens-rg-scorer:draft:mode:v1";
+/** 十年後モードの解放状態（ジュニアモードの切り替え回数）。構成とは別に端末ごとに覚える。 */
+export const FUTURE_UNLOCK_KEY = "mens-rg-scorer:future-unlock:v1";
 
-export type ScorerMode = "individual" | "team";
+export type ScorerMode = "individual" | "team" | "rating";
 
 /** 個人モードのドラフト。エクスポート／共有URLの `SaveData` と同じ形。 */
 export interface IndividualDraft {
   version: 1;
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 十年後モードの上限難度（null＝OFF） */
+  future: FutureLevel;
   series: Series[];
   executionDeduction: number;
   apparatusElements: string[];
   violations: string[];
   artDeductions: Record<string, number>;
+  /** 実施した基本徒手のid */
+  basicHands: string[];
+  /** 実施した手具操作のチェック項目id */
+  handOps: string[];
+  /** 身体を離れる手具操作の回数 */
+  offBodyCount: number;
+  /** 単独で実施した徒手系要素（跳躍・柔軟）のid */
+  handElements: string[];
+  /** ロープの跳びシリーズ。同じシリーズで隣り合う跳びが連続した跳び */
+  ropeJumps: RopeJumpItem[][];
 }
 
 export const asStringArray = (v: unknown): string[] =>
@@ -43,6 +66,51 @@ export function normalizeArtDeductions(v: unknown): Record<string, number> {
   });
   return out;
 }
+
+/** 既知のidだけを残す（表から消えた項目・壊れたデータを落とす） */
+const knownIds = (v: unknown, known: { id: string }[]): string[] => {
+  const ids = new Set(known.map((x) => x.id));
+  return asStringArray(v).filter((id) => ids.has(id));
+};
+
+/**
+ * 徒手系要素の入力を取り込む（知らないidは落とす）。
+ * 手具操作の有無を持っていた頃の `{ id, withApparatus }` 形も読める。
+ */
+export function normalizeHandElements(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((x) => {
+    const id = typeof x === "string" ? x : (x as { id?: unknown })?.id;
+    return typeof id === "string" && soloHandElementDef(id) ? [id] : [];
+  });
+}
+
+const normalizeRopeJumpItem = (x: unknown): RopeJumpItem[] => {
+  if (!x || typeof x !== "object") return [];
+  const o = x as Record<string, unknown>;
+  if (typeof o.jumpId !== "string") return [];
+  const item: RopeJumpItem = { kind: "ropeJump", jumpId: o.jumpId };
+  if (o.cross === true) item.cross = true;
+  if (o.isMoving6m === true) item.isMoving6m = true;
+  if (o.count !== undefined) item.count = ropeJumpTimes(Number(o.count));
+  return [item];
+};
+
+/**
+ * ロープの跳びシリーズを取り込む（壊れた行は落とす。旧 id はそのまま持ち、採点時に解決する）。
+ * 跳びシリーズに分ける前の形（跳びを1本に並べた配列）は、1つの跳びシリーズとして読む。
+ */
+export function normalizeRopeJumps(v: unknown): RopeJumpItem[][] {
+  if (!Array.isArray(v)) return [];
+  if (v.length > 0 && v.every((x) => !Array.isArray(x))) {
+    const flat = v.flatMap(normalizeRopeJumpItem);
+    return flat.length > 0 ? [flat] : [];
+  }
+  return v.filter(Array.isArray).map((g) => (g as unknown[]).flatMap(normalizeRopeJumpItem));
+}
+
+/** 身体を離れる手具操作の回数（0以上の整数に丸める） */
+export const normalizeOffBodyCount = (v: unknown): number => Math.max(0, Math.floor(Number(v) || 0));
 
 const ITEM_KINDS = new Set<string>(["throw", "catch", "skill", "motion", "ropeJump"]);
 
@@ -73,15 +141,25 @@ export function normalizeIndividualDraft(data: unknown): IndividualDraft | null 
   const apparatus: ApparatusKey =
     typeof d.apparatus === "string" && d.apparatus in APPARATUS ? (d.apparatus as ApparatusKey) : "stick";
   const raw = Array.isArray(d.series) ? d.series.flatMap((x) => normalizeSeries(x) ?? []) : [];
+  // 旧データでシリーズの中にあったロープ跳びは、跳びリストの後ろへ移す
+  const hoisted = hoistRopeJumps(raw);
+  const ropeJumps =
+    apparatus === "rope" ? [...normalizeRopeJumps(d.ropeJumps), ...hoisted.jumps.map((g) => normalizeRopeJumps(g)[0] ?? [])] : [];
   return {
     version: 1,
     apparatus,
     junior: !!d.junior,
-    series: raw.length > 0 ? stripForApparatus(raw, apparatus) : [],
+    future: normalizeFutureLevel(d.future),
+    series: raw.length > 0 ? stripForApparatus(hoisted.series, apparatus) : [],
     executionDeduction: Number(d.executionDeduction) || 0,
     apparatusElements: asStringArray(d.apparatusElements),
     violations: asStringArray(d.violations),
     artDeductions: normalizeArtDeductions(d.artDeductions),
+    basicHands: knownIds(d.basicHands, BASIC_HAND_ELEMENTS),
+    handOps: knownIds(d.handOps, HAND_OP_CHECKS),
+    offBodyCount: normalizeOffBodyCount(d.offBodyCount),
+    handElements: normalizeHandElements(d.handElements),
+    ropeJumps,
   };
 }
 
@@ -105,9 +183,15 @@ export function isBlankIndividualDraft(d: IndividualDraft): boolean {
     d.series.every((ser) => ser.items.length <= 1 && ser.items.every(isBlankItem) && !ser.executionDeduction) &&
     !d.executionDeduction &&
     !d.junior &&
+    !d.future &&
     d.apparatusElements.length === 0 &&
     d.violations.length === 0 &&
-    Object.keys(d.artDeductions).length === 0
+    Object.keys(d.artDeductions).length === 0 &&
+    !d.basicHands?.length &&
+    !d.handOps?.length &&
+    !d.offBodyCount &&
+    !d.handElements?.length &&
+    !d.ropeJumps?.length
   );
 }
 
@@ -131,6 +215,7 @@ export function isBlankTeamState(t: TeamState): boolean {
         !ser.executionDeduction,
     ) &&
     !t.junior &&
+    !t.future &&
     !t.executionDeduction
   );
 }
@@ -195,9 +280,30 @@ export function saveTeamDraft(team: TeamState): boolean {
 /** 団体モードの初期状態（ドラフトが無いとき） */
 export const emptyTeamDraft = (): TeamState => initialTeamState();
 
+/** 十年後モードの切り替えを表示するまでに必要な、ジュニアモードの切り替え回数 */
+export const FUTURE_UNLOCK_TOGGLES = 10;
+
+/** 十年後モードの解放状態（端末ごと） */
+export interface FutureUnlockState {
+  /** ジュニアモードを切り替えた回数 */
+  toggles: number;
+  /** 十年後モードの切り替えを表示してよいか */
+  unlocked: boolean;
+}
+
+export function loadFutureUnlock(): FutureUnlockState {
+  const v = readKey(FUTURE_UNLOCK_KEY) as Partial<FutureUnlockState> | null;
+  const toggles = Math.max(0, Math.floor(Number(v?.toggles) || 0));
+  return { toggles, unlocked: !!v?.unlocked || toggles >= FUTURE_UNLOCK_TOGGLES };
+}
+
+export function saveFutureUnlock(state: FutureUnlockState): void {
+  writeKey(FUTURE_UNLOCK_KEY, state);
+}
+
 export function loadDraftMode(): ScorerMode | null {
   const v = readKey(DRAFT_KEY_MODE);
-  return v === "individual" || v === "team" ? v : null;
+  return v === "individual" || v === "team" || v === "rating" ? v : null;
 }
 
 export function saveDraftMode(mode: ScorerMode): void {

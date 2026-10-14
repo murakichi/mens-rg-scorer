@@ -4,8 +4,8 @@
 
 import {
   DIFF_VALUE,
-  VALUE_DIFF,
-  MAX_DIFF,
+  clampDifficulty,
+  futureHandValue,
   HAND_MOTIONS,
   DEFAULT_HANDS_TYPE,
   HANDS_TYPE_OTHER,
@@ -13,19 +13,31 @@ import {
   APPARATUS_USE,
   REQUIRED_THROW_OPTIONS,
   USE_APPARATUS_TAG,
+  SIDE_THROW_TAG,
+  canUseSideThrow,
   requiredThrowName,
   skillDef,
   skillDifficulty,
-  ropeJumpDef,
+  skillDifficultyAt,
+  resolveRopeJump,
+  ropeJumpKey,
   isBackwardSalto,
   isBackwardSkill,
   leadsBackward,
   ROUNDOFF_SKILL_ID,
+  TWO_THROW_TAG,
+  artDeductionItem,
+  TUM_VARIETY_ITEM_ID,
+  TUM_VARIETY_DEDUCTION_STEP,
+  canOperateApparatus,
+  appInTumblingDeduction,
 } from "./constants";
 import type {
   ApparatusKey,
   Difficulty,
+  FutureLevel,
   Item,
+  RopeJumpItem,
   Series,
   SeriesAnalysis,
   Unit,
@@ -70,26 +82,42 @@ export function needsRoundoffBefore(items: Item[], iIdx: number): boolean {
   return !leadsBackward(prev);
 }
 
-/** タンブリング塊の難度を算出。先頭技の値 + 以降の非A技ごとに +1、投げ含みで +1、E止め。 */
+/**
+ * タンブリング塊の難度を算出。先頭技の値 + 以降の非A技ごとに +1、投げ含みで +1。
+ * 上限は現行規則ならE、十年後モードならその上限（F・G）。
+ */
 export function calcTumblingDifficulty(
   skillIds: string[],
   hasThrow: boolean,
   junior = false,
+  future: FutureLevel = null,
 ): Difficulty | null {
   const diffs = skillIds
-    .map((id) => skillDifficulty(id, junior))
+    // 位置で難度が変わる特例（宙返りの直後のダイビングは格上げ）があるので位置つきで引く
+    .map((_id, i) => skillDifficultyAt(skillIds, i, junior, future))
     .filter((d): d is Difficulty => !!d && d !== "A");
   if (diffs.length === 0) return null;
   let v = DIFF_VALUE[diffs[0]];
   for (let i = 1; i < diffs.length; i++) v += DIFF_VALUE[diffs[i]] - 1;
   if (hasThrow) v += 1;
-  return VALUE_DIFF[Math.min(v, MAX_DIFF)];
+  return clampDifficulty(v, future);
 }
 
-/** 徒手難度。縦3動作は無条件E、それ以外は動作数を A 起点で加算。 */
-export function calcHandDifficulty(motionCount: number, verticalThree: boolean): Difficulty {
-  if (verticalThree) return "E";
-  return VALUE_DIFF[Math.min(DIFF_VALUE.A + motionCount, MAX_DIFF)];
+/**
+ * 徒手難度。動作数を A 起点で加算し、**縦3動作は最低E**（§3.5.5.3）。
+ * 十年後モードでは、縦回転を重く数えた動作量（`futureHandValue`）でF・Gまで伸びる
+ * — 縦3動作の「最低E」も上書きではなく最低保証なので、縦3動作に動作を足せば難度は上がる。
+ */
+export function calcHandDifficulty(
+  motionCount: number,
+  verticalThree: boolean,
+  future: FutureLevel = null,
+  verticalCount = 0,
+): Difficulty {
+  let value = DIFF_VALUE.A + motionCount;
+  if (verticalThree) value = Math.max(value, DIFF_VALUE.E);
+  if (future) value = Math.max(value, futureHandValue(motionCount, verticalCount));
+  return clampDifficulty(value, future);
 }
 
 /**
@@ -134,8 +162,8 @@ export function tumblingFlags(skillIds: string[]): boolean[] {
  * A難度技（側転・ロンダート・バク転・ハンドスプリング・とび前転）は縦の一回転の徒手で1動作、
  * きりもみ（B）は1動作、きりもみ転回（C）は2動作＝難度をそのまま徒手系難度に読み替える。
  */
-export function handMotionsOfSkill(skillId: string, junior = false): number {
-  const d = skillDifficulty(skillId, junior);
+export function handMotionsOfSkill(skillId: string, junior = false, future: FutureLevel = null): number {
+  const d = skillDifficulty(skillId, junior, future);
   return d ? Math.max(1, DIFF_VALUE[d] - 1) : 0;
 }
 
@@ -145,6 +173,7 @@ export function handMotionsOfSkill(skillId: string, junior = false): number {
 export function motionDef(
   id: string,
   junior = false,
+  future: FutureLevel = null,
 ): {
   motions: number;
   verticalThree: boolean;
@@ -163,7 +192,7 @@ export function motionDef(
       generic: !!m.legacy && !m.verticalThree,
     };
   if (skillDef(id)) {
-    const n = handMotionsOfSkill(id, junior);
+    const n = handMotionsOfSkill(id, junior, future);
     // 徒手扱いの転回技はすべて縦回転の徒手
     return { motions: n, verticalThree: false, vertical: n, hasHandsOption: false, generic: false };
   }
@@ -264,9 +293,10 @@ function unitSignatures(
   tumblingSkillIds: string[],
   composition: Map<string, number>,
   junior: boolean,
+  future: FutureLevel,
 ): string[] {
   // 難度に効く非A難度技だけをキーにする（つなぎ技のA難度技は含めない：Q&A Q22）
-  const tumIds = tumblingSkillIds.filter((id) => skillDifficulty(id, junior) !== "A");
+  const tumIds = tumblingSkillIds.filter((id) => skillDifficulty(id, junior, future) !== "A");
   if (tumIds.length > 0) return [`tum:${tumIds.join(">")}`];
   const base = `hand:${compositionKey(composition)}`;
   const { cheneNoHands, cheneHandsTypes } = buf;
@@ -276,7 +306,7 @@ function unitSignatures(
   return cheneNoHands > 0 ? [base, ...keys] : keys;
 }
 
-function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
+function finalizeUnit(buf: UnitBuffer, junior: boolean, future: FutureLevel): Unit {
   const hasSkill = buf.skills.length > 0;
   const skillThrow = buf.skills.some((s) => s.isThrow);
   const isThrow = buf.throwItems > 0 || skillThrow;
@@ -288,7 +318,7 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
   const tumFlags = tumblingFlags(ids);
   const tumblingSkillIds = ids.filter((_id, i) => tumFlags[i]);
   const hasTumbling = tumblingSkillIds.length > 0;
-  const skillMotions = ids.reduce((n, id, i) => n + (tumFlags[i] ? 0 : handMotionsOfSkill(id, junior)), 0);
+  const skillMotions = ids.reduce((n, id, i) => n + (tumFlags[i] ? 0 : handMotionsOfSkill(id, junior, future)), 0);
   const motionCount = buf.motionCount + skillMotions;
   // 徒手として数える技も内訳に含める（タンブリング技として入れても徒手動作として入れても同じ）
   const composition = new Map(buf.composition);
@@ -296,13 +326,18 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
     if (tumFlags[i]) return;
     composition.set(id, (composition.get(id) ?? 0) + 1);
   });
+  // 徒手扱いの転回技（側転・きりもみ等）はすべて縦回転（`motionDef` と同じ扱い）
+  const verticalCount = buf.verticalCount + skillMotions;
   // 縦回転の徒手が3動作分そろえば縦3動作（E難度）
-  const verticalThree = buf.verticalThree || buf.verticalCount + skillMotions >= VERTICAL_THREE_COUNT;
+  const verticalThree = buf.verticalThree || verticalCount >= VERTICAL_THREE_COUNT;
 
-  const tumblingDiff = hasTumbling ? calcTumblingDifficulty(tumblingSkillIds, isThrow, junior) : null;
-  const handDiff = isThrow || motionCount > 0 ? calcHandDifficulty(motionCount, verticalThree) : null;
+  const tumblingDiff = hasTumbling ? calcTumblingDifficulty(tumblingSkillIds, isThrow, junior, future) : null;
+  const handDiff =
+    isThrow || motionCount > 0
+      ? calcHandDifficulty(motionCount, verticalThree, future, verticalCount)
+      : null;
 
-  const signatures = unitSignatures(buf, tumblingSkillIds, composition, junior);
+  const signatures = unitSignatures(buf, tumblingSkillIds, composition, junior, future);
   const neverDuplicate = buf.hasOtherHands;
 
   if (!isThrow) {
@@ -337,6 +372,8 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
       hasDPlus: false,
     };
   }
+  // 投げタンは転回側のキーしか持たないので、投げ側（徒手）のキーも別に持つ（レーティング用）
+  const handSignatures = hasTumbling ? unitSignatures(buf, [], composition, junior, future) : undefined;
   const handV = handDiff ? DIFF_VALUE[handDiff] : 0;
   const tumbV = tumblingDiff ? DIFF_VALUE[tumblingDiff] : 0;
   const finalDiff = (handV >= tumbV ? handDiff : tumblingDiff) as Difficulty;
@@ -350,6 +387,7 @@ function finalizeUnit(buf: UnitBuffer, junior: boolean): Unit {
     skillThrow,
     isThrowTumbling: hasTumbling,
     signatures,
+    handSignatures,
     neverDuplicate,
     skills: buf.skills,
     handDiff,
@@ -378,6 +416,38 @@ function isThrowItem(item: Item): boolean {
 }
 
 /**
+ * キャッチか（**技の最中の受け**を含む）。点数の扱いは技の最中の投げと同じで、
+ * キャッチアイテムと同じようにユニットを閉じ、技術加点・多様な受け方・必須要素に効く。
+ */
+export function isCatchItem(item: Item): boolean {
+  return item.kind === "catch" || (item.kind === "skill" && !!item.isCatch);
+}
+
+/** その位置のキャッチの技術タグ（キャッチでなければ空） */
+export const catchTagsOf = (item: Item): string[] =>
+  item.kind === "catch" || (item.kind === "skill" && item.isCatch) ? item.catchTypes || [] : [];
+
+/** そのキャッチで手元に戻る手具の数（2つ同時キャッチなら2つ） */
+export const caughtCount = (item: Item): number =>
+  (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) && item.catchTwo ? 2 : 1;
+
+/**
+ * **技の最中に受けたあと、タンブリングがそのまま続くか**（続くなら同じユニットのまま扱う）。
+ *
+ * 受けた技はタンブリングの連鎖の途中なので、直後に転回技が続くならそこで切らない
+ * （実施例：投げ→ロンダート（手具を使ったキャッチ）→後方宙返り1回半ひねり→ロンダート→
+ * ダイビング前宙 は**1本の投げタン**。切ってしまうとロンダート1本だけのユニットになり、
+ * A難度の技が1本だけ＝徒手動作1つとして数えるので投げタンにならない）。
+ * **キャッチアイテム（手で受ける）は従来どおり必ず切る** — いったん手に戻してから次の連鎖に入る。
+ */
+export function catchSkillContinues(items: Item[], i: number): boolean {
+  const item = items[i];
+  if (!(item?.kind === "skill" && item.isCatch)) return false;
+  const next = items[i + 1];
+  return !!next && isTumblingItem(next);
+}
+
+/**
  * ユニットを区切る位置（その手前で区切る）を返す。
  *
  * キャッチで区切るほかに、**タンブリングの合間の徒手（側転・徒手動作）でも区切る**。
@@ -393,10 +463,13 @@ export function unitSplitFlags(items: Item[]): boolean[] {
   const segments: [number, number][] = [];
   let from = 0;
   items.forEach((item, i) => {
-    if (item.kind === "catch") {
-      segments.push([from, i]);
-      from = i + 1;
-    }
+    if (!isCatchItem(item)) return;
+    // 技の最中の受けは**その技自体が区間の中身**なので、区間はその技まで含める。
+    // 受けた後に連鎖が続くときも区間はここで切る（手具は手元に戻っているので、
+    // そこから先の徒手は「投げ上げている間」の例外に入らない）。ユニットを続けるかは
+    // `analyzeSeries` 側の `catchSkillContinues` が決める
+    segments.push([from, item.kind === "catch" ? i : i + 1]);
+    from = i + 1;
   });
   segments.push([from, items.length]);
 
@@ -427,8 +500,9 @@ export function unitSplitFlags(items: Item[]): boolean[] {
  * items を左から走査し、catch を区切りに unit へ分類する中核関数。
  * 投げを含まない連続技 → tumbling、投げを含む塊 → throw。
  * junior＝ジュニア適用規則（変更規則1）での難度認定を使う。
+ * future＝十年後モードの上限難度（null で現行規則どおりE止め）。
  */
-export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
+export function analyzeSeries(series: Series, junior = false, future: FutureLevel = null): SeriesAnalysis {
   const units: Unit[] = [];
   let throwCount = 0;
   let buf: UnitBuffer | null = null;
@@ -445,7 +519,7 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
   });
   const flush = () => {
     if (buf && (buf.skills.length || buf.motionCount > 0 || buf.throwItems > 0)) {
-      const u = finalizeUnit(buf, junior);
+      const u = finalizeUnit(buf, junior, future);
       if (u.finalDiff) units.push(u);
       const skillThrows = buf.skills.filter((s) => s.isThrow).length;
       throwCount += buf.throwItems + skillThrows;
@@ -464,10 +538,19 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
     } else if (item.kind === "skill") {
       if (!item.skillId) return;
       if (!buf) buf = newBuf();
-      buf.skills.push({ skillId: item.skillId, hasApparatus: !!item.hasApparatus, isThrow: !!item.isThrow });
+      buf.skills.push({
+        skillId: item.skillId,
+        // きりもみ系は手具操作ができないので、入力に残っていても操作として数えない
+        hasApparatus: !!item.hasApparatus && canOperateApparatus(item.skillId),
+        isThrow: !!item.isThrow,
+      });
+      // 技の最中に受けたら、その技を含めてユニットが閉じる（キャッチアイテムと同じ）。
+      // ただし直後に転回技が続くなら、受けた技は連鎖の途中なので**同じユニットのまま続ける**
+      // （`catchSkillContinues`）
+      if (item.isCatch && !catchSkillContinues(series.items, i)) flush();
     } else if (item.kind === "motion") {
       if (!buf) buf = newBuf();
-      const m = motionDef(item.motionId, junior);
+      const m = motionDef(item.motionId, junior, future);
       const times = motionTimes(item.count);
       // 0回の動作は何も数えない（構成にも入れない）
       if (m && times > 0) {
@@ -492,38 +575,6 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
   });
   flush();
 
-  // ロープ跳び：シリーズ内の最高難度の跳びを独立した徒手系難度ユニットとして追加
-  let ropeMax = 0;
-  let ropeMaxId = "";
-  series.items.forEach((item) => {
-    if (item.kind === "ropeJump") {
-      const j = ropeJumpDef(item.jumpId);
-      if (j && DIFF_VALUE[j.difficulty] > ropeMax) {
-        ropeMax = DIFF_VALUE[j.difficulty];
-        ropeMaxId = j.id;
-      }
-    }
-  });
-  if (ropeMax > 0) {
-    const diff = VALUE_DIFF[Math.min(ropeMax, MAX_DIFF)];
-    units.push({
-      type: "throw",
-      isThrow: true,
-      throwCount: 0,
-      skillThrow: false,
-      isThrowTumbling: false,
-      fromRopeJump: true,
-      signatures: [`rope:${ropeMaxId}`],
-      skills: [],
-      handDiff: diff,
-      tumblingDiff: null,
-      finalDiff: diff,
-      diffFromHand: true,
-      hasApparatus: true,
-      hasDPlus: ropeMax >= DIFF_VALUE.D,
-    });
-  }
-
   return { units, throwCount };
 }
 
@@ -534,11 +585,43 @@ export function analyzeSeries(series: Series, junior = false): SeriesAnalysis {
 // **画面に出ないまま採点に効いてしまう**（スティックに残った「手具を使ったキャッチ」で
 // 技術加点＋0.1、ロープ跳びで難度＋0.3 など）。採点も編集もここを通して弾く。
 
+/**
+ * 旧データでシリーズの中に入っていたロープ跳びを取り出す。
+ * ロープ跳びは跳びシリーズ（徒手・構成タブ）で入力するようになったので、読み込み時にシリーズから外し、
+ * 元のシリーズごとに1つの跳びシリーズにする（別のシリーズの跳びは別の実施）。
+ * 取り出すものが無ければ同じ配列を返す。
+ */
+export function hoistRopeJumps(list: Series[]): { series: Series[]; jumps: RopeJumpItem[][] } {
+  if (!list.some((ser) => ser.items.some((item) => item.kind === "ropeJump"))) return { series: list, jumps: [] };
+  const jumps: RopeJumpItem[][] = [];
+  const series = list.map((ser) => {
+    const own: RopeJumpItem[] = [];
+    const items = ser.items.filter((item) => {
+      if (item.kind !== "ropeJump") return true;
+      own.push(item);
+      return false;
+    });
+    if (own.length > 0) jumps.push(own);
+    return { ...ser, items };
+  });
+  return { series, jumps };
+}
+
 /** 手具固有の入力（その手具で入力できるものだけを true にする） */
 const canUseApparatusTag = (apparatus: ApparatusKey): boolean => APPARATUS_USE[apparatus];
 const canUseReqType = (apparatus: ApparatusKey, id: string): boolean =>
   REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === id);
 const canUseRopeJump = (apparatus: ApparatusKey): boolean => apparatus === "rope";
+
+/**
+ * その投げで手元から離れる手具の数。二つ投げなら2つ、それ以外は1つ。
+ * 投げアイテムでも技の最中の投げでも同じ（`SkillItem.reqTypes` も見る）。
+ */
+export const thrownCount = (item: Item): number =>
+  (item.kind === "throw" || (item.kind === "skill" && item.isThrow)) &&
+  (item.reqTypes || []).includes(TWO_THROW_TAG)
+    ? 2
+    : 1;
 
 /**
  * 各アイテムを実施する時点で**手元に手具が無い**か（投げてからキャッチするまで）。
@@ -551,16 +634,47 @@ export function handsEmptyFlags(items: Item[], apparatus: ApparatusKey): boolean
   let inHand = total;
   return items.map((item) => {
     if (item.kind === "throw") {
-      inHand = Math.max(0, inHand - ((item.reqTypes || []).includes("twothrow") ? 2 : 1));
+      inHand = Math.max(0, inHand - thrownCount(item));
       return false;
     }
     if (item.kind === "catch") {
-      inHand = Math.min(total, inHand + (item.catchTwo ? 2 : 1));
+      inHand = Math.min(total, inHand + caughtCount(item));
       return false;
     }
     const empty = inHand === 0;
-    if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - 1);
+    if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - thrownCount(item));
+    // 技の最中の受けは**技の終わり**に手元に戻るので、その技の間はまだ手元が空
+    // （投げの技は離す瞬間まで手元にあるので操作あり。そこが投げと非対称）
+    if (item.kind === "skill" && item.isCatch) inHand = Math.min(total, inHand + caughtCount(item));
     return empty;
+  });
+}
+
+/**
+ * 各アイテムの位置で **2つ同時キャッチ**を入力できるか。
+ * 手具が2つある種目（クラブ・リング）で、そのキャッチの時点で**2つとも空中にある**
+ * ときだけ（＝二つ投げで両方を投げている間）。片方が手元にあるなら同時には受けられない。
+ */
+export function catchTwoFlags(items: Item[], apparatus: ApparatusKey): boolean[] {
+  const total = APPARATUS_COUNT[apparatus];
+  let inHand = total;
+  return items.map((item) => {
+    if (item.kind === "throw") {
+      inHand = Math.max(0, inHand - thrownCount(item));
+      return false;
+    }
+    if (item.kind === "catch") {
+      const allowed = total > 1 && inHand === 0;
+      inHand = Math.min(total, inHand + caughtCount(item));
+      return allowed;
+    }
+    if (item.kind === "skill" && item.isThrow) inHand = Math.max(0, inHand - thrownCount(item));
+    if (item.kind === "skill" && item.isCatch) {
+      const allowed = total > 1 && inHand === 0;
+      inHand = Math.min(total, inHand + caughtCount(item));
+      return allowed;
+    }
+    return false;
   });
 }
 
@@ -570,18 +684,22 @@ export const APPARATUS_INPUT_NAMES = {
   catchTwo: "2つ同時キャッチ",
   ropeJump: "ロープ跳び",
   handsEmptyOp: "投げている間の手具操作",
+  side: "横投げ",
 } as const;
 
 /** その手具では入力できない内容の一覧（無ければ空。確認ダイアログの文面に使う） */
 export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): string[] {
   const reasons = new Set<string>();
   const tags = canUseApparatusTag(apparatus);
+  const side = canUseSideThrow(apparatus);
   list.forEach((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);
     ser.items.forEach((item, i) => {
       // 投げている間（手元に手具が無い間）は手具操作ができない
       if (item.kind === "skill" && item.hasApparatus && empty[i])
         reasons.add(APPARATUS_INPUT_NAMES.handsEmptyOp);
+      if ((item.kind === "throw" || item.kind === "skill") && !side && (item.throwTypes || []).includes(SIDE_THROW_TAG))
+        reasons.add(APPARATUS_INPUT_NAMES.side);
       if (item.kind === "throw") {
         if (!tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
           reasons.add(APPARATUS_INPUT_NAMES.useapp);
@@ -590,8 +708,18 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
             reasons.add(requiredThrowName(id));
         });
       }
-      if (item.kind === "skill" && !tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
-        reasons.add(APPARATUS_INPUT_NAMES.useapp);
+      if (item.kind === "skill") {
+        if (!tags && (item.throwTypes || []).includes(USE_APPARATUS_TAG))
+          reasons.add(APPARATUS_INPUT_NAMES.useapp);
+        // 技の最中の投げの必須投げ（二つ投げ）も、その手具で入力できなければ落とす
+        (item.reqTypes || []).forEach((id) => {
+          if (!canUseReqType(apparatus, id)) reasons.add(requiredThrowName(id));
+        });
+        // 技の最中の受けも、キャッチアイテムと同じ入力の制限を受ける
+        if (!tags && (item.catchTypes || []).includes(USE_APPARATUS_TAG))
+          reasons.add(APPARATUS_INPUT_NAMES.useapp);
+        if (!tags && item.catchTwo) reasons.add(APPARATUS_INPUT_NAMES.catchTwo);
+      }
       if (item.kind === "catch") {
         if (!tags && (item.catchTypes || []).includes(USE_APPARATUS_TAG))
           reasons.add(APPARATUS_INPUT_NAMES.useapp);
@@ -611,7 +739,10 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
 export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Series[] {
   if (apparatusBlockers(list, apparatus).length === 0) return list;
   const tags = canUseApparatusTag(apparatus);
-  const withoutTag = (ids?: string[]) => (ids || []).filter((id) => tags || id !== USE_APPARATUS_TAG);
+  const side = canUseSideThrow(apparatus);
+  const withoutTag = (ids?: string[]) =>
+    (ids || []).filter((id) => (tags || id !== USE_APPARATUS_TAG) && (side || id !== SIDE_THROW_TAG));
+  const withoutReq = (ids?: string[]) => (ids || []).filter((id) => canUseReqType(apparatus, id));
   return list.map((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);
     const emptyOf = new Map(ser.items.map((item, i) => [item, empty[i]]));
@@ -622,15 +753,37 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
         .map((item) => {
           // 投げている間は手具操作ができない
           if (item.kind === "skill" && item.hasApparatus && emptyOf.get(item))
-            return { ...item, hasApparatus: false, throwTypes: withoutTag(item.throwTypes) };
+            return {
+              ...item,
+              hasApparatus: false,
+              throwTypes: withoutTag(item.throwTypes),
+              reqTypes: withoutReq(item.reqTypes),
+              ...(item.isCatch
+                ? { catchTypes: withoutTag(item.catchTypes), catchTwo: tags ? item.catchTwo : false }
+                : {}),
+            };
           if (item.kind === "throw")
             return {
               ...item,
               throwTypes: withoutTag(item.throwTypes),
-              reqTypes: (item.reqTypes || []).filter((id) => canUseReqType(apparatus, id)),
+              reqTypes: withoutReq(item.reqTypes),
             };
-          if (item.kind === "skill" && item.throwTypes)
-            return { ...item, throwTypes: withoutTag(item.throwTypes) };
+          if (item.kind === "skill" && (item.throwTypes || item.reqTypes))
+            return {
+              ...item,
+              throwTypes: withoutTag(item.throwTypes),
+              reqTypes: withoutReq(item.reqTypes),
+              // 技の最中の受けのタグも、キャッチアイテムと同じように落とす
+              ...(item.isCatch
+                ? { catchTypes: withoutTag(item.catchTypes), catchTwo: tags ? item.catchTwo : false }
+                : {}),
+            };
+          if (item.kind === "skill" && item.isCatch)
+            return {
+              ...item,
+              catchTypes: withoutTag(item.catchTypes),
+              catchTwo: tags ? item.catchTwo : false,
+            };
           if (item.kind === "catch")
             return {
               ...item,
@@ -651,19 +804,26 @@ export function checkApparatusFlow(series: Series, apparatusKey: keyof typeof AP
   const errors: string[] = [];
   series.items.forEach((item, idx) => {
     if (item.kind === "throw") {
-      const num = (item.reqTypes || []).includes("twothrow") ? 2 : 1;
+      const num = thrownCount(item);
       if (inHand < num) errors.push(`${idx + 1}番目の投げ：手元の手具が足りません`);
       const t = Math.min(num, inHand);
       inHand -= t;
       inAir += t;
     } else if (item.kind === "skill" && item.isThrow) {
-      if (inHand < 1) errors.push(`${idx + 1}番目の技の最中の投げ：手元の手具が足りません`);
+      const num = thrownCount(item);
+      if (inHand < num) errors.push(`${idx + 1}番目の技の最中の投げ：手元の手具が足りません`);
       else {
-        inHand -= 1;
-        inAir += 1;
+        inHand -= num;
+        inAir += num;
       }
+    } else if (item.kind === "skill" && item.isCatch) {
+      const num = caughtCount(item);
+      if (inAir < num) errors.push(`${idx + 1}番目の技の最中の受け：空中に手具がありません`);
+      const c = Math.min(num, inAir);
+      inAir -= c;
+      inHand += c;
     } else if (item.kind === "catch") {
-      const num = item.catchTwo ? 2 : 1;
+      const num = caughtCount(item);
       if (inAir < num) errors.push(`${idx + 1}番目のキャッチ：空中に手具がありません`);
       const c = Math.min(num, inAir);
       inAir -= c;
@@ -675,6 +835,71 @@ export function checkApparatusFlow(series: Series, apparatusKey: keyof typeof AP
 }
 
 /** 重複シリーズ判定用の正規化シグネチャ */
+/**
+ * **転回系の種類・組み合わせの多様性**（§3.5.6.4 の欠点テーブル）の自動判定。
+ * A難度の転回技（ロンダート・バク転・側転など）は数えず、**宙返り（B難度以上の転回技）**だけを数える。
+ * 全部違う技なら減点なし、同じ技を繰り返したぶん（`repeats`＝実施数−種類数）だけ減点する。
+ * ひねり・姿勢が違えば別の技（`skillId` が違う）として数える。
+ */
+export interface TumblingVariety {
+  /** 実施した宙返り（A難度を除く転回技）の数 */
+  total: number;
+  /** そのうち何種類か */
+  distinct: number;
+  /** 種類が減っているぶん（＝ total − distinct） */
+  repeats: number;
+  /** 自動計算した減点（`TUM_VARIETY_DEDUCTION_STEP` × repeats、項目の上限で丸め） */
+  deduction: number;
+}
+
+export function tumblingVariety(list: Series[], junior = false): TumblingVariety {
+  const ids: string[] = [];
+  list.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind !== "skill" || !item.skillId) return;
+      if (skillDifficulty(item.skillId, junior) === "A") return;
+      ids.push(item.skillId);
+    }),
+  );
+  const total = ids.length;
+  const distinct = new Set(ids).size;
+  const repeats = Math.max(0, total - distinct);
+  const max = artDeductionItem(TUM_VARIETY_ITEM_ID)?.max ?? 0;
+  const deduction = Math.min(max, Math.round(repeats * TUM_VARIETY_DEDUCTION_STEP * 10) / 10);
+  return { total, distinct, repeats, deduction };
+}
+
+/**
+ * **転回中の操作**（§3.5.6.4 の欠点テーブル）の自動判定。
+ * 数えるのは「手具操作を付けられる技」＝入力欄にチェックが出る技だけ
+ * （きりもみ系のように操作できない技、投げている間で手元に手具が無い技は数えない）。
+ * そのうち実際に操作した割合から `appInTumblingDeduction` で減点を引く。
+ */
+export interface TumblingOperation {
+  /** 手具操作を付けられる技の数 */
+  total: number;
+  /** そのうち操作を伴ったもの */
+  withOp: number;
+  /** 自動計算した減点（0〜0.4） */
+  deduction: number;
+}
+
+export function tumblingOperation(list: Series[], apparatus: ApparatusKey): TumblingOperation {
+  let total = 0;
+  let withOp = 0;
+  list.forEach((ser) => {
+    const empty = handsEmptyFlags(ser.items, apparatus);
+    ser.items.forEach((item, i) => {
+      if (item.kind !== "skill" || !item.skillId) return;
+      // 手元に手具が無い間・操作できない技は「操作しなかった」ではなく最初から数えない
+      if (empty[i] || !canOperateApparatus(item.skillId)) return;
+      total += 1;
+      if (item.hasApparatus) withOp += 1;
+    });
+  });
+  return { total, withOp, deduction: appInTumblingDeduction(withOp, total) };
+}
+
 export function seriesSignature(series: Series): string {
   return JSON.stringify(
     series.items.map((item) => {
@@ -682,7 +907,13 @@ export function seriesSignature(series: Series): string {
         return { k: "throw", req: [...(item.reqTypes || [])].sort(), types: [...(item.throwTypes || [])].sort() };
       if (item.kind === "catch")
         return { k: "catch", types: [...(item.catchTypes || [])].sort(), two: !!item.catchTwo };
-      if (item.kind === "skill") return { k: "skill", id: item.skillId, thr: !!item.isThrow };
+      if (item.kind === "skill")
+        return {
+          k: "skill",
+          id: item.skillId,
+          thr: !!item.isThrow,
+          req: [...(item.reqTypes || [])].sort(),
+        };
       if (item.kind === "motion")
         return {
           k: "motion",
@@ -691,7 +922,10 @@ export function seriesSignature(series: Series): string {
           ht: item.hands ? item.handsType || DEFAULT_HANDS_TYPE : "",
           n: motionTimes(item.count),
         };
-      if (item.kind === "ropeJump") return { k: "ropeJump", id: item.jumpId };
+      if (item.kind === "ropeJump") {
+        const r = resolveRopeJump(item);
+        return { k: "ropeJump", id: r ? ropeJumpKey(r) : item.jumpId, n: r ? r.count : 0 };
+      }
       return { k: "?" };
     }),
   );

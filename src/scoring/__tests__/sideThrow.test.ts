@@ -1,0 +1,271 @@
+import { describe, it, expect } from "vitest";
+import { computeScore } from "../score";
+import { checkApparatusFlow } from "../analysis";
+import { apparatusBlockers, stripForApparatus } from "../analysis";
+import { SIDE_THROW_TAG, TECHNIQUE_BONUS } from "../constants";
+import { autoThrowSpecs, buildAutoThrowSeries } from "../autoThrows";
+import { commonBlockers } from "../templates";
+import { autoTumblingTemplates } from "../autoTumblings";
+import type { Series } from "../types";
+
+const ser = (throwTypes: string[]): Series => ({
+  executionDeduction: 0,
+  items: [{ kind: "throw", throwTypes }, { kind: "catch" }],
+});
+
+describe("横投げ", () => {
+  it("投げ方の種類として数えるが技術加点にはならない", () => {
+    const plain = computeScore([ser([])], "clubs");
+    const side = computeScore([ser([SIDE_THROW_TAG])], "clubs");
+    expect(side.techniqueBonus).toBe(plain.techniqueBonus);
+    expect(side.techniqueBonus).toBe(0);
+    const noview = computeScore([ser(["noview"])], "clubs");
+    expect(noview.techniqueBonus).toBe(TECHNIQUE_BONUS);
+    // 通常の投げ＋横投げ＝2種類（通常を2本並べても重複で1種類のまま）
+    const withSide = computeScore([ser([]), ser([SIDE_THROW_TAG])], "clubs");
+    const twice = computeScore([ser([]), ser([])], "clubs");
+    expect(withSide.varietyDeduction).toBeLessThan(twice.varietyDeduction);
+  });
+
+  it("ロープでは入力できず、採点前に落とされる", () => {
+    const list = [ser([SIDE_THROW_TAG])];
+    expect(apparatusBlockers(list, "rope")).toContain("横投げ");
+    expect(apparatusBlockers(list, "stick")).toEqual([]);
+    expect(stripForApparatus(list, "rope")[0].items[0]).toMatchObject({ throwTypes: [] });
+    expect(commonBlockers(list)).toContain("横投げ");
+  });
+
+  it("自動生成：クラブの押さえつけキャッチは高確率で横投げ、ロープには付かない", () => {
+    const rate = (apparatus: "clubs" | "ring" | "rope") => {
+      let press = 0;
+      let pressSide = 0;
+      for (let k = 0; k < 20; k++) {
+        autoThrowSpecs(apparatus).forEach((spec) => {
+          if (!(spec.catchStyle.catchTypes || []).includes("useapp")) return;
+          // 視野外の投げ・二つ投げ・手以外の投げは横投げにしない（分母から外す）
+          const t = spec.throwStyle.throwTypes || [];
+          if (t.includes("noview") || t.includes("nonhand") || spec.throwStyle.two) return;
+          press += 1;
+          if ((spec.throwStyle.throwTypes || []).includes(SIDE_THROW_TAG)) pressSide += 1;
+        });
+      }
+      return { press, share: press ? pressSide / press : 0 };
+    };
+    expect(rate("clubs").share).toBeGreaterThan(0.75);
+    expect(rate("ring").share).toBeGreaterThan(0.4);
+    expect(rate("ring").share).toBeLessThan(rate("clubs").share);
+    let ropeSide = 0;
+    for (let k = 0; k < 5; k++)
+      autoThrowSpecs("rope").forEach((s) => {
+        if ((buildAutoThrowSeries(s).items.some((i) => i.kind === "throw" && (i.throwTypes || []).includes(SIDE_THROW_TAG)))) ropeSide += 1;
+      });
+    expect(ropeSide).toBe(0);
+  });
+
+  it("自動生成：視野外の投げは真後ろも横も作る（横は手以外の投げと組まない。ロープは横なし）", () => {
+    (["stick", "clubs", "ring"] as const).forEach((apparatus) => {
+      let both = 0;
+      for (let k = 0; k < 20; k++)
+        autoThrowSpecs(apparatus).forEach((spec) => {
+          buildAutoThrowSeries(spec).items.forEach((item) => {
+            if (item.kind !== "throw") return;
+            const types = item.throwTypes || [];
+            if (types.includes(SIDE_THROW_TAG) && types.includes("noview")) {
+              both += 1;
+              expect(types).not.toContain("nonhand");
+            }
+          });
+        });
+      expect(both).toBeGreaterThan(0);
+    });
+  });
+
+  it("自動生成：スティックの低難度の左手投げは高確率で横投げ、高難度は付かない", () => {
+    let low = 0;
+    let lowSide = 0;
+    for (let k = 0; k < 30; k++)
+      autoThrowSpecs("stick").forEach((spec) => {
+        const left = (spec.throwStyle.reqTypes || []).includes("lefthand");
+        // 視野外の左手投げの横は方向の指定（NO_VIEW_SIDE_CHANCE）なので、ここでは見ない
+        if (!left || (spec.throwStyle.throwTypes || []).includes("noview")) return;
+        const motions = spec.cheneCount + spec.pattern.after.reduce((n, m) => n + m.count, 0);
+        const side = (spec.throwStyle.throwTypes || []).includes(SIDE_THROW_TAG);
+        if (motions <= 1) {
+          low += 1;
+          if (side) lowSide += 1;
+        } else if (!(spec.catchStyle.catchTypes || []).includes("useapp")) expect(side).toBe(false);
+      });
+    expect(low).toBeGreaterThan(0);
+    expect(lowSide / low).toBeGreaterThan(0.6);
+  });
+
+  it("自動生成：クラブは横投げ以外の投げを押さえつけキャッチで受けない", () => {
+    const check = (series: Series) => {
+      let thrown: string[] | null = null;
+      series.items.forEach((item) => {
+        // 視野外の投げ（背面の連続投げ）は押さえつけて受けない。押さえつけの相手は先に投げた横投げ
+        if ((item.kind === "throw" || (item.kind === "skill" && item.isThrow)) && !(item.throwTypes || []).includes("noview"))
+          thrown = item.throwTypes || [];
+        if (item.kind === "catch" && (item.catchTypes || []).includes("useapp")) {
+          expect(thrown).not.toBeNull();
+          expect(thrown).toContain(SIDE_THROW_TAG);
+        }
+      });
+    };
+    let presses = 0;
+    for (let k = 0; k < 10; k++) {
+      autoThrowSpecs("clubs").forEach((spec) => {
+        const s = buildAutoThrowSeries(spec);
+        presses += s.items.filter((i) => i.kind === "catch" && (i.catchTypes || []).includes("useapp")).length;
+        check(s);
+      });
+      autoTumblingTemplates("clubs").forEach((t) => {
+        presses += t.series.items.filter((i) => i.kind === "catch" && (i.catchTypes || []).includes("useapp")).length;
+        check(t.series);
+      });
+    }
+    expect(presses).toBeGreaterThan(0);
+  });
+
+  it("自動生成：二つ投げ（横）→キャッチ→0〜1動作→押さえつけてキャッチの形が出る（クラブ・リング）", () => {
+    (["clubs", "ring"] as const).forEach((apparatus) => {
+      const specs = autoThrowSpecs(apparatus).filter((s) => s.pattern.splitCatch);
+      expect(specs.length).toBeGreaterThan(0);
+      specs.forEach((spec) => {
+        const items = buildAutoThrowSeries(spec).items;
+        const kinds = items.map((i) => i.kind);
+        expect(kinds[0]).toBe("throw");
+        expect(items[0]).toMatchObject({ reqTypes: ["twothrow"], throwTypes: [SIDE_THROW_TAG] });
+        // 間の徒手は0〜1動作、キャッチは2つ同時ではなく1つずつ
+        expect(spec.cheneCount).toBeLessThanOrEqual(1);
+        // 徒手は二つとも空中の間（最初のキャッチの前）か2つのキャッチの間
+        const motionIdx = items.map((i, n) => (i.kind === "motion" ? n : -1)).filter((n) => n >= 0);
+        const firstCatch = items.findIndex((i) => i.kind === "catch");
+        if (spec.cheneCount > 0) {
+          const at = spec.splitMotionAt;
+          expect(motionIdx.length).toBe(at === "both" ? 2 : 1);
+          expect(motionIdx.some((n) => n < firstCatch)).toBe(at !== "betweenCatches");
+          expect(motionIdx.some((n) => n > firstCatch)).toBe(at !== "bothAir");
+        } else expect(motionIdx).toHaveLength(0);
+        const catches = items.filter((i) => i.kind === "catch");
+        expect(catches).toHaveLength(2);
+        expect(catches[0]).not.toHaveProperty("catchTwo");
+        expect(catches[1]).toMatchObject({ catchTypes: ["useapp"] });
+        expect(items[items.length - 1].kind).toBe("catch");
+        expect(checkApparatusFlow(buildAutoThrowSeries(spec), apparatus)).toEqual([]);
+      });
+    });
+    // 徒手を置く場所は両方出る
+    const places = new Set<string>();
+    for (let k = 0; k < 20; k++)
+      autoThrowSpecs("clubs").forEach((s) => {
+        if (s.pattern.splitCatch && s.cheneCount > 0) places.add(s.splitMotionAt ?? "");
+      });
+    expect([...places].sort()).toEqual(["betweenCatches", "both", "bothAir"]);
+    // スティック・ロープには出ない
+    expect(autoThrowSpecs("stick").some((s) => s.pattern.splitCatch)).toBe(false);
+    expect(autoThrowSpecs("rope").some((s) => s.pattern.splitCatch)).toBe(false);
+  });
+
+  it("自動生成：リングは手以外のキャッチ（首・足にはめる）でも横投げになる。クラブでは付かない", () => {
+    const count = (apparatus: "ring" | "clubs") => {
+      let n = 0;
+      for (let r = 0; r < 30; r++)
+        for (const spec of autoThrowSpecs(apparatus)) {
+          const [t, ...rest] = buildAutoThrowSeries(spec).items as any[];
+          const c = rest.find((i) => i.kind === "catch");
+          if (
+            (c?.catchTypes || []).includes("nonhand") &&
+            (t.throwTypes || []).includes(SIDE_THROW_TAG) &&
+            !(t.throwTypes || []).includes("noview")
+          ) {
+            n++;
+            expect(t.throwTypes).not.toContain("nonhand");
+          }
+        }
+      return n;
+    };
+    expect(count("ring")).toBeGreaterThan(0);
+    expect(count("clubs")).toBe(0);
+  });
+
+  it("自動生成：リング・ロープの投げタンは手以外のキャッチで受けることがあり、リングは必ず横投げ", () => {
+    const run = (apparatus: "ring" | "rope" | "clubs") => {
+      let nonHand = 0;
+      let side = 0;
+      for (let r = 0; r < 20; r++)
+        for (const t of autoTumblingTemplates(apparatus)) {
+          const items = t.series.items as any[];
+          const c = items.find((i) => i.kind === "catch");
+          if (!(c?.catchTypes || []).includes("nonhand")) continue;
+          nonHand++;
+          const th = items.find((i) => (i.kind === "throw" || i.kind === "skill") && (i.kind === "throw" || i.isThrow));
+          if ((th.throwTypes || []).includes(SIDE_THROW_TAG)) side++;
+          expect(checkApparatusFlow(t.series, apparatus as "ring")).toEqual([]);
+        }
+      return { nonHand, side };
+    };
+    const ring = run("ring");
+    expect(ring.nonHand).toBeGreaterThan(0);
+    expect(ring.side).toBe(ring.nonHand);
+    const rope = run("rope");
+    expect(rope.nonHand).toBeGreaterThan(0);
+    expect(rope.side).toBe(0);
+    expect(run("clubs").nonHand).toBe(0);
+  });
+});
+
+describe("1回の投げ・受けは組み合わせ全体で1種類", () => {
+  const catchSer = (catchTypes: string[]): Series => ({
+    executionDeduction: 0,
+    items: [{ kind: "throw" }, { kind: "catch", catchTypes }],
+  });
+
+  it("投げ方を複数チェックしても種類は1つ（技術加点はチェックの数だけ）", () => {
+    const both = computeScore([ser(["useapp", SIDE_THROW_TAG])], "clubs");
+    const one = computeScore([ser(["useapp"])], "clubs");
+    expect(both.throwKindCount).toBe(1);
+    expect(one.throwKindCount).toBe(1);
+    expect(both.techniqueBonus).toBe(one.techniqueBonus);
+    // 同じ組み合わせは（順番が違っても）重複、組み合わせが違えば別の投げ方
+    const same = computeScore([ser(["useapp", SIDE_THROW_TAG]), ser([SIDE_THROW_TAG, "useapp"])], "clubs");
+    expect(same.throwKindCount).toBe(1);
+    const combo = computeScore([ser(["useapp", SIDE_THROW_TAG]), ser([SIDE_THROW_TAG])], "clubs");
+    expect(combo.throwKindCount).toBe(2);
+    // 別の投げに分ければ2種類
+    const split = computeScore([ser(["useapp"]), ser([SIDE_THROW_TAG])], "clubs");
+    expect(split.throwKindCount).toBe(2);
+  });
+
+  it("右手・左手・二つ投げは種類に影響しない（投げ方・受け方とも）", () => {
+    const left: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", reqTypes: ["lefthand"] }, { kind: "catch" }],
+    };
+    const two: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", reqTypes: ["twothrow"] }, { kind: "catch" }],
+    };
+    const r = computeScore([ser([]), left, two], "stick");
+    expect(r.throwKindCount).toBe(1);
+    expect(r.catchKindCount).toBe(1);
+    // チェックを付けた左手投げは、同じチェックの通常の投げと同じ種類
+    const leftSide: Series = {
+      executionDeduction: 0,
+      items: [{ kind: "throw", reqTypes: ["lefthand"], throwTypes: [SIDE_THROW_TAG] }, { kind: "catch" }],
+    };
+    expect(computeScore([ser([SIDE_THROW_TAG]), leftSide], "stick").throwKindCount).toBe(1);
+  });
+
+  it("受け方も複数チェックして1種類", () => {
+    const both = computeScore([catchSer(["noview", "nonhand"])], "clubs");
+    expect(both.catchKindCount).toBe(1);
+    const split = computeScore([catchSer(["noview"]), catchSer(["nonhand"])], "clubs");
+    expect(split.catchKindCount).toBe(2);
+    // 組み合わせが違えば別の受け方、同じなら重複
+    const combo = computeScore([catchSer(["noview", "nonhand"]), catchSer(["noview"])], "clubs");
+    expect(combo.catchKindCount).toBe(2);
+    const same = computeScore([catchSer(["noview", "nonhand"]), catchSer(["nonhand", "noview"])], "clubs");
+    expect(same.catchKindCount).toBe(1);
+  });
+});

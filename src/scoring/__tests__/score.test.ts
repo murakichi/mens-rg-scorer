@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { computeScore } from "../score";
-import { ART_DEDUCTION_ITEMS } from "../constants";
+import {
+  ART_DEDUCTION_ITEMS,
+  NO_APP_ALL_DEDUCTION,
+  NO_APP_SALTO_DEDUCTION,
+  TECHNIQUE_BONUS,
+  DIFF_SCORE,
+  canOperateApparatus,
+} from "../constants";
 import type { Series, Item } from "../types";
 
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
@@ -12,14 +19,17 @@ describe("computeScore — 空の演技（回帰アンカー）", () => {
     expect(r.eScore).toBe(10);
     // 方向系3不足(0.9) + 投げ不足(0.3) + 宙返り連続なし(0.2) + 多様性上限(0.5)
     //  + 必須要素の欠如3項目(投げタン・つなぎ技・タンブリング本数 3×0.3=0.9)
-    //  + スティック手具別必須要素5項目未実施(5×0.3=1.5) = 4.3
-    expect(r.aDeduction).toBeCloseTo(4.3, 5);
-    expect(r.aScore).toBeCloseTo(5.7, 5);
-    expect(r.grandTotal).toBeCloseTo(15.7, 5);
+    //  + 深い運動2部位不足(0.2) + 柔軟なし(0.1) + 手具操作チェック3件(スティックは左手の操作も／0.3)
+    //  + 身体を離れる操作4回不足(0.4) + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 5.0
+    expect(r.aDeduction).toBeCloseTo(5.0, 5);
+    expect(r.aScore).toBeCloseTo(5.0, 5);
+    expect(r.grandTotal).toBeCloseTo(15.0, 5);
     expect(r.missing.length).toBeGreaterThan(0);
     expect(r.missingElementDeduction).toBeCloseTo(0.9, 5);
-    // 手具別必須要素は未実施5項目で −1.5
-    expect(r.apparatusElementDeduction).toBeCloseTo(1.5, 5);
+    // 手具別必須要素は未実施4項目で −1.2
+    expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
+    expect(r.deepMotionDeduction).toBeCloseTo(0.2, 5);
+    expect(r.handOpDeduction).toBeCloseTo(0.7, 5);
   });
 });
 
@@ -63,14 +73,14 @@ describe("computeScore — 右投げ右受けの自動判定（§3.2 スティ�
   it("投げが無ければ不足のまま（−0.3）", () => {
     const r = computeScore([S({ kind: "skill", skillId: "b_backsalto" }, { kind: "catch" })], "stick");
     expect(check(r)?.passed).toBe(false);
-    expect(r.apparatusElementDeduction).toBeCloseTo(1.5, 5);
+    expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
   });
 
   it("通常の投げが1回でもあれば自動でOK", () => {
     const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "stick");
     expect(check(r)?.passed).toBe(true);
-    // 5項目中1つ自動OK → 残り4項目未実施で −1.2
-    expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
+    // 4項目中1つ自動OK → 残り3項目未実施で −0.9
+    expect(r.apparatusElementDeduction).toBeCloseTo(0.9, 5);
   });
 
   it("左手投げ・手以外の投げだけでは右投げとみなさない", () => {
@@ -330,6 +340,94 @@ describe("computeScore — 同じ内容の難度は演技全体で1回しか数�
   });
 });
 
+describe("computeScore — ロープ跳びリスト（構成全体・徒手・構成タブ）", () => {
+  const J = (jumpId: string, extra: Partial<Extract<Item, { kind: "ropeJump" }>> = {}) =>
+    ({ kind: "ropeJump", jumpId, ...extra }) as Extract<Item, { kind: "ropeJump" }>;
+  const score = (jumps: ReturnType<typeof J>[]) => computeScore([], "rope", { ropeJumps: [jumps] });
+
+  it("複数種類の跳びをそれぞれ評価する", () => {
+    const r = score([J("3b", { cross: true }), J("1f"), J("2b")]);
+    expect(r.ropeJumpRows.map((x) => x.difficulty)).toEqual(["D", "A", "B"]);
+    expect(r.ropeJumpRows.every((x) => x.inTop)).toBe(true);
+    expect(r.handScore).toBeCloseTo(0.5 + 0.1 + 0.2, 5);
+    expect(r.ropeJumpScore).toBeCloseTo(r.handScore, 5);
+  });
+
+  it("徒手系難度は上位3つまで（投げ受けの徒手と同じ枠を争う）", () => {
+    const r = score([J("1f"), J("2b"), J("3b"), J("4b")]);
+    expect(r.ropeJumpRows.map((x) => x.inTop)).toEqual([false, true, true, true]);
+    expect(r.handScore).toBeCloseTo(0.2 + 0.3 + 0.5, 5);
+  });
+
+  it("同じ跳びは1回だけ数える（回数の行が違えば別の技）", () => {
+    const same = score([J("3b"), J("3b", { count: 1 })]);
+    expect(same.ropeJumpRows.map((x) => x.duplicate)).toEqual([false, true]);
+    expect(same.handScore).toBeCloseTo(0.3, 5);
+    const other = score([J("3b"), J("3b", { count: 2 })]);
+    expect(other.ropeJumpRows.map((x) => x.duplicate)).toEqual([false, false]);
+    expect(other.handScore).toBeCloseTo(0.3 + 0.5, 5);
+  });
+
+  it("回数0の跳びは数えない", () => {
+    const r = score([J("4b", { count: 0 })]);
+    expect(r.ropeJumpRows[0].adopted).toBe(false);
+    expect(r.handScore).toBe(0);
+  });
+
+  it("行ラベルはクロスと回数を含む", () => {
+    expect(score([J("3b", { cross: true, count: 2 })]).ropeJumpRows[0].label).toBe("3重跳び（後ろ）・クロス×2");
+  });
+
+  it("ロープ以外ではリストがあっても数えない", () => {
+    expect(computeScore([], "stick", { ropeJumps: [[J("4b")]] }).handScore).toBe(0);
+  });
+
+  it("前2重→前3重を続けて跳ぶと、その場前回し2回以上連続を満たす", () => {
+    const front = (jumps: ReturnType<typeof J>[]) =>
+      computeScore([], "rope", { ropeJumps: [jumps] }).apparatusElementChecks.find(
+        (c) => c.key === "appEl_rope_front",
+      )?.passed;
+    expect(front([J("2f"), J("3f")])).toBe(true);
+    expect(front([J("2f"), J("1b"), J("3f")])).toBe(false);
+    expect(front([J("2f")])).toBe(false);
+  });
+
+  it("跳びシリーズが分かれていれば連続にならない（要所ごとの実施）", () => {
+    const el = (groups: ReturnType<typeof J>[][], id: string) =>
+      computeScore([], "rope", { ropeJumps: groups }).apparatusElementChecks.find((c) => c.key === `appEl_rope_${id}`)
+        ?.passed;
+    // 前跳び1回ずつを別々の要所で実施 → 連続2回にならない
+    expect(el([[J("2f")], [J("3f")]], "front")).toBe(false);
+    expect(el([[J("2f"), J("3f")]], "front")).toBe(true);
+    // 6m移動2回＋1回 → 3回連続にならない
+    const m = (n: number) => J("2b", { isMoving6m: true, count: n });
+    expect(el([[m(2)], [m(1)]], "moving")).toBe(false);
+    expect(el([[m(2), m(1)]], "moving")).toBe(true);
+  });
+
+  it("跳びシリーズをまたいでも、難度の重複と上位3つは全体で数える", () => {
+    const r = computeScore([], "rope", { ropeJumps: [[J("3b")], [J("3b")], [J("4b")]] });
+    expect(r.ropeJumpRows.map((x) => [x.group, x.index, x.duplicate])).toEqual([
+      [0, 0, false],
+      [1, 0, true],
+      [2, 0, false],
+    ]);
+    expect(r.handScore).toBeCloseTo(0.3 + 0.5, 5);
+  });
+
+  it("様々な跳び加点は同じ跳びシリーズの中の連続で判定する", () => {
+    const b = (groups: ReturnType<typeof J>[][]) => computeScore([], "rope", { ropeJumps: groups }).jumpVarietyBonus;
+    const m = (n: number) => J("2b", { isMoving6m: true, count: n });
+    expect(b([[m(3)]])).toBeGreaterThan(0);
+    expect(b([[m(2)], [m(1)]])).toBe(0);
+  });
+
+  it("旧データのシリーズ内ロープ跳びも跳びシリーズとして数える", () => {
+    const r = computeScore([S(J("3bc"))], "rope");
+    expect(r.ropeJumpRows.map((x) => x.difficulty)).toEqual(["D"]);
+  });
+});
+
 describe("computeScore — つなぎ技のA難度に手具操作なし（Q10）", () => {
   it("後方一回半ひねり(操作なし)〜ロンダート(操作なし)〜ダイビング前宙(操作あり)で −0.2", () => {
     const r = computeScore(
@@ -451,11 +549,6 @@ describe("computeScore — 徒手難度点の投げごとの内訳（handRows）
     const sumTum = r.seriesBreakdowns.reduce((s, b) => s + b.tumDiff, 0);
     expect(sumHand).toBeCloseTo(r.handScore, 5);
     expect(sumTum).toBeCloseTo(r.tumblingScore, 5);
-  });
-
-  it("ロープ跳び由来の行はラベルが「ロープ跳び」", () => {
-    const r = computeScore([S({ kind: "ropeJump", jumpId: "3b" })], "rope");
-    expect(r.seriesBreakdowns[0].handRows.map((x) => x.label)).toEqual(["ロープ跳び"]);
   });
 });
 
@@ -696,13 +789,13 @@ describe("computeScore — タンブリング難度点も塊ごとの内訳を�
     );
     expect(held.seriesBreakdowns[0].tumRows[0].score).toBeCloseTo(0.7, 5);
     expect(held.apparatusOpBonus).toBeCloseTo(0.1, 5);
-    // 手具を保持していなければ付かない
+    // 手具操作のチェックが無くても、技の最中の投げがあれば付く（シリーズとしてEなら成立）
     const free = computeScore(
       [S({ kind: "skill", skillId: "e_doublelay", isThrow: true }, { kind: "catch" })],
       "clubs",
     );
-    expect(free.apparatusOpBonus).toBe(0);
-    expect(free.dScore).toBeCloseTo(0.7, 5);
+    expect(free.apparatusOpBonus).toBeCloseTo(0.1, 5);
+    expect(free.dScore).toBeCloseTo(0.8, 5);
   });
 
   it("手具操作2回以上と技の最中の投げは重複しない（まとめて最大0.1）", () => {
@@ -842,7 +935,6 @@ describe("computeScore — 必須投げ（左手投げ／二つ同時投げ）�
       "右投げ右受け1回以上（自動判定）",
       "転回系の投げ受け（自動判定）",
       "1m以上のころがし",
-      "プロペラ回旋2回以上",
     ]);
     expect(el(r, "stick_left")?.passed).toBe(false);
   });
@@ -892,11 +984,21 @@ describe("computeScore — ロープの跳び要求要素は手具別必須要�
     expect(el(r, "triple")?.label).toBe("3重跳び（自動判定）");
   });
 
-  it("6m移動の跳びが3回以上で満たす", () => {
+  it("6m移動の跳びが3回以上続けば満たす（種類が違っても、回数入力でも）", () => {
     const two = computeScore([S(jump("2f", true), jump("2b", true))], "rope");
     expect(el(two, "moving")?.passed).toBe(false);
     const three = computeScore([S(jump("2f", true), jump("2b", true), jump("3f", true))], "rope");
     expect(el(three, "moving")?.passed).toBe(true);
+    const counted = computeScore([S({ ...jump("2f", true), count: 3 })], "rope");
+    expect(el(counted, "moving")?.passed).toBe(true);
+  });
+
+  it("6m移動の連続は間に移動しない跳びが入ると切れる", () => {
+    const split = computeScore(
+      [S(jump("2f", true), jump("2b", true), jump("1f"), jump("3f", true))],
+      "rope",
+    );
+    expect(el(split, "moving")?.passed).toBe(false);
   });
 
   it("その場の前回し／後ろ回しは2回以上連続で満たす", () => {
@@ -905,6 +1007,33 @@ describe("computeScore — ロープの跳び要求要素は手具別必須要�
     expect(el(r, "back")?.passed).toBe(false);
     const r2 = computeScore([S(jump("1b"), jump("2b"))], "rope");
     expect(el(r2, "back")?.passed).toBe(true);
+  });
+
+  it("その場の連続は、1つの跳びに回数2以上を入れても満たす", () => {
+    const r = computeScore([S({ ...jump("2b"), count: 2 })], "rope");
+    expect(el(r, "back")?.passed).toBe(true);
+    const once = computeScore([S(jump("2b"))], "rope");
+    expect(el(once, "back")?.passed).toBe(false);
+  });
+
+  it("6m移動の跳びはその場の前回し／後ろ回しには数えない", () => {
+    const r = computeScore([S({ ...jump("2f", true), count: 3 })], "rope");
+    expect(el(r, "front")?.passed).toBe(false);
+  });
+
+  it("回数0の跳びはどの要求要素にも数えない", () => {
+    const r = computeScore([S({ ...jump("3b"), count: 0 })], "rope");
+    expect(el(r, "triple")?.passed).toBe(false);
+  });
+
+  it("様々な跳び加点：6m移動の3回以上の連続に2重跳び以上が3回以上", () => {
+    const bonus = (items: Item[]) => computeScore([S(...items)], "rope").jumpVarietyBonus;
+    expect(bonus([{ ...jump("2f", true), count: 3 }])).toBeGreaterThan(0);
+    expect(bonus([jump("2f", true), jump("2b", true), jump("3f", true)])).toBeGreaterThan(0);
+    // 1重が混ざって2重以上が2回だけ
+    expect(bonus([jump("1f", true), jump("2b", true), jump("3f", true)])).toBe(0);
+    // 2重以上は3回だが、移動しない跳びで連続が切れている
+    expect(bonus([jump("2f", true), jump("2b", true), jump("2b"), jump("3f", true)])).toBe(0);
   });
 
   it("必須要素チェックからは外れている", () => {
@@ -966,6 +1095,9 @@ describe("computeScore — 必須要素チェックの不足も減点する", ()
       r.saltoChainDeduction +
       r.varietyDeduction +
       r.missingElementDeduction +
+      r.deepMotionDeduction +
+      r.flexDeduction +
+      r.handOpDeduction +
       r.apparatusElementDeduction +
       r.violationDeduction;
     expect(sum).toBeCloseTo(r.aDeduction, 5);
@@ -1071,5 +1203,147 @@ describe("その手具では入力できない内容は採点しない", () => {
     const jump = [S({ kind: "ropeJump", jumpId: "3fc", isMoving6m: false })];
     expect(computeScore(jump, "stick").dScore).toBe(0);
     expect(computeScore(jump, "rope").dScore).toBeGreaterThan(0);
+  });
+});
+
+describe("技の最中の二つ投げ（必須投げ）", () => {
+  it("クラブの必須投げ（2つ同時投げ）を満たす", () => {
+    const ser = {
+      executionDeduction: 0,
+      items: [
+        { kind: "skill", skillId: "a_roundoff", hasApparatus: true, isThrow: false },
+        { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: true, reqTypes: ["twothrow"] },
+        { kind: "motion", motionId: "fwd_roll", count: 1 },
+        { kind: "catch", catchTwo: true },
+      ],
+    } as Series;
+    const passed = (list: Series[]) =>
+      computeScore(list, "clubs").apparatusElementChecks.find((c) => c.label.includes("2つ同時投げ"))
+        ?.passed;
+    expect(passed([ser])).toBe(true);
+    // 二つ投げを外すと満たさない
+    const plain = structuredClone(ser);
+    (plain.items[1] as { reqTypes?: string[] }).reqTypes = [];
+    (plain.items[3] as { catchTwo?: boolean }).catchTwo = false;
+    expect(passed([plain])).toBe(false);
+  });
+});
+
+describe("きりもみ系は手具操作ができない", () => {
+  const skill = (skillId: string, hasApparatus: boolean): Item => ({
+    kind: "skill",
+    skillId,
+    hasApparatus,
+    isThrow: false,
+  });
+
+  it("定義で判定できる（きりもみ・きりもみ転回だけ）", () => {
+    expect(canOperateApparatus("b_kirimomi")).toBe(false);
+    expect(canOperateApparatus("c_kirimomiten")).toBe(false);
+    expect(canOperateApparatus("b_front")).toBe(true);
+    expect(canOperateApparatus("a_roundoff")).toBe(true);
+  });
+
+  it("入力に残っていても手具操作として数えない（宙返り系すべてに操作なしの減点が出る）", () => {
+    // 連続の中のきりもみは宙返りとして数える。操作はロンダート（A難度）ときりもみだけ
+    // → 宙返り系のどれにも操作が無い扱いになる
+    const onlyKirimomi = computeScore(
+      [S(skill("a_roundoff", true), skill("c_back15", false), skill("b_kirimomi", true))],
+      "stick",
+    );
+    expect(onlyKirimomi.noApparatusDeduction).toBeCloseTo(NO_APP_SALTO_DEDUCTION, 5);
+    // きりもみにしか付いていなければ、シリーズ全体に操作なしの扱い
+    const nothingElse = computeScore([S(skill("c_back15", false), skill("b_kirimomi", true))], "stick");
+    expect(nothingElse.noApparatusDeduction).toBeCloseTo(NO_APP_ALL_DEDUCTION, 5);
+    // ほかの宙返りに操作が付いていれば減点されない
+    const withOther = computeScore([S(skill("c_back15", true), skill("b_kirimomi", true))], "stick");
+    expect(withOther.noApparatusDeduction).toBe(0);
+  });
+
+  it("手具操作加点（操作2回以上）にも数えない", () => {
+    // E難度の連続。前宙・きりもみの2本に操作を付けても、きりもみは数えないので1回どまり
+    const kiri = computeScore(
+      [S(skill("c_back15", true), skill("b_front", false), skill("b_kirimomi", true))],
+      "stick",
+    );
+    expect(kiri.apparatusOpBonus).toBe(0);
+    // きりもみの代わりに前宙に付ければ2回になり、加点が付く
+    const ok = computeScore(
+      [S(skill("c_back15", true), skill("b_front", true), skill("b_kirimomi", false))],
+      "stick",
+    );
+    expect(ok.apparatusOpBonus).toBeGreaterThan(0);
+  });
+});
+
+describe("技の最中の受け（点数の扱いは技の最中の投げと同じ）", () => {
+  const catching = (catchTypes?: string[]): Item => ({
+    kind: "skill",
+    skillId: "b_front",
+    hasApparatus: false,
+    isThrow: false,
+    isCatch: true,
+    ...(catchTypes ? { catchTypes } : {}),
+  });
+
+  it("受け方の技術タグが技術加点に効く（キャッチアイテムと同額）", () => {
+    const plain = computeScore([S({ kind: "throw" }, catching())], "stick");
+    const tagged = computeScore([S({ kind: "throw" }, catching(["noview"]))], "stick");
+    expect(tagged.techniqueBonus - plain.techniqueBonus).toBeCloseTo(TECHNIQUE_BONUS, 5);
+    // キャッチアイテムに同じタグを付けた構成と同額
+    const asItem = computeScore(
+      [S({ kind: "throw" }, { kind: "skill", skillId: "b_front", hasApparatus: false, isThrow: false }, { kind: "catch", catchTypes: ["noview"] })],
+      "stick",
+    );
+    expect(tagged.techniqueBonus).toBeCloseTo(asItem.techniqueBonus, 5);
+  });
+
+  it("受け方の種類として数える（多様な受け方の充足に効く）", () => {
+    // 通常キャッチ＋技の最中の視野外受け＋手以外キャッチ ＝ 受け方3種類
+    const r = computeScore(
+      [
+        S({ kind: "throw" }, { kind: "catch" }),
+        S({ kind: "throw" }, catching(["noview"])),
+        S({ kind: "throw" }, { kind: "catch", catchTypes: ["nonhand"] }),
+      ],
+      "stick",
+    );
+    expect(r.catchKindCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it("転回系の投げ受け（投げタン）の必須要素を満たす", () => {
+    const r = computeScore([S({ kind: "throw" }, catching())], "stick");
+    expect(r.required.find((x) => x.key === "throwTum")?.passed).toBe(true);
+  });
+
+  it("受けたあと連鎖が続く実施例は1本の投げタンになる（リング）", () => {
+    // 実施例：投げ→ロンダート（手具を使ったキャッチ）→後方宙返り1回半ひねり→ロンダート→
+    // ダイビング前宙。受けた技で切ると、ロンダート1本＝徒手ユニットB難度になり
+    // 「転回系の投げ受け」を満たさなくなる
+    const skill = (skillId: string): Item => ({ kind: "skill", skillId, hasApparatus: true, isThrow: false });
+    const ser = S(
+      { kind: "throw" },
+      { kind: "skill", skillId: "a_roundoff", hasApparatus: false, isThrow: false, isCatch: true, catchTypes: ["useapp"] },
+      skill("c_back15"),
+      skill("a_roundoff"),
+      skill("b_divefront"),
+    );
+    const r = computeScore([ser], "ring");
+    expect(r.required.find((x) => x.key === "throwTum")?.passed).toBe(true);
+    // タンブリング側にE難度1本ぶんが乗る（徒手ユニットは作られない）
+    expect(r.tumblingScore).toBeCloseTo(DIFF_SCORE.E, 5);
+    expect(r.handScore).toBeCloseTo(0, 5);
+    // 手具を使ったキャッチの技術加点も付く
+    expect(r.techniqueBonus).toBeCloseTo(TECHNIQUE_BONUS, 5);
+  });
+
+  it("難度はキャッチアイテムで書いた同じ内容と一致する", () => {
+    const inSkill = computeScore([S({ kind: "throw" }, catching())], "stick");
+    const asItem = computeScore(
+      [S({ kind: "throw" }, { kind: "skill", skillId: "b_front", hasApparatus: false, isThrow: false }, { kind: "catch" })],
+      "stick",
+    );
+    expect(inSkill.tumblingScore).toBeCloseTo(asItem.tumblingScore, 5);
+    expect(inSkill.handScore).toBeCloseTo(asItem.handScore, 5);
   });
 });

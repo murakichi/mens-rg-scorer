@@ -3,7 +3,17 @@
 // =====================================================================
 
 export type ApparatusKey = "stick" | "clubs" | "ring" | "rope";
-export type Difficulty = "A" | "B" | "C" | "D" | "E";
+/**
+ * 難度。F・G は現行規則には無く、十年後モード（`FutureLevel`）でだけ認定する。
+ * 現行規則で採点するあいだは `skillDifficulty` などが E に丸めるので表に出ない。
+ */
+export type Difficulty = "A" | "B" | "C" | "D" | "E" | "F" | "G";
+
+/**
+ * 十年後モードの上限難度。null がモードOFF（現行規則どおり E 止め）。
+ * "F" なら F難度まで、"G" なら G難度までを認定する。
+ */
+export type FutureLevel = "F" | "G" | null;
 
 /** 演技を構成する1アイテム。kind で判別する判別共用体。 */
 export type Item =
@@ -38,6 +48,23 @@ export interface SkillItem {
   isThrow?: boolean;
   /** 技の最中の投げの技術タグ（noview / nonhand / useapp）。isThrow 時のみ有効。 */
   throwTypes?: string[];
+  /**
+   * 技の最中の投げの必須投げ（`twothrow` ＝ 二つ投げ）。`isThrow` 時のみ有効。
+   * 投げアイテムの `reqTypes` と同じ扱いで、手元/空中の手具数にも必須要素の判定にも効く。
+   */
+  reqTypes?: string[];
+  /**
+   * この技の最中に受けを行うか（`isThrow` とは同時に成り立たない）。
+   * **点数の扱いは技の最中の投げと同じ** — キャッチアイテムと同じようにユニットを閉じ、
+   * `catchTypes` は技術加点・多様な受け方・必須要素に効く。
+   * 受けるのは技の終わりなので、その技自体に手具操作は付けられない
+   * （投げの技は離す瞬間まで手元にあるので付けられる。そこが投げと非対称）。
+   */
+  isCatch?: boolean;
+  /** 技の最中の受けの技術タグ（noview / nonhand / useapp）。`isCatch` 時のみ有効。 */
+  catchTypes?: string[];
+  /** 技の最中の受けが2つ同時キャッチか。`isCatch` 時のみ有効。 */
+  catchTwo?: boolean;
 }
 
 export interface MotionItem {
@@ -52,12 +79,21 @@ export interface MotionItem {
   count?: number;
 }
 
+/**
+ * ロープの跳び。構成全体の跳びリスト（`SaveData.ropeJumps`、徒手・構成タブで入力）の1行で、
+ * 続けて並べたものが連続した跳びになる。旧データではシリーズの中にも入っており、
+ * 読み込み時に `hoistRopeJumps` がリストへ移す。
+ */
 export interface RopeJumpItem {
   kind: "ropeJump";
   /** ROPE_JUMPS の id */
   jumpId: string;
   /** 6m以上の移動を伴う跳びか */
   isMoving6m?: boolean;
+  /** クロスで跳んだか（2重・3重だけ難度に効く） */
+  cross?: boolean;
+  /** 跳んだ回数（未指定は1回）。3重の2回・3回以上、4重の2回以上は回数で難度が変わる。 */
+  count?: number;
 }
 
 export interface Series {
@@ -91,6 +127,25 @@ export interface Skill {
   isHandElement?: boolean;
   /** 2回宙返り系か（ジュニア適用規則では禁止のため選択肢に出さない） */
   isDoubleSalto?: boolean;
+  /**
+   * 十年後モードでだけ実施できる技（F・G難度）。現行規則の選択肢には出さない。
+   * 上限（`FutureLevel`）より高い難度の技も出さないので、F設定ではG難度の技は選べない。
+   */
+  future?: boolean;
+  /** 団体でしか実施しない技（個人モードの選択肢に出さない） */
+  teamOnly?: boolean;
+  /**
+   * 自動生成では組み立てない技（入力画面には出す）。
+   * ダイビングのように、実施はされるがシステム側で提案する性質のものではない技に付ける。
+   */
+  noAuto?: boolean;
+  /**
+   * 実施中に**手具操作ができない**技（きりもみ・きりもみ転回）。
+   * 首から背中にかけて着地するので、手具を操作しながらは実施できない。
+   * 入力画面では手具操作のチェックを出さず、採点でも手具操作として数えない
+   * （`canOperateApparatus`）。技の最中の投げ（手を離すだけ）は実施できる。
+   */
+  noApparatusOp?: boolean;
   /** ひねり・姿勢から組み立てられる宙返りか（`TwistParams` と1対1） */
   twist?: TwistParams;
 }
@@ -126,13 +181,11 @@ export interface HandMotion {
 export interface Unit {
   type: "tumbling" | "throw";
   isThrow: boolean;
-  /** このユニットに含まれる投げ上げの回数（タンブリング塊・ロープ跳びは0） */
+  /** このユニットに含まれる投げ上げの回数（タンブリング塊は0） */
   throwCount: number;
   skillThrow: boolean;
   /** 投げ単位かつ技を含む＝投げタン */
   isThrowTumbling?: boolean;
-  /** ロープ跳びから生成した徒手系ユニット（実際の投げ受けではない） */
-  fromRopeJump?: boolean;
   /**
    * 難度の内容を表す正規化キー。§3.4.4「全く同じ技は難度として数えない」の判定に使う。
    * 技術タグ（視野外・手以外など）は難度の内容ではないため含めない。
@@ -140,6 +193,11 @@ export interface Unit {
    * ことがある（Q&A Q21）。表示や比較には先頭の要素を使う。
    */
   signatures: string[];
+  /**
+   * 投げタン（投げ＋転回系）の**投げ側（徒手）の内容キー**。`signatures` は転回側のキーなので、
+   * 投げと転回を別々に評価するレーティングが投げ側の重複を判定するのに使う。投げタン以外は持たない。
+   */
+  handSignatures?: string[];
   /** 「その他」の手ありシェネを含み、いくつあっても重複と見なさないユニットか */
   neverDuplicate?: boolean;
   skills: { skillId: string; hasApparatus: boolean; isThrow: boolean }[];
@@ -170,5 +228,13 @@ export interface SaveData {
   junior?: boolean;
   /** §3.5.6.4 芸術と多様性の欠点テーブル（項目id → 減点）。 */
   artDeductions?: Record<string, number>;
+  /** 実施した基本徒手のid（BASIC_HAND_ELEMENTS）。 */
+  basicHands?: string[];
+  /** 実施した手具操作のチェック項目id（HAND_OP_CHECKS）。 */
+  handOps?: string[];
+  /** 身体を離れる手具操作の回数。 */
+  offBodyCount?: number;
+  /** 単独で実施した徒手系要素（跳躍・柔軟）のid。 */
+  handElements?: string[];
   series: Series[];
 }

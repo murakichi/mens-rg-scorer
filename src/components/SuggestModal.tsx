@@ -6,13 +6,15 @@ import {
   suggestImprovements,
   type Suggestion,
 } from "../scoring/suggest";
-import type { ApparatusKey, Series } from "../scoring/types";
+import type { ApparatusKey, FutureLevel, Series } from "../scoring/types";
 
 interface Props {
   open: boolean;
   series: Series[];
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 十年後モードの上限難度（null＝OFF） */
+  future?: FutureLevel;
   /**
    * 採点画面で入力済みのA側の減点。これを渡さないと A残点 の基準がずれる
    * （とくに減点が10点に達していると、実際には増えない分を「上がる」と出してしまう）。
@@ -31,6 +33,7 @@ export function SuggestModal({
   series,
   apparatus,
   junior,
+  future = null,
   apparatusElements,
   violations,
   artDeductions,
@@ -40,9 +43,15 @@ export function SuggestModal({
   const list = useMemo<Suggestion[]>(
     () =>
       open
-        ? suggestImprovements(series, apparatus, { junior, apparatusElements, violations, artDeductions })
+        ? suggestImprovements(series, apparatus, {
+            junior,
+            future,
+            apparatusElements,
+            violations,
+            artDeductions,
+          })
         : [],
-    [open, series, apparatus, junior, apparatusElements, violations, artDeductions],
+    [open, series, apparatus, junior, future, apparatusElements, violations, artDeductions],
   );
   if (!open) return null;
 

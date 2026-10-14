@@ -1,27 +1,34 @@
-import { useState } from "react";
-import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
+  THROW_OPTIONS_SIDE,
+  SIDE_THROW_TAG,
+  NO_VIEW_TAG,
+  canUseSideThrow,
   SKILL_THROW_OPTIONS_COMMON,
   CATCH_OPTIONS_COMMON,
+  catchOptionBlocked,
   CATCH_OPTIONS_APPARATUS,
   REQUIRED_THROW_OPTIONS,
+  TWO_THROW_TAG,
+  USE_APPARATUS_TAG,
   APPARATUS_USE,
   skillDef,
-  skillAllowed,
+  skillBlockedReason,
   skillOptionGroups,
   skillDifficulty,
+  canOperateApparatus,
   hasTwoThrow,
   motionOptionsFor,
   motionOptionGroupsFor,
   legacyMotionDef,
   HANDS_TYPES,
   DEFAULT_HANDS_TYPE,
-  ROPE_JUMPS,
   POSTURE_OPTIONS,
   TWIST_BASES,
-  TWIST_OPTIONS,
+  twistOptions,
   TWIST_ID_PREFIX,
   buildTwistSkillId,
   parseTwistSkillId,
@@ -31,14 +38,19 @@ import {
 import {
   checkApparatusFlow,
   handsEmptyFlags,
+  catchTwoFlags,
   maxSaltoChain,
   needsRoundoffBefore,
   prevSkillId,
   SERIES_TAGS,
   seriesTags,
 } from "../scoring/analysis";
+import { tumblingChainEndErrors } from "../scoring/tumblingChain";
+import { seriesNickname } from "../scoring/nickname";
+import { describeSeries, itemLabel } from "../scoring/templates";
+import type { AutoInputSuggestion } from "../scoring/autoInput";
 import type { SkillFlow } from "../scoring/constants";
-import type { ApparatusKey, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
+import type { ApparatusKey, FutureLevel, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
 import type { DiffRow, SeriesBreakdown } from "../scoring/score";
 import type { SeriesTemplateOption } from "./SeriesListEditor";
 
@@ -63,6 +75,8 @@ interface Props {
   apparatus: ApparatusKey;
   /** ジュニア適用規則で採点中か（技の難度表示に反映） */
   junior: boolean;
+  /** 十年後モードの上限難度（null＝OFF）。技の選択肢・難度表示・ひねりの選択肢に反映する。 */
+  future?: FutureLevel;
   analysis: SeriesAnalysis;
   /** analysis.units と同じ並びで、そのユニットが難度点に採用されたか */
   unitAdopted: boolean[];
@@ -76,12 +90,18 @@ interface Props {
   showExec?: boolean;
   /** 共通テンプレートの編集か（手具固有の入力を出さない） */
   common?: boolean;
+  /** 手具無しの入力か（投げ・キャッチ・手具操作を出さない。レーティング用） */
+  noApparatus?: boolean;
   /** テンプレート読み込みプルダウンの選択肢（省略時はプルダウンを出さない） */
   templateOptions?: SeriesTemplateOption[];
   onLoadTemplate?: (templateId: string) => void;
   onSaveTemplate?: () => void;
   onUpdateField: (patch: Partial<Series>) => void;
   onAddItem: (kind: ItemKind) => void;
+  /** 自動入力の候補（先頭が既定。空なら出さない） */
+  autoInput?: AutoInputSuggestion[];
+  /** 自動入力を確定する（アイテムをシリーズ末尾に足す） */
+  onAddItems?: (items: Item[]) => void;
   onUpdateItem: (iIdx: number, patch: Partial<Item>) => void;
   onRemoveItem: (iIdx: number) => void;
   /** 技を隣の技と入れ替える（dir: -1 で前、+1 で後ろ） */
@@ -118,23 +138,52 @@ function toggle(list: string[] | undefined, id: string, checked: boolean): strin
   return checked ? [...cur, id] : cur.filter((x) => x !== id);
 }
 
+/**
+ * 視野外の投げの方向（真後ろ／横）。横は既存の横投げタグ（`side`）で表すので、
+ * 点数の扱いは横投げと同じ（技術加点にはならず、投げ方の種類は真後ろと別に数える）。
+ * 視野外のときは通常の「横投げ」チェックの代わりにこの選択を出す。
+ */
+function NoViewDirection({ types, onChange }: { types: string[] | undefined; onChange: (next: string[]) => void }) {
+  const side = (types || []).includes(SIDE_THROW_TAG);
+  const set = (toSide: boolean) => onChange(toggle(types, SIDE_THROW_TAG, toSide));
+  return (
+    <span className="check-req">
+      視野外の方向
+      <label className="check">
+        <input type="radio" checked={!side} onChange={() => set(false)} />
+        真後ろ
+      </label>
+      <label className="check">
+        <input type="radio" checked={side} onChange={() => set(true)} />横
+      </label>
+    </span>
+  );
+}
+
 function ItemEditor({
   item,
   apparatus,
   junior,
+  future,
   common,
+  noApparatus,
   twistMode,
   onTwistModeChange,
   flow,
   prevMotionId,
   handsEmpty,
+  catchTwoAllowed,
   onUpdate,
 }: {
   item: Item;
   apparatus: ApparatusKey;
   junior: boolean;
+  /** 十年後モードの上限難度（null＝OFF） */
+  future: FutureLevel;
   /** 共通テンプレートの編集か（手具固有の入力を出さない） */
   common?: boolean;
+  /** 手具無しの入力か（手具操作・技の最中の投げ／受けを出さない） */
+  noApparatus?: boolean;
   /** このブロックをひねり・姿勢で指定するモードか */
   twistMode: boolean;
   onTwistModeChange: (on: boolean) => void;
@@ -144,32 +193,57 @@ function ItemEditor({
   prevMotionId?: string;
   /** 投げている間（手元に手具が無い）か。手具操作は付けられない */
   handsEmpty?: boolean;
+  /** このキャッチで2つ同時キャッチを入力できるか（2つとも空中にあるときだけ） */
+  catchTwoAllowed?: boolean;
   onUpdate: (patch: Partial<Item>) => void;
 }) {
   if (item.kind === "throw") {
+    // 二つ投げ（両方を投げる）と手具を使った投げ（もう一方で押さえる）は排他
+    const twoThrow = (item.reqTypes || []).includes(TWO_THROW_TAG);
+    const useApparatusThrow = (item.throwTypes || []).includes(USE_APPARATUS_TAG);
+    const noView = (item.throwTypes || []).includes(NO_VIEW_TAG);
+    const sideDirection = !common && canUseSideThrow(apparatus);
     return (
       <>
         <div className="throw-tag">投げ</div>
-        {[...THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map((opt) => (
-          <label key={opt.id} className="check">
-            <input
-              type="checkbox"
-              checked={(item.throwTypes || []).includes(opt.id)}
-              onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
-            />
-            {opt.name}
-          </label>
-        ))}
-        {(common ? [] : REQUIRED_THROW_OPTIONS[apparatus]).map((opt) => (
-          <label key={opt.id} className="check-req">
-            <input
-              type="checkbox"
-              checked={(item.reqTypes || []).includes(opt.id)}
-              onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
-            />
-            {opt.name}
-          </label>
-        ))}
+        {[
+          ...THROW_OPTIONS_COMMON,
+          ...(sideDirection && !noView ? THROW_OPTIONS_SIDE : []),
+          ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
+        ].map((opt) => {
+          const on = (item.throwTypes || []).includes(opt.id);
+          // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
+          const blocked = opt.id === USE_APPARATUS_TAG && !on && twoThrow;
+          return (
+            <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={blocked}
+                onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
+              />
+              {opt.name}
+            </label>
+          );
+        })}
+        {sideDirection && noView && (
+          <NoViewDirection types={item.throwTypes} onChange={(throwTypes) => onUpdate({ throwTypes })} />
+        )}
+        {(common ? [] : REQUIRED_THROW_OPTIONS[apparatus]).map((opt) => {
+          const on = (item.reqTypes || []).includes(opt.id);
+          const blocked = opt.id === TWO_THROW_TAG && !on && useApparatusThrow;
+          return (
+            <label key={opt.id} className={blocked ? "check-req is-disabled" : "check-req"}>
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={blocked}
+                onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
+              />
+              {opt.name}
+            </label>
+          );
+        })}
       </>
     );
   }
@@ -177,17 +251,23 @@ function ItemEditor({
     return (
       <>
         <div className="catch-tag">キャッチ</div>
-        {[...CATCH_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])].map((opt) => (
-          <label key={opt.id} className="check">
-            <input
-              type="checkbox"
-              checked={(item.catchTypes || []).includes(opt.id)}
-              onChange={(e) => onUpdate({ catchTypes: toggle(item.catchTypes, opt.id, e.target.checked) })}
-            />
-            {opt.name}
-          </label>
-        ))}
-        {!common && APPARATUS_USE[apparatus] && (
+        {[...CATCH_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])].map((opt) => {
+          // 手具を使ったキャッチと手以外のキャッチは同時に実施できない
+          const blocked = catchOptionBlocked(opt.id, item.catchTypes);
+          return (
+            <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+              <input
+                type="checkbox"
+                checked={(item.catchTypes || []).includes(opt.id)}
+                disabled={blocked}
+                onChange={(e) => onUpdate({ catchTypes: toggle(item.catchTypes, opt.id, e.target.checked) })}
+              />
+              {opt.name}
+            </label>
+          );
+        })}
+        {/* 2つ同時キャッチは二つ投げで2つとも空中にあるときだけ（すでに付いていれば外せるように残す） */}
+        {!common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) && (
           <label className="check-req">
             <input
               type="checkbox"
@@ -201,16 +281,20 @@ function ItemEditor({
     );
   }
   if (item.kind === "skill") {
+    // 技の最中の投げでも二つ投げは実施できる（手具を使った投げとは排他）
+    const skillTwoThrow = (item.reqTypes || []).includes(TWO_THROW_TAG);
     const params = parseTwistSkillId(item.skillId);
     // 後ろ向きで終わった後は後方系しか出さない（初期値もそれに合わせる）
     const fallbackTwist = flow.forward ? DEFAULT_TWIST_FORWARD : DEFAULT_TWIST;
     const cur = params ?? fallbackTwist;
     const setTwist = (patch: Partial<TwistParams>) =>
       onUpdate({ skillId: buildTwistSkillId({ ...cur, ...patch }) });
-    const groups = skillOptionGroups(junior, flow);
+    const groups = skillOptionGroups(junior, flow, future);
     // 選択中の技が選択肢に無いとき（ジュニア禁止・その位置で実施しない系統・
     // 一覧に無いひねりの組み合わせ）は、消さずに選択値として残す
     const listed = groups.some((g) => g.skills.some((sk) => sk.id === item.skillId));
+    // 選択肢に無い技を残すときの但し書き（ジュニア禁止・十年後モード専用・団体のみ）
+    const blockedReason = skillBlockedReason(item.skillId, junior, future);
     // すでに選ばれている向きは、その位置で実施しない系統でも残す
     const bases = TWIST_BASES.filter((b) =>
       b.id === cur.base ? true : b.id === "back" ? flow.backward : flow.forward,
@@ -261,14 +345,14 @@ function ItemEditor({
               value={cur.twist}
               onChange={(e) => setTwist({ twist: Number(e.target.value) })}
             >
-              {TWIST_OPTIONS.map((t) => (
+              {twistOptions(future, { base: cur.base, posture: cur.posture }).map((t) => (
                 <option key={t} value={t}>
                   {twistLabel(t)}
                 </option>
               ))}
             </select>
             <span className="twist-name">
-              {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}）
+              {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior, future)}）
             </span>
           </div>
         ) : (
@@ -282,8 +366,8 @@ function ItemEditor({
               {/* 選択肢に無い技が入っている場合は、消さずに選択値として残す */}
               {item.skillId && !listed && (
                 <option value={item.skillId}>
-                  {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior)}
-                  {skillAllowed(item.skillId, junior) ? "" : "・ジュニア禁止"}）
+                  {skillDef(item.skillId)?.name}（{skillDifficulty(item.skillId, junior, future)}
+                  {blockedReason && `・${blockedReason}`}）
                 </option>
               )}
               {/* 前方系・側方系・後方系に分けて表示 */}
@@ -291,7 +375,7 @@ function ItemEditor({
                 <optgroup key={g.name} label={g.name}>
                   {g.skills.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name}（{skillDifficulty(s.id, junior)}）
+                      {s.name}（{skillDifficulty(s.id, junior, future)}）
                     </option>
                   ))}
                 </optgroup>
@@ -299,8 +383,9 @@ function ItemEditor({
             </select>
           </div>
         )}
-        {/* 投げている間は手元に手具が無いので操作できない */}
-        {!handsEmpty && (
+        {/* 投げている間は手元に手具が無いので操作できない。
+            きりもみ系は首から背中にかけて着地するので、実施中に操作できない */}
+        {!noApparatus && !handsEmpty && canOperateApparatus(item.skillId) && (
           <label className="check">
             <input
               type="checkbox"
@@ -310,54 +395,123 @@ function ItemEditor({
             手具操作
           </label>
         )}
-        <label className="check">
+        {!noApparatus && (
+          <>
+        {/* 投げと受けは同じ技では実施できない。入っているほうは外せるように残す */}
+        <label className={!item.isThrow && item.isCatch ? "check is-disabled" : "check"}>
           <input
             type="checkbox"
             checked={item.isThrow || false}
+            disabled={!item.isThrow && !!item.isCatch}
             onChange={(e) =>
-              onUpdate(e.target.checked ? { isThrow: true } : { isThrow: false, throwTypes: [] })
+              onUpdate(
+                e.target.checked
+                  ? { isThrow: true }
+                  : { isThrow: false, throwTypes: [], reqTypes: [] },
+              )
             }
           />
           この技の最中に投げ
         </label>
-        {item.isThrow &&
-          [...SKILL_THROW_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : [])].map(
-            (opt) => (
-              <label key={opt.id} className="check">
+        <label className={!item.isCatch && item.isThrow ? "check is-disabled" : "check"}>
+          <input
+            type="checkbox"
+            checked={item.isCatch || false}
+            disabled={!item.isCatch && !!item.isThrow}
+            onChange={(e) =>
+              onUpdate(
+                e.target.checked
+                  ? { isCatch: true }
+                  : { isCatch: false, catchTypes: [], catchTwo: false },
+              )
+            }
+          />
+          この技の最中に受け
+        </label>
+        {/* 受け方の種類はキャッチアイテムと同じ（点数の扱いも同じ） */}
+        {item.isCatch &&
+          [
+            ...CATCH_OPTIONS_COMMON,
+            ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : []),
+          ].map((opt) => {
+            const blocked = catchOptionBlocked(opt.id, item.catchTypes);
+            return (
+              <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
                 <input
                   type="checkbox"
-                  checked={(item.throwTypes || []).includes(opt.id)}
-                  onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
+                  checked={(item.catchTypes || []).includes(opt.id)}
+                  disabled={blocked}
+                  onChange={(e) => onUpdate({ catchTypes: toggle(item.catchTypes, opt.id, e.target.checked) })}
                 />
                 {opt.name}
               </label>
-            ),
+            );
+          })}
+        {item.isCatch && !common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) && (
+          <label className="check-req">
+            <input
+              type="checkbox"
+              checked={item.catchTwo || false}
+              onChange={(e) => onUpdate({ catchTwo: e.target.checked })}
+            />
+            2つ同時キャッチ
+          </label>
+        )}
+        {item.isThrow &&
+          [
+            ...SKILL_THROW_OPTIONS_COMMON,
+            ...(!common && canUseSideThrow(apparatus) && !(item.throwTypes || []).includes(NO_VIEW_TAG)
+              ? THROW_OPTIONS_SIDE
+              : []),
+            ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
+          ].map(
+            (opt) => {
+              const on = (item.throwTypes || []).includes(opt.id);
+              // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
+              const blocked = opt.id === USE_APPARATUS_TAG && !on && skillTwoThrow;
+              return (
+                <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={blocked}
+                    onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
+                  />
+                  {opt.name}
+                </label>
+              );
+            },
           )}
+        {item.isThrow && !common && canUseSideThrow(apparatus) && (item.throwTypes || []).includes(NO_VIEW_TAG) && (
+          <NoViewDirection types={item.throwTypes} onChange={(throwTypes) => onUpdate({ throwTypes })} />
+        )}
+        {/* 技の最中の投げでも二つ投げ（両方を投げる）は実施できる */}
+        {item.isThrow &&
+          !common &&
+          REQUIRED_THROW_OPTIONS[apparatus]
+            .filter((opt) => opt.id === TWO_THROW_TAG)
+            .map((opt) => {
+              const on = (item.reqTypes || []).includes(opt.id);
+              const blocked = !on && (item.throwTypes || []).includes(USE_APPARATUS_TAG);
+              return (
+                <label key={opt.id} className={blocked ? "check-req is-disabled" : "check-req"}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={blocked}
+                    onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
+                  />
+                  {opt.name}
+                </label>
+              );
+            })}
+          </>
+        )}
       </>
     );
   }
-  if (item.kind === "ropeJump") {
-    return (
-      <>
-        <select className="select" value={item.jumpId} onChange={(e) => onUpdate({ jumpId: e.target.value })}>
-          <option value="">ロープ跳び</option>
-          {ROPE_JUMPS.map((j) => (
-            <option key={j.id} value={j.id}>
-              {j.name}（{j.difficulty}）
-            </option>
-          ))}
-        </select>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={item.isMoving6m || false}
-            onChange={(e) => onUpdate({ isMoving6m: e.target.checked })}
-          />
-          6m以上移動
-        </label>
-      </>
-    );
-  }
+  // ロープ跳びは徒手・構成タブの跳びリストで入力する（旧データは読み込み時にそちらへ移す）
+  if (item.kind === "ropeJump") return null;
   // motion
   const options = motionOptionsFor(prevMotionId);
   const motionOpt = options.find((m) => m.id === item.motionId);
@@ -454,6 +608,7 @@ export function SeriesCard({
   sIdx,
   apparatus,
   junior,
+  future = null,
   analysis: a,
   unitAdopted,
   breakdown: b,
@@ -462,20 +617,30 @@ export function SeriesCard({
   canRemove,
   showExec = true,
   common = false,
+  noApparatus = false,
   templateOptions,
   onLoadTemplate,
   onSaveTemplate,
   onUpdateField,
   onAddItem,
+  autoInput,
+  onAddItems,
   onUpdateItem,
   onRemoveItem,
   onMoveItem,
   onRemoveSeries,
 }: Props) {
+  // シリーズを畳む（見出しだけ残す）。表示だけの状態で、採点や保存には関わらない
+  const nickname = seriesNickname(ser);
+  const [collapsed, setCollapsed] = useState(false);
   const seriesQualifies = a.throwCount >= 2 && a.units.some((u) => u.type === "throw" && u.hasDPlus);
-  const flowErrors = checkApparatusFlow(ser, apparatus);
+  // 手具の流れ（投げてから受けるまで）と、連続を終える技の後に何か続いていないか。
+  // どちらも警告だけで採点には影響しない
+  const flowErrors = [...checkApparatusFlow(ser, apparatus), ...tumblingChainEndErrors(ser)];
   // 投げてからキャッチするまでは手元に手具が無いので、その間の技に手具操作は付けられない
   const handsEmpty = handsEmptyFlags(ser.items, apparatus);
+  // 2つ同時キャッチは「2つとも空中にある（＝二つ投げの間）」ときだけ入力できる
+  const catchTwoAllowed = catchTwoFlags(ser.items, apparatus);
   // タンブリング技の入力パターン（一覧／手動入力）。既定は一覧で、
   // ボタンで切り替えたブロックだけを覚えておく（キーはアイテムの位置）。
   const [twistModes, setTwistModes] = useState<Record<number, boolean>>({});
@@ -517,14 +682,60 @@ export function SeriesCard({
     onUpdateItem(iIdx, patch);
   };
 
+  // ---- 自動入力：末尾から予測した続きを半透明で見せる ----
+  // 候補が出るのは「その候補が新しく当てはまった編集」の直後だけ。次に何か手で入力したら
+  // （同じ候補が当てはまり続けていても）取り消す。却下・確定でも消える。
+  const itemsKey = JSON.stringify(ser.items);
+  const sugKey = autoInput?.[0]?.id ?? "";
+  const [shownFor, setShownFor] = useState<string | null>(null);
+  const [altIdx, setAltIdx] = useState(0);
+  const prevSug = useRef<string | null>(null);
+  useEffect(() => {
+    const first = prevSug.current === null;
+    if (!first && sugKey && prevSug.current !== sugKey) {
+      setShownFor(itemsKey);
+      setAltIdx(0);
+    } else {
+      setShownFor(null);
+    }
+    prevSug.current = sugKey;
+  }, [itemsKey, sugKey]);
+  const candidates = shownFor === itemsKey && autoInput ? autoInput : [];
+  const ghost = candidates[altIdx % Math.max(candidates.length, 1)];
+  const confirmGhost = () => {
+    if (!ghost || !onAddItems) return;
+    setShownFor(null);
+    onAddItems(ghost.items);
+  };
+  const onCardKeyDown = (e: React.KeyboardEvent) => {
+    if (!ghost || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key !== "Enter" && e.key !== "Tab") return;
+    // ボタン上の Enter は本来のクリックを優先。テキスト入力の中も邪魔しない
+    const t = e.target as HTMLElement;
+    if (t.tagName === "BUTTON" || t.tagName === "TEXTAREA" || t.tagName === "A") return;
+    e.preventDefault();
+    confirmGhost();
+  };
+
   return (
     // id は改善提案（SuggestModal）からのジャンプ先
-    <section className="card" id={`series-${sIdx}`}>
+    <section className="card" id={`series-${sIdx}`} onKeyDown={onCardKeyDown}>
       <div className="line-head">
         <span>
+          <button
+            className={`collapse-btn${collapsed ? " is-collapsed" : ""}`}
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "シリーズを開く" : "シリーズを畳む"}
+            title={collapsed ? "開く" : "畳む"}
+          >
+            <ChevronDown size={15} />
+          </button>
           シリーズ {sIdx + 1}
+          {nickname && <span className="series-nickname">{nickname}</span>}
           {isDup ? "（重複：D・本数・投げ回数に不算入）" : isDupSignature ? "（重複扱いを解除中）" : ""}
           <SeriesTags series={ser} junior={junior} />
+          {collapsed && <span className="collapsed-summary">{describeSeries(ser)}｜D寄与 {b.dPart.toFixed(1)} 点</span>}
         </span>
         {canRemove && (
           <button className="remove-btn-sm" onClick={onRemoveSeries}>
@@ -532,6 +743,8 @@ export function SeriesCard({
           </button>
         )}
       </div>
+      {!collapsed && (
+        <>
       {showExec && (
       <div className="exec-row">
         <label className="exec-label">
@@ -610,12 +823,15 @@ export function SeriesCard({
               item={item}
               apparatus={apparatus}
               junior={junior}
+              future={future}
               common={common}
+              noApparatus={noApparatus}
               twistMode={twistModeOf(iIdx, item)}
               onTwistModeChange={(on) => setTwistModeOf(iIdx, on)}
               flow={skillFlowAfter(prevSkillId(ser.items, iIdx))}
               prevMotionId={prevMotionId(ser.items, iIdx)}
               handsEmpty={handsEmpty[iIdx]}
+              catchTwoAllowed={catchTwoAllowed[iIdx]}
               onUpdate={(patch) => updateItemAt(iIdx, patch)}
             />
             {/* 技の両端：隣の技と入れ替える矢印（中央は削除） */}
@@ -645,25 +861,50 @@ export function SeriesCard({
             {iIdx < ser.items.length - 1 && <div className="arrow">→</div>}
           </div>
         ))}
+        {ghost &&
+          ghost.items.map((gi, k) => (
+            <div key={`ghost-${k}`} className="skill-block is-ghost" aria-label="自動入力の候補">
+              {k === 0 && <div className="arrow">→</div>}
+              <span className="ghost-label">{itemLabel(gi)}</span>
+            </div>
+          ))}
       </div>
+      {ghost && (
+        <div className="auto-input-bar" role="status">
+          <span className="auto-input-text">
+            自動入力：<b>{ghost.label}</b>
+            <span className="hint-inline">（Enter / Tab で確定）</span>
+          </span>
+          <button className="io-btn" onClick={confirmGhost}>
+            確定
+          </button>
+          {candidates.length > 1 && (
+            <button className="io-btn" onClick={() => setAltIdx((i) => (i + 1) % candidates.length)}>
+              別案 {(altIdx % candidates.length) + 1}/{candidates.length}
+            </button>
+          )}
+          <button className="io-btn" onClick={() => setShownFor(null)}>
+            却下
+          </button>
+        </div>
+      )}
       <div className="add-row">
-        <button className="add-btn-sm" onClick={() => onAddItem("throw")}>
-          ＋ 投げ
-        </button>
+        {!noApparatus && (
+          <button className="add-btn-sm" onClick={() => onAddItem("throw")}>
+            ＋ 投げ
+          </button>
+        )}
         <button className="add-btn-sm" onClick={() => onAddItem("skill")}>
           ＋ タンブリング技
         </button>
         <button className="add-btn-sm" onClick={() => onAddItem("motion")}>
           ＋ 徒手動作
         </button>
-        {!common && apparatus === "rope" && (
-          <button className="add-btn-sm" onClick={() => onAddItem("ropeJump")}>
-            ＋ ロープ跳び
+        {!noApparatus && (
+          <button className="add-btn-sm" onClick={() => onAddItem("catch")}>
+            ＋ キャッチ
           </button>
         )}
-        <button className="add-btn-sm" onClick={() => onAddItem("catch")}>
-          ＋ キャッチ
-        </button>
       </div>
       {a.units.map((u, ui) => (
         <div key={ui} className="unit-result">
@@ -747,6 +988,8 @@ export function SeriesCard({
           <p className="hint">※同一構成ですが「別の内容」として重複扱いを解除中（通常のシリーズとして算入）</p>
         )}
       </div>
+        </>
+      )}
     </section>
   );
 }

@@ -5,9 +5,9 @@
 // 保持するのは入力データ（Series / Series[] と手具）だけ。
 // =====================================================================
 
-import { APPARATUS, DIFF_VALUE, HAND_MOTIONS, MOTION_OPTIONS, VALUE_DIFF, ropeJumpDef, skillDef } from "./constants";
+import { APPARATUS, DIFF_VALUE, HAND_MOTIONS, MOTION_OPTIONS, VALUE_DIFF, resolveRopeJump, skillDef } from "./constants";
 import { computeScore } from "./score";
-import type { ApparatusKey, Difficulty, Item, Series } from "./types";
+import type { ApparatusKey, Difficulty, FutureLevel, Item, Series } from "./types";
 
 export const TEMPLATE_STORAGE_KEY = "mens-rg-scorer:templates:v1";
 
@@ -34,16 +34,20 @@ export function commonBlockers(list: Series[]): string[] {
   const reasons = new Set<string>();
   list.forEach((ser) =>
     ser.items.forEach((item) => {
-      if (item.kind === "throw") {
+      // 必須投げは投げアイテムにも技の最中の投げにも付く
+      if (item.kind === "throw" || item.kind === "skill")
         (item.reqTypes || []).forEach((t) => {
           if (t === "lefthand") reasons.add("左手投げ");
           else if (t === "twothrow") reasons.add("二つ投げ");
           else reasons.add(t);
         });
-        if ((item.throwTypes || []).includes("useapp")) reasons.add("手具を使った投げ");
-      }
+      if ((item.kind === "throw" || item.kind === "skill") && (item.throwTypes || []).includes("side"))
+        reasons.add("横投げ");
+      if (item.kind === "throw" && (item.throwTypes || []).includes("useapp"))
+        reasons.add("手具を使った投げ");
       if (item.kind === "skill" && (item.throwTypes || []).includes("useapp")) reasons.add("手具を使った投げ");
-      if (item.kind === "catch") {
+      // キャッチのタグは、キャッチアイテムにも技の最中の受けにも付く
+      if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
         if ((item.catchTypes || []).includes("useapp")) reasons.add("手具を使ったキャッチ");
         if (item.catchTwo) reasons.add("2つ同時キャッチ");
       }
@@ -226,11 +230,19 @@ export const apparatusName = (key: TemplateApparatus): string =>
 
 
 /** カード表示用：アイテム1つの短い名前 */
-function itemLabel(item: Item): string {
+export function itemLabel(item: Item): string {
   if (item.kind === "throw") return "投げ";
   if (item.kind === "catch") return "キャッチ";
-  if (item.kind === "skill") return skillDef(item.skillId)?.name ?? "技";
-  if (item.kind === "ropeJump") return ropeJumpDef(item.jumpId)?.name ?? "ロープ跳び";
+  if (item.kind === "skill") {
+    const name = skillDef(item.skillId)?.name ?? "技";
+    // 技の最中の投げ・受けはカード表示でも分かるようにする
+    return item.isThrow ? `${name}(投)` : item.isCatch ? `${name}(受)` : name;
+  }
+  if (item.kind === "ropeJump") {
+    const r = resolveRopeJump(item);
+    if (!r) return "ロープ跳び";
+    return `${r.def.name}${r.cross ? "・クロス" : ""}${r.count > 1 ? `×${r.count}` : ""}`;
+  }
   const m = MOTION_OPTIONS.find((o) => o.id === item.motionId) ?? HAND_MOTIONS.find((x) => x.id === item.motionId);
   const name = m?.name ?? skillDef(item.motionId)?.name ?? "徒手";
   const n = Number(item.count);
@@ -255,8 +267,13 @@ export interface TemplateMetrics {
 }
 
 /** テンプレート（シリーズ1つ／構成まるごと）の難度と点数を求める */
-export function templateMetrics(list: Series[], apparatus: TemplateApparatus, junior = false): TemplateMetrics {
-  const r = computeScore(list, scoringApparatus(apparatus), { junior });
+export function templateMetrics(
+  list: Series[],
+  apparatus: TemplateApparatus,
+  junior = false,
+  future: FutureLevel = null,
+): TemplateMetrics {
+  const r = computeScore(list, scoringApparatus(apparatus), { junior, future });
   let v = 0;
   r.analysis.forEach((a) => a.units.forEach((u) => (v = Math.max(v, DIFF_VALUE[u.finalDiff]))));
   return { diff: v > 0 ? VALUE_DIFF[v] : null, diffValue: v, dScore: r.dScore };

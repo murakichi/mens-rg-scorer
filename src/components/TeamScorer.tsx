@@ -1,11 +1,14 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Plus, X, Trash2, Download, Upload, Link2 } from "lucide-react";
 import {
+  DEFAULT_FUTURE_LEVEL,
+  FUTURE_LEVELS,
   HAND_ELEMENTS,
   HAND_ELEMENT_GROUPS,
   JUNIOR_SERIES_EXECUTION_MAX,
   clampSeriesExecution,
-  skillAllowed,
+  normalizeFutureLevel,
+  skillBlockedReason,
   skillDef,
   skillDifficulty,
   skillOptionGroups,
@@ -28,6 +31,7 @@ import {
 import { buildShareUrl } from "../scoring/share";
 import { DRAFT_KEY_TEAM, clearDraft, loadTeamDraft, saveTeamDraft } from "../scoring/draft";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
+import { useFutureUnlock } from "./useFutureUnlock";
 
 const newId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `g${Date.now()}${Math.random()}`;
@@ -51,6 +55,8 @@ export function TeamScorer({ initialData }: Props = {}) {
       (initialData ? normalizeTeamState(initialData.team ?? initialData) : restored) ?? initialTeamState(),
   );
   const [draftNotice, setDraftNotice] = useState(!!restored);
+  // 十年後モードは既定で隠れていて、ジュニアモードを何度も切り替えると出てくる（個人と共通）
+  const futureUnlock = useFutureUnlock();
   // グループ編集中の対象 { シリーズ, グループid, 種別 }。アクティブ時はセルクリックで所属を切替。
   const [pick, setPick] = useState<{ sIdx: number; gid: string; kind: GroupKind } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -278,7 +284,15 @@ export function TeamScorer({ initialData }: Props = {}) {
       n.series[sIdx].lanes[0][0] = { type: "motion", motionId };
       return n;
     });
-  const toggleJunior = () => setTeam((p) => ({ ...structuredClone(p), junior: !p.junior }));
+  const toggleJunior = () => {
+    setTeam((p) => ({ ...structuredClone(p), junior: !p.junior }));
+    futureUnlock.countJuniorToggle();
+  };
+  /** 十年後モードの切り替え（ONにしたときの上限は既定値） */
+  const toggleFuture = () =>
+    setTeam((p) => ({ ...structuredClone(p), future: p.future ? null : DEFAULT_FUTURE_LEVEL }));
+  const setFutureLevel = (v: string) =>
+    setTeam((p) => ({ ...structuredClone(p), future: normalizeFutureLevel(v) }));
 
   // ---- 交差／組運動グループ（共通） ----
   const groupsOf = (s: TeamSeries, kind: GroupKind) => (kind === "cross" ? s.crossGroups : s.unionGroups);
@@ -329,6 +343,7 @@ export function TeamScorer({ initialData }: Props = {}) {
   } = result;
 
   const junior = !!team.junior;
+  const future = team.future ?? null;
 
   return (
     <>
@@ -394,6 +409,40 @@ export function TeamScorer({ initialData }: Props = {}) {
           </button>
           <span className="switch-label">ジュニアモード{junior ? "：ON" : "：OFF"}</span>
         </div>
+        {futureUnlock.unlocked && (
+          <>
+            <div className="switch-row">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!!future}
+                className={future ? "switch is-on" : "switch"}
+                onClick={toggleFuture}
+              >
+                <span className="switch-knob" />
+              </button>
+              <span className="switch-label">十年後モード{future ? "：ON" : "：OFF"}</span>
+              {future && (
+                <select
+                  className="select switch-select"
+                  value={future}
+                  aria-label="十年後モードの上限難度"
+                  onChange={(e) => setFutureLevel(e.target.value)}
+                >
+                  {FUTURE_LEVELS.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <p className="hint">
+              {futureUnlock.justUnlocked && <b>十年後モードが使えるようになりました。</b>}
+              現行規則には無いF難度（0.9点）・G難度（1.1点）まで認定する、十年後を想像するためのモードです。
+            </p>
+          </>
+        )}
         <p className="hint">
           ジュニア適用規則（§10 変更規則1）で採点します。ダイビング前宙・後方宙返り半ひねりをC難度で認定し、
           バク転→後方伸身宙返りの連続はまとめてC難度、2回宙返り系は選べません。各シリーズの実施減点は
@@ -519,9 +568,12 @@ export function TeamScorer({ initialData }: Props = {}) {
                         // 後方の宙返りはロンダート・バク転の直後だけ、その後に前方系は出さない
                         // （隣のスロットが直前の技）
                         const prev = slot > 0 ? lane[slot - 1] : undefined;
+                        // 団体なので team=true（十年後モードの2回宙返り系は団体だけに出す）
                         const skillGroups = skillOptionGroups(
                           junior,
                           skillFlowAfter(prev?.type === "skill" ? prev.skillId : undefined),
+                          future,
+                          true,
                         );
                         const skillListed = skillGroups.some((g) => g.skills.some((sk) => sk.id === cell.skillId));
                         return (
@@ -565,7 +617,10 @@ export function TeamScorer({ initialData }: Props = {}) {
                                   {cell.skillId && !skillListed && (
                                     <option value={cell.skillId}>
                                       {skillDef(cell.skillId)?.name}
-                                      {skillAllowed(cell.skillId, junior) ? "" : "（ジュニア禁止）"}
+                                      {(() => {
+                                        const r = skillBlockedReason(cell.skillId, junior, future, true);
+                                        return r && `（${r}）`;
+                                      })()}
                                     </option>
                                   )}
                                   {/* 前方系・側方系・後方系に分けて表示 */}
@@ -573,7 +628,7 @@ export function TeamScorer({ initialData }: Props = {}) {
                                     <optgroup key={g.name} label={g.name}>
                                       {g.skills.map((sk) => (
                                         <option key={sk.id} value={sk.id}>
-                                          {sk.name}（{skillDifficulty(sk.id, junior)}）
+                                          {sk.name}（{skillDifficulty(sk.id, junior, future)}）
                                         </option>
                                       ))}
                                     </optgroup>

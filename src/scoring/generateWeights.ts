@@ -1,0 +1,610 @@
+// =====================================================================
+// ランダム生成の上限・目標値・重み
+//
+// 評価式（`generateEvaluate.ts`）に掛ける数だけを置く。値の尺度は3段階：
+//  - **タイブレーク**（0.005〜0.05）：難度の刻み0.1より小さいので、同点のときだけ効く
+//    （多様性・組み方の優先度・連続投げの順番・自動生成より登録テンプレート、など）
+//  - **実在の好み**（0.1〜0.9）：0.1を超えるので、点数と引き換えになる
+//    （投げの回数・その他の投げ受け・縦3動作・手以外の投げのあとの徒手、など）
+//  - **要求と範囲**：必須要素の不足は `REQUIRED_ELEMENT_WEIGHT`（10）、
+//    Dスコアの範囲外は ×100。難度では覆せない
+// どの値も**実測して決めた**もので、根拠は `app-scoring-spec.md` と work-logs に残す。
+// =====================================================================
+
+import { NON_HAND_TAG, isAutoThrowTemplate } from "./autoThrows";
+import { isAutoTumblingTemplate } from "./autoTumblings";
+import {
+  ADOPT_COUNT,
+  DIFF_SCORE,
+  DIFF_VALUE,
+  USE_APPARATUS_TAG,
+  maxDiff,
+  throwCountRequired,
+} from "./constants";
+import type { GenerateOptions } from "./generateOptions";
+import type { SeriesTemplate } from "./templates";
+import type { ApparatusKey, Difficulty, FutureLevel } from "./types";
+
+/** 生成する構成に入れる投げタンの本数の上限（必須要素は1本で満たせる） */
+export const DEFAULT_MAX_THROW_TUMBLING = 1;
+
+/**
+ * 構成に入れるタンブリングの本数の上限（**投げタンを含む**）。
+ * 難度点に採用されるのは上位3本（`ADOPT_COUNT`）までで、4本目は評価されないため。
+ */
+export const DEFAULT_MAX_TUMBLINGS = ADOPT_COUNT;
+
+/** シリーズ数の上限の既定値 */
+export const DEFAULT_MAX_SERIES = 8;
+
+/** 自動生成の割合の既定値（1＝種類ごとの上限だけで、割合では制限しない） */
+export const DEFAULT_AUTO_RATIO = 1;
+
+/**
+ * その構成に入れてよい自動生成のシリーズの本数（種類の合計）。
+ * `autoRatio` をシリーズ数の上限に対する本数に換算する。null＝割合では制限しない。
+ */
+export function autoSeriesMax(opts: GenerateOptions): number | null {
+  const ratio = opts.autoRatio ?? DEFAULT_AUTO_RATIO;
+  if (ratio >= 1) return null;
+  const maxSeries = opts.maxSeries ?? DEFAULT_MAX_SERIES;
+  return Math.max(0, Math.round(Math.max(0, ratio) * maxSeries));
+}
+
+/**
+ * 生成する構成に入れる自動生成の投げの本数の上限。
+ * 難度を狙う投げは投げタン＋上位3本（`ADOPT_COUNT`）までだが、それを超える投げは
+ * **技術加点のために実施する**ので、本数そのものは投げ上げの回数の最頻値
+ * （`preferredThrowCount` / `throwCountPenalty`）で決める。上限はその判断が効く範囲で
+ * 「構成が自動生成の投げだけで埋まらない」ようにするためだけのもので、実測では
+ * 5本と8本で結果が完全に一致する（＝最頻値の重みが先に効く）。
+ */
+export const DEFAULT_MAX_AUTO_THROWS = 5;
+
+/**
+ * 生成する構成に入れる自動生成のタンブリングの本数の上限。
+ * タンブリング全体が3本まで（`DEFAULT_MAX_TUMBLINGS`）なので、それを超えない本数にする。
+ */
+export const DEFAULT_MAX_AUTO_TUMBLINGS = DEFAULT_MAX_TUMBLINGS;
+
+/** その候補が1つの構成に入れられる本数の上限（登録したテンプレートは無制限） */
+export function autoLimitOf(t: SeriesTemplate, opts: GenerateOptions): number | null {
+  if (isAutoThrowTemplate(t)) return opts.maxAutoThrows ?? DEFAULT_MAX_AUTO_THROWS;
+  if (isAutoTumblingTemplate(t)) return opts.maxAutoTumblings ?? DEFAULT_MAX_AUTO_TUMBLINGS;
+  return null;
+}
+
+/**
+ * これ未満のDスコアを狙う構成は「基本的な構成の選手」とみなす（`basicLevel`）。
+ * Dスコアが0〜1点台の選手は、ルールの要求を満たしきれない単純なタンブリングを実施する
+ * （ロンダート→宙返り1本で終わり／三宙なし／つなぎなし／D難度なし）ので、
+ * 自動生成のタンブリングもその範囲に寄せる。
+ */
+export const BASIC_LEVEL_MAX_SCORE = 2.0;
+
+/**
+ * これ以上のDスコアを狙う構成では、必須要素（三宙・つなぎ技・方向系・投げタン・
+ * 投げ回数・タンブリング本数）を**必ず満たす**。
+ * 上級者（Dスコア4点以上）は必然的にAスコアも高く、要求を満たした構成になっている。
+ * 必須要素をすべて満たす構成のDスコアは2.0あたりが下限なので、そこから少し余裕を見た値。
+ * 上限を指定しない（最大を狙う）ときも必ず満たしにいく。
+ */
+export const REQUIRE_ALL_ELEMENTS_MIN_SCORE = 3.0;
+
+/**
+ * その構成で必須要素を必ず満たしにいくか。
+ * 既定は狙うDスコアで決まり、`requireAllElements` で明示的に上書きできる。
+ * false のときは、必須要素の不足も他と同じくA減点（1つ −0.30）として
+ * DとAの損失を比べるだけになる。
+ */
+export function requiresAllElements(opts: Pick<GenerateOptions, "maxScore" | "requireAllElements">): boolean {
+  if (opts.requireAllElements !== undefined) return opts.requireAllElements;
+  return opts.maxScore == null || opts.maxScore >= REQUIRE_ALL_ELEMENTS_MIN_SCORE;
+}
+
+/**
+ * A側の要求を満たす優先順位（現実の感覚）。大きいほど先に満たす。
+ *
+ *   投げの回数 ＝ 各手具の必須投げ・受け ＞ 投げタン ＞ **D難度** ＞ 多様な投げ受け
+ *   ＞ つなぎ ＞ 三宙 ＞ つなぎの手具操作
+ *
+ * D難度（難度点そのもの）は評価の `dScore` が担うので表には持たず、投げタンと多様性の間の
+ * 位置づけになる。表に無い要求（方向系・タンブリング本数）は `other` を使う。
+ * 規則どおりの減点額（投げ回数・投げタン・つなぎ 0.30／多様性 0.10〜0.50／三宙 0.10〜0.20／
+ * つなぎの手具操作 0.20）がすでにこの順序をおおむね表しているので、
+ * ここの重みは**同点のときにどちらを残すか**を決めるだけにとどめる。
+ */
+export const A_PRIORITY = {
+  /** 投げの回数（ジュニアの投げ超過も同じ扱い） */
+  throwCount: 7,
+  /** 各手具の必須投げ・受け（左投げ左受け・右投げ右受け・二つ投げ） */
+  apparatusThrow: 7,
+  /** 転回系の投げ受け（投げタン） */
+  throwTumbling: 6,
+  // D難度＝5 相当（`dScore` が担当）
+  /** 多様な投げ方・受け方 */
+  variety: 4,
+  /** つなぎ技 */
+  connect: 3,
+  /** 三宙（宙返り3回以上連続） */
+  triple: 2,
+  /** つなぎ技の手具操作 */
+  connectApparatus: 1,
+  /** 表に無い要求（方向系・タンブリング本数） */
+  other: 3,
+} as const;
+
+/**
+ * 優先順位1つあたりの評価の重み。
+ * 難度点の最小単位（0.1）より小さくして、順位は**同点のときのタイブレーク**にだけ効かせる。
+ */
+export const A_PRIORITY_WEIGHT = 0.01;
+
+/**
+ * 必須要素を必ず満たす構成での、不足1つあたりの評価の重み。
+ * 難度点（最大でも1本0.7）より十分大きく、Dスコアの範囲外ペナルティ（×100）よりは小さい。
+ * 範囲に収めることを優先しつつ、その中では要求を満たす構成を選ぶ。
+ */
+export const REQUIRED_ELEMENT_WEIGHT = 10;
+
+/**
+ * 自動生成のシリーズ1本あたりの評価の重み。
+ * 登録したテンプレートは「その選手が実際に実施できる構成」なので、
+ * 同じ点数なら自動生成より優先する。難度点の最小単位（0.1）より小さくして、
+ * 点数を犠牲にしてまでテンプレートを選ぶことはしない。
+ */
+export const AUTO_SERIES_WEIGHT = 0.02;
+
+/**
+ * 同じ宙返りを繰り返したときの1回あたりの減点（評価用の重み）。
+ * 上級者ほど同じ宙返りを演技中に何度も実施しないため、多様な宙返りを選ばせる。
+ * 難度点の最小単位（0.1）より小さくして、点数を犠牲にしてまで多様性を取らないようにする。
+ */
+export const SALTO_VARIETY_WEIGHT = 0.02;
+
+/** 演技中に何度実施しても不自然でない宙返り（前宙） */
+export const REPEATABLE_SALTOS = ["b_front"];
+
+/**
+ * 実施が少ない技（ハンドスプリング・転宙）を使ったときの評価の重み。
+ * 難度点の最小単位（0.1）より小さくして、同じ点数なら別の技の構成を選ばせる。
+ * 演技内の回数そのものは `LIMITED_SKILL_MAX` で1回までに制限する。
+ */
+export const LIMITED_SKILL_WEIGHT = 0.02;
+
+/**
+ * 単発で高難度（D難度以上）な技を1つ実施するごとの評価の重み。
+ * 上限は決めず、重みの結果として演技内で**1〜2つ程度**に落ち着くようにする
+ * （日本のトップでも単発でD難度になる技は演技に1〜2つ程度）。
+ *
+ * 実際の抑えは候補づくり側の `saltoDifficultyWeight`（D=0.6／E=0.05＝その時代の上限難度の
+ * 単発は実戦でほぼ実施されない）が担っていて、
+ * それだけで最大を狙う構成でも 0個23%／1個43%／2個28%／3個以上5% に収まる。
+ * ここは難度点の刻み（0.1）より小さくして、同じ点数なら易しい技の構成を選ぶ程度にする
+ * （0.1 にすると0個が35%まで増えて、1〜2つという実態から外れる）。
+ *
+ * 手具によって出やすさが違う分は `apparatusHighDifficultyWeight` で割る
+ * （リングは重く持ったままひねりにくいので、他の手具より更に嫌う）。
+ */
+export const HIGH_DIFFICULTY_WEIGHT = 0.02;
+
+/**
+ * 同じ難度に到達する組み方のうち、実施されにくい組み方1順位ぶんの評価の重み。
+ * 難度点は同じなので、**同じ点数ならより実施される組み方を選ぶ**だけの効き方にする
+ * （順位は最大5、タンブリング3本で最大0.075＝難度の刻み0.1より小さい）。
+ */
+export const SHAPE_PRIORITY_WEIGHT = 0.005;
+
+/**
+ * 縦3動作（前転3回など）でE難度になる投げ受けのうち、**手具を使ったキャッチ以外**の本数。
+ * 前転3回から受けるのは手具で押さえつけるのが主流で、それ以外の形は基本実施しない。
+ * 難度点より大きい重み（`VERTICAL_THREE_THROW_WEIGHT`）で嫌い、Dスコアの範囲を満たすのに
+ * どうしても必要なとき（範囲外のペナルティは×100）だけ入るようにする。
+ */
+/**
+ * **手以外の投げ・手具を使った投げのあとに多くの徒手やタンブリングを実施するのは難しい**。
+ * 足や手具で投げた直後なので、現実的なのは徒手 `HARD_THROW_MAX_MOTIONS`（1）動作までで、
+ * 転回系を挟むこともまずない。狙うDスコアの**要求値**（下限）が `HARD_THROW_FREE_SCORE`（5.0）を
+ * 超えるまでは、この形を `HARD_THROW_WEIGHT`（0.9／本＝その形が足せる点数より大きい）だけ嫌うので、
+ * **かなり稀にしか出ない**。5.0を超える要求では点数を稼ぐために必要になるので嫌わない。
+ */
+export const HARD_THROW_TAGS: string[] = [NON_HAND_TAG, USE_APPARATUS_TAG];
+
+export const HARD_THROW_MAX_MOTIONS = 1;
+
+export const HARD_THROW_WEIGHT = 0.9;
+
+export const HARD_THROW_FREE_SCORE = 5.0;
+
+/** その構成で手以外・手具を使った投げのあとの実施を嫌うか（要求値が5.0を超えるなら嫌わない） */
+export function suppressHardThrow(opts: GenerateOptions): boolean {
+  return (opts.minScore ?? 0) <= HARD_THROW_FREE_SCORE;
+}
+
+/**
+ * **演技の締め方**。手具によって「最後の投げ受けをこう受けて、そのまま演技を終える」形が決まっている。
+ *  - クラブ：もう一方の手具で**押さえてキャッチ**
+ *  - ロープ：**足に絡めたキャッチ**（手以外のキャッチ）
+ * スティック・リングには決まった締め方が無いので指定しない。
+ */
+export const FINISH_CATCH_TAG: Partial<Record<ApparatusKey, string>> = {
+  clubs: USE_APPARATUS_TAG,
+  rope: NON_HAND_TAG,
+};
+
+/**
+ * 締めの受け方で終わらない構成を嫌う重み。並べ替え（`finishCatchLast`）だけでは
+ * 「締めの形になるシリーズが1本も無い」ときに何もできないので、そのときに1本入れさせるための重み。
+ * 難度の刻み（0.1）より小さくしてあるので、**難度を捨ててまで締めの形にはしない**。
+ * 実測（20構成ずつ）：並べ替えだけでクラブ19/20・ロープ18/20、この重みでクラブ20/20・ロープ19/20
+ * （Dスコア平均は 4.32／4.13 のまま変わらない）。
+ */
+export const FINISH_CATCH_WEIGHT = 0.05;
+
+/**
+ * その他の投げ・その他のキャッチは自動生成では**可能な限り使わない**。
+ * 技術加点（`TECHNIQUE_BONUS`＝0.1）より強い重みで嫌うので、加点のためだけには実施せず、
+ * 多様な投げ受け（必須要素＝`REQUIRED_ELEMENT_WEIGHT`）を満たすのにどうしても必要なときだけ入る。
+ */
+export const OTHER_STYLE_WEIGHT = 0.15;
+
+/**
+ * **演技の最初の投げ／最初のキャッチがその他**のときの重み。
+ * その他は「ほかの受け方と違う」ことを示す入力なので、比べる相手（通常の投げ受け）より
+ * 先には置けない。実質置かせないために、現実志向の重み（0.1〜0.9）より上にする
+ * （必須要素の `REQUIRED_ELEMENT_WEIGHT`＝10 より下なので、要求は犠牲にしない）。
+ */
+export const OTHER_FIRST_WEIGHT = 1;
+
+/**
+ * **二つ投げのシリーズが2本目以降**のときの重み（1本あたり）。
+ * 二つ投げは必須投げなので1回実施すれば満たし、投げ方の種類にも数えず、
+ * 投げタンで実施しても加点にならない。投げのシリーズと投げタンの両方に入れたり、
+ * 何本も並べたりしない — 1構成に1本まで。現実志向の重み（0.1〜0.9）より上にして
+ * 実質置かせない（必須要素の `REQUIRED_ELEMENT_WEIGHT`＝10 より下なので、要求は犠牲にしない）。
+ */
+export const TWO_THROW_EXTRA_WEIGHT = 1;
+
+/**
+ * **投げタンで実施する二つ投げ**の重み（1本あたり）。二つ投げは通常の投げ（二つ投げ→キャッチ）で
+ * 実施するのが基本で、高難度の投げタンに載せても加点にならない。投げタンの二つ投げは
+ * 必須投げと転回系の投げ受けを1本で満たせるので禁止はせず、通常の二つ投げより
+ * **優先度を下げる**だけ（現実志向の重み 0.1〜0.9 の下側）。
+ */
+export const TWO_THROW_TUMBLING_WEIGHT = 0.3;
+
+/**
+ * 余った「その他」のタグを外す繰り返しの回数（`trimSpareOtherStyles`）。
+ * タグを1つ外すとその投げは**通常の投げ**になって種類が1つ増えるので、
+ * 残っていたその他がまた余りに変わる。投げ・受けそれぞれ数本なので数回で足りる。
+ */
+export const OTHER_TRIM_PASSES = 4;
+
+// **実施例の無い形**（現実的だが競技での実施例が無い形）の重みは、ここではなく
+// `unseenShapes.ts` に形ごとに宣言する（`UNSEEN_SHAPES` の `earns` ＋ `extra`）。
+// 候補を出す確率（`unseenChance`）だけでは頻度を抑えられない：どれも技術加点（0.1）を稼ぐので、
+// 候補にあれば貪欲法が**進んで**採ってしまい、候補の3%が生成結果の55%になった。
+// そこで評価は**稼ぐぶんをそのまま打ち消す**（点数的に中立）。こうすると頻度は抽選だけで決まり、
+// 要求するDスコアに応じて滑らかに上がる（要求値で重みを変えると、重みが加点を下回る点で
+// 一気に跳ねてしまう）。
+
+/** 縦3動作とみなす動作数（§3.5.5.3） */
+export const VERTICAL_THREE_MOTIONS = 3;
+
+/**
+ * 手具を使ったキャッチ以外の縦3動作の投げ受け1本ぶんの評価の重み。
+ * この形が1本増やす点数（徒手系E難度＝0.7が上限）より大きくして、
+ * **点数を稼ぐうえでどうしても必要なときだけ**実施するようにする
+ * （Dスコアの範囲外は×100、投げ回数の不足は10なので、必要なときは必ず入る）。
+ */
+export const VERTICAL_THREE_THROW_WEIGHT = 0.85;
+
+/**
+ * 難度を狙う投げは基本4回まで（投げタン1回＋それ以外の投げ3回＝`ADOPT_COUNT` 本の
+ * 徒手系ユニット）。それ以上の投げは**加点だけを狙う**ので徒手操作を足さない。
+ * 難度に採用されない投げ受けに操作が入っているぶんを、難度の刻みより小さい重みで嫌う。
+ */
+export const EXTRA_THROW_OPERATION_WEIGHT = 0.01;
+
+/**
+ * 投げ上げの回数の**最頻値**。Dスコアが上がるほど多くなる。
+ * 最小はルールの回数（一般3回・ジュニア2回）で、それ未満にはしない。
+ */
+export const THROW_COUNT_MODE_STEPS: { minScore: number; count: number }[] = [
+  { minScore: 4.0, count: 5 },
+  { minScore: 2.0, count: 4 },
+];
+
+/** そのDスコアの構成で最も多い投げ上げの回数 */
+export function preferredThrowCount(dScore: number, junior = false): number {
+  const step = THROW_COUNT_MODE_STEPS.find((x) => dScore >= x.minScore);
+  return Math.max(throwCountRequired(junior), step?.count ?? 0);
+}
+
+/** 最頻値より少ない投げ1回ぶんの評価の重み */
+export const THROW_COUNT_UNDER_WEIGHT = 0.1;
+
+/**
+ * 最頻値より**1回多い**投げの重み。1回多い構成は十分ありえる（Dスコア4点台でも6回を
+ * 実施する）ので弱めに嫌う。それでも難度の刻み（0.1）より強くするのは、技術加点に
+ * 上限が無く、投げを足すほど点が伸びてしまうため。
+ * 自動生成の投げの本数の上限（`DEFAULT_MAX_AUTO_THROWS`）を上げたぶん、
+ * 「最頻値を保つ」のはこの重みの仕事になっている。
+ */
+export const THROW_COUNT_OVER_WEIGHT = 0.2;
+
+/**
+ * Dスコアが高い構成での、最頻値より1回多い投げの重み。
+ * `THROW_COUNT_HIGH_SCORE` 以上を狙う構成では6回を実施する確率が上がる
+ * （最頻値は5回のまま）ので、1回多いぶんの重みを**弱める**。
+ */
+export const THROW_COUNT_HIGH_SCORE = 5.0;
+
+export const THROW_COUNT_OVER_WEIGHT_HIGH = 0.15;
+
+/** 最頻値より2回以上多い投げ1回ぶんの重み（実際にはほぼ無いので強く嫌う） */
+export const THROW_COUNT_FAR_OVER_WEIGHT = 0.3;
+
+/**
+ * 投げ上げの回数が最頻値から離れているぶんの評価の引き算。
+ * 多い側は技術加点（上限なし）で稼げてしまうので、難度の刻みより強い重みで嫌う。
+ * 1回多いだけなら弱め、2回以上多いぶんは強く。
+ */
+export function throwCountPenalty(count: number, dScore: number, junior = false): number {
+  const mode = preferredThrowCount(dScore, junior);
+  if (count < mode) return (mode - count) * THROW_COUNT_UNDER_WEIGHT;
+  const over = count - mode;
+  if (over === 0) return 0;
+  const first =
+    dScore >= THROW_COUNT_HIGH_SCORE ? THROW_COUNT_OVER_WEIGHT_HIGH : THROW_COUNT_OVER_WEIGHT;
+  return first + (over - 1) * THROW_COUNT_FAR_OVER_WEIGHT;
+}
+
+/** 連続投げで2回目以降のほうが難度が高いシリーズ1本ぶんの評価の重み */
+export const THROW_ORDER_WEIGHT = 0.005;
+
+/**
+ * 難度点（タンブリング＋徒手）1点あたりの上乗せ。Dスコアを上げるときは、
+ * **加点よりも高難度の実施を優先する**。同じDスコアなら難度点で取っている構成を選び、
+ * 難度点と加点が競合する場面（シリーズの枠は限られている）では難度点を取る。
+ */
+export const DIFFICULTY_PREFERENCE_WEIGHT = 0.3;
+
+/**
+ * **タンブリングの難度点**1点あたりの、さらなる上乗せ。上級者のタンブリングはほぼE難度なので、
+ * 同じDスコアなら「徒手や加点で稼いだ構成」より「タンブリングの難度で稼いだ構成」を選ぶ。
+ * `DIFFICULTY_PREFERENCE_WEIGHT` に足して効く（タンブリング1点＝0.6、徒手1点＝0.3）。
+ */
+export const TUMBLING_PREFERENCE_WEIGHT = 0.3;
+
+/**
+ * **実際の大会でのDスコアの目安**（2025年度・個人）。オーナー提供の配布資料そのまま。
+ * 生成の目標範囲をこの表から選べるようにするためだけのもので、**採点には一切使わない**。
+ *
+ * 数字は資料の値をそのまま持つ（丸めたり足したりしない）。表が更新されたらここを差し替える。
+ * `junior` は**その大会がジュニア適用規則で採点されるか**。採点画面のジュニア設定は
+ * ここからは変えられない（`GenerateModal` の `junior` は props）ので、食い違ったら注意だけ出す。
+ */
+export interface CompetitionLevel {
+  /** 大会名 */
+  meet: string;
+  /** その大会での順位帯 */
+  rank: string;
+  min: number;
+  max: number;
+  /** ジュニア適用規則で採点される大会か */
+  junior?: boolean;
+}
+
+export const COMPETITION_LEVELS: CompetitionLevel[] = [
+  { meet: "全日本", rank: "1〜5位", min: 4.5, max: 5.0 },
+  { meet: "全日本", rank: "15位", min: 3.8, max: 4.7 },
+  { meet: "全日本", rank: "30位", min: 3.7, max: 4.4 },
+  { meet: "インターハイ", rank: "1〜5位", min: 3.8, max: 4.7 },
+  { meet: "インターハイ", rank: "15位", min: 2.8, max: 3.9 },
+  { meet: "インターハイ", rank: "30位", min: 1.9, max: 2.9 },
+  { meet: "全日本ジュニア", rank: "1〜2位", min: 4.0, max: 4.2, junior: true },
+  { meet: "全日本ジュニア", rank: "3〜5位", min: 3.7, max: 4.0, junior: true },
+  { meet: "全日本ジュニア", rank: "20位", min: 2.7, max: 3.5, junior: true },
+  { meet: "全日本ジュニア", rank: "下位", min: 1.7, max: 2.2, junior: true },
+];
+
+/** 大会ごとにまとめた目安（プルダウンの `optgroup` 用。表の並びを保つ） */
+export function competitionLevelGroups(): { meet: string; levels: CompetitionLevel[] }[] {
+  const groups: { meet: string; levels: CompetitionLevel[] }[] = [];
+  COMPETITION_LEVELS.forEach((lv) => {
+    const hit = groups.find((g) => g.meet === lv.meet);
+    if (hit) hit.levels.push(lv);
+    else groups.push({ meet: lv.meet, levels: [lv] });
+  });
+  return groups;
+}
+
+/**
+ * **難度点をタンブリングと徒手のどちらで取るかの比重はユーザーが決める**（0〜100、既定50）。
+ * 上限の低い構成ほどタンブリング寄りになる（実測：上限3.0点でタンブリング1.68 対 徒手0.85、
+ * 上限なしで 2.07 対 2.05）ので、どちらに寄せるかを選べるようにした。
+ *
+ * 上乗せは `DIFFICULTY_PREFERENCE_WEIGHT`（タンブリング・徒手の両方に0.3）に、
+ * この比重ぶんを足したもの：
+ *  - 0 … 徒手に `TUMBLING_PREFERENCE_WEIGHT` を足す（徒手・投げ寄り）
+ *  - 50 … タンブリングに `TUMBLING_PREFERENCE_WEIGHT` を足す（**既定＝実測どおり**）
+ *  - 100 … タンブリングに `TUMBLING_PREFERENCE_WEIGHT` の2倍を足す（タンブリング寄り）
+ *
+ * 片寄り（タンブリング − 徒手）は 0/25/50/75/100 で −0.3 / 0 / +0.3 / +0.45 / +0.6 と単調に動く。
+ * 両者を等しく扱う点が25にあるのは、50が「今までどおり」でなければならないため。
+ * `upgradeTumblings`（タンブリング候補だけの入れ替え）は評価が上がるときしか採らないので、
+ * 比重を下げればそのパスも自然に効かなくなる。
+ *
+ * **効き幅は小さい**（実測、上限3.0点・30構成：比重0で タンブリング1.65／徒手0.92、
+ * 比重50で 1.72／0.86、比重100で 1.73／0.86。上限4.5点でも 1.93／1.75 → 1.96／1.71）。
+ * 理由は2つあり、どちらも構造の話なので重みでは越えられない：
+ *  - 難度点そのものは評価に重み1で入るので、**Dスコアが上限に張り付いていない限り**
+ *    「難度を上げる」が常に勝つ。上乗せが効くのは上限ぎりぎりの比較だけ
+ *  - 必須要素（三宙・つなぎ・投げタン）がそれぞれ別のシリーズを要求するので、
+ *    タンブリングのシリーズ数は実質3本で固定される
+ * 実際に大きく動くのは**シリーズ数**のほう（`maxTumblings`）だが、3→2で必須要素が
+ * ちょうど1つ未達になる（実測：未達0.03 → 1.00、A減点 0.61 → 0.90、上限3.0点で
+ * タンブリング1.72／徒手0.86 → 1.25／1.37）。規則を落とす選択なのでつまみには繋いでいない。
+ * 重みを3倍・6倍にしても 1.65／0.94・1.62／1.00 までしか動かず、6倍では投げの本数まで
+ * 歪み始める（4.0本 → 4.4本）ので、素直な2倍幅のままにしてある。
+ */
+export const DEFAULT_TUMBLING_BALANCE = 50;
+
+export const TUMBLING_BALANCE_MIN = 0;
+
+export const TUMBLING_BALANCE_MAX = 100;
+
+export const TUMBLING_BALANCE_STEP = 25;
+
+/** その比重での「タンブリング難度1点」「徒手難度1点」への上乗せ（共通ぶんとは別） */
+export function preferenceWeights(balance: number = DEFAULT_TUMBLING_BALANCE): {
+  tumbling: number;
+  hand: number;
+} {
+  const b = Math.min(
+    TUMBLING_BALANCE_MAX,
+    Math.max(TUMBLING_BALANCE_MIN, Number.isFinite(balance) ? balance : DEFAULT_TUMBLING_BALANCE),
+  );
+  const t = b / DEFAULT_TUMBLING_BALANCE; // 0〜2（1が既定）
+  return {
+    tumbling: TUMBLING_PREFERENCE_WEIGHT * t,
+    hand: TUMBLING_PREFERENCE_WEIGHT * Math.max(0, 1 - t),
+  };
+}
+
+/** 不足を満たす候補を必ず入れて組み直す回数（足す順番で結果が変わるため） */
+export const REBUILD_ATTEMPTS = 5;
+
+/** 投げの回数が足りないときに、組み直しの起点として試す投げ候補の数 */
+export const THROW_REBUILD_CANDIDATES = 4;
+
+/** タンブリングの入れ替えを試す回数 */
+export const TUMBLING_UPGRADE_ROUNDS = 2;
+
+/**
+ * **Dスコア 4.2 は「採点される6ユニットが全部E難度」ちょうど**
+ * （`DIFF_SCORE.E` 0.7 × `ADOPT_COUNT` 3 × 2＝タンブリングと徒手）。
+ * つまり 4.2 以上を狙うなら、**まず6つ全部をEにしてから加点を積む**しかない。
+ * そこを要求されたら徒手側も入れ替えて引き上げる（`upgradeHandUnits`）。
+ *
+ * 値は定数から導く（難度点や採用数を変えたらここも自動で追従する）。
+ */
+export function topDifficulty(future: FutureLevel = null): Difficulty {
+  const ceiling = maxDiff(future);
+  return (Object.keys(DIFF_SCORE) as Difficulty[]).find((d) => DIFF_VALUE[d] === ceiling) ?? "E";
+}
+
+export const allEScore = (future: FutureLevel = null): number =>
+  DIFF_SCORE[topDifficulty(future)] * ADOPT_COUNT * 2;
+
+/** 徒手ユニットの入れ替えを試す回数（タンブリングと同じ） */
+export const HAND_UPGRADE_ROUNDS = TUMBLING_UPGRADE_ROUNDS;
+
+/**
+ * **難度として採用されるユニットの難度は、1段より広くばらつかない**。
+ * 実際の演技は「D難度の選手なら C と D」「E難度の選手なら D と E」のように揃っていて、
+ * 同じ演技の採用ユニットに C と E が並んだり、B以下が混ざったりしない。
+ *
+ * 採用（＝重複でなく、上位3つに入った）ユニットの難度の**最大 − 最小**がこの段数まで。
+ * 1段までは許すので {C,D} も {D,E} も通り、{C,D,E}（幅2）や {B,…,E} は均しに行く。
+ *
+ * **技そのもののばらつきは対象外** — 前宙を混ぜても、そのユニットの難度が揃っていればよい。
+ * **採用されない低難度の投げも対象外** — 技術加点のためだけの投げは上位3つに入らないので、
+ * そのまま残る。
+ */
+export const MAX_ADOPTED_DIFF_SPREAD = 1;
+
+/**
+ * **均すために手放してよい評価の量**（`levelAdoptedDiffs`）。
+ *
+ * この規則は**評価の重みにしない**。試して駄目だったのは2つ：
+ *  - はみ出しに重みを掛けて評価から引く（0.5 → 1.5 → 4）。効きは頭打ちで、幅2以上が
+ *    25/25 → 16〜22/25 止まり。ばらつきは重みの問題ではなく**経路**の問題で、
+ *    Dスコアの上限に張り付いた構成では「安い投げを厚くする」1手が上限を超えてしまう。
+ *  - 重みを強くする（0.7）と幅は縮むが、**貪欲法の他の釣り合いを壊した**：
+ *    安い投げは1本やめれば消えるので、上限3.0で投げ4回以上が 85% → 58% に落ち、
+ *    投げとタンブリングの交互の並びも崩れ、難度の比重のつまみも効かなくなった。
+ *    ユーザーの要望は「加点のための低難度の投げはそのまま残して」なので、これは逆。
+ *
+ * なので評価には一切入れず、**構成が決まったあとの詰め直しだけ**で均す。そのとき
+ * 難度をタンブリングから徒手へ移すぶん評価（`TUMBLING_PREFERENCE_WEIGHT` など）は少し下がるので、
+ * 「この量までなら手放してよい」を決めておく。Dスコアの範囲と必須要素は別に守るので、
+ * ここで下がるのは実際の点数ではなく**好みの重み**のぶん。
+ */
+export const SPREAD_REPAIR_BUDGET = 1.0;
+
+/**
+ * **その水準の選手が実施するユニットの難度**（上限から導く）。採点されるのは
+ * 上位3タンブリング＋上位3徒手の `ADOPT_COUNT * 2` ＝6ユニットなので、Dスコア X の演技は
+ * 1ユニットあたり X / 6 を担う。その水準に届く最小の難度がこれ
+ * （上限2.5・3.0 → D、3.5・4.0 → E、1.5 → C、4.2 → E。`allEScore` と同じ導き方で、
+ *  4.2 ＝ E×6 がちょうど「ceiling が E で6つ全部E」になる）。
+ * 上限の指定が無ければ天井なし（最大を目指す）。
+ */
+export function unitDifficultyCeiling(
+  targetScore?: number | null,
+  future: FutureLevel = null,
+): number | null {
+  if (targetScore == null) return null;
+  const per = targetScore / (ADOPT_COUNT * 2);
+  const ceiling = maxDiff(future);
+  const found = (Object.keys(DIFF_SCORE) as Difficulty[])
+    .filter((d) => DIFF_VALUE[d] <= ceiling)
+    .sort((a, b) => DIFF_VALUE[a] - DIFF_VALUE[b])
+    .find((d) => DIFF_SCORE[d] >= per - 1e-9);
+  return found ? DIFF_VALUE[found] : ceiling;
+}
+
+/**
+ * **その水準より高い難度のユニットを採用しているぶんの重み**（1段につき）。
+ *
+ * ばらつきの本当の原因はここ。貪欲法はかたまりの大きいタンブリングから埋めるので、
+ * 上限3.0の構成でもタンブリングはE難度まで上がり（`upgradeTumblings` が押し上げる）、
+ * 投げの番にはDスコアの残りが無く**安い投げしか入らない**。だから採用の中に E と A・B が
+ * 並ぶ。天井を水準に合わせて下げると、Dスコアは6ユニットに割り振るしかなくなり、
+ * 投げも厚くなる＝自然に揃う。
+ *
+ * 1段ぶんの難度（D→E は 0.2、`TUMBLING_PREFERENCE_WEIGHT` も合わせて 0.32 ほど）より重く、
+ * 必須要素（`REQUIRED_ELEMENT_WEIGHT` 10）より軽い。**天井を超えたぶんだけ**を見るので、
+ * 「安い投げを1本やめればはみ出しが消える」という逆方向の抜け道が無い
+ * （低いほうを罰すると、上限3.0で投げ4回以上が 85% → 58% に落ちた）。
+ */
+export const ADOPTED_OVER_CEILING_WEIGHT = 0.5;
+
+/**
+ * **均す詰め直しの手数**。Dスコアの上限に張り付いた構成では「別のユニットを下げて余地を作る」→
+ * 「安い投げを厚くする」の2手が要るので、それが何度か入る程度の手数。
+ * 1手ごとに候補を総当たりするが、候補の数は手具ごとに80〜90なので生成時間は数百msで済む。
+ */
+export const SPREAD_REPAIR_ROUNDS = 12;
+
+/**
+ * 「余地を作る」だけの手（はみ出しは変わらないがDスコアを下げる手）を続けて踏める回数。
+ * 上限いっぱいの構成では安い投げを厚くする前に別のユニットを下げる必要があるが、
+ * 下げ続けても均らない（点数だけ失う）ので頭を打たせる。
+ */
+export const SPREAD_REPAIR_ROOM_RUN = 2;
+
+/**
+ * **6つ全部Eに届いていないぶんの重み**。4.2 以上を狙うなら E×6 が先で、加点はその後。
+ * 加点1つ（技術加点0.1、上限つきの加点も0.1）より重くしないと、貪欲法は
+ * 「ユニットをEに上げる」より「加点の付く投げを増やす」を選んでしまう。
+ * 難度の刻み（0.1）も投げ本数の重み（0.2〜0.3）も上回る値にしてある。
+ * 数えるのは**採用されて上位3つに入ったユニットのうちE難度のもの**で、
+ * 6から引く（ユニット自体が足りない場合も同じだけ足りない扱いになる）。
+ */
+export const ALL_E_SHORTFALL_WEIGHT = 0.5;
+
+/** 6つ全部Eを狙う水準か（要求したDスコア＝`minScore`。上限だけの指定では狙わない） */
+export function aimsAllE(opts: { minScore?: number | null; future?: FutureLevel }): boolean {
+  return (opts.minScore ?? 0) >= allEScore(opts.future ?? null) - 1e-9;
+}
+
+/**
+ * **1シリーズの中の加点は少ないほうを優先する**（オーナー指定）。技術加点・次々に投げる加点・手具操作加点・
+ * 二つ投げの徒手動作加点を数え、**1つ目は嫌わず、2つ目から**1つにつきこの重みを引く。
+ * 加点1つは +0.1 なので、これを少し上回らせて（現実志向の重み 0.1〜0.9 の下側）、
+ * 加点を重ねた形より少ない形が同点以上なら選ばれるようにする。範囲外（×100）・必須要素の不足（10）には勝てない。
+ */
+export const SERIES_BONUS_WEIGHT = 0.15;

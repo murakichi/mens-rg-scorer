@@ -1,0 +1,663 @@
+// =====================================================================
+// 構成の評価
+//
+// 「その構成がどれくらい良いか」を1つの数（`Evaluation.value`）にする。
+// 中身は **D + A残点** を軸に、`generateWeights.ts` の重み × ここで数えた個数を引いたもの：
+//
+//   value = -(範囲外 + 本数超過) * 100      … 難度では覆せない
+//           - 満たせていない必須要素          … `shortfallPenalty`
+//           + Dスコア + 難度への上乗せ + A残点
+//           - 実在の好みに合わない形（投げの回数・その他の投げ受け・縦3動作 …）
+//           - タイブレーク（多様性・組み方・自動生成 …）
+//
+// 必須要素の不足もジュニアの投げ超過もA減点に出るので、この1つの数だけで
+// 「必須要素を満たしつつ難度を上げ、範囲に収める」方向に進む。
+// 探索（`generateSearch.ts`）はこの数が上がるかどうかだけを見る。
+// =====================================================================
+
+import { motionDef, motionTimes } from "./analysis";
+import { OTHER_TAG } from "./autoThrows";
+import { TWO_THROW_TAG, VARIETY_REQUIRED } from "./constants";
+import {
+  LIMITED_SKILLS,
+  LIMITED_SKILL_MAX,
+  apparatusHighDifficultyWeight,
+  isHighDifficultySkill,
+  readTumblingShape,
+  throwTumblingShapeRank,
+  tumblingShapeRank,
+} from "./autoTumblings";
+import {
+  ADOPT_COUNT,
+  APPARATUS_REQUIRED_ELEMENTS,
+  DIFF_VALUE,
+  USE_APPARATUS_TAG,
+  skillDef,
+} from "./constants";
+import {
+  AUTO_SERIES_WEIGHT,
+  A_PRIORITY,
+  A_PRIORITY_WEIGHT,
+  DEFAULT_MAX_THROW_TUMBLING,
+  DEFAULT_MAX_TUMBLINGS,
+  DIFFICULTY_PREFERENCE_WEIGHT,
+  EXTRA_THROW_OPERATION_WEIGHT,
+  FINISH_CATCH_TAG,
+  FINISH_CATCH_WEIGHT,
+  HARD_THROW_MAX_MOTIONS,
+  HARD_THROW_TAGS,
+  HARD_THROW_WEIGHT,
+  HIGH_DIFFICULTY_WEIGHT,
+  LIMITED_SKILL_WEIGHT,
+  OTHER_FIRST_WEIGHT,
+  TWO_THROW_EXTRA_WEIGHT,
+  TWO_THROW_TUMBLING_WEIGHT,
+  OTHER_STYLE_WEIGHT,
+  REPEATABLE_SALTOS,
+  REQUIRED_ELEMENT_WEIGHT,
+  SALTO_VARIETY_WEIGHT,
+  SERIES_BONUS_WEIGHT,
+  SHAPE_PRIORITY_WEIGHT,
+  THROW_ORDER_WEIGHT,
+  preferenceWeights,
+  ADOPTED_OVER_CEILING_WEIGHT,
+  ALL_E_SHORTFALL_WEIGHT,
+  MAX_ADOPTED_DIFF_SPREAD,
+  aimsAllE,
+  topDifficulty,
+  unitDifficultyCeiling,
+  VERTICAL_THREE_MOTIONS,
+  VERTICAL_THREE_THROW_WEIGHT,
+  requiresAllElements,
+  suppressHardThrow,
+  throwCountPenalty,
+} from "./generateWeights";
+import { computeScore, type ScoreResult } from "./score";
+import type { GenerateOptions } from "./generateOptions";
+import type { SeriesTemplate } from "./templates";
+import type { ApparatusKey, Difficulty, FutureLevel, Series } from "./types";
+import { unseenPenalty } from "./unseenShapes";
+
+/** 演技全体での、実施が少ない技の回数（技idごと） */
+export function limitedSkillCounts(series: Series[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  const add = (id: string) => {
+    if (LIMITED_SKILLS.includes(id)) counts.set(id, (counts.get(id) ?? 0) + 1);
+  };
+  series.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "skill" && item.skillId) add(item.skillId);
+      if (item.kind === "motion" && item.motionId) add(item.motionId);
+    }),
+  );
+  return counts;
+}
+
+/** 演技全体での、単発で高難度（D難度以上）な技の数 */
+export function highDifficultyCount(
+  series: Series[],
+  junior = false,
+  future: FutureLevel = null,
+): number {
+  let n = 0;
+  series.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "skill" && item.skillId && isHighDifficultySkill(item.skillId, junior, future))
+        n += 1;
+    }),
+  );
+  return n;
+}
+
+/**
+ * 構成全体で、実施されにくい組み方ぶんの順位の合計（`TUMBLING_SHAPE_ORDER`）。
+ * 転回系のユニットが1つのシリーズだけを見る（テンプレートの複合シリーズは対象外）。
+ */
+export function shapeRankTotal(
+  series: Series[],
+  r: ScoreResult,
+  junior = false,
+  future: FutureLevel = null,
+): number {
+  let total = 0;
+  series.forEach((ser, i) => {
+    const units = (r.analysis[i]?.units ?? []).filter((u) => u.type === "tumbling" || u.isThrowTumbling);
+    if (units.length !== 1) return;
+    const shape = readTumblingShape(ser, junior, future);
+    if (!shape) return;
+    total += units[0].isThrowTumbling
+      ? throwTumblingShapeRank(shape, units[0].finalDiff)
+      : tumblingShapeRank(shape, units[0].finalDiff);
+  });
+  return total;
+}
+
+/**
+ * 二つ投げ（投げ・技の最中の投げ）を含むシリーズのうち、**2本目以降**の本数。
+ * 投げのシリーズか投げタンかは問わない（両方に入れるのも2本目として数える）。
+ */
+export function extraTwoThrowSeriesCount(series: Series[]): number {
+  return Math.max(0, series.filter(hasTwoThrow).length - 1);
+}
+
+/** 二つ投げを含むシリーズのうち、投げタン（転回系の投げ受け）で実施しているものの本数 */
+export function twoThrowTumblingCount(series: Series[], r: ScoreResult): number {
+  return series.filter(
+    (ser, i) => hasTwoThrow(ser) && r.analysis[i]?.units.some((u) => u.isThrowTumbling),
+  ).length;
+}
+
+/** 二つ投げ（投げ・技の最中の投げ）を含むシリーズか */
+export function hasTwoThrow(series: Series): boolean {
+  return series.items.some(
+    (it) =>
+      (it.kind === "throw" || (it.kind === "skill" && !!it.isThrow)) &&
+      (it.reqTypes || []).includes(TWO_THROW_TAG),
+  );
+}
+
+/** その構成で「手以外・手具を使った投げのあとに徒手を2動作以上または転回系」を実施している回数 */
+export function hardThrowCount(series: Series[], junior = false, future: FutureLevel = null): number {
+  let count = 0;
+  series.forEach((ser) => {
+    let open = false;
+    let hard = false;
+    let motions = 0;
+    let skills = 0;
+    ser.items.forEach((item) => {
+      if (item.kind === "throw") {
+        open = true;
+        hard = (item.throwTypes || []).some((t) => HARD_THROW_TAGS.includes(t));
+        motions = 0;
+        skills = 0;
+        return;
+      }
+      if (!open) return;
+      if (item.kind === "motion") {
+        const def = motionDef(item.motionId, junior, future);
+        if (def) motions += motionTimes(item.count);
+        return;
+      }
+      if (item.kind === "skill") {
+        skills += 1;
+        return;
+      }
+      if (item.kind === "catch") {
+        if (hard && (motions > HARD_THROW_MAX_MOTIONS || skills > 0)) count += 1;
+        open = false;
+        hard = false;
+      }
+    });
+  });
+  return count;
+}
+
+/** そのシリーズが手具の締めの受け方で終わっているか */
+export function endsWithFinishCatch(series: Series, apparatus: ApparatusKey): boolean {
+  const tag = FINISH_CATCH_TAG[apparatus];
+  if (!tag) return false;
+  const last = series.items[series.items.length - 1];
+  return last?.kind === "catch" && (last.catchTypes || []).includes(tag);
+}
+
+/** 構成が手具の締めの受け方で終わっていないか（締め方の無い手具では常に false） */
+export function missesFinishCatch(series: Series[], apparatus: ApparatusKey): boolean {
+  if (!FINISH_CATCH_TAG[apparatus] || series.length === 0) return false;
+  return !endsWithFinishCatch(series[series.length - 1], apparatus);
+}
+
+/** その他の投げ・その他のキャッチの回数 */
+
+export function otherStyleCount(series: Series[]): number {
+  const u = otherStyleUsage(series);
+  return u.throwCount + u.catchCount;
+}
+
+/**
+ * **その他の投げ・その他のキャッチの使われ方**を数える。
+ * その他は「珍しい投げ方・受け方」ではなく、**規則の分類では同じに見えるが実態は違うものを
+ * 別の種類として数えてもらう**ための入力で、多様な投げ受け（`VARIETY_REQUIRED`＝3種類）の
+ * 種類数を埋めるのが役割。だから生成では次の3つを分けて見る：
+ *  - `needed`：その他を外すと種類数が足りなくなる分＝**役割を果たしている**ので嫌わない
+ *  - `spare`：それを超えた分＝飾りなので `OTHER_STYLE_WEIGHT` で嫌う
+ *  - `leading`：**演技の最初の投げ／最初のキャッチがその他**の数。
+ *    「ほかの受け方と違う」ことを示す入力なので、比べる相手（通常の投げ受け）より先には置けない
+ */
+export function otherStyleUsage(
+  series: Series[],
+  kinds?: {
+    throwKindCount: number;
+    catchKindCount: number;
+    throwOtherCount: number;
+    catchOtherCount: number;
+  },
+): { throwCount: number; catchCount: number; spare: number; leading: number } {
+  let throwCount = 0;
+  let catchCount = 0;
+  let leading = 0;
+  let seenThrow = false;
+  let seenCatch = false;
+  series.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "throw" || (item.kind === "skill" && item.isThrow)) {
+        const other = (item.throwTypes || []).includes(OTHER_TAG);
+        if (other) {
+          throwCount += 1;
+          // 最初の投げがその他（比べる相手がまだ無い）
+          if (!seenThrow) leading += 1;
+        }
+        seenThrow = true;
+      } else if (item.kind === "catch") {
+        const other = (item.catchTypes || []).includes(OTHER_TAG);
+        if (other) {
+          catchCount += 1;
+          if (!seenCatch) leading += 1;
+        }
+        seenCatch = true;
+      }
+    }),
+  );
+  /**
+   * その他を外したときの種類数から、種類を埋めるのに必要な本数を出す。
+   * 数える対象は採点側と揃える（`ScoreResult.throwOtherCount`。重複シリーズや
+   * ジュニアの上限超過の扱いが違うと、必要な本数を過小に見積もってしまう）。
+   */
+  const needed = (scored: number, kindCount: number) =>
+    Math.min(scored, Math.max(0, VARIETY_REQUIRED - (kindCount - scored)));
+  const spare = kinds
+    ? kinds.throwOtherCount -
+      needed(kinds.throwOtherCount, kinds.throwKindCount) +
+      (kinds.catchOtherCount - needed(kinds.catchOtherCount, kinds.catchKindCount))
+    : 0;
+  return { throwCount, catchCount, spare, leading };
+}
+
+/**
+ * **種類を埋めていないその他のタグを外した**シリーズを返す（何も外さないなら同じ配列）。
+ * その他は「規則の分類では同じに見えるが実態は違うものを別の種類として数えてもらう」ための
+ * 入力なので、多様な投げ受け（`VARIETY_REQUIRED`）の種類数に効いていないその他は意味がない。
+ * 生成の途中で外すので、外したぶん点数が下がるなら探索が別のシリーズで埋め直せる。
+ */
+export function trimSpareOtherStyles(series: Series[], kinds: {
+  throwKindCount: number;
+  catchKindCount: number;
+  throwOtherCount: number;
+  catchOtherCount: number;
+}): Series[] {
+  /** その他を外してよい本数（種類を埋めている分は残す） */
+  const spareOf = (other: number, kindCount: number) =>
+    Math.max(0, other - Math.max(0, VARIETY_REQUIRED - (kindCount - other)));
+  let throwSpare = spareOf(kinds.throwOtherCount, kinds.throwKindCount);
+  let catchSpare = spareOf(kinds.catchOtherCount, kinds.catchKindCount);
+  if (throwSpare === 0 && catchSpare === 0) return series;
+  // 後ろから外す（演技の最初の投げ受けは `OTHER_FIRST_WEIGHT` で既に避けているが、
+  // 残すなら先に出てきたもの＝比べる相手がある側を残したい）
+  const out = series.map((ser) => ({ ...ser, items: [...ser.items] }));
+  for (let i = out.length - 1; i >= 0; i--) {
+    const items = out[i].items;
+    for (let j = items.length - 1; j >= 0; j--) {
+      const item = items[j];
+      if (throwSpare > 0 && (item.kind === "throw" || (item.kind === "skill" && item.isThrow))) {
+        const types = item.throwTypes || [];
+        if (types.includes(OTHER_TAG)) {
+          items[j] = { ...item, throwTypes: types.filter((t) => t !== OTHER_TAG) };
+          throwSpare -= 1;
+        }
+      } else if (catchSpare > 0 && item.kind === "catch") {
+        const types = item.catchTypes || [];
+        if (types.includes(OTHER_TAG)) {
+          items[j] = { ...item, catchTypes: types.filter((t) => t !== OTHER_TAG) };
+          catchSpare -= 1;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+export function verticalThreeThrowCount(
+  series: Series[],
+  junior = false,
+  future: FutureLevel = null,
+): number {
+  let count = 0;
+  series.forEach((ser) => {
+    let vertical = 0;
+    let open = false;
+    ser.items.forEach((item) => {
+      if (item.kind === "throw") {
+        vertical = 0;
+        open = true;
+        return;
+      }
+      if (item.kind === "motion" && open) {
+        const def = motionDef(item.motionId, junior, future);
+        if (def) vertical += def.vertical * motionTimes(item.count);
+        return;
+      }
+      if (item.kind === "catch" && open) {
+        if (vertical >= VERTICAL_THREE_MOTIONS && !(item.catchTypes || []).includes(USE_APPARATUS_TAG))
+          count += 1;
+        open = false;
+      }
+    });
+  });
+  return count;
+}
+
+/** 難度に採用されない投げ受けに入っている徒手操作のぶん（A難度＝操作なしを0とする） */
+export function extraThrowOperation(r: ScoreResult): number {
+  let total = 0;
+  r.analysis.forEach((a, i) =>
+    a.units.forEach((u, j) => {
+      if (u.throwCount === 0 || u.isThrowTumbling) return;
+      if (r.unitInTop[i]?.[j]) return;
+      total += DIFF_VALUE[u.finalDiff] - DIFF_VALUE.A;
+    }),
+  );
+  return total;
+}
+
+/**
+ * 連続投げ（1つのシリーズに投げ受けが2つ以上）のうち、**2回目以降のほうが難度が高い**
+ * シリーズの数。1回目のほうが高いのが普通だが、逆の構成も現実にあるので、
+ * `THROW_ORDER_WEIGHT`（難度点の刻みより小さい）だけ弱く嫌うだけにする。
+ * 投げタンは転回系の難度で決まるので数えない。
+ */
+export function reversedThrowOrderCount(r: ScoreResult): number {
+  let n = 0;
+  r.analysis.forEach((a) => {
+    const diffs = a.units
+      .filter((u) => u.throwCount > 0 && !u.isThrowTumbling)
+      .map((u) => DIFF_VALUE[u.finalDiff]);
+    if (diffs.length < 2) return;
+    if (Math.max(...diffs.slice(1)) > diffs[0]) n += 1;
+  });
+  return n;
+}
+
+/** 演技全体で同じ宙返りを繰り返した回数（2回目以降を数える。前宙は数えない）。 */
+export function saltoRepeatCount(series: Series[]): number {
+  const counts = new Map<string, number>();
+  series.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind !== "skill" || !item.skillId) return;
+      if (REPEATABLE_SALTOS.includes(item.skillId)) return;
+      if (!skillDef(item.skillId)?.isSalto) return;
+      counts.set(item.skillId, (counts.get(item.skillId) ?? 0) + 1);
+    }),
+  );
+  let repeats = 0;
+  counts.forEach((n) => (repeats += Math.max(0, n - 1)));
+  return repeats;
+}
+
+/** 範囲から外れた分のペナルティ。範囲内なら0。 */
+export function rangePenalty(d: number, min?: number | null, max?: number | null): number {
+  let p = 0;
+  if (min != null && d < min) p += min - d;
+  if (max != null && d > max) p += d - max;
+  return p;
+}
+
+export interface Evaluation {
+  value: number;
+  dScore: number;
+  aScore: number;
+  missing: string[];
+  /** ルールの投げ回数（一般3回・ジュニア2回）に足りていないか。Dスコアに関係なく必ず満たす */
+  throwCountUnmet: boolean;
+  /** 実施した投げの回数。詰め直しで減らさないために見る */
+  throwCount: number;
+  /** 採用ユニットの難度の幅（段数）。`MAX_ADOPTED_DIFF_SPREAD` を超えていたら均しに行く */
+  diffSpread: number;
+  /** 採用ユニットが1段ぶんの窓からはみ出したぶんの合計（`adoptedSpreadCost`） */
+  spreadCost: number;
+}
+
+/**
+ * **難度として採用されたユニットの難度**（重複でなく、上位3つに入ったもの）。
+ * タンブリング・投げの徒手に加えて、単独の徒手系要素（跳躍）とロープの跳びも同じ枠を争うので
+ * まとめて見る。採用されない低難度の投げ（技術加点のためだけのもの）は入らない。
+ */
+export function adoptedDifficulties(r: ScoreResult): Difficulty[] {
+  const out: Difficulty[] = [];
+  r.seriesBreakdowns.forEach((b) => {
+    [...b.tumRows, ...b.handRows].forEach((row) => {
+      if (row.adopted && row.inTop) out.push(row.diff);
+    });
+  });
+  r.handElementRows.forEach((row) => {
+    if (row.adopted && row.inTop) out.push(row.difficulty);
+  });
+  r.ropeJumpRows.forEach((row) => {
+    if (row.adopted && row.inTop) out.push(row.difficulty);
+  });
+  return out;
+}
+
+/** 採用ユニットの難度の幅（最大 − 最小。段数）。1つ以下なら0 */
+export function adoptedDiffSpread(r: ScoreResult): number {
+  const values = adoptedDifficulties(r).map((d) => DIFF_VALUE[d]);
+  if (values.length < 2) return 0;
+  return Math.max(...values) - Math.min(...values);
+}
+
+/** 採用ユニットのうち、その水準の天井（`unitDifficultyCeiling`）を超えているぶんの段数の合計 */
+export function adoptedOverCeiling(r: ScoreResult, ceiling: number | null): number {
+  if (ceiling == null) return 0;
+  return adoptedDifficulties(r).reduce((n, d) => n + Math.max(0, DIFF_VALUE[d] - ceiling), 0);
+}
+
+/**
+ * **採用ユニットが「1段ぶんの窓」にどれだけ収まっていないか**（段数の合計）。
+ * 幅（最大 − 最小）そのものではなく、窓（`MAX_ADOPTED_DIFF_SPREAD` ＋1段）を
+ * いちばん収まりの良い位置に置いたときの、はみ出したぶんの合計。0 なら幅は1段以内。
+ *
+ * 幅でなくこの形にしているのは**探索の足場**のため。幅は「いちばん高い1本といちばん低い1本」
+ * しか見ないので、{C,C,E,E} の C を1つ D に上げても幅は2のままで、1手ずつ降りる探索には
+ * 改善が見えない。はみ出しの合計なら 2 → 1 と減るので、「タンブリングを下げる」→
+ * 「安い投げを厚くする」と順に降りていける（`levelAdoptedDiffs`）。
+ */
+export function adoptedSpreadCost(r: ScoreResult): number {
+  const values = adoptedDifficulties(r).map((d) => DIFF_VALUE[d]);
+  if (values.length < 2) return 0;
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  let best = Infinity;
+  for (let x = lo; x <= hi; x++) {
+    let cost = 0;
+    values.forEach((v) => {
+      if (v < x) cost += x - v;
+      else if (v > x + MAX_ADOPTED_DIFF_SPREAD) cost += v - (x + MAX_ADOPTED_DIFF_SPREAD);
+    });
+    best = Math.min(best, cost);
+  }
+  return best;
+}
+
+/**
+ * **採点される6ユニット（上位3タンブリング＋上位3徒手）のうち、E難度に届いていない数**。
+ * Dスコア 4.2 は E×6 ちょうど（`allEScore`）なので、それ以上を狙うならここが0でなければ
+ * 加点をいくら積んでも届かない。ユニットの本数自体が足りない場合も同じだけ不足として数える。
+ */
+export function allEShortfall(r: ScoreResult, future: FutureLevel = null): number {
+  const top = topDifficulty(future);
+  let atTop = 0;
+  r.seriesBreakdowns.forEach((b) => {
+    [...b.tumRows, ...b.handRows].forEach((row) => {
+      if (row.adopted && row.inTop && row.diff === top) atTop += 1;
+    });
+  });
+  return Math.max(0, ADOPT_COUNT * 2 - atTop);
+}
+
+/**
+ * 構成の良さ。範囲外は強いペナルティ、そのうえで D + A残点 を最大化する。
+ * 必須要素の不足・ジュニアの投げ超過はA減点として効くので、これだけで
+ * 「必須要素を満たしつつ難度を上げる」方向に進む。
+ */
+export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0): Evaluation {
+  const r = computeScore(series, opts.apparatus, { junior: !!opts.junior, future: opts.future ?? null });
+  const penalty = rangePenalty(r.dScore, opts.minScore, opts.maxScore);
+  // 投げタンの本数制限（既定1本）。超えた分は範囲外と同じ強さで嫌う。
+  const maxThrowTum = opts.maxThrowTumbling ?? DEFAULT_MAX_THROW_TUMBLING;
+  const throwTumCount = r.analysis.reduce(
+    (n, a) => n + a.units.filter((u) => u.isThrowTumbling).length,
+    0,
+  );
+  const overThrowTum = Math.max(0, throwTumCount - maxThrowTum);
+  // タンブリングは投げタンを含めて3本までしか評価されない。4本目は入れない
+  const overTumbling = Math.max(0, r.nonDupTumblingCount - (opts.maxTumblings ?? DEFAULT_MAX_TUMBLINGS));
+  // 単発で高難度（D難度以上）な技は数が少ない。上限は決めず、重みで抑える
+  const highDifficulty = highDifficultyCount(series, !!opts.junior, opts.future ?? null);
+  // 実施が少ない技（ハンドスプリング・転宙）は演技内で1回まで。使うこと自体も弱く嫌う
+  const limited = limitedSkillCounts(series);
+  let limitedUsed = 0;
+  let overLimited = 0;
+  limited.forEach((n) => {
+    limitedUsed += n;
+    overLimited += Math.max(0, n - LIMITED_SKILL_MAX);
+  });
+  // 同じ宙返りの繰り返しは弱く嫌う（同点のときに多様な構成が選ばれる程度）
+  const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
+  // 転回系の多様性の減点（§3.5.6.4）は手入力の項目だが、自動計算した値を評価では負う。
+  // 上級者（難度の高い構成）になるほど宙返りの種類が増えるので、この減点は自然に小さくなる
+  const tumVariety = r.tumVariety.deduction;
+  // 同じ難度なら、より実施される組み方（C→B→B など）を選ぶ
+  const shape = shapeRankTotal(series, r, !!opts.junior, opts.future ?? null) * SHAPE_PRIORITY_WEIGHT;
+  // 連続投げは1回目のほうが難度が高いのが普通（逆の構成も現実にあるので弱く嫌うだけ）
+  const throwOrder = reversedThrowOrderCount(r) * THROW_ORDER_WEIGHT;
+  // 投げ上げの回数はDスコアに応じた最頻値に寄せる
+  const throwCount = throwCountPenalty(r.performedThrowCount, r.dScore, !!opts.junior);
+  // 難度に採用されない投げは加点だけを狙うので、操作を足さない
+  const extraOperation = extraThrowOperation(r) * EXTRA_THROW_OPERATION_WEIGHT;
+  // 前転3回（縦3動作）を手具を使ったキャッチ以外で受ける形は基本実施しない
+  const verticalThree =
+    verticalThreeThrowCount(series, !!opts.junior, opts.future ?? null) * VERTICAL_THREE_THROW_WEIGHT;
+  // その他の投げ・その他のキャッチは可能な限り使わない
+  // その他の投げ受けは「種類を埋める」のが役割なので、足りない種類を埋めている分は嫌わない。
+  // 余った分は飾りなので嫌い、演技の最初の投げ／キャッチに置くことは実質させない
+  const otherUse = otherStyleUsage(series, r);
+  const otherStyle = otherUse.spare * OTHER_STYLE_WEIGHT + otherUse.leading * OTHER_FIRST_WEIGHT;
+  // 実施例の無い形（`unseenShapes.ts` に宣言）。稼ぐ点数をそのまま打ち消すので、
+  // 出現率は候補を出す確率（要求Dスコアのカーブ）だけで決まる
+  const rareStyle = unseenPenalty(series);
+  // 1シリーズの中の加点は少ないほうを優先する（2つ目の加点から嫌う）
+  const seriesBonusExtra = seriesBonusExcess(r) * SERIES_BONUS_WEIGHT;
+  // 二つ投げのシリーズは1構成に1本まで（必須投げを1回満たせば足りる）
+  const twoThrowExtra = extraTwoThrowSeriesCount(series) * TWO_THROW_EXTRA_WEIGHT;
+  // 二つ投げの投げタンは通常の二つ投げより優先度を下げる（禁止ではない）
+  const twoThrowTumbling = twoThrowTumblingCount(series, r) * TWO_THROW_TUMBLING_WEIGHT;
+  // クラブは押さえてキャッチ、ロープは足に絡めたキャッチで演技を締める
+  const finishCatch = missesFinishCatch(series, opts.apparatus) ? FINISH_CATCH_WEIGHT : 0;
+  // 手以外・手具を使った投げのあとに徒手を多く実施する形は、要求値が5.0を超えるまで嫌う
+  const hardThrow = suppressHardThrow(opts)
+    ? hardThrowCount(series, !!opts.junior, opts.future ?? null) * HARD_THROW_WEIGHT
+    : 0;
+  // 満たせていないA側の要求（優先順位つき）。ある程度のDスコアを狙う構成では必ず満たしにいく
+  const shortfall = shortfallPenalty(r, opts.apparatus, requiresAllElements(opts));
+  // タンブリングと徒手のどちらで難度を取るかの比重（ユーザーが選ぶ）
+  const lean = preferenceWeights(opts.tumblingBalance);
+  // 4.2以上を狙うときは、6ユニットを全部E難度にするのが加点より先
+  const allE = aimsAllE(opts) ? allEShortfall(r, opts.future ?? null) * ALL_E_SHORTFALL_WEIGHT : 0;
+  // 採用されるユニットの難度は1段より広くばらつかない（CとEが並ばない・B以下を混ぜない）
+  const spreadCost = adoptedSpreadCost(r);
+  // その水準の選手が実施しない高難度のユニットを採用しているぶん（§難度のばらつき）
+  const overCeiling =
+    adoptedOverCeiling(r, unitDifficultyCeiling(opts.maxScore, opts.future ?? null)) *
+    ADOPTED_OVER_CEILING_WEIGHT;
+  // 自動生成は同点ならテンプレートに譲る（多様性と同じく、点数は犠牲にしない重み）
+  const auto = autoCount * AUTO_SERIES_WEIGHT;
+  return {
+    value:
+      -(penalty + overThrowTum + overTumbling + overLimited) * 100 -
+      shortfall +
+      r.dScore +
+      // 加点よりも高難度の実施を優先する。タンブリングと徒手のどちらに寄せるかは
+      // ユーザーの比重（`tumblingBalance`。既定50＝タンブリング寄り＝実測どおり）
+      (r.tumblingScore + r.handScore) * DIFFICULTY_PREFERENCE_WEIGHT +
+      r.tumblingScore * lean.tumbling +
+      r.handScore * lean.hand -
+      allE -
+      overCeiling +
+      r.aScore -
+      variety -
+      tumVariety -
+      shape -
+      throwOrder -
+      throwCount -
+      extraOperation -
+      verticalThree -
+      otherStyle -
+      rareStyle -
+      twoThrowExtra -
+      seriesBonusExtra -
+      twoThrowTumbling -
+      finishCatch -
+      hardThrow -
+      auto -
+      limitedUsed * LIMITED_SKILL_WEIGHT -
+      (highDifficulty * (opts.highDifficultyWeight ?? HIGH_DIFFICULTY_WEIGHT)) /
+        apparatusHighDifficultyWeight(opts.apparatus),
+    dScore: r.dScore,
+    aScore: r.aScore,
+    missing: r.missing.map((m) => m.label),
+    throwCountUnmet: r.required.some((c) => c.key === "count3" && c.passed === false),
+    throwCount: r.performedThrowCount,
+    diffSpread: adoptedDiffSpread(r),
+    spreadCost,
+  };
+}
+
+/**
+ * 1シリーズの中で、2つ目以降の加点の数（技術加点・次々に投げる加点・手具操作加点・二つ投げの徒手動作加点。
+ * 加点は 0.1 刻み）。重複シリーズは加点が 0 なので数えない。
+ */
+export function seriesBonusExcess(r: ScoreResult): number {
+  return r.seriesBreakdowns.reduce((n, b) => {
+    const count = Math.round((b.sBonus + b.tech + b.appOp + b.twoMot) / 0.1);
+    return n + Math.max(0, count - 1);
+  }, 0);
+}
+
+/**
+ * 満たせていないA側の要求に対する評価の引き算。
+ * `mandatory` なら1つにつき `REQUIRED_ELEMENT_WEIGHT`（必ず満たしにいく）、
+ * それに加えて優先順位ぶんの小さな重み（同点のときのタイブレーク）を足す。
+ * 手動チェックの手具別必須要素（ころがし等）とロープ跳びは生成では満たせないので数えない。
+ */
+export function shortfallPenalty(r: ScoreResult, apparatus: ApparatusKey, mandatory: boolean): number {
+  let total = 0;
+  const add = (unmet: boolean, priority: number) => {
+    if (unmet) total += (mandatory ? REQUIRED_ELEMENT_WEIGHT : 0) + priority * A_PRIORITY_WEIGHT;
+  };
+  const failed = (key: string) => r.required.some((c) => c.key === key && c.passed === false);
+  // 投げの回数はA側の最優先。Dスコアが低い構成でも**ルールの回数は必ず満たす**
+  // （0〜1点台の選手が満たさないのはタンブリング側の要求で、投げの回数は投げるだけ）
+  if (failed("count3") || failed("countMax"))
+    total += REQUIRED_ELEMENT_WEIGHT + A_PRIORITY.throwCount * A_PRIORITY_WEIGHT;
+  APPARATUS_REQUIRED_ELEMENTS[apparatus].forEach((el) => {
+    // 投げ・受けの要求だけ（ロープ跳び・手動チェックの項目は生成では動かせない）
+    if (el.auto !== "rightThrow" && el.auto !== "leftThrow" && el.auto !== "twoThrow") return;
+    add(
+      r.apparatusElementChecks.some((c) => c.key === `appEl_${el.id}` && !c.passed),
+      A_PRIORITY.apparatusThrow,
+    );
+  });
+  add(failed("throwTum"), A_PRIORITY.throwTumbling);
+  add(r.varietyDeduction > 0, A_PRIORITY.variety);
+  add(failed("connect"), A_PRIORITY.connect);
+  add(failed("triple"), A_PRIORITY.triple);
+  add(r.connectNoApparatus, A_PRIORITY.connectApparatus);
+  add(failed("dir"), A_PRIORITY.other);
+  add(failed("tumCount"), A_PRIORITY.other);
+  return total;
+}
+
+/** テンプレートの並びを、採点できるシリーズの並びに直す */
+export const seriesOf = (list: SeriesTemplate[]): Series[] => list.map((t) => structuredClone(t.series));
+
+/** テンプレートの並びを評価する（自動生成の本数もここで数える） */
+export const evaluateUsed = (list: SeriesTemplate[], opts: GenerateOptions): Evaluation =>
+  evaluate(seriesOf(list), opts, list.filter((t) => t.auto).length);

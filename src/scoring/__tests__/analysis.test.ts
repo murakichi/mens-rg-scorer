@@ -14,8 +14,26 @@ import {
   apparatusBlockers,
   stripForApparatus,
   handsEmptyFlags,
+  catchTwoFlags,
+  catchSkillContinues,
+  checkApparatusFlow,
+  tumblingVariety,
 } from "../analysis";
-import { ropeJumpDef, MOTION_OPTIONS, SKILL_LIST, legacyMotionDef, motionOptionsFor } from "../constants";
+import {
+  ROPE_JUMPS,
+  resolveRopeJump,
+  ropeJumpDef,
+  ropeJumpDifficulty,
+  DIVING_SKILL_ID,
+  DIVING_UPGRADED_DIFFICULTY,
+  MOTION_OPTIONS,
+  SKILL_LIST,
+  legacyMotionDef,
+  motionOptionsFor,
+  skillDifficulty,
+  skillDifficultyAt,
+  skillOptions,
+} from "../constants";
 import type { Series, Item } from "../types";
 
 // テストヘルパー：items から Series を組む
@@ -112,12 +130,6 @@ describe("analyzeSeries", () => {
     expect(a.units[0].isThrowTumbling).toBe(true);
     expect(a.throwCount).toBe(1);
   });
-  it("ロープ跳びは最高難度の独立ユニットを追加する", () => {
-    const a = analyzeSeries(S({ kind: "ropeJump", jumpId: "3bc" }, { kind: "ropeJump", jumpId: "1f" }));
-    // 3bc = D, 1f = A → 最高の D が採用
-    expect(a.units).toHaveLength(1);
-    expect(a.units[0].finalDiff).toBe("D");
-  });
 });
 
 describe("seriesSignature", () => {
@@ -133,19 +145,39 @@ describe("seriesSignature", () => {
   });
 });
 
-describe("ロープ跳び — 3重連続3回以上・4重跳びは前後で難度が同じ", () => {
-  const diff = (id: string) => ropeJumpDef(id)?.difficulty;
+describe("ロープ跳び — 難度は前後・クロス・回数から表（§3.5.5.3）どおりに引く", () => {
+  const diff = (jumpId: string, cross = false, count = 1) =>
+    ropeJumpDifficulty(resolveRopeJump({ jumpId, cross, count })!);
 
-  it("3重跳び連続3回以上は前後ともD", () => {
-    expect(diff("3x3f")).toBe("D");
-    expect(diff("3x3b")).toBe("D");
+  it("1重跳びはすべてA", () => {
+    expect(["1f", "1b"].map((id) => diff(id))).toEqual(["A", "A"]);
+    expect(diff("1b", true, 5)).toBe("A");
   });
 
-  it("4重跳びは前後ともD、連続2回以上は前後ともE", () => {
-    expect(diff("4f")).toBe("D");
-    expect(diff("4b")).toBe("D");
-    expect(diff("4x2f")).toBe("E");
-    expect(diff("4x2b")).toBe("E");
+  it("2重跳び：前A／前クロスB／後ろB／後ろクロスC", () => {
+    expect([diff("2f"), diff("2f", true), diff("2b"), diff("2b", true)]).toEqual(["A", "B", "B", "C"]);
+  });
+
+  it("3重跳び：前B／前クロスC／後ろC／後ろクロスD", () => {
+    expect([diff("3f"), diff("3f", true), diff("3b"), diff("3b", true)]).toEqual(["B", "C", "C", "D"]);
+  });
+
+  it("3重跳び2回：前C／前クロスC／後ろD／後ろクロスD", () => {
+    expect([diff("3f", false, 2), diff("3f", true, 2), diff("3b", false, 2), diff("3b", true, 2)]).toEqual([
+      "C",
+      "C",
+      "D",
+      "D",
+    ]);
+  });
+
+  it("3重跳び連続3回以上は前後・クロスを区別せずD", () => {
+    expect([diff("3f", false, 3), diff("3f", true, 3), diff("3b", false, 9)]).toEqual(["D", "D", "D"]);
+  });
+
+  it("4重跳びは前後ともD、連続2回以上は前後ともE（クロスは効かない）", () => {
+    expect([diff("4f"), diff("4b"), diff("4f", true)]).toEqual(["D", "D", "D"]);
+    expect([diff("4f", false, 2), diff("4b", false, 3)]).toEqual(["E", "E"]);
   });
 
   it("前後の別は要求要素（前回し／後ろ回し）の判定用に保持される", () => {
@@ -153,10 +185,32 @@ describe("ロープ跳び — 3重連続3回以上・4重跳びは前後で難�
     expect(ropeJumpDef("4b")?.direction).toBe("back");
   });
 
-  it("前の4重跳びも徒手系難度Dのユニットになる", () => {
-    const a = analyzeSeries(S({ kind: "ropeJump", jumpId: "4f" }));
-    expect(a.units).toHaveLength(1);
-    expect(a.units[0].finalDiff).toBe("D");
+  it("クロスは2重・3重にだけ効く（1重・4重ではフラグを立てても無視する）", () => {
+    expect(resolveRopeJump({ jumpId: "1f", cross: true })?.cross).toBe(false);
+    expect(resolveRopeJump({ jumpId: "4b", cross: true })?.cross).toBe(false);
+    expect(resolveRopeJump({ jumpId: "2b", cross: true })?.cross).toBe(true);
+  });
+
+  it("回数は未指定なら1回、負数や小数は丸める", () => {
+    expect(resolveRopeJump({ jumpId: "2f" })?.count).toBe(1);
+    expect(resolveRopeJump({ jumpId: "2f", count: -3 })?.count).toBe(0);
+    expect(resolveRopeJump({ jumpId: "2f", count: 2.9 })?.count).toBe(2);
+  });
+
+  it("旧データの id（クロス・回数を含んでいたもの）は今の表現に解決される", () => {
+    const legacy = (id: string) => {
+      const r = resolveRopeJump({ jumpId: id })!;
+      return [r.def.id, r.cross, r.count, ropeJumpDifficulty(r)];
+    };
+    expect(legacy("3bc")).toEqual(["3b", true, 1, "D"]);
+    expect(legacy("2fc")).toEqual(["2f", true, 1, "B"]);
+    expect(legacy("3x2f")).toEqual(["3f", false, 2, "C"]);
+    expect(legacy("3x3b")).toEqual(["3b", false, 3, "D"]);
+    expect(legacy("4x2f")).toEqual(["4f", false, 2, "E"]);
+  });
+
+  it("選択肢にクロス・回数を含む跳びは残っていない", () => {
+    expect(ROPE_JUMPS.map((j) => j.id)).toEqual(["1f", "1b", "2f", "2b", "3f", "3b", "4f", "4b"]);
   });
 });
 
@@ -607,6 +661,57 @@ describe("その手具では入力できない内容", () => {
     expect(handsEmptyFlags(inSkill, "stick")).toEqual([false, true, false]);
   });
 
+  it("転回系の多様性は宙返りの種類数から自動計算する", () => {
+    const sk = (id: string): Item => ({ kind: "skill", skillId: id, hasApparatus: true, isThrow: false });
+    const S2 = (...items: Item[]): Series => ({ executionDeduction: 0, items });
+    // A難度の転回技（ロンダート・バク転・側転）は数えない
+    const onlyA = tumblingVariety([S2(sk("a_roundoff"), sk("a_flicflac"), sk("a_cartwheel"))]);
+    expect(onlyA).toEqual({ total: 0, distinct: 0, repeats: 0, deduction: 0 });
+    // 全部違う技なら減点なし
+    const varied = tumblingVariety([
+      S2(sk("a_roundoff"), sk("c_back15"), sk("b_front")),
+      S2(sk("a_roundoff"), sk("b_backlayout"), sk("b_sidesalto")),
+    ]);
+    expect(varied.total).toBe(4);
+    expect(varied.distinct).toBe(4);
+    expect(varied.deduction).toBe(0);
+    // 同じ技を繰り返したぶんだけ減点する（1つにつき0.1）
+    const repeated = tumblingVariety([S2(sk("a_roundoff"), sk("b_front"), sk("b_front"), sk("b_front"))]);
+    expect(repeated).toEqual({ total: 3, distinct: 1, repeats: 2, deduction: 0.2 });
+    // 上限（項目の0.50）で止まる
+    const many = tumblingVariety([S2(...Array.from({ length: 9 }, () => sk("b_front")))]);
+    expect(many.repeats).toBe(8);
+    expect(many.deduction).toBe(0.5);
+    // ひねり・姿勢が違えば別の技として数える
+    const twists = tumblingVariety([S2(sk("b_backsalto"), sk("b_backlayout"), sk("b_backhalf"))]);
+    expect(twists.distinct).toBe(3);
+    expect(twists.deduction).toBe(0);
+    // 徒手動作として入れた転回技は数えない（転回系ではない）
+    const asMotion = tumblingVariety([
+      S2(sk("b_front"), { kind: "motion", motionId: "b_kirimomi", count: 1 }),
+    ]);
+    expect(asMotion.total).toBe(1);
+  });
+
+  it("2つ同時キャッチは2つとも空中にあるときだけ入力できる", () => {
+    // 二つ投げなら2つとも空中にあるので、そのキャッチで入力できる
+    const two: Item[] = [
+      { kind: "throw", reqTypes: ["twothrow"] },
+      { kind: "motion", motionId: "chene", count: 1 },
+      { kind: "catch" },
+    ];
+    expect(catchTwoFlags(two, "clubs")).toEqual([false, false, true]);
+    // 片方だけ投げたときは、もう片方が手元にあるので同時には受けられない
+    const one: Item[] = [{ kind: "throw" }, { kind: "catch" }];
+    expect(catchTwoFlags(one, "clubs")).toEqual([false, false]);
+    // 続けて2つ投げた場合も2つとも空中（1本目のキャッチで入力できる）
+    const twice: Item[] = [{ kind: "throw" }, { kind: "throw" }, { kind: "catch" }, { kind: "catch" }];
+    expect(catchTwoFlags(twice, "clubs")).toEqual([false, false, true, false]);
+    // 手具が1つの種目には同時キャッチが無い
+    expect(catchTwoFlags(two, "stick")).toEqual([false, false, false]);
+    expect(catchTwoFlags([{ kind: "throw" }, { kind: "catch" }], "rope")).toEqual([false, false]);
+  });
+
   it("投げている間の手具操作は落とす", () => {
     const list = [
       S({ kind: "throw" }, { kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: false }, { kind: "catch" }),
@@ -641,5 +746,218 @@ describe("その手具では入力できない内容", () => {
     ];
     const sk = stripForApparatus(skillThrow, "stick")[0].items[0];
     expect(sk.kind === "skill" && sk.throwTypes).toEqual([]);
+  });
+});
+
+describe("ダイビング（後方系・頭から着地）", () => {
+  it("単発はA難度、宙返りの直後に連続で実施すると1段格上げ", () => {
+    expect(skillDifficulty(DIVING_SKILL_ID)).toBe("A");
+    // 単発・先頭はA
+    expect(skillDifficultyAt([DIVING_SKILL_ID], 0)).toBe("A");
+    // A難度技（ロンダート・バク転）は宙返りではないので格上げしない
+    expect(skillDifficultyAt(["a_roundoff", DIVING_SKILL_ID], 1)).toBe("A");
+    expect(skillDifficultyAt(["a_flicflac", DIVING_SKILL_ID], 1)).toBe("A");
+    // 宙返りの直後なら格上げ
+    expect(skillDifficultyAt(["c_back15", DIVING_SKILL_ID], 1)).toBe(DIVING_UPGRADED_DIFFICULTY);
+    expect(skillDifficultyAt(["d_backlay2twist", DIVING_SKILL_ID], 1)).toBe(DIVING_UPGRADED_DIFFICULTY);
+    // ほかの技の難度は位置で変わらない
+    expect(skillDifficultyAt(["c_back15", "b_front"], 1)).toBe(skillDifficulty("b_front"));
+  });
+
+  it("格上げぶんが連続の難度に乗る", () => {
+    // ロンダート→ダイビング：ダイビングはA扱いのままなので難度は付かない
+    expect(calcTumblingDifficulty(["a_roundoff", DIVING_SKILL_ID], false)).toBeNull();
+    // ロンダート→後方1回半ひねり(C)→ダイビング(格上げB)：C + (B-1) = D
+    expect(calcTumblingDifficulty(["a_roundoff", "c_back15", DIVING_SKILL_ID], false)).toBe("D");
+    // 格上げが無ければC止まりであることの確認（比較対象）
+    expect(calcTumblingDifficulty(["a_roundoff", "c_back15"], false)).toBe("C");
+  });
+
+  it("常に宙返りとして数える（三宙に入る）", () => {
+    expect(SKILL_LIST.find((s) => s.id === DIVING_SKILL_ID)?.isSalto).toBe(true);
+    expect(maxSaltoChain(["a_roundoff", "c_back15", DIVING_SKILL_ID])).toBe(2);
+    expect(maxSaltoChain(["a_roundoff", "d_backlay2twist", "c_back15", DIVING_SKILL_ID])).toBe(3);
+  });
+
+  it("入力画面には出るが、自動生成では組み立てない", () => {
+    expect(skillOptions().some((s) => s.id === DIVING_SKILL_ID)).toBe(true);
+    expect(SKILL_LIST.find((s) => s.id === DIVING_SKILL_ID)?.noAuto).toBe(true);
+    // 徒手動作の選択肢には出ない（宙返り扱いなので）
+    expect(MOTION_OPTIONS.some((m) => m.id === DIVING_SKILL_ID)).toBe(false);
+  });
+});
+
+describe("技の最中の投げの二つ投げ", () => {
+  const twoThrowSeries = () =>
+    S(
+      { kind: "skill", skillId: "a_roundoff", hasApparatus: true, isThrow: false },
+      { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: true, reqTypes: ["twothrow"] },
+      { kind: "motion", motionId: "fwd_roll", count: 1 },
+      { kind: "catch", catchTwo: true },
+    );
+
+  it("二つ投げなら手具が2つとも空中に出る", () => {
+    const items = twoThrowSeries().items;
+    // 前転の位置で手元が空（＝手具操作を付けられない）
+    expect(handsEmptyFlags(items, "clubs")).toEqual([false, false, true, false]);
+    // 2つとも空中なので2つ同時キャッチを入力できる
+    expect(catchTwoFlags(items, "clubs")).toEqual([false, false, false, true]);
+    // 二つ投げでなければ片方は手元に残る
+    const one = S(
+      { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: true },
+      { kind: "catch" },
+    ).items;
+    expect(handsEmptyFlags(one, "clubs")).toEqual([false, false]);
+    expect(catchTwoFlags(one, "clubs")).toEqual([false, false]);
+  });
+
+  it("手具の流れの警告が出ない（2つ投げて2つ受ける）", () => {
+    expect(checkApparatusFlow(twoThrowSeries(), "clubs")).toEqual([]);
+  });
+
+  it("その手具で入力できなければ落ちる", () => {
+    const list = [twoThrowSeries()];
+    expect(apparatusBlockers(list, "clubs")).toEqual([]);
+    expect(apparatusBlockers(list, "stick")).toContain("二つ投げ");
+    const stripped = stripForApparatus(list, "stick")[0].items[1];
+    expect(stripped.kind === "skill" && stripped.reqTypes).toEqual([]);
+    // クラブのままなら落とさない（同じ配列をそのまま返す）
+    expect(stripForApparatus(list, "clubs")).toBe(list);
+  });
+
+  it("二つ投げの有無で別のシリーズとして扱う", () => {
+    const plain = S(
+      { kind: "skill", skillId: "a_roundoff", hasApparatus: true, isThrow: false },
+      { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: true },
+      { kind: "motion", motionId: "fwd_roll", count: 1 },
+      { kind: "catch" },
+    );
+    expect(seriesSignature(twoThrowSeries())).not.toBe(seriesSignature(plain));
+  });
+});
+
+describe("技の最中の受け（isCatch）", () => {
+  const throwItem = (): Item => ({ kind: "throw" });
+  const catchingSkill = (skillId: string, extra: Partial<Extract<Item, { kind: "skill" }>> = {}): Item => ({
+    kind: "skill",
+    skillId,
+    hasApparatus: false,
+    isThrow: false,
+    isCatch: true,
+    ...extra,
+  });
+
+  it("入力はどの技にも付けられる（自動生成の制限は生成側だけ）", () => {
+    // 規則が禁じていないので入力は制限しない。側宙でも転宙でも採点が通る
+    ["b_sidesalto", "b_tenchu", "a_roundoff"].forEach((skillId) => {
+      const a = analyzeSeries(S(throwItem(), catchingSkill(skillId)));
+      expect(a.units.length).toBeGreaterThan(0);
+      expect(checkApparatusFlow(S(throwItem(), catchingSkill(skillId)), "stick")).toEqual([]);
+    });
+  });
+
+  it("その技でユニットが閉じ、投げタンとして扱われる（技の最中の投げと同じ）", () => {
+    const a = analyzeSeries(S(throwItem(), catchingSkill("b_front")));
+    expect(a.units).toHaveLength(1);
+    expect(a.units[0].type).toBe("throw");
+    expect(a.units[0].isThrowTumbling).toBe(true);
+    // 投げ1回ぶんとして数える（受けは投げの回数には足さない）
+    expect(a.throwCount).toBe(1);
+    // キャッチアイテムで書いた同じ内容と難度が一致する
+    const withItem = analyzeSeries(S(throwItem(), { kind: "skill", skillId: "b_front", hasApparatus: false, isThrow: false }, { kind: "catch" }));
+    expect(a.units[0].finalDiff).toBe(withItem.units[0].finalDiff);
+  });
+
+  it("受けたあとは別のユニットになる（キャッチで区切るのと同じ）", () => {
+    const a = analyzeSeries(
+      S(throwItem(), catchingSkill("b_front"), { kind: "motion", motionId: "chene", count: 2 }),
+    );
+    expect(a.units).toHaveLength(2);
+    expect(a.units[0].isThrowTumbling).toBe(true);
+    // 2つ目は投げを含まない徒手ユニット（転回技が無いので type は徒手側＝"throw"）
+    expect(a.units[1].isThrow).toBe(false);
+    expect(a.units[1].isThrowTumbling).toBeFalsy();
+  });
+
+  it("受けた直後に転回技が続くときは、同じユニットのまま（1本の投げタン）", () => {
+    // 実施例（リング）：投げ→ロンダート（手具を使ったキャッチ）→後方宙返り1回半ひねり→
+    // ロンダート→ダイビング前宙。受けた技は連鎖の途中なので、ここで切らない
+    const ser = S(
+      throwItem(),
+      catchingSkill("a_roundoff", { catchTypes: ["useapp"] }),
+      { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: false },
+      { kind: "skill", skillId: "a_roundoff", hasApparatus: true, isThrow: false },
+      { kind: "skill", skillId: "b_divefront", hasApparatus: true, isThrow: false },
+    );
+    const a = analyzeSeries(ser);
+    expect(a.units).toHaveLength(1);
+    expect(a.units[0].isThrowTumbling).toBe(true);
+    // 切ってしまうとロンダート1本だけ＝徒手動作1つのユニット（B難度）になってしまう
+    expect(a.units[0].finalDiff).toBe("E");
+    expect(catchSkillContinues(ser.items, 1)).toBe(true);
+  });
+
+  it("受けた直後が徒手（側転・徒手動作）ならそこで切る", () => {
+    // 側転は徒手扱いなので連鎖の続きではない
+    const withCartwheel = S(
+      throwItem(),
+      catchingSkill("a_roundoff"),
+      { kind: "skill", skillId: "a_cartwheel", hasApparatus: true, isThrow: false },
+    );
+    expect(catchSkillContinues(withCartwheel.items, 1)).toBe(false);
+    expect(analyzeSeries(withCartwheel).units).toHaveLength(2);
+    // 何も続かないときも切る（従来どおり）
+    expect(catchSkillContinues(S(throwItem(), catchingSkill("b_front")).items, 1)).toBe(false);
+  });
+
+  it("キャッチアイテム（手で受ける）のあとの転回技は従来どおり別のユニット", () => {
+    // いったん手に戻してから次の連鎖に入るので、技の最中の受けとは扱いが違う
+    const a = analyzeSeries(
+      S(throwItem(), { kind: "catch" }, { kind: "skill", skillId: "c_back15", hasApparatus: true, isThrow: false }),
+    );
+    expect(a.units).toHaveLength(2);
+    expect(a.units[0].isThrowTumbling).toBeFalsy();
+  });
+
+  it("受けるのは技の終わりなので、その技には手具操作を付けられない", () => {
+    // 投げの技は離す瞬間まで手元にあるので操作あり（＝false）、受けの技はまだ空（＝true）
+    const items = [throwItem(), catchingSkill("b_front")];
+    expect(handsEmptyFlags(items, "stick")).toEqual([false, true]);
+    const thrown: Item[] = [
+      { kind: "skill", skillId: "b_front", hasApparatus: true, isThrow: true },
+      { kind: "catch" },
+    ];
+    expect(handsEmptyFlags(thrown, "stick")[0]).toBe(false);
+  });
+
+  it("手具の流れの検証に効く（受けすぎ・受け不足を見つける）", () => {
+    expect(checkApparatusFlow(S(throwItem(), catchingSkill("b_front")), "stick")).toEqual([]);
+    // 投げていないのに技の最中に受けるのは空中に手具が無い
+    expect(checkApparatusFlow(S(catchingSkill("b_front")), "stick")[0]).toContain("技の最中の受け");
+    // 投げたまま受けないと余る
+    expect(checkApparatusFlow(S(throwItem(), { kind: "skill", skillId: "b_front", hasApparatus: false, isThrow: false }), "stick")).toHaveLength(1);
+  });
+
+  it("2つ同時キャッチを入力できる位置も、キャッチアイテムと同じに判定する", () => {
+    // クラブの二つ投げ → 2つとも空中なので、技の最中の受けでも2つ同時にできる
+    const items: Item[] = [
+      { kind: "throw", reqTypes: ["twothrow"] },
+      catchingSkill("b_front"),
+    ];
+    expect(catchTwoFlags(items, "clubs")[1]).toBe(true);
+    // スティック（手具1つ）では同時に受けられない
+    expect(catchTwoFlags(items, "stick")[1]).toBe(false);
+  });
+
+  it("その手具で入力できない受け方は落とす（キャッチアイテムと同じ）", () => {
+    const list = [S(throwItem(), catchingSkill("b_front", { catchTypes: ["useapp"], catchTwo: true }))];
+    // スティックには押さえつける相手の手具が無い
+    expect(apparatusBlockers(list, "stick")).toContain("手具を使った投げ・キャッチ");
+    expect(apparatusBlockers(list, "stick")).toContain("2つ同時キャッチ");
+    const stripped = stripForApparatus(list, "stick")[0].items[1];
+    expect(stripped.kind === "skill" ? stripped.catchTypes : null).toEqual([]);
+    expect(stripped.kind === "skill" ? stripped.catchTwo : null).toBe(false);
+    // クラブなら残る
+    expect(apparatusBlockers(list, "clubs")).toEqual([]);
   });
 });

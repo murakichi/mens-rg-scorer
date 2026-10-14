@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { IndividualScorer } from "./components/IndividualScorer";
 import { TeamScorer } from "./components/TeamScorer";
+import { RatingScreen } from "./components/RatingScreen";
 import { consumeShareHash } from "./scoring/share";
 import { loadDraftMode, saveDraftMode, type ScorerMode } from "./scoring/draft";
 
@@ -37,13 +38,18 @@ export default function App() {
           <button className={mode === "team" ? "mode-active" : "mode-btn"} onClick={() => changeMode("team")}>
             団体モード（5人）
           </button>
+          <button className={mode === "rating" ? "mode-active" : "mode-btn"} onClick={() => changeMode("rating")}>
+            レーティング
+          </button>
         </div>
       </header>
 
       {mode === "individual" ? (
         <IndividualScorer initialData={individualInit} />
-      ) : (
+      ) : mode === "team" ? (
         <TeamScorer initialData={teamInit} />
+      ) : (
+        <RatingScreen />
       )}
 
       <footer className="site-footer">

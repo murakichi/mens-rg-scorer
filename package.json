@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "probe": "node scripts/probe.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",

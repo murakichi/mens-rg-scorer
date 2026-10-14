@@ -62,6 +62,9 @@ const draft = (over: Partial<IndividualDraft> = {}): IndividualDraft => ({
   apparatusElements: [],
   violations: [],
   artDeductions: {},
+  basicHands: [],
+  handOps: [],
+  offBodyCount: 0,
   ...over,
 });
 
@@ -313,7 +316,90 @@ describe("localStorage への保存と復元", () => {
     expect(loadDraftMode()).toBeNull();
     saveDraftMode("team");
     expect(loadDraftMode()).toBe("team");
+    saveDraftMode("rating");
+    expect(loadDraftMode()).toBe("rating");
     store.setItem(DRAFT_KEY_MODE, JSON.stringify("solo"));
     expect(loadDraftMode()).toBeNull();
+  });
+});
+
+describe("ロープ跳びリストの保存", () => {
+  it("跳びリストを取り込み、壊れた行は落とす", () => {
+    const d = normalizeIndividualDraft({
+      apparatus: "rope",
+      series: [],
+      ropeJumps: [
+        { kind: "ropeJump", jumpId: "3b", cross: true, count: 2, isMoving6m: true },
+        null,
+        { kind: "ropeJump" },
+        { kind: "ropeJump", jumpId: "2f", count: -1 },
+      ],
+    })!;
+    // 跳びシリーズに分ける前の形（跳びを1本に並べた配列）は1つの跳びシリーズとして読む
+    expect(d.ropeJumps).toEqual([
+      [
+        { kind: "ropeJump", jumpId: "3b", cross: true, count: 2, isMoving6m: true },
+        { kind: "ropeJump", jumpId: "2f", count: 0 },
+      ],
+    ]);
+  });
+
+  it("跳びシリーズの分け方をそのまま保つ", () => {
+    const d = normalizeIndividualDraft({
+      apparatus: "rope",
+      series: [],
+      ropeJumps: [[{ kind: "ropeJump", jumpId: "2f" }], [], [{ kind: "ropeJump", jumpId: "3b" }, null]],
+    })!;
+    expect(d.ropeJumps.map((g) => g.map((j) => j.jumpId))).toEqual([["2f"], [], ["3b"]]);
+  });
+
+  it("旧データでシリーズの中にあった跳びは跳びリストへ移る", () => {
+    const d = normalizeIndividualDraft({
+      apparatus: "rope",
+      series: [
+        {
+          executionDeduction: 0,
+          items: [{ kind: "ropeJump", jumpId: "2fc" }, { kind: "throw" }, { kind: "catch" }],
+        },
+      ],
+    })!;
+    expect(d.series[0].items.map((i) => i.kind)).toEqual(["throw", "catch"]);
+    expect(d.ropeJumps.map((g) => g.map((j) => j.jumpId))).toEqual([["2fc"]]);
+  });
+
+  it("旧データのシリーズごとに別の跳びシリーズになる", () => {
+    const ser = (jumpId: string) => ({ executionDeduction: 0, items: [{ kind: "ropeJump", jumpId }, { kind: "throw" }, { kind: "catch" }] });
+    const d = normalizeIndividualDraft({ apparatus: "rope", series: [ser("2f"), ser("3b")] })!;
+    expect(d.ropeJumps.map((g) => g.map((j) => j.jumpId))).toEqual([["2f"], ["3b"]]);
+  });
+
+  it("ロープ以外では跳びリストを持たない", () => {
+    expect(normalizeIndividualDraft({ apparatus: "stick", series: [], ropeJumps: [{ kind: "ropeJump", jumpId: "3b" }] })!.ropeJumps).toEqual([]);
+  });
+
+  it("技の最中の受けは保存データの往復で残る", () => {
+    const d = normalizeIndividualDraft({
+      apparatus: "clubs",
+      series: [
+        {
+          executionDeduction: 0,
+          items: [
+            { kind: "throw" },
+            {
+              kind: "skill",
+              skillId: "b_front",
+              hasApparatus: false,
+              isThrow: false,
+              isCatch: true,
+              catchTypes: ["noview"],
+            },
+          ],
+        },
+      ],
+    })!;
+    const item = d.series[0].items[1];
+    expect(item.kind).toBe("skill");
+    expect(item.kind === "skill" ? item.isCatch : null).toBe(true);
+    expect(item.kind === "skill" ? item.catchTypes : null).toEqual(["noview"]);
   });
 });

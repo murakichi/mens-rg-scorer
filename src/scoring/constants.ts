@@ -8,6 +8,7 @@
 import type {
   ApparatusKey,
   Difficulty,
+  FutureLevel,
   HandMotion,
   Posture,
   Skill,
@@ -48,6 +49,32 @@ export const CATCH_OPTIONS_COMMON = [
 ];
 export const CATCH_OPTIONS_APPARATUS = [{ id: USE_APPARATUS_TAG, name: "手具を使ったキャッチ" }];
 
+/**
+ * **手具を使ったキャッチ**（もう一方の手具で押さえる）と**手以外のキャッチ**（首・足にはめる）は
+ * 1回の受けで同時には実施できない（排他）。
+ */
+export const NON_HAND_CATCH_TAG = "nonhand";
+export const CATCH_EXCLUSIVE_TAGS: string[] = [USE_APPARATUS_TAG, NON_HAND_CATCH_TAG];
+
+/**
+ * そのキャッチのタグ `types` に対して、`optId` のチェックを新しく付けられないか（排他の相手が付いている）。
+ * すでに付いているものは外せるように、**付いている側は塞がない**（旧データで両方付いていても直せる）。
+ */
+export const catchOptionBlocked = (optId: string, types: string[] | undefined): boolean => {
+  const have = types || [];
+  if (!CATCH_EXCLUSIVE_TAGS.includes(optId) || have.includes(optId)) return false;
+  return CATCH_EXCLUSIVE_TAGS.some((t) => t !== optId && have.includes(t));
+};
+
+/**
+ * 横投げの技術タグ。投げ方の一種類として数える（多様な投げ受けの種類数）。
+ * ロープでは実施しないので、それ以外の手具だけに出す（`canUseSideThrow`）。
+ * 技術加点（0.1）は付けない — 投げ方の種類としてだけ数える。
+ */
+export const SIDE_THROW_TAG = "side";
+export const THROW_OPTIONS_SIDE = [{ id: SIDE_THROW_TAG, name: "横投げ" }];
+export const canUseSideThrow = (apparatus: ApparatusKey): boolean => apparatus !== "rope";
+
 export const APPARATUS_USE: Record<ApparatusKey, boolean> = {
   stick: false,
   clubs: true,
@@ -61,10 +88,19 @@ export const APPARATUS_COUNT: Record<ApparatusKey, number> = {
   rope: 1,
 };
 
+/** 二つ投げ（両方の手具を同時に投げる）の必須投げのid */
+export const TWO_THROW_TAG = "twothrow";
+
+/** 左手投げ（利き手でない手で投げる）の必須投げのid */
+export const LEFT_HAND_THROW_TAG = "lefthand";
+
+/** 視野外の投げ・キャッチの技術タグ */
+export const NO_VIEW_TAG = "noview";
+
 export const REQUIRED_THROW_OPTIONS: Record<ApparatusKey, { id: string; name: string }[]> = {
-  stick: [{ id: "lefthand", name: "左手投げ" }],
-  clubs: [{ id: "twothrow", name: "二つ投げ" }],
-  ring: [{ id: "twothrow", name: "二つ投げ" }],
+  stick: [{ id: LEFT_HAND_THROW_TAG, name: "左手投げ" }],
+  clubs: [{ id: TWO_THROW_TAG, name: "二つ投げ" }],
+  ring: [{ id: TWO_THROW_TAG, name: "二つ投げ" }],
   rope: [],
 };
 
@@ -76,13 +112,82 @@ export const requiredThrowName = (id: string): string =>
 
 /** 二つ投げが必須投げの手具（リング・クラブ）か。二つ投げ関連の表示条件に使う。 */
 export function hasTwoThrow(apparatus: ApparatusKey): boolean {
-  return REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === "twothrow");
+  return REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === TWO_THROW_TAG);
 }
 
-export const DIFF_VALUE: Record<Difficulty, number> = { A: 1, B: 2, C: 3, D: 4, E: 5 };
-export const VALUE_DIFF: Record<number, Difficulty> = { 1: "A", 2: "B", 3: "C", 4: "D", 5: "E" };
+/** 左手投げが必須投げの手具（スティック）か */
+export function hasLeftHandThrow(apparatus: ApparatusKey): boolean {
+  return REQUIRED_THROW_OPTIONS[apparatus].some((o) => o.id === LEFT_HAND_THROW_TAG);
+}
+
+export const DIFF_VALUE: Record<Difficulty, number> = { A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7 };
+export const VALUE_DIFF: Record<number, Difficulty> = { 1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "F", 7: "G" };
+/** 現行規則の上限難度（E）。十年後モードでは `maxDiff` がこれを上回る。 */
 export const MAX_DIFF = 5;
-export const DIFF_SCORE: Record<Difficulty, number> = { A: 0.1, B: 0.2, C: 0.3, D: 0.5, E: 0.7 };
+export const DIFF_SCORE: Record<Difficulty, number> = {
+  A: 0.1,
+  B: 0.2,
+  C: 0.3,
+  D: 0.5,
+  E: 0.7,
+  // 十年後モードでのみ認定する難度（F・G）。E の 0.7 から 0.2 刻みで伸ばす。
+  F: 0.9,
+  G: 1.1,
+};
+
+// ---- 十年後モード（現行規則には無いF・G難度を認定する仮想ルール）----
+
+/** 上限難度の選択肢（プルダウン）。値は `FutureLevel`。 */
+export const FUTURE_LEVELS: { id: Exclude<FutureLevel, null>; name: string }[] = [
+  { id: "F", name: "F難度まで" },
+  { id: "G", name: "G難度まで" },
+];
+/** 十年後モードをONにしたときの既定の上限 */
+export const DEFAULT_FUTURE_LEVEL: Exclude<FutureLevel, null> = "F";
+
+/** 保存データ・共有URLから読んだ値を `FutureLevel` に正規化する（不正値・旧データは null）。 */
+export function normalizeFutureLevel(v: unknown): FutureLevel {
+  return FUTURE_LEVELS.some((l) => l.id === v) ? (v as FutureLevel) : null;
+}
+
+/** 適用する上限難度の値。モードOFF（null）は現行規則どおり E 止め。 */
+export function maxDiff(future: FutureLevel = null): number {
+  return future ? DIFF_VALUE[future] : MAX_DIFF;
+}
+
+/**
+ * 十年後モードの徒手系難度の数え方。**縦回転は手具の滞空時間を食う**ので横より重く数え、
+ * 重み付きの動作量が `FUTURE_HAND_STEPS` の値に届いたらF・Gを認定する。
+ * 現行規則の「縦3動作＝E」（4動作相当）と同じ考え方を上に伸ばしたもので、
+ *   シェネ×5＝5.0（F）／シェネ×4＋前転＝5.5（G）／前転×4＝6.0（G）／6動作＝6.0以上（G）
+ * となる。E以下は従来どおり動作数だけで決めるので、現行規則の採点は変わらない。
+ */
+export const HAND_MOTION_WEIGHT = { vertical: 1.5, horizontal: 1 } as const;
+export const FUTURE_HAND_STEPS: { value: number; diff: Difficulty }[] = [
+  { value: 5.5, diff: "G" },
+  { value: 5, diff: "F" },
+];
+
+/** 重み付きの動作量（縦回転を重く数えた動作数） */
+export function handMotionValue(motionCount: number, verticalCount: number): number {
+  const vertical = Math.min(Math.max(verticalCount, 0), motionCount);
+  return vertical * HAND_MOTION_WEIGHT.vertical + (motionCount - vertical) * HAND_MOTION_WEIGHT.horizontal;
+}
+
+/**
+ * 十年後モードで認定する徒手系難度の値（F・Gに届かなければ0）。
+ * 呼び出し側が動作数から決まる値と `Math.max` を取る（下げることはしない）。
+ */
+export function futureHandValue(motionCount: number, verticalCount: number): number {
+  const weighted = handMotionValue(motionCount, verticalCount);
+  const step = FUTURE_HAND_STEPS.find((x) => weighted + 1e-9 >= x.value);
+  return step ? DIFF_VALUE[step.diff] : 0;
+}
+
+/** 難度を適用中の上限で丸める（E超えは十年後モードのときだけ残る） */
+export function clampDifficulty(value: number, future: FutureLevel = null): Difficulty {
+  return VALUE_DIFF[Math.min(Math.max(value, DIFF_VALUE.A), maxDiff(future))];
+}
 
 export const SERIES_BONUS = 0.1;
 export const TECHNIQUE_BONUS = 0.1;
@@ -152,7 +257,6 @@ export const APPARATUS_REQUIRED_ELEMENTS: Record<
     { id: "stick_right", name: "右投げ右受け1回以上", auto: "rightThrow" },
     { id: "stick_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "stick_roll", name: "1m以上のころがし" },
-    { id: "stick_propeller", name: "プロペラ回旋2回以上" },
   ],
   ring: [
     { id: "ring_twothrow", name: "2つ同時投げ", auto: "twoThrow" },
@@ -171,7 +275,6 @@ export const APPARATUS_REQUIRED_ELEMENTS: Record<
     { id: "clubs_twothrow", name: "2つ同時投げ", auto: "twoThrow" },
     { id: "clubs_rotthrow", name: "転回系の投げ受け", auto: "throwTumbling" },
     { id: "clubs_roll", name: "50cm以上のころがし" },
-    { id: "clubs_propeller", name: "プロペラ回旋2回以上" },
   ],
 };
 
@@ -187,19 +290,106 @@ export interface ArtDeductionItem {
   name: string;
   max: number;
   note: string;
+  /** 画面のツールチップ。自動判定している部分がある項目だけ、その中身を要約して持つ */
+  tip?: string;
 }
 export const ART_DEDUCTION_STEP = 0.1;
 export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
-  { id: "handVariety", group: "多様性と技術価値", name: "徒手系の種類・組み合わせの多様性", max: 1.0, note: "0.1 / 0.2" },
-  { id: "tumVariety", group: "多様性と技術価値", name: "転回系の種類・組み合わせの多様性", max: 0.5, note: "0.1 / 0.2" },
-  { id: "appVariety", group: "多様性と技術価値", name: "さまざまな操作", max: 1.0, note: "0.1 / 0.2" },
-  { id: "appInTumbling", group: "手具操作の多様性", name: "転回中の操作", max: 0.5, note: "0〜0.4" },
+  {
+    id: "handVariety",
+    group: "多様性と技術価値",
+    name: "徒手系の種類・組み合わせの多様性",
+    max: 1.0,
+    note: "0.1 / 0.2",
+    tip: "上半身・下半身の深い運動の不足は「基本徒手」カードで自動判定して別に引いている。ここはそれ以外の主観評価ぶん",
+  },
+  {
+    id: "tumVariety",
+    group: "多様性と技術価値",
+    name: "転回系の種類・組み合わせの多様性",
+    max: 0.5,
+    note: "0.1 / 0.2",
+    tip: "自動計算：A難度技と徒手扱いの転回を除いた宙返りについて、実施数−種類数ぶん1つにつき −0.1（上限0.50）。ひねり回数・姿勢が違えば別の技として数える",
+  },
+  {
+    id: "appVariety",
+    group: "多様性と技術価値",
+    name: "さまざまな操作",
+    max: 1.0,
+    note: "0.1 / 0.2",
+    tip: "投げ受けの種類の不足は「投げ方・受け方の種類不足」として自動で引いている（投げ方・受け方それぞれ3種類、1種類不足につき −0.1・合計上限0.5）。ここはそれ以外の操作の多様性",
+  },
+  {
+    id: "appInTumbling",
+    group: "手具操作の多様性",
+    name: "転回中の操作",
+    max: 0.5,
+    note: "0〜0.4",
+    tip: "自動計算：手具操作を付けられる技のうち操作した割合で 0〜0.4（8割以上で0／2割未満で0.4）。操作がまったく無いタンブリングは別に自動で引いている（宙返り系すべてで無操作 −0.1／シリーズ全体で無操作 −0.2・上限0.4）",
+  },
   { id: "rhythm", group: "芸術性と技術価値", name: "リズム変化・ダイナミズムによる表現", max: 0.5, note: "0.1 / 0.2" },
   { id: "space", group: "芸術性と技術価値", name: "空間使用による表現", max: 0.5, note: "0.1 / 0.2" },
   { id: "originality", group: "芸術性と技術価値", name: "独創性の高い内容と表現", max: 0.5, note: "0.1 / 0.2" },
   { id: "handRatio", group: "その他の技術的価値", name: "徒手の割合", max: 0.5, note: "0〜0.5" },
   { id: "volume", group: "その他の技術的価値", name: "運動量", max: 0.5, note: "0.1 / 0.2" },
 ];
+
+/**
+ * 「転回系の種類・組み合わせの多様性」（§3.5.6.4）の自動計算。
+ * 上級者が必須要素をすべて満たす構成では、ロンダート等のA難度を含めて9〜11個の転回が入り、
+ * A難度を除くと**6〜8個の宙返り**になる。それが**全部違う技なら減点なし**で、
+ * 同じ技を繰り返したぶん（＝種類が減ったぶん）1つにつき `TUM_VARIETY_DEDUCTION_STEP` を引く。
+ * 上限は欠点テーブルの項目の上限（0.50）。
+ */
+export const TUM_VARIETY_ITEM_ID = "tumVariety";
+export const TUM_VARIETY_DEDUCTION_STEP = 0.1;
+
+/**
+ * 「転回中の操作」（§3.5.6.4）の自動計算。
+ * 手具操作を付けられる技（＝入力欄に「手具操作」チェックが出る技）のうち、
+ * 実際に操作した割合で減点幅 0〜0.4 を割り当てる。割合の区切りは規則には無いので
+ * **この表がアプリの判断**（自動計算ボタンで手入力欄に入れるだけなので、上書きできる）。
+ */
+export const APP_IN_TUM_ITEM_ID = "appInTumbling";
+export const APP_IN_TUM_STEPS: { minRatio: number; deduction: number }[] = [
+  { minRatio: 0.8, deduction: 0 },
+  { minRatio: 0.6, deduction: 0.1 },
+  { minRatio: 0.4, deduction: 0.2 },
+  { minRatio: 0.2, deduction: 0.3 },
+  { minRatio: 0, deduction: 0.4 },
+];
+/** 割合から減点を引く（操作できる技が無ければ減点なし） */
+export function appInTumblingDeduction(withOp: number, total: number): number {
+  if (total <= 0) return 0;
+  const ratio = withOp / total;
+  return APP_IN_TUM_STEPS.find((s) => ratio >= s.minRatio)?.deduction ?? 0;
+}
+
+/**
+ * ジュニアをONにしたとき、既定で**上限まで引く**欠点テーブルの項目。
+ * ジュニアの水準では一部のトップクラスしか達成できないため。
+ * あくまで既定値なので、入れたあとに手で下げられる。
+ */
+export const JUNIOR_MAX_ART_ITEMS: string[] = ["originality"];
+
+/**
+ * ジュニアの切り替えに合わせて欠点テーブルの既定値を入れ替える。
+ * ON …… 対象項目を上限まで引く（手入力を上書きする＝既定値なので）
+ * OFF …… 上限のままの項目だけ戻す（手で下げた値はそのまま残す）
+ */
+export function withJuniorArtDefaults(
+  current: Record<string, number>,
+  junior: boolean,
+): Record<string, number> {
+  const next = { ...current };
+  JUNIOR_MAX_ART_ITEMS.forEach((id) => {
+    const max = artDeductionItem(id)?.max ?? 0;
+    if (!max) return;
+    if (junior) next[id] = max;
+    else if (next[id] === max) delete next[id];
+  });
+  return next;
+}
 
 export function artDeductionItem(id: string): ArtDeductionItem | undefined {
   return ART_DEDUCTION_ITEMS.find((x) => x.id === id);
@@ -212,6 +402,106 @@ export function clampArtDeduction(id: string, value: unknown): number {
   const v = Number(value);
   if (!Number.isFinite(v) || v <= 0) return 0;
   return Math.min(Math.round(v * 10) / 10, item.max);
+}
+
+// ---- 基本徒手（§3.5.2 徒手系基礎要素群1群「各種徒手」）----
+
+/** 深い運動の部位。演技にはどちらも入れる。 */
+export type DeepMotionPart = "upper" | "lower";
+/** `tip` は画面の注記・ツールチップに出す説明 */
+export const DEEP_MOTION_PARTS: { id: DeepMotionPart; name: string; tip: string }[] = [
+  { id: "upper", name: "上半身の深い運動", tip: "上半身を大きく上下左右に動かすこと" },
+  { id: "lower", name: "下半身の深い運動", tip: "前倒、側倒、斜前屈など、下半身を大きく動かすこと" },
+];
+
+/**
+ * 基本徒手の一覧。`parts` は、その動作が満たす深い運動（複数可）。
+ * 表を増やすときはここに1行足すだけでよい（採点側は `parts` しか見ない）。
+ */
+export interface BasicHandElement {
+  id: string;
+  name: string;
+  parts: DeepMotionPart[];
+}
+export const BASIC_HAND_ELEMENTS: BasicHandElement[] = [
+  { id: "slantfwd", name: "斜前屈", parts: ["upper", "lower"] },
+  { id: "chestback", name: "胸後反", parts: ["lower"] },
+  { id: "snake", name: "蛇動", parts: ["lower"] },
+  { id: "forwardbend", name: "前屈", parts: ["upper"] },
+  // 表に無い動作の受け皿。実施した部位を選んで深い運動の充足に数える
+  { id: "other_upper", name: "その他上半身の運動", parts: ["upper"] },
+  { id: "other_lower", name: "その他下半身の運動", parts: ["lower"] },
+  { id: "other_whole", name: "その他全身の運動", parts: ["upper", "lower"] },
+];
+
+export const basicHandDef = (id: string): BasicHandElement | undefined =>
+  BASIC_HAND_ELEMENTS.find((x) => x.id === id);
+
+/** 深い運動が1部位不足するごとのA減点（§3.5.6.4 徒手系の種類・組み合わせの多様性） */
+export const DEEP_MOTION_DEDUCTION = 0.1;
+
+/** 入力された基本徒手が満たす深い運動の部位 */
+export function deepMotionParts(ids: string[]): Set<DeepMotionPart> {
+  const set = new Set<DeepMotionPart>();
+  ids.forEach((id) => basicHandDef(id)?.parts.forEach((p) => set.add(p)));
+  return set;
+}
+
+// ---- 手具操作の多様性（§3.5.6.4 さまざまな操作）----
+
+/** 実施していれば減点なしのチェック項目（`tip` は画面の注記・ツールチップ） */
+export interface HandOpCheck {
+  id: string;
+  name: string;
+  tip: string;
+  /** この手具でだけ出す項目（未指定＝全手具） */
+  only?: ApparatusKey[];
+}
+export const HAND_OP_CHECKS: HandOpCheck[] = [
+  {
+    id: "twoParts",
+    name: "2部位以上を通る手具操作",
+    tip: "身体の部位は右腕・左腕・右足・左足・胴・首の6つ。そのうち2つ以上を通して操作すること",
+  },
+  { id: "character", name: "手具の特性を生かした手具操作", tip: "その手具にしかできない操作をすること" },
+  {
+    id: "leftHand",
+    name: "左手の手具操作",
+    tip: "左手で手具を操作すること。必須要素の左投げ左受けとは別軸の評価",
+    only: ["stick"],
+  },
+];
+
+/** その手具で出すチェック項目 */
+export const handOpChecksFor = (apparatus: ApparatusKey): HandOpCheck[] =>
+  HAND_OP_CHECKS.filter((c) => !c.only || c.only.includes(apparatus));
+/** 身体の部位（2部位以上を通る手具操作の判定に使う） */
+export const BODY_PARTS = ["右腕", "左腕", "右足", "左足", "胴", "首"];
+
+/** 「手具の特性を生かした手具操作」の項目id（手具ごとの例を出すため） */
+export const HAND_OP_CHARACTER_ID = "character";
+
+/** 手具ごとの「特性」の例。チェック項目の横とツールチップに出す。 */
+export const APPARATUS_CHARACTER_HINTS: Record<ApparatusKey, string[]> = {
+  stick: ["様々な位置を持てる"],
+  clubs: ["二つある"],
+  ring: ["二つある", "体にはめられる", "回せる"],
+  rope: ["体に巻き付けられる", "変形できる"],
+};
+/** チェック項目1つにつきのA減点 */
+export const HAND_OP_CHECK_DEDUCTION = 0.1;
+
+/** 身体を離れる手具操作（プロペラ回旋・まわしなど）に必要な回数 */
+export const OFF_BODY_REQUIRED_COUNT = 4;
+/** 身体を離れる手具操作が1回不足するごとのA減点 */
+export const OFF_BODY_DEDUCTION_STEP = 0.1;
+/** 「身体を離れる手具操作」の説明（画面の注記・ツールチップ） */
+export const OFF_BODY_TIP = "プロペラ回旋・まわしなど、手具が身体から離れて動く操作";
+
+/** 身体を離れる手具操作の不足回数（0〜必要回数） */
+export function offBodyShortage(count: unknown): number {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  return Math.max(0, OFF_BODY_REQUIRED_COUNT - n);
 }
 
 export const VIOLATION_OPTIONS = [
@@ -283,6 +573,59 @@ export const HAND_ELEMENTS: HandElement[] = [
   { id: "f7", group: "flex", name: "左右／前後開脚座（一直線・180度）仰臥位", solo: "B", team: "C" },
 ];
 
+// ---- 個人が単独で実施する徒手系要素（§3.5.5.3(1)）----
+/**
+ * §3.5.5.3(1)「手具操作を伴って難度のある徒手系を実施した場合に、その難度を採用する」。
+ * 跳躍は §3.6.1 の表そのもの（難度は**個人列**）、柔軟は現場の呼び方で3つ持つ。
+ * ブリッジは §3.6.1 の表に無いので、柔軟の基礎難度に合わせて暫定でAとしている。
+ * 団体の選択肢（`HAND_ELEMENTS`）とは別の表にして、団体側の入力を変えないようにしている。
+ */
+export const SOLO_FLEX_ELEMENTS: HandElement[] = [
+  { id: "sf_split_fb", group: "flex", name: "前後開脚", solo: "A", team: "B" },
+  { id: "sf_split_lr", group: "flex", name: "左右開脚", solo: "A", team: "B" },
+  { id: "sf_bridge", group: "flex", name: "ブリッジ", solo: "A", team: "B" },
+];
+
+/**
+ * 個人の徒手系要素の選択肢（跳躍＝§3.6.1 の表／柔軟＝上の3つ）。
+ * `scored` … 徒手系難度（D）に算入するか。柔軟は難度に数えず、実施したかだけをA側で見る。
+ */
+export const SOLO_HAND_ELEMENT_GROUPS: {
+  id: HandElementGroup;
+  name: string;
+  items: HandElement[];
+  scored: boolean;
+}[] = [
+  { id: "jump", name: "跳躍", items: HAND_ELEMENTS.filter((h) => h.group === "jump"), scored: true },
+  { id: "flex", name: "柔軟", items: SOLO_FLEX_ELEMENTS, scored: false },
+];
+/** その要素を徒手系難度に算入するか */
+export const soloHandElementScored = (id: string): boolean =>
+  SOLO_HAND_ELEMENT_GROUPS.some((g) => g.scored && g.items.some((x) => x.id === id));
+/** 柔軟の要素か（実施の有無だけを見る） */
+export const isFlexElement = (id: string): boolean => SOLO_FLEX_ELEMENTS.some((x) => x.id === id);
+
+/**
+ * 跳躍だが柔軟性としても評価する技（反り身の跳躍）。
+ * 難度は跳躍として数えたうえで、柔軟の実施にも数える。
+ */
+export const FLEX_EQUIVALENT_JUMPS: string[] = ["j8", "j9"];
+
+/** 柔軟性の実施として数える要素か（柔軟の3つ＋反り身の跳躍） */
+export const countsAsFlex = (id: string): boolean => isFlexElement(id) || FLEX_EQUIVALENT_JUMPS.includes(id);
+/** 柔軟を1つも実施していないときのA減点 */
+export const FLEX_ELEMENT_DEDUCTION = 0.1;
+export const SOLO_HAND_ELEMENTS: HandElement[] = SOLO_HAND_ELEMENT_GROUPS.flatMap((g) => g.items);
+export const soloHandElementDef = (id: string): HandElement | undefined =>
+  SOLO_HAND_ELEMENTS.find((x) => x.id === id);
+/** 補足のある徒手系要素だけの説明（ツールチップ） */
+export const SOLO_ELEMENT_TIPS: Record<string, string> = {
+  sf_bridge: "§3.6.1 の表には無い項目",
+};
+
+/** 個人での難度（表の個人列） */
+export const soloHandDifficulty = (id: string): Difficulty | undefined => soloHandElementDef(id)?.solo;
+
 export function handElementDef(id: string): HandElement | undefined {
   return HAND_ELEMENTS.find((x) => x.id === id);
 }
@@ -307,38 +650,96 @@ export const TEAM_SAMEDIFF_BONUS = { d: 0.1, e: 0.2 } as const;
 export interface RopeJump {
   id: string;
   name: string;
-  difficulty: Difficulty;
   rotations: number;
   direction: "front" | "back";
 }
 
+/**
+ * ロープ跳びの選択肢は「何重跳びか × 前／後ろ」だけ。クロスの有無と跳んだ回数は
+ * `RopeJumpItem` の `cross` / `count` で入力し、難度は `ropeJumpDifficulty` が §3.5.5.3 の表から引く
+ * （3重跳び2回・連続3回以上・4重跳び連続2回以上は「回数」として表せるので選択肢に持たない）。
+ */
 export const ROPE_JUMPS: RopeJump[] = [
-  { id: "1f", name: "1重跳び（前）", difficulty: "A", rotations: 1, direction: "front" },
-  { id: "1b", name: "1重跳び（後ろ）", difficulty: "A", rotations: 1, direction: "back" },
-  { id: "2f", name: "2重跳び（前）", difficulty: "A", rotations: 2, direction: "front" },
-  { id: "2fc", name: "2重跳び（前・クロス）", difficulty: "B", rotations: 2, direction: "front" },
-  { id: "2b", name: "2重跳び（後ろ）", difficulty: "B", rotations: 2, direction: "back" },
-  { id: "2bc", name: "2重跳び（後ろ・クロス）", difficulty: "C", rotations: 2, direction: "back" },
-  { id: "3f", name: "3重跳び（前）", difficulty: "B", rotations: 3, direction: "front" },
-  { id: "3fc", name: "3重跳び（前・クロス）", difficulty: "C", rotations: 3, direction: "front" },
-  { id: "3b", name: "3重跳び（後ろ）", difficulty: "C", rotations: 3, direction: "back" },
-  { id: "3bc", name: "3重跳び（後ろ・クロス）", difficulty: "D", rotations: 3, direction: "back" },
-  { id: "3x2f", name: "3重跳び2回（前）", difficulty: "C", rotations: 3, direction: "front" },
-  { id: "3x2fc", name: "3重跳び2回（前・クロス）", difficulty: "C", rotations: 3, direction: "front" },
-  { id: "3x2b", name: "3重跳び2回（後ろ）", difficulty: "D", rotations: 3, direction: "back" },
-  { id: "3x2bc", name: "3重跳び2回（後ろ・クロス）", difficulty: "D", rotations: 3, direction: "back" },
-  // 以下3種は難度判定で前後を区別しない（規則表では後ろの列にのみ記載）。
-  // 前後の別は §3.2(3) の前回し／後ろ回し跳びの要求要素判定にのみ使う。
-  { id: "3x3f", name: "3重跳び連続3回以上（前）", difficulty: "D", rotations: 3, direction: "front" },
-  { id: "3x3b", name: "3重跳び連続3回以上（後ろ）", difficulty: "D", rotations: 3, direction: "back" },
-  { id: "4f", name: "4重跳び（前）", difficulty: "D", rotations: 4, direction: "front" },
-  { id: "4b", name: "4重跳び（後ろ）", difficulty: "D", rotations: 4, direction: "back" },
-  { id: "4x2f", name: "4重跳び連続2回以上（前）", difficulty: "E", rotations: 4, direction: "front" },
-  { id: "4x2b", name: "4重跳び連続2回以上（後ろ）", difficulty: "E", rotations: 4, direction: "back" },
+  { id: "1f", name: "1重跳び（前）", rotations: 1, direction: "front" },
+  { id: "1b", name: "1重跳び（後ろ）", rotations: 1, direction: "back" },
+  { id: "2f", name: "2重跳び（前）", rotations: 2, direction: "front" },
+  { id: "2b", name: "2重跳び（後ろ）", rotations: 2, direction: "back" },
+  { id: "3f", name: "3重跳び（前）", rotations: 3, direction: "front" },
+  { id: "3b", name: "3重跳び（後ろ）", rotations: 3, direction: "back" },
+  { id: "4f", name: "4重跳び（前）", rotations: 4, direction: "front" },
+  { id: "4b", name: "4重跳び（後ろ）", rotations: 4, direction: "back" },
 ];
+
+/** 旧データの id（クロス・回数を id に含んでいた選択肢）→ 今の表現 */
+const LEGACY_ROPE_JUMPS: Record<string, { base: string; cross: boolean; count: number }> = {
+  "2fc": { base: "2f", cross: true, count: 1 },
+  "2bc": { base: "2b", cross: true, count: 1 },
+  "3fc": { base: "3f", cross: true, count: 1 },
+  "3bc": { base: "3b", cross: true, count: 1 },
+  "3x2f": { base: "3f", cross: false, count: 2 },
+  "3x2fc": { base: "3f", cross: true, count: 2 },
+  "3x2b": { base: "3b", cross: false, count: 2 },
+  "3x2bc": { base: "3b", cross: true, count: 2 },
+  "3x3f": { base: "3f", cross: false, count: 3 },
+  "3x3b": { base: "3b", cross: false, count: 3 },
+  "4x2f": { base: "4f", cross: false, count: 2 },
+  "4x2b": { base: "4b", cross: false, count: 2 },
+};
 
 export function ropeJumpDef(id: string): RopeJump | undefined {
   return ROPE_JUMPS.find((x) => x.id === id);
+}
+
+/** クロスの有無が難度に効く跳びか（表でクロス列を持つのは2重・3重だけ） */
+export const ropeJumpHasCross = (rotations: number): boolean => rotations === 2 || rotations === 3;
+
+/** 跳んだ回数（未指定は1回、0以上の整数に丸める。0回は採点に数えない） */
+export const ropeJumpTimes = (count?: number): number =>
+  count === undefined ? 1 : Math.max(0, Math.floor(Number(count) || 0));
+
+export interface ResolvedRopeJump {
+  def: RopeJump;
+  cross: boolean;
+  count: number;
+}
+
+/** 入力（旧 id を含む）を、跳びの定義・クロス・回数に解決する。id が空・未知なら undefined */
+export function resolveRopeJump(item: { jumpId: string; cross?: boolean; count?: number }): ResolvedRopeJump | undefined {
+  const legacy = LEGACY_ROPE_JUMPS[item.jumpId];
+  const def = ropeJumpDef(legacy ? legacy.base : item.jumpId);
+  if (!def) return undefined;
+  if (legacy) return { def, cross: legacy.cross, count: legacy.count };
+  return { def, cross: !!item.cross && ropeJumpHasCross(def.rotations), count: ropeJumpTimes(item.count) };
+}
+
+/**
+ * §3.5.5.3 の跳びの難度表。前後・クロス・回数から引く。
+ * 表の「3回以上の連続した3重跳び」「4重跳び」「2回以上の連続した4重跳び」は前後・クロスを区別しない。
+ */
+export function ropeJumpDifficulty({ def, cross, count }: ResolvedRopeJump): Difficulty {
+  const back = def.direction === "back";
+  switch (def.rotations) {
+    case 1:
+      return "A";
+    case 2:
+      return back ? (cross ? "C" : "B") : cross ? "B" : "A";
+    case 3:
+      if (count >= 3) return "D";
+      if (count === 2) return back ? "D" : "C";
+      return back ? (cross ? "D" : "C") : cross ? "C" : "B";
+    default:
+      return count >= 2 ? "E" : "D";
+  }
+}
+
+/**
+ * 同じ跳びかどうかを決めるキー（§3.4.4：全く同じ技は難度として数えない）。
+ * 難度表の行が違えば別の技なので、回数は表の行（3重は1/2/3以上、4重は1/2以上）に丸めて入れる。
+ */
+export function ropeJumpKey(r: ResolvedRopeJump): string {
+  const row = r.def.rotations === 3 ? Math.min(r.count, 3) : r.def.rotations === 4 ? Math.min(r.count, 2) : 1;
+  const cross = r.cross && !(r.def.rotations === 3 && r.count >= 3);
+  return `${r.def.id}:${cross ? "c" : ""}:${row}`;
 }
 
 export const HAND_MOTIONS: HandMotion[] = [
@@ -348,7 +749,7 @@ export const HAND_MOTIONS: HandMotion[] = [
   { id: "m2", name: "2動作", motions: 2, legacy: true },
   { id: "m3", name: "3動作", motions: 3, legacy: true },
   { id: "m4", name: "4動作", motions: 4, legacy: true },
-  { id: "mv3", name: "縦3動作", motions: 3, verticalThree: true, legacy: true },
+  { id: "mv3", name: "縦3動作", motions: 3, verticalThree: true, vertical: true, legacy: true },
   // 縦回転の徒手としてのみ判定する技（タンブリング技には出さない）
   { id: "td_rise", name: "タッチダウンライズ", motions: 1, vertical: true },
   { id: "fwd_roll", name: "前転", motions: 1, vertical: true },
@@ -364,6 +765,7 @@ export const SKILL_LIST: Skill[] = [
   { id: "a_cartwheel", name: "側転", category: CATEGORY.SIDE, difficulty: "A", isSalto: false, isHandElement: true },
   { id: "a_roundoff", name: "ロンダート", category: CATEGORY.SIDE, difficulty: "A", isSalto: false, isConnectA: true },
   { id: "a_flicflac", name: "バク転", category: CATEGORY.BACKWARD, difficulty: "A", isSalto: false, isConnectA: true },
+  { id: "a_diving", name: "ダイビング", category: CATEGORY.BACKWARD, difficulty: "A", isSalto: true, noAuto: true },
   { id: "a_handspring", name: "ハンドスプリング", category: CATEGORY.FORWARD, difficulty: "A", isSalto: false, isConnectA: true },
   { id: "a_frontroll", name: "とび前転", category: CATEGORY.FORWARD, difficulty: "A", isSalto: false, isConnectA: true },
   { id: "b_sidesalto", name: "側宙", category: CATEGORY.SIDE, difficulty: "B", isSalto: true },
@@ -377,9 +779,25 @@ export const SKILL_LIST: Skill[] = [
   { id: "b_front", name: "前宙", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true, twist: { base: "front", twist: 0, posture: "tuck" } },
   { id: "b_fronthalf", name: "前宙半ひねり", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true, twist: { base: "front", twist: 0.5, posture: "tuck" } },
   { id: "b_tenchu", name: "転宙", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true },
-  { id: "b_kirimomi", name: "きりもみ", category: CATEGORY.FORWARD, difficulty: "B", isSalto: true, saltoOnlyInChain: true },
+  {
+    id: "b_kirimomi",
+    name: "きりもみ",
+    category: CATEGORY.FORWARD,
+    difficulty: "B",
+    isSalto: true,
+    saltoOnlyInChain: true,
+    noApparatusOp: true,
+  },
   { id: "c_front1full", name: "前方宙返り1回ひねり", category: CATEGORY.FORWARD, difficulty: "C", isSalto: true, twist: { base: "front", twist: 1, posture: "tuck" } },
-  { id: "c_kirimomiten", name: "きりもみ転回", category: CATEGORY.FORWARD, difficulty: "C", isSalto: true, saltoOnlyInChain: true },
+  {
+    id: "c_kirimomiten",
+    name: "きりもみ転回",
+    category: CATEGORY.FORWARD,
+    difficulty: "C",
+    isSalto: true,
+    saltoOnlyInChain: true,
+    noApparatusOp: true,
+  },
   { id: "c_back15", name: "後方宙返り1回半ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true, twist: { base: "back", twist: 1.5, posture: "tuck" } },
   { id: "c_backlay15", name: "後方伸身宙返り1回半ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true, twist: { base: "back", twist: 1.5, posture: "layout" } },
   { id: "c_back1full", name: "後方宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "C", isSalto: true, twist: { base: "back", twist: 1, posture: "tuck" } },
@@ -389,6 +807,7 @@ export const SKILL_LIST: Skill[] = [
   { id: "d_frontlay1", name: "伸身前宙1回ひねり", category: CATEGORY.FORWARD, difficulty: "D", isSalto: true, twist: { base: "front", twist: 1, posture: "layout" } },
   { id: "e_frontlay2", name: "伸身前宙2回ひねり", category: CATEGORY.FORWARD, difficulty: "E", isSalto: true, twist: { base: "front", twist: 2, posture: "layout" } },
   { id: "d_back2twist", name: "後方宙返り2回ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, twist: { base: "back", twist: 2, posture: "tuck" } },
+  { id: "d_backlay2twist", name: "後方伸身宙返り2回ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, twist: { base: "back", twist: 2, posture: "layout" } },
   { id: "d_backlay25", name: "後方伸身宙返り2回半ひねり", category: CATEGORY.BACKWARD, difficulty: "D", isSalto: true, twist: { base: "back", twist: 2.5, posture: "layout" } },
   { id: "e_backlay3twist", name: "後方伸身宙返り3回ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, twist: { base: "back", twist: 3, posture: "layout" } },
   { id: "e_backlay35twist", name: "後方伸身宙返り3回半ひねり", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, twist: { base: "back", twist: 3.5, posture: "layout" } },
@@ -397,12 +816,25 @@ export const SKILL_LIST: Skill[] = [
   { id: "e_divedouble", name: "ダイビングダブル", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
   { id: "e_moonsault", name: "後方2回宙返り1回ひねり（ムーンサルト）", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
   { id: "e_rudolph", name: "後方2回宙返り2回ひねり（ルドルフ）", category: CATEGORY.BACKWARD, difficulty: "E", isSalto: true, isDoubleSalto: true },
+  // ---- 十年後モードでのみ実施できる技（F・G難度）----
+  // ひねり系は §3.6.2 の刻み（半ひねり1段・1難度2段）をそのまま伸ばしたもの。
+  // 2回宙返り系（`teamOnly`）は団体でしか実施しないので、個人モードの選択肢には出さない。
+  { id: "f_backlay4twist", name: "後方伸身宙返り4回ひねり", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, future: true, twist: { base: "back", twist: 4, posture: "layout" } },
+  { id: "f_backlay45twist", name: "後方伸身宙返り4回半ひねり", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, future: true, twist: { base: "back", twist: 4.5, posture: "layout" } },
+  { id: "g_backlay5twist", name: "後方伸身宙返り5回ひねり", category: CATEGORY.BACKWARD, difficulty: "G", isSalto: true, future: true, twist: { base: "back", twist: 5, posture: "layout" } },
+  { id: "f_frontlay3", name: "伸身前宙3回ひねり", category: CATEGORY.FORWARD, difficulty: "F", isSalto: true, future: true, twist: { base: "front", twist: 3, posture: "layout" } },
+  { id: "g_frontlay4", name: "伸身前宙4回ひねり", category: CATEGORY.FORWARD, difficulty: "G", isSalto: true, future: true, twist: { base: "front", twist: 4, posture: "layout" } },
+  { id: "f_rudolphhalf", name: "後方2回宙返り2回半ひねり（ルドルフハーフ）", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, isDoubleSalto: true, future: true, teamOnly: true },
+  { id: "f_doublelay1twist", name: "後方伸身2回宙返り1回ひねり", category: CATEGORY.BACKWARD, difficulty: "F", isSalto: true, isDoubleSalto: true, future: true, teamOnly: true },
+  { id: "g_rijonson", name: "後方2回宙返り3回ひねり（リジョンソン）", category: CATEGORY.BACKWARD, difficulty: "G", isSalto: true, isDoubleSalto: true, future: true, teamOnly: true },
 ];
 
 // ---- ひねり・姿勢で組み立てる宙返り（§3.6.2 の表を素直に表現する） ----
 
-/** ひねり回数の選択肢（0.5 が半ひねり） */
+/** ひねり回数の選択肢（0.5 が半ひねり）。現行規則の上限（E難度）まで。 */
 export const TWIST_OPTIONS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
+/** 十年後モードで増えるひねり回数（F・G難度の宙返り） */
+export const FUTURE_TWIST_OPTIONS = [4, 4.5, 5];
 /** 姿勢の選択肢 */
 export const POSTURE_OPTIONS: { id: Posture; name: string }[] = [
   { id: "tuck", name: "抱え込み" },
@@ -429,13 +861,49 @@ export const twistLabel = (twist: number): string => {
  * ひねり回数と姿勢から基礎難度を求める（§3.6.2）。
  * 後方系は姿勢によらずひねり回数だけで決まる（#7・#12〜#17）。
  * 前方系は伸身が1段階上（#7/#8/#11/#12〜#14）。
+ * 十年後モード（`future`）でなければ、F・Gになる組み合わせはE止めに丸める。
  */
-export function twistDifficulty({ base, twist, posture }: TwistParams): Difficulty {
-  const steps = [DIFF_VALUE.B, DIFF_VALUE.B, DIFF_VALUE.C, DIFF_VALUE.C, DIFF_VALUE.D, DIFF_VALUE.D, DIFF_VALUE.E];
+export function twistDifficulty(params: TwistParams, future: FutureLevel = null): Difficulty {
+  return clampDifficulty(twistDiffValue(params), future);
+}
+
+/**
+ * ひねり・姿勢の**上限で丸める前の**難度値。選択肢の絞り込み（`twistOptions`）で使う
+ * — 丸めた難度で比べると、上限を超える組み合わせも上限ちょうどに見えてしまう。
+ */
+export function twistDiffValue({ base, twist, posture }: TwistParams): number {
+  // 半ひねりごとに1段、1難度ぶんで2段（B:0〜0.5 / C:1〜1.5 / D:2〜2.5 / E:3〜3.5）。
+  // F・G はその刻みをそのまま伸ばしたもので、十年後モードでのみ認定する。
+  const steps = [
+    DIFF_VALUE.B,
+    DIFF_VALUE.B,
+    DIFF_VALUE.C,
+    DIFF_VALUE.C,
+    DIFF_VALUE.D,
+    DIFF_VALUE.D,
+    DIFF_VALUE.E,
+    DIFF_VALUE.E,
+    DIFF_VALUE.F,
+    DIFF_VALUE.F,
+    DIFF_VALUE.G,
+  ];
   const i = Math.min(Math.max(Math.round(twist * 2), 0), steps.length - 1);
   let v = steps[i];
   if (base === "front" && posture === "layout") v += 1;
-  return VALUE_DIFF[Math.min(v, MAX_DIFF)];
+  return v;
+}
+
+/**
+ * ひねり回数の選択肢。十年後モードでは上限難度に収まるひねりまで増やす
+ * （前方伸身は1段階上がるので、同じ上限でも選べるひねりが少ない）。
+ */
+export function twistOptions(future: FutureLevel = null, params?: Omit<TwistParams, "twist">): number[] {
+  if (!future) return TWIST_OPTIONS;
+  const all = [...TWIST_OPTIONS, ...FUTURE_TWIST_OPTIONS];
+  if (!params) return all;
+  // 上限を超える組み合わせは出さない（現行規則のひねり＝E以下は必ず残る）
+  const limit = DIFF_VALUE[future];
+  return all.filter((twist) => twistDiffValue({ ...params, twist }) <= limit);
 }
 
 /** 組み立てた宙返りの名前（例：後方伸身宙返り1回半ひねり／伸身前宙1回ひねり） */
@@ -475,25 +943,78 @@ export function parseTwistSkillId(id: string): TwistParams | null {
   return SKILL_LIST.find((x) => x.id === id)?.twist ?? null;
 }
 
+/**
+ * その技の最中に**手具操作ができるか**。きりもみ・きりもみ転回は首から背中にかけて
+ * 着地するので操作できない（`Skill.noApparatusOp`）。手を離すだけの「技の最中の投げ」は別。
+ */
+export const canOperateApparatus = (skillId: string): boolean => !skillDef(skillId)?.noApparatusOp;
+
 export function skillDef(id: string): Skill | undefined {
   const found = SKILL_LIST.find((x) => x.id === id);
   if (found) return found;
   // SKILL_LIST に無いひねりの組み合わせは、その場で技として組み立てる
   const params = id.startsWith(TWIST_ID_PREFIX) ? parseTwistSkillId(id) : null;
   if (!params) return undefined;
+  // ここで返すのは技そのものの定義なので、難度は上限で丸めない（適用規則ごとの丸めは
+  // `skillDifficulty` の仕事）。F・G難度になる組み合わせは十年後モード専用として印を付ける。
+  const difficulty = twistDifficulty(params, "G");
   return {
     id,
     name: twistName(params),
     category: params.base === "back" ? CATEGORY.BACKWARD : CATEGORY.FORWARD,
-    difficulty: twistDifficulty(params),
+    difficulty,
     isSalto: true,
+    future: DIFF_VALUE[difficulty] > MAX_DIFF,
     twist: params,
   };
 }
 
-/** 適用規則で実施できる技か。ジュニアは2回宙返り系が禁止（§10 変更規則1）。 */
-export function skillAllowed(id: string, junior = false): boolean {
-  return !(junior && skillDef(id)?.isDoubleSalto);
+/**
+ * 適用規則で実施できる技か。
+ *  - ジュニアは2回宙返り系が禁止（§10 変更規則1）
+ *  - F・G難度の技（`future`）は十年後モードのときだけ。上限（F/G）を超える技も出さない
+ *  - `teamOnly` の技（十年後モードの2回宙返り系）は団体モードだけ（`team`）
+ */
+export function skillAllowed(
+  id: string,
+  junior = false,
+  future: FutureLevel = null,
+  team = false,
+): boolean {
+  const s = skillDef(id);
+  if (!s) return true;
+  if (junior && s.isDoubleSalto) return false;
+  if (s.future && (!future || DIFF_VALUE[s.difficulty] > DIFF_VALUE[future])) return false;
+  if (s.teamOnly && !team) return false;
+  return true;
+}
+
+/**
+ * 十年後モードで新しく実施できるようになる技（上限難度に収まるものだけ）。
+ * まだ誰も実施していない技なので、ランダム生成では「テンプレートに出てくる技」の
+ * 制限を受けずに使ってよい（`autoTumblingSpecs`）。
+ */
+export function futureSkillIds(future: FutureLevel, junior = false, team = false): string[] {
+  if (!future) return [];
+  return SKILL_LIST.filter((s) => s.future && skillAllowed(s.id, junior, future, team)).map((s) => s.id);
+}
+
+/**
+ * その技が選択肢に出ない理由（出るなら空文字）。選択済みの技を選択肢に残すときの但し書きに使う。
+ * 判定の順序は `skillAllowed` と同じ。
+ */
+export function skillBlockedReason(
+  id: string,
+  junior = false,
+  future: FutureLevel = null,
+  team = false,
+): string {
+  const s = skillDef(id);
+  if (!s || skillAllowed(id, junior, future, team)) return "";
+  if (junior && s.isDoubleSalto) return "ジュニア禁止";
+  if (s.future && (!future || DIFF_VALUE[s.difficulty] > DIFF_VALUE[future])) return "十年後モード専用";
+  if (s.teamOnly) return "団体のみ";
+  return "";
 }
 
 /** ロンダートの技id（後方の宙返りに入るときに自動で補う） */
@@ -572,10 +1093,15 @@ export function skillFlowAfter(prevSkillId: string | undefined): SkillFlow {
  * `flow` を渡すと、その位置で実施しない系統（後ろ向きで終わった後の前方系・側方系）を
  * 選択肢から外す。
  */
-export function skillOptions(junior = false, flow: SkillFlow = ANY_SKILL_FLOW): Skill[] {
+export function skillOptions(
+  junior = false,
+  flow: SkillFlow = ANY_SKILL_FLOW,
+  future: FutureLevel = null,
+  team = false,
+): Skill[] {
   const allows = (category: string) =>
     category === CATEGORY.BACKWARD ? flow.backward : category === CATEGORY.SIDE ? flow.side : flow.forward;
-  return SKILL_LIST.filter((s) => skillAllowed(s.id, junior) && allows(s.category));
+  return SKILL_LIST.filter((s) => skillAllowed(s.id, junior, future, team) && allows(s.category));
 }
 
 /** タンブリング技のプルダウンをまとめる系統の表示順 */
@@ -585,8 +1111,10 @@ export const SKILL_CATEGORY_ORDER: string[] = [CATEGORY.FORWARD, CATEGORY.SIDE, 
 export function skillOptionGroups(
   junior = false,
   flow: SkillFlow = ANY_SKILL_FLOW,
+  future: FutureLevel = null,
+  team = false,
 ): { name: string; skills: Skill[] }[] {
-  const opts = skillOptions(junior, flow);
+  const opts = skillOptions(junior, flow, future, team);
   const groups = SKILL_CATEGORY_ORDER.map((name) => ({ name, skills: opts.filter((s) => s.category === name) }));
   // 表示順に無いカテゴリが増えても落とさない
   const rest = opts.filter((s) => !SKILL_CATEGORY_ORDER.includes(s.category));
@@ -679,8 +1207,13 @@ export const JUNIOR_SKILL_DIFFICULTY: Record<string, Difficulty> = {
   b_backlayhalf: "C", // 後方伸身宙返り半ひねり
 };
 
-/** 適用規則に応じた転回系の難度。ジュニアは JUNIOR_SKILL_DIFFICULTY で上書きする。 */
-export function skillDifficulty(id: string, junior = false): Difficulty | undefined {
+/**
+ * 適用規則に応じた転回系の難度。
+ * ジュニアは JUNIOR_SKILL_DIFFICULTY、十年後モードは FUTURE_SKILL_DIFFICULTY で上書きし、
+ * F・G難度は十年後モードの上限で丸める
+ * （モードOFFのままF難度の技が残っている保存データを読んでも E までしか付かない）。
+ */
+export function skillDifficulty(id: string, junior = false, future: FutureLevel = null): Difficulty | undefined {
   if (junior) {
     const j = JUNIOR_SKILL_DIFFICULTY[id];
     if (j) return j;
@@ -688,8 +1221,45 @@ export function skillDifficulty(id: string, junior = false): Difficulty | undefi
     const p = parseTwistSkillId(id);
     if (p && p.base === "back" && p.twist === 0.5) return "C";
   }
-  return skillDef(id)?.difficulty;
+  const d = (future && FUTURE_SKILL_DIFFICULTY[id]) || skillDef(id)?.difficulty;
+  return d ? clampDifficulty(DIFF_VALUE[d], future) : undefined;
 }
+
+/**
+ * ダイビング。後方系で**頭から着地する**ので、この技の後に技は続かない
+ * （`CHAIN_END_SKILLS`）。単発ではA難度だが、**宙返りの直後に連続で実施すると1段格上げ**する
+ * のが特例（`DIVING_UPGRADED_DIFFICULTY`）。宙返りとしては常に数える（`isSalto: true`）ので、
+ * 宙返り→ダイビング は連続2本ぶんになる。
+ * 実施はされるがシステム側で提案する性質の技ではないので、自動生成では組み立てない（`noAuto`）。
+ */
+export const DIVING_SKILL_ID = "a_diving";
+export const DIVING_UPGRADED_DIFFICULTY: Difficulty = "B";
+
+/**
+ * 並びのなかでの**その位置の**技の難度。連続の位置で難度が変わる特例（ダイビングの格上げ）を
+ * 反映する。位置に依存しない難度は `skillDifficulty`。
+ * `skillIds` は連続の並び（A難度を含む、実施した順）。
+ */
+export function skillDifficultyAt(
+  skillIds: string[],
+  i: number,
+  junior = false,
+  future: FutureLevel = null,
+): Difficulty | undefined {
+  const id = skillIds[i];
+  // 宙返りの直後のダイビングは格上げ（間にA難度技が入ったら「連続」ではない）
+  if (id === DIVING_SKILL_ID && i > 0 && skillDef(skillIds[i - 1])?.isSalto)
+    return clampDifficulty(DIFF_VALUE[DIVING_UPGRADED_DIFFICULTY], future);
+  return skillDifficulty(id, junior, future);
+}
+
+/**
+ * 十年後モードで難度認定が変わる転回系。現行規則の技でも、十年後の基準では上がるものがある
+ * （ジュニアの `JUNIOR_SKILL_DIFFICULTY` と同じ仕組み）。上限（F/G）で丸めるのは共通。
+ */
+export const FUTURE_SKILL_DIFFICULTY: Record<string, Difficulty> = {
+  e_rudolph: "F", // 後方2回宙返り2回ひねり（ルドルフ）
+};
 
 /** 適用規則に応じた投げ上げの最低回数 */
 export function throwCountRequired(junior = false): number {
