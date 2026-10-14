@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useAutoInputSetting } from "./useAutoInputSetting";
-import { Download, Upload, Link2, BookMarked, Save, Shuffle, Lightbulb, Plus, X } from "lucide-react";
+import { Download, Upload, Link2, BookMarked, Save, Shuffle, Lightbulb, Plus, X, Printer } from "lucide-react";
 import {
   APPARATUS,
   APPARATUS_REQUIRED_ELEMENTS,
@@ -39,6 +39,7 @@ import { SeriesListEditor, emptySeries } from "./SeriesListEditor";
 import { TemplateModal } from "./TemplateModal";
 import { GenerateModal } from "./GenerateModal";
 import { SuggestModal } from "./SuggestModal";
+import { PrintSheet } from "./PrintSheet";
 import { ScoreSummary } from "./ScoreSummary";
 import { RopeJumpList } from "./RopeJumpList";
 import { useFutureUnlock } from "./useFutureUnlock";
@@ -539,6 +540,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
         <button className="io-btn" onClick={() => setSuggestOpen(true)}>
           <Lightbulb size={14} /> 改善提案
         </button>
+        <button className="io-btn" onClick={() => window.print()}>
+          <Printer size={14} /> 印刷・PDF
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -993,6 +997,8 @@ export function IndividualScorer({ initialData }: Props = {}) {
       )}
 
       <ScoreSummary result={result} apparatus={apparatus} />
+
+      <PrintSheet result={result} apparatus={apparatus} junior={junior} series={series} />
 
       {/* 入力中どこにいても届くように、画面下に貼り付く操作バー */}
       <div className="action-bar">
