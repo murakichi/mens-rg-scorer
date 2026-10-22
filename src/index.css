@@ -4,48 +4,51 @@
    - すべての視覚トークンは :root の CSS 変数に集約
    ===================================================================== */
 
-@import url("https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap");
 
+/* 床（フロア）の青・チョークの白・スコアボードの琥珀を軸にした配色 */
 :root {
-  /* パステル背景のアクセント色 */
-  --bg-1: #e7ecff; /* lavender */
-  --bg-2: #e6f7ff; /* sky      */
-  --bg-3: #eafff4; /* mint     */
-  --bg-4: #fff0f3; /* peach    */
+  --bg-1: #f1f2ee; /* chalk */
+  --bg-2: #f1f2ee;
+  --bg-3: #f1f2ee;
+  --bg-4: #f1f2ee;
 
-  /* ガラス面 */
-  --glass: rgba(255, 255, 255, 0.55);
-  --glass-strong: rgba(255, 255, 255, 0.72);
-  --glass-soft: rgba(255, 255, 255, 0.38);
-  --glass-border: rgba(255, 255, 255, 0.7);
-  --glass-blur: 16px;
+  /* パネル面（ガラス調をやめ、不透明の面と細い罫線で階層を出す） */
+  --glass: #ffffff;
+  --glass-strong: #ffffff;
+  --glass-soft: #e8edf3;
+  --glass-border: #c9d3df;
+  --glass-blur: 0px;
 
-  /* プライマリ（アクセント・グラデ） */
-  --accent: #6d6af0;
-  --accent-2: #4d9bf5;
-  --accent-grad: linear-gradient(135deg, #6d6af0 0%, #4d9bf5 100%);
+  /* プライマリ（フロアの青） */
+  --accent: #1f3d6b;
+  --accent-2: #2f5b99;
+  --accent-grad: #1f3d6b;
+  --board: #14233d; /* スコアボードの面 */
+  --board-ink: #f2b01e; /* スコアボードの数字 */
 
   /* セマンティック */
-  --teal: #0f9b78;
-  --teal-soft: rgba(120, 230, 200, 0.28);
-  --orange: #d56a36;
-  --orange-soft: rgba(255, 190, 150, 0.3);
-  --red: #d6455f;
-  --red-soft: rgba(255, 160, 175, 0.28);
-  --amber: #b6790f;
-  --amber-soft: rgba(255, 215, 130, 0.3);
+  --teal: #0f7a5f;
+  --teal-soft: rgba(15, 122, 95, 0.12);
+  --orange: #b9571f;
+  --orange-soft: rgba(185, 87, 31, 0.13);
+  --red: #b3263e;
+  --red-soft: rgba(179, 38, 62, 0.11);
+  --amber: #8f5f06;
+  --amber-soft: rgba(242, 176, 30, 0.2);
 
   /* テキスト */
-  --ink: #2b2b3a;
-  --ink-soft: #5a5a72;
-  --ink-mute: #8a8aa2;
+  --ink: #18202c;
+  --ink-soft: #46515f;
+  --ink-mute: #6f7a88;
 
-  --radius: 18px;
-  --radius-sm: 12px;
-  --radius-xs: 9px;
-  --shadow: 0 10px 30px -12px rgba(60, 60, 120, 0.28);
-  --shadow-soft: 0 4px 14px -6px rgba(60, 60, 120, 0.22);
-  --ring: 0 0 0 3px rgba(109, 106, 240, 0.25);
+  --radius: 8px;
+  --radius-sm: 6px;
+  --radius-xs: 4px;
+  --shadow: none;
+  --shadow-soft: 0 1px 2px rgba(20, 35, 61, 0.18);
+  --ring: 0 0 0 3px rgba(47, 91, 153, 0.35);
+  --font-num: "Big Shoulders Display", "Zen Kaku Gothic New", sans-serif;
 }
 
 * {
@@ -59,16 +62,10 @@ body {
 }
 
 body {
-  font-family: "M PLUS Rounded 1c", system-ui, sans-serif;
+  font-family: "Zen Kaku Gothic New", system-ui, sans-serif;
   color: var(--ink);
   min-height: 100vh;
-  background:
-    radial-gradient(1200px 800px at 8% -10%, var(--bg-1), transparent 55%),
-    radial-gradient(1000px 700px at 100% 0%, var(--bg-2), transparent 55%),
-    radial-gradient(1100px 900px at 50% 120%, var(--bg-3), transparent 50%),
-    radial-gradient(900px 700px at -10% 110%, var(--bg-4), transparent 55%),
-    #eef1fb;
-  background-attachment: fixed;
+  background: var(--bg-1);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -84,13 +81,10 @@ body {
 }
 .title {
   font-size: 28px;
-  font-weight: 800;
+  font-weight: 900;
   letter-spacing: 0.02em;
   margin: 0 0 14px;
-  background: linear-gradient(135deg, #4b46c9, #3f86d6 60%, #1f9e86);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--accent);
 }
 
 .mode-wrap {
@@ -163,7 +157,7 @@ body {
   font-size: 11px;
   font-weight: 700;
   color: var(--accent);
-  background: rgba(109, 106, 240, 0.12);
+  background: rgba(31, 61, 107, 0.12);
   padding: 3px 9px;
   border-radius: 999px;
 }
@@ -224,11 +218,8 @@ body {
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
-.card:hover {
-  box-shadow: 0 16px 38px -14px rgba(60, 60, 120, 0.34);
-}
 .card-total {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(244, 247, 255, 0.62));
+  border-top: 3px solid var(--accent);
 }
 
 .note {
@@ -317,7 +308,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1.5px dashed rgba(109, 106, 240, 0.45);
+  border: 1.5px dashed rgba(31, 61, 107, 0.45);
   background: rgba(255, 255, 255, 0.4);
   color: var(--accent);
   border-radius: var(--radius-xs);
@@ -340,7 +331,7 @@ button {
   margin-top: 12px;
 }
 .add-btn-sm {
-  border: 1.5px dashed rgba(109, 106, 240, 0.4);
+  border: 1.5px dashed rgba(31, 61, 107, 0.4);
   background: rgba(255, 255, 255, 0.35);
   color: var(--accent);
   border-radius: var(--radius-xs);
@@ -686,7 +677,6 @@ input[type="radio"] {
   letter-spacing: 0.04em;
   margin: 16px 0 6px;
   color: var(--accent);
-  text-transform: uppercase;
 }
 .grand-row {
   display: flex;
@@ -697,14 +687,17 @@ input[type="radio"] {
   padding: 16px 18px;
   margin-top: 12px;
   border-radius: var(--radius-sm);
-  background: var(--accent-grad);
+  background: var(--board);
   color: #fff;
-  box-shadow: var(--shadow-soft);
 }
 .grand-row .grand-score {
-  font-size: 30px;
-  font-weight: 800;
+  font-family: var(--font-num);
+  font-size: 40px;
+  font-weight: 900;
+  line-height: 1;
   letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--board-ink);
 }
 
 .hint {
@@ -894,7 +887,7 @@ input[type="radio"] {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 24px 60px -16px rgba(40, 40, 90, 0.4);
+  box-shadow: 0 24px 60px -16px rgba(20, 35, 61, 0.4);
   backdrop-filter: blur(24px) saturate(180%);
   animation: pop-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
@@ -940,7 +933,7 @@ input[type="radio"] {
   margin-bottom: 12px;
 }
 .diff-badge {
-  background: rgba(109, 106, 240, 0.16);
+  background: rgba(31, 61, 107, 0.16);
   color: var(--accent);
   padding: 4px 14px;
   border-radius: 999px;
@@ -1000,7 +993,7 @@ input[type="radio"] {
   transition: background 0.16s ease;
 }
 .td-cell.in-chunk {
-  background: rgba(109, 106, 240, 0.07);
+  background: rgba(31, 61, 107, 0.07);
 }
 .empty-cell {
   display: flex;
@@ -1012,7 +1005,7 @@ input[type="radio"] {
   align-items: center;
 }
 .cell-btn {
-  border: 1.5px dashed rgba(109, 106, 240, 0.4);
+  border: 1.5px dashed rgba(31, 61, 107, 0.4);
   background: rgba(255, 255, 255, 0.4);
   color: var(--accent);
   border-radius: 8px;
@@ -1394,23 +1387,26 @@ input[type="radio"] {
   gap: 10px;
   flex-wrap: wrap;
   padding: 10px 14px;
-  border: 1px solid var(--glass-border);
-  border-radius: 999px;
-  background: var(--glass-strong);
-  backdrop-filter: blur(18px) saturate(180%);
-  box-shadow: 0 12px 30px -12px rgba(40, 40, 90, 0.35);
+  border: 1px solid #000;
+  border-radius: var(--radius);
+  background: var(--board);
+  box-shadow: 0 10px 24px -10px rgba(20, 35, 61, 0.6);
 }
 .action-bar-score {
   display: flex;
   align-items: baseline;
   gap: 8px;
   font-size: 13px;
-  color: var(--ink-soft);
+  color: #c3cddb;
   padding-left: 6px;
 }
 .action-bar-score b {
-  font-size: 18px;
-  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--board-ink);
 }
 .action-bar-sub {
   font-size: 11px;
@@ -1882,9 +1878,9 @@ input[type="radio"] {
   gap: 8px;
   margin-top: 10px;
   padding: 8px 12px;
-  border: 1px dashed rgba(109, 106, 240, 0.5);
+  border: 1px dashed rgba(31, 61, 107, 0.5);
   border-radius: var(--radius-xs);
-  background: rgba(109, 106, 240, 0.08);
+  background: rgba(31, 61, 107, 0.08);
   font-size: 13px;
 }
 .auto-input-bar .auto-input-text {
