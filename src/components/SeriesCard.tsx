@@ -4,6 +4,9 @@ import {
   THROW_OPTIONS_COMMON,
   THROW_OPTIONS_APPARATUS,
   THROW_OPTIONS_SIDE,
+  THROW_OPTIONS_NO_ROTATION,
+  canUseNoRotation,
+  NON_HAND_CATCH_KINDS,
   SIDE_THROW_TAG,
   NO_VIEW_TAG,
   canUseSideThrow,
@@ -160,6 +163,41 @@ function NoViewDirection({ types, onChange }: { types: string[] | undefined; onC
   );
 }
 
+/**
+ * 手以外のキャッチの受け方（手具ごと）。手以外のキャッチにチェックが入っているときだけ出す。
+ * 横投げ前提の受け方（リング）には注記が付く。採点には影響しない。
+ */
+function NonHandKindSelect({
+  apparatus,
+  types,
+  value,
+  onChange,
+}: {
+  apparatus: ApparatusKey;
+  types: string[] | undefined;
+  value: string | undefined;
+  onChange: (id: string | undefined) => void;
+}) {
+  if (!(types || []).includes("nonhand")) return null;
+  return (
+    <label className="check-req">
+      受け方
+      <select value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
+        <option value="">（未選択）</option>
+        {NON_HAND_CATCH_KINDS[apparatus].map((k) => (
+          <option key={k.id} value={k.id}>
+            {k.name}
+          </option>
+        ))}
+        {/* 他の手具の入力が残っていても消さずに見える */}
+        {value && !NON_HAND_CATCH_KINDS[apparatus].some((k) => k.id === value) && (
+          <option value={value}>{value}（この手具にない）</option>
+        )}
+      </select>
+    </label>
+  );
+}
+
 function ItemEditor({
   item,
   apparatus,
@@ -209,6 +247,7 @@ function ItemEditor({
         {[
           ...THROW_OPTIONS_COMMON,
           ...(sideDirection && !noView ? THROW_OPTIONS_SIDE : []),
+          ...(!common && canUseNoRotation(apparatus) ? THROW_OPTIONS_NO_ROTATION : []),
           ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
         ].map((opt) => {
           const on = (item.throwTypes || []).includes(opt.id);
@@ -260,12 +299,26 @@ function ItemEditor({
                 type="checkbox"
                 checked={(item.catchTypes || []).includes(opt.id)}
                 disabled={blocked}
-                onChange={(e) => onUpdate({ catchTypes: toggle(item.catchTypes, opt.id, e.target.checked) })}
+                onChange={(e) =>
+                  onUpdate({
+                    catchTypes: toggle(item.catchTypes, opt.id, e.target.checked),
+                    // 手以外のキャッチを外したら受け方も消す
+                    ...(opt.id === "nonhand" && !e.target.checked ? { nonHandKind: undefined } : {}),
+                  })
+                }
               />
               {opt.name}
             </label>
           );
         })}
+        {!common && (
+          <NonHandKindSelect
+            apparatus={apparatus}
+            types={item.catchTypes}
+            value={item.nonHandKind}
+            onChange={(nonHandKind) => onUpdate({ nonHandKind })}
+          />
+        )}
         {/* 2つ同時キャッチは二つ投げで2つとも空中にあるときだけ（すでに付いていれば外せるように残す） */}
         {!common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) && (
           <label className="check-req">
@@ -441,12 +494,25 @@ function ItemEditor({
                   type="checkbox"
                   checked={(item.catchTypes || []).includes(opt.id)}
                   disabled={blocked}
-                  onChange={(e) => onUpdate({ catchTypes: toggle(item.catchTypes, opt.id, e.target.checked) })}
+                  onChange={(e) =>
+                    onUpdate({
+                      catchTypes: toggle(item.catchTypes, opt.id, e.target.checked),
+                      ...(opt.id === "nonhand" && !e.target.checked ? { nonHandKind: undefined } : {}),
+                    })
+                  }
                 />
                 {opt.name}
               </label>
             );
           })}
+        {item.isCatch && !common && (
+          <NonHandKindSelect
+            apparatus={apparatus}
+            types={item.catchTypes}
+            value={item.nonHandKind}
+            onChange={(nonHandKind) => onUpdate({ nonHandKind })}
+          />
+        )}
         {item.isCatch && !common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) && (
           <label className="check-req">
             <input
@@ -463,6 +529,7 @@ function ItemEditor({
             ...(!common && canUseSideThrow(apparatus) && !(item.throwTypes || []).includes(NO_VIEW_TAG)
               ? THROW_OPTIONS_SIDE
               : []),
+            ...(!common && canUseNoRotation(apparatus) ? THROW_OPTIONS_NO_ROTATION : []),
             ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
           ].map(
             (opt) => {

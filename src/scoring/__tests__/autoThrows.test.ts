@@ -648,7 +648,8 @@ describe("ランダム生成への組み込み", () => {
     const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree && !rollFinishShape(x))!;
     const w = (apparatus: ApparatusKey, catchId: string, motions: number) =>
       catchStyleWeight({
-        throwStyle: autoThrowStyles(apparatus).find((t) => t.id === "normal")!,
+        // スティックの手以外のキャッチは無回転の投げのときだけ
+        throwStyle: autoThrowStyles(apparatus).find((t) => t.id === (apparatus === "stick" ? "norotate" : "normal"))!,
         catchStyle: autoCatchStyles(apparatus).find((c) => c.id === catchId)!,
         pattern: plain,
         apparatus,
@@ -685,9 +686,20 @@ describe("ランダム生成への組み込み", () => {
   it("手以外のキャッチは手具ごとに実施しやすさが違う", () => {
     const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree && !rollFinishShape(x))!;
     const normalThrow = autoThrowStyles("stick").find((t) => t.id === "normal")!;
+    const noRotation = autoThrowStyles("stick").find((t) => t.id === "norotate")!;
     const nonHand = autoCatchStyles("stick").find((c) => c.id === NON_HAND_TAG)!;
     const w = (apparatus: ApparatusKey, motions: number) =>
-      catchStyleWeight({ throwStyle: normalThrow, catchStyle: nonHand, pattern: plain, apparatus, motions });
+      catchStyleWeight({
+        // スティックの手以外のキャッチは無回転の投げのときだけ
+        throwStyle: apparatus === "stick" ? noRotation : normalThrow,
+        catchStyle: nonHand,
+        pattern: plain,
+        apparatus,
+        motions,
+      });
+    expect(
+      catchStyleWeight({ throwStyle: normalThrow, catchStyle: nonHand, pattern: plain, apparatus: "stick", motions: 0 }),
+    ).toBe(0);
     // スティックは低難度の投げ（徒手0〜1動作）で実施する
     expect(w("stick", 0)).toBe(1);
     expect(w("stick", NON_HAND_CATCH_MAX_MOTIONS)).toBe(1);
@@ -764,12 +776,18 @@ describe("ランダム生成への組み込み", () => {
     expect(VERTICAL_THREE_OTHER_CATCH_WEIGHT).toBeLessThan(1);
     const pattern = AUTO_THROW_PATTERNS.find((x) => x.verticalThree)!;
     expect(pattern.id).toBe("rolls");
-    // クラブは手具で押さえつけて受けられるので、受け方の中でそれが最も多くなる
+    // クラブは手具で押さえつけて受けられるので、押さえつけられる投げ（二つ投げ・視野外・手以外は
+    // 横投げにできず押さえつけない）では、受け方の中でそれが最も多くなる
     const count = new Map<string, number>();
     for (let seed = 0; seed < 20; seed++)
       // 前転3回は珍しい寄りの技で候補に入らない回があるので、必要になる要求Dスコアで引く
       autoThrowSpecs("clubs", { random: seeded(seed), demandScore: VERTICAL_THREE_FREE_SCORE })
-        .filter((sp) => sp.pattern.verticalThree)
+        .filter(
+          (sp) =>
+            sp.pattern.verticalThree &&
+            !sp.throwStyle.two &&
+            !["noview", "nonhand"].includes(sp.throwStyle.id),
+        )
         .forEach((sp) => count.set(sp.catchStyle.id, (count.get(sp.catchStyle.id) ?? 0) + 1));
     const useapp = count.get(CATCH_USE_APPARATUS) ?? 0;
     expect(useapp).toBeGreaterThan(0);

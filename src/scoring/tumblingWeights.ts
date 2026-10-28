@@ -278,7 +278,7 @@ export const CATCH_IN_SKILL_PRESS_CHANCE = 0.2;
  * 手具を使った投げ＋横投げ（視野外でない）は手具を使ったキャッチ（押さえつけ）で受けてよい
  * （受けは通常の抽選 `ROLL_FINISH_PRESS_CATCH_CHANCE` / `draws.sideThrow` に従う）。
  */
-export const THROW_IN_SKILL_USE_APPARATUS_CHANCE: Partial<Record<ApparatusKey, number>> = { clubs: 0.1 };
+export const THROW_IN_SKILL_USE_APPARATUS_CHANCE: Partial<Record<ApparatusKey, number>> = { clubs: 0.25 };
 
 /**
  * 宙返りの途中で投げる投げタン（`throwInSkill`）で、**ロンダートから入る**
@@ -470,6 +470,8 @@ export const DIFFICULTY_RISE_WEIGHT = 0.3;
  */
 export const KIRIMOMITEN_AFTER_FORWARD_FACTOR = 0.7;
 const KIRIMOMITEN_ID = "c_kirimomiten";
+/** 後ろ向きに降りる後方系のあとにテンポ宙返りを選ぶ重みの倍率（実施する選手がいるが少数） */
+export const TEMPO_AFTER_BACK_FACTOR = 0.3;
 /**
  * 前方系の宙返りのあとにきりもみを選ぶ重みの倍率。きりもみは首から背中に着地するので
  * あとに技は続かないが、何のあとでも実施できる。主流は後方伸身宙返りのあと（切り返し）なので、
@@ -499,6 +501,9 @@ export function saltoWeights(
   // きりもみ転回は切り返し（後方伸身宙返り→きりもみ転回）のほうが前宙のあとより簡単なので、
   // 使うときは切り返しを優先する（前宙→きりもみ転回は選ばれにくくする）
   if (!isBackLayoutSalto(prevId)) {
+    // 後ろ向きに降りる後方系のあとのテンポ宙返りは控えめ（後方系を続けるのは稀）
+    if (weights[TEMPO_SKILL_ID] !== undefined && !TEMPO_SKILLS.includes(prevId))
+      weights[TEMPO_SKILL_ID] *= TEMPO_AFTER_BACK_FACTOR;
     if (weights[KIRIMOMITEN_ID] !== undefined)
       weights[KIRIMOMITEN_ID] *= KIRIMOMITEN_AFTER_FORWARD_FACTOR;
     if (weights[KIRIMOMI_ID] !== undefined) weights[KIRIMOMI_ID] *= KIRIMOMI_AFTER_FORWARD_FACTOR;

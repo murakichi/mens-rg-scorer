@@ -33,6 +33,7 @@ import {
   SIDE_THROW_PRESS_CHANCE,
   SIDE_THROW_TWO_THROW_CHANCE,
   canThrowAfterCatch,
+  withNonHandKinds,
   type AutoThrowStyle,
 } from "./autoThrows";
 import { cycler, pickDifferent, rarityChance, rarityExponent, shuffled } from "./pick";
@@ -286,8 +287,9 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       const types = throwInSkillTypes(prevSkillId(items, items.length), id);
       if (types) next.throwTypes = [...types];
       // 手具を使った投げ（低確率。視野外の投げには付けない）
+      // 手具を使った投げは横投げ（もう一方の手具を体側に構えて投げる）で実施する
       if (draws.useAppThrow && !(next.throwTypes || []).includes(NO_VIEW_TAG))
-        next.throwTypes = [...(next.throwTypes || []), USE_APPARATUS_TAG];
+        next.throwTypes = [...(next.throwTypes || []), USE_APPARATUS_TAG, SIDE_THROW_TAG];
     }
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
     items.push(next);
@@ -338,10 +340,12 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       !back &&
       !nonHand &&
       !(draws.sideThrow && !sideOk);
-    if (nonHand && nonHandSide && throwItem)
-      throwItem.throwTypes = [...(throwItem.throwTypes || []), SIDE_THROW_TAG];
-    if (press && draws.sideThrow && throwItem)
-      throwItem.throwTypes = [...(throwItem.throwTypes || []), SIDE_THROW_TAG];
+    const addSide = (item: NonNullable<typeof throwItem>) => {
+      if (!(item.throwTypes || []).includes(SIDE_THROW_TAG))
+        item.throwTypes = [...(item.throwTypes || []), SIDE_THROW_TAG];
+    };
+    if (nonHand && nonHandSide && throwItem) addSide(throwItem);
+    if (press && draws.sideThrow && throwItem) addSide(throwItem);
     // 二つ投げの投げタン（2つ同時キャッチ）：リングは横投げにすることがある
     if (draws.twoThrow && draws.twoThrowSide && throwItem && sideOk && !(throwItem.throwTypes || []).includes(SIDE_THROW_TAG))
       throwItem.throwTypes = [...(throwItem.throwTypes || []), SIDE_THROW_TAG];
@@ -963,7 +967,7 @@ const autoTemplate = (
   auto: true,
   spec,
   // 手具が1つの種目では投げている間に手具操作ができないので、その手具に合わせて落とす
-  series: stripForApparatus([buildAutoTumblingSeries(spec)], apparatus)[0],
+  series: withNonHandKinds(stripForApparatus([buildAutoTumblingSeries(spec)], apparatus)[0], apparatus),
 });
 
 /** 自動生成のタンブリングを、ランダム生成の候補（シリーズテンプレート）として返す */

@@ -25,6 +25,8 @@ import {
   HANDS_TYPES,
   NO_VIEW_TAG,
   SIDE_THROW_TAG,
+  NO_ROTATION_TAG,
+  NON_HAND_CATCH_KINDS,
   USE_APPARATUS_TAG,
   canUseSideThrow,
   REQUIRED_THROW_OPTIONS,
@@ -262,6 +264,15 @@ export interface AutoCatchStyle {
   catchTypes?: string[];
 }
 
+/**
+ * **背面（視野外）の横投げ**の投げ方id。クラブでは、背面に横投げをして**0〜1動作**で手具を使ったキャッチ
+ * （押さえつけ）で受ける形が実施される（オーナー指定）。徒手を多く実施する形では実施しないので、
+ * 最低限の形（`NO_VIEW_SIDE_PATTERNS`）だけで使い、受け方は手具を使ったキャッチだけにする。
+ */
+export const NO_VIEW_SIDE_STYLE_ID = "noview+side";
+export const NO_VIEW_SIDE_PRESS_APPARATUS: ApparatusKey[] = ["clubs"];
+export const NO_VIEW_SIDE_PATTERNS: string[] = ["minimalNone", "minimalChene", "minimalRoll"];
+
 /** その手具で使える投げ方（通常の右投げ＋必須投げ＋技術タグ） */
 export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   const styles: AutoThrowStyle[] = [
@@ -277,6 +288,16 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
     { id: "other", name: "その他の投げ", throwTypes: ["other"] },
   ];
   if (APPARATUS_USE[apparatus]) styles.push({ id: "useapp", name: "手具を使った投げ", throwTypes: ["useapp"] });
+  // スティックの無回転の投げ（投げ方の一種類。スティックの手以外のキャッチはこの投げのときだけ実施する）
+  if (apparatus === "stick")
+    styles.push({ id: NO_ROTATION_TAG, name: "無回転の投げ", throwTypes: [NO_ROTATION_TAG] });
+  // クラブ：背面（視野外）の横投げ→0〜1動作→手具を使ったキャッチ（`NO_VIEW_SIDE_STYLE_ID`）
+  if (NO_VIEW_SIDE_PRESS_APPARATUS.includes(apparatus))
+    styles.push({
+      id: NO_VIEW_SIDE_STYLE_ID,
+      name: "背面の横投げ",
+      throwTypes: [NO_VIEW_TAG, SIDE_THROW_TAG],
+    });
   // 左手投げを視野外（背面）で投げる形。物理的には実施できるが競技での例が無いので
   // `rare` を立てて、要求するDスコアが上がるまで出さない
   if (hasLeftHandThrow(apparatus))
@@ -553,6 +574,12 @@ export function catchStyleWeight({
   demandScore?: number | null;
 }): number {
   const has = (tag: string) => catchHasTag(catchStyle, tag);
+  // スティックの手以外のキャッチは、無回転で投げたときだけ実施する
+  if (apparatus === "stick" && has(NON_HAND_TAG) && !(throwStyle.throwTypes || []).includes(NO_ROTATION_TAG))
+    return 0;
+  // 背面の横投げは手具を使ったキャッチ（押さえつけ）だけで受ける
+  if (throwStyle.id === NO_VIEW_SIDE_STYLE_ID)
+    return catchStyle.id === CATCH_USE_APPARATUS ? 1 : 0;
   // クラブは横投げ以外の投げを手具で押さえつけて受けない（視野外・手以外・二つ投げは横投げにできない）
   if (apparatus === "clubs" && has(CATCH_USE_APPARATUS) && !canAddSideThrow(throwStyle))
     return CLUBS_PRESS_WITHOUT_SIDE_WEIGHT;
@@ -648,7 +675,10 @@ export function throwStylesForPattern(
   apparatus: ApparatusKey,
   pattern: AutoThrowPattern,
 ): AutoThrowStyle[] {
-  const styles = autoThrowStyles(apparatus);
+  // 背面の横投げは最低限の形（0〜1動作）だけで使う
+  const styles = autoThrowStyles(apparatus).filter(
+    (t) => t.id !== NO_VIEW_SIDE_STYLE_ID || NO_VIEW_SIDE_PATTERNS.includes(pattern.id),
+  );
   // `leadPair` の本体は連続投げの**2回目**。手以外の投げは2回目には実施できず、
   // 二つ投げも「2回目 かつ 徒手を多く実施する（＝高難度）」形は実施されない
   // （実施例があるのは 視野外投げ→1シェネ→視野外キャッチ→**二つ投げ→そのままキャッチ**の
@@ -1163,6 +1193,32 @@ export interface AutoThrowTemplate extends SeriesTemplate {
   spec: AutoThrowSpec;
 }
 
+/**
+ * 手以外のキャッチに**受け方**を付ける（`NON_HAND_CATCH_KINDS`）。直前の投げが横投げでなければ
+ * 横投げ前提の受け方（リング）は選ばない。乱数は使わず、シリーズの中身から決める
+ * （同じ候補は同じ受け方になる＝生成の再現性を壊さない）。
+ */
+export function withNonHandKinds(series: Series, apparatus: ApparatusKey): Series {
+  let hasSide = false;
+  let changed = false;
+  const items = series.items.map((item, idx) => {
+    if ((item.kind === "throw" || item.kind === "skill") && (item.kind === "throw" || item.isThrow))
+      hasSide = (item.throwTypes || []).includes(SIDE_THROW_TAG);
+    const isNonHandCatch =
+      (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) &&
+      (item.catchTypes || []).includes(NON_HAND_TAG) &&
+      !item.nonHandKind;
+    if (!isNonHandCatch) return item;
+    const kinds = NON_HAND_CATCH_KINDS[apparatus].filter((k) => !k.needsSide || hasSide);
+    if (kinds.length === 0) return item;
+    let h = idx + 1;
+    for (const ch of JSON.stringify(series.items)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    changed = true;
+    return { ...item, nonHandKind: kinds[h % kinds.length].id };
+  });
+  return changed ? { ...series, items } : series;
+}
+
 const autoTemplate = (apparatus: ApparatusKey, spec: AutoThrowSpec, id = newTemplateId()): AutoThrowTemplate => ({
   id,
   name: autoThrowName(),
@@ -1170,7 +1226,7 @@ const autoTemplate = (apparatus: ApparatusKey, spec: AutoThrowSpec, id = newTemp
   updatedAt: 0,
   auto: true,
   spec,
-  series: buildAutoThrowSeries(spec),
+  series: withNonHandKinds(buildAutoThrowSeries(spec), apparatus),
 });
 
 /** 自動生成の投げシリーズを、ランダム生成の候補（シリーズテンプレート）として返す */

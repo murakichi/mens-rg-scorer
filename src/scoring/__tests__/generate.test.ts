@@ -199,7 +199,7 @@ describe("ランダム生成", () => {
     // （実測：スティック20/25・クラブ24/25・リング18/25・ロープ22/25。
     //   直す前は 14/12/10/9）
     let allSix = 0, n = 0, shortfall = 0;
-    for (let seed = 1; seed <= 12; seed++) {
+    for (let seed = 1; seed <= 25; seed++) {
       const r = generateRoutine([], {
         apparatus: "clubs",
         minScore: allEScore(),
@@ -218,7 +218,7 @@ describe("ランダム生成", () => {
     expect(allSix / n).toBeGreaterThan(0.7);
     // 届かない構成でも、足りないのはせいぜい1〜2ユニット
     expect(shortfall / n).toBeLessThan(1);
-  }, 120_000);
+  }, 240_000);
 
   it("難度をタンブリングと徒手のどちらで取るかの比重はユーザーが選ぶ", () => {
     // 既定（50）は今までどおり：タンブリングにだけ `TUMBLING_PREFERENCE_WEIGHT` が乗る

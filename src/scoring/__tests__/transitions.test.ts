@@ -85,7 +85,8 @@ describe("遷移表（連鎖のルール × 選ばれやすさ）", () => {
     // 首から背中に着地する技・側宙の後には何も続かない
     CHAIN_END_SKILLS.forEach((id) => expect(tr.next(id)).toEqual([]));
     // テンポ以外の後方系（後ろ向きに降りる）の後も続かない
-    expect(tr.next("b_backsalto")).toEqual([]);
+    // 後方系のあとに続くのはテンポ宙返りだけ
+    expect(ids(tr.next("b_backsalto"))).toEqual(["b_tempo"]);
   });
 
   it("連続の難度はだんだん下がる（テンポと例外を除く）", () => {
