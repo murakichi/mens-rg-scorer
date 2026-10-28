@@ -45,19 +45,21 @@ describe("クラブ：背面の横投げ→0〜1動作→手具を使ったキ�
   });
 });
 
-describe("クラブ：タンブリング中の手具を使った投げは横投げ", () => {
-  it("手具を使った投げには必ず横投げが付く", () => {
-    let n = 0;
-    for (let seed = 1; seed <= 40; seed++)
+describe("クラブ：タンブリング中の手具を使った投げ", () => {
+  it("出る。横投げとはセットではない（付く形も付かない形もある。タグの重複はしない）", () => {
+    let withSide = 0;
+    let withoutSide = 0;
+    for (let seed = 1; seed <= 80; seed++)
       autoTumblingTemplates("clubs", { random: seededRandom(seed), apparatus: "clubs", targetScore: null }).forEach((t) =>
         t.series.items.forEach((x) => {
           if (x.kind === "skill" && x.isThrow && (x.throwTypes ?? []).includes("useapp")) {
-            n++;
-            expect(x.throwTypes).toContain("side");
+            if ((x.throwTypes ?? []).includes("side")) withSide++;
+            else withoutSide++;
             expect(new Set(x.throwTypes).size).toBe(x.throwTypes!.length);
           }
         }),
       );
-    expect(n).toBeGreaterThan(0);
+    expect(withSide + withoutSide).toBeGreaterThan(0);
+    expect(withoutSide).toBeGreaterThan(0);
   });
 });

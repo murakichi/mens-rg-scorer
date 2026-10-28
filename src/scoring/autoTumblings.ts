@@ -287,9 +287,9 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       const types = throwInSkillTypes(prevSkillId(items, items.length), id);
       if (types) next.throwTypes = [...types];
       // 手具を使った投げ（低確率。視野外の投げには付けない）
-      // 手具を使った投げは横投げ（もう一方の手具を体側に構えて投げる）で実施する
+      // （手具を使った投げと横投げはセットではない。横投げは押さえつけて受けるときの抽選で別に付く）
       if (draws.useAppThrow && !(next.throwTypes || []).includes(NO_VIEW_TAG))
-        next.throwTypes = [...(next.throwTypes || []), USE_APPARATUS_TAG, SIDE_THROW_TAG];
+        next.throwTypes = [...(next.throwTypes || []), USE_APPARATUS_TAG];
     }
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
     items.push(next);
