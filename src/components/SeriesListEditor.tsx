@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import { SeriesCard } from "./SeriesCard";
 import { needsRoundoffBefore, roundoffItem } from "../scoring/analysis";
 import { autoInputSuggestions } from "../scoring/autoInput";
+import { duplicateSeriesAt } from "./seriesEdit";
 import { computeScore } from "../scoring/score";
 import type { ApparatusKey, FutureLevel, Item, Series } from "../scoring/types";
 
@@ -125,6 +126,8 @@ export function SeriesListEditor({
     if (series.length > 1) onChange(series.filter((_, i) => i !== sIdx));
   };
   const addSeries = () => onChange([...structuredClone(series), emptySeries()]);
+  /** シリーズをコピーして直後に挿す（中身は `seriesEdit.ts`） */
+  const duplicateSeries = (sIdx: number) => onChange(duplicateSeriesAt(series, sIdx));
 
   return (
     <>
@@ -156,6 +159,9 @@ export function SeriesListEditor({
           onRemoveItem={(iIdx) => removeItem(sIdx, iIdx)}
           onMoveItem={(iIdx, dir) => moveItem(sIdx, iIdx, dir)}
           onRemoveSeries={() => removeSeries(sIdx)}
+          /* シリーズを増やせない画面（シリーズテンプレート・レーティング）では出さない。
+             親が先頭1本しか受け取らないので、押しても何も起きないボタンになる。 */
+          onDuplicateSeries={allowAdd ? () => duplicateSeries(sIdx) : undefined}
         />
       ))}
       {allowAdd && (

@@ -7,6 +7,7 @@
 // =====================================================================
 
 import { hoistRopeJumps, stripForApparatus } from "./analysis";
+import { decodeShare } from "./share";
 import {
   APPARATUS,
   ART_DEDUCTION_ITEMS,
@@ -308,4 +309,30 @@ export function loadDraftMode(): ScorerMode | null {
 
 export function saveDraftMode(mode: ScorerMode): void {
   writeKey(DRAFT_KEY_MODE, mode);
+}
+
+/**
+ * 共有URL・エクスポートしたJSONのどちらを貼られても構成として読む。
+ * 比較（#70）やインポート欄のように「何を貼られるか分からない」場面で使う。
+ * 読めなければ null。
+ */
+export function parseRoutineText(text: string): IndividualDraft | null {
+  const raw = text.trim();
+  if (!raw) return null;
+  // 共有URL（#d=... を含む）か、その圧縮部分だけ
+  const hash = raw.indexOf("#d=");
+  const token = hash >= 0 ? raw.slice(hash + 3) : null;
+  if (token) {
+    const d = normalizeIndividualDraft(decodeShare(token));
+    if (d && d.series.length > 0) return d;
+  }
+  try {
+    const d = normalizeIndividualDraft(JSON.parse(raw));
+    if (d && d.series.length > 0) return d;
+  } catch {
+    /* JSON でなければ次へ */
+  }
+  // URL でも JSON でもない：圧縮文字列そのものを貼られた場合
+  const d = normalizeIndividualDraft(decodeShare(raw));
+  return d && d.series.length > 0 ? d : null;
 }
