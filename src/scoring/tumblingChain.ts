@@ -132,7 +132,7 @@ export const KIRIMOMI_THROW_SKILL_ID = "b_kirimomi";
 
 /** 技の最中の投げに付ける技術タグ（後ろ向き→前方系のきりもみは視野外投げ） */
 export const throwInSkillTypes = (prevId: string | undefined, skillId: string): string[] | undefined =>
-  isBackToForwardThrow(prevId, skillId) ? [NO_VIEW_TAG] : undefined;
+  isBackToForwardThrow(prevId, skillId) || skillId === KIRIMOMI_THROW_SKILL_ID ? [NO_VIEW_TAG] : undefined;
 
 /**
  * 投げ受け（投げてから跳ぶ形）で前方系の宙返りに続けて実施する技。
@@ -166,6 +166,8 @@ export const AFTER_BACK_LAYOUT_SALTOS: { id: string; weight: number }[] = [
  * そのまま前方系に続けて三宙にできる。
  */
 export const AFTER_BACK_LAYOUT_BACKWARD_SALTOS: { id: string; weight: number }[] = [
+  // 後ろ向きに降りる後方系のあとのテンポ宙返り（後方2回ひねり→テンポ→ダイビング前宙 を実施する選手がいる）
+  { id: "b_tempo", weight: 0.5 },
   { id: "c_back15", weight: 0.5 },
   { id: "b_backhalf", weight: 0.5 },
 ];
@@ -252,7 +254,7 @@ export const difficultyValue = (id: string, junior: boolean, future: FutureLevel
  * きりもみは入れない：首から背中にかけて着地するので、そのまま受けには繋げられない
  * （後方伸身のあとだけは連続の技として実施するので `AFTER_BACK_LAYOUT_SALTOS` にある）。
  */
-export const AFTER_FORWARD_KIRIMOMI: string[] = ["c_kirimomiten"];
+export const AFTER_FORWARD_KIRIMOMI: string[] = ["b_kirimomi", "c_kirimomiten"];
 
 /** 連続に使う宙返り（きりもみ系は宙返りの連続の中でだけ宙返りになるので使わない） */
 function saltoList(
@@ -301,7 +303,12 @@ export function nextSaltoOptions(prevId: string, junior = false, future: FutureL
   // 後方系を続けて実施することは少ない（テンポは例外）。
   // 前方の半ひねりのように**前方系から後ろ向きに降りた**後に後方系へ入るのは普通に実施する
   // （例：ロンダート→後方1回半ひねり→前宙半ひねり→ダイビング前宙）。
-  if (backward && !isTempoSalto(prevId) && isBackwardSalto(prevId)) return [];
+  // ただし**後ろ向きに降りる後方系のあとのテンポ宙返り**は実施される
+  // （例：後方宙返り2回ひねり→テンポ宙返り→ダイビング前宙）
+  if (backward && !isTempoSalto(prevId) && isBackwardSalto(prevId))
+    return skillDef(prevId)?.isDoubleSalto
+      ? []
+      : [TEMPO_SKILL_ID].filter((id) => offered.has(id) && difficultyValue(id, junior, future) <= maxDiff(future));
   const ceiling = isTempoSalto(prevId) ? maxDiff(future) : difficultyValue(prevId, junior, future);
   // 難度が上がってよい例外（後方宙返り半ひねり→前方宙返り1回ひねり など）
   const rise = DIFFICULTY_RISE_AFTER[prevId] ?? [];

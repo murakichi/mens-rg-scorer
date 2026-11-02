@@ -14,6 +14,9 @@ import {
   REQUIRED_THROW_OPTIONS,
   USE_APPARATUS_TAG,
   SIDE_THROW_TAG,
+  NO_ROTATION_TAG,
+  canUseNoRotation,
+  nonHandKindOf,
   canUseSideThrow,
   requiredThrowName,
   skillDef,
@@ -685,6 +688,8 @@ export const APPARATUS_INPUT_NAMES = {
   ropeJump: "ロープ跳び",
   handsEmptyOp: "投げている間の手具操作",
   side: "横投げ",
+  noRotation: "無回転",
+  nonHandKind: "手以外のキャッチの受け方",
 } as const;
 
 /** その手具では入力できない内容の一覧（無ければ空。確認ダイアログの文面に使う） */
@@ -692,9 +697,15 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
   const reasons = new Set<string>();
   const tags = canUseApparatusTag(apparatus);
   const side = canUseSideThrow(apparatus);
+  const noRotation = canUseNoRotation(apparatus);
   list.forEach((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);
     ser.items.forEach((item, i) => {
+      if ((item.kind === "throw" || item.kind === "skill") && !noRotation && (item.throwTypes || []).includes(NO_ROTATION_TAG))
+        reasons.add(APPARATUS_INPUT_NAMES.noRotation);
+      // 手以外のキャッチの受け方は、その手具の選択肢に無ければ入力できない
+      if ((item.kind === "catch" || (item.kind === "skill" && item.isCatch)) && item.nonHandKind && !nonHandKindOf(apparatus, item.nonHandKind))
+        reasons.add(APPARATUS_INPUT_NAMES.nonHandKind);
       // 投げている間（手元に手具が無い間）は手具操作ができない
       if (item.kind === "skill" && item.hasApparatus && empty[i])
         reasons.add(APPARATUS_INPUT_NAMES.handsEmptyOp);
@@ -740,8 +751,14 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
   if (apparatusBlockers(list, apparatus).length === 0) return list;
   const tags = canUseApparatusTag(apparatus);
   const side = canUseSideThrow(apparatus);
+  const noRotation = canUseNoRotation(apparatus);
   const withoutTag = (ids?: string[]) =>
-    (ids || []).filter((id) => (tags || id !== USE_APPARATUS_TAG) && (side || id !== SIDE_THROW_TAG));
+    (ids || []).filter(
+      (id) =>
+        (tags || id !== USE_APPARATUS_TAG) &&
+        (side || id !== SIDE_THROW_TAG) &&
+        (noRotation || id !== NO_ROTATION_TAG),
+    );
   const withoutReq = (ids?: string[]) => (ids || []).filter((id) => canUseReqType(apparatus, id));
   return list.map((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);
@@ -791,7 +808,15 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
               catchTwo: tags ? item.catchTwo : false,
             };
           return item;
-        }),
+        })
+        // その手具に無い手以外のキャッチの受け方は落とす
+        .map((item) =>
+          (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) &&
+          item.nonHandKind &&
+          !nonHandKindOf(apparatus, item.nonHandKind)
+            ? { ...item, nonHandKind: undefined }
+            : item,
+        ),
     };
   });
 }

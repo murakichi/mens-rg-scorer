@@ -12,6 +12,7 @@ import {
   DIFF_SCORE,
   SERIES_BONUS,
   SIDE_THROW_TAG,
+  NO_ROTATION_TAG,
   TECHNIQUE_BONUS,
   APPARATUS_OP_BONUS,
   resolveRopeJump,
@@ -557,9 +558,9 @@ export function computeScore(
     if (!isDup) {
       ser.items.forEach((item, j) => {
         if (itemOver[i][j]) return; // 上限超過の投げ受けは加点も数えない
-        // 横投げは投げ方の種類として数えるだけで、技術加点にはしない
+        // 横投げ・無回転は投げ方の種類として数えるだけで、技術加点にはしない
         const bonusThrowTypes = (item: { throwTypes?: string[] }) =>
-          (item.throwTypes || []).filter((t) => t !== SIDE_THROW_TAG).length;
+          (item.throwTypes || []).filter((t) => t !== SIDE_THROW_TAG && t !== NO_ROTATION_TAG).length;
         if (item.kind === "throw") techCount += bonusThrowTypes(item);
         else if (item.kind === "catch") techCount += (item.catchTypes || []).length;
         else if (item.kind === "skill" && item.isThrow) techCount += bonusThrowTypes(item);

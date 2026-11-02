@@ -36,6 +36,8 @@ export interface CatchItem {
   catchTypes?: string[];
   /** 2つ同時キャッチ */
   catchTwo?: boolean;
+  /** 手以外のキャッチの受け方（`NON_HAND_CATCH_KINDS` の id。手以外のキャッチにチェックがあるときだけ有効） */
+  nonHandKind?: string;
 }
 
 export interface SkillItem {
@@ -65,6 +67,8 @@ export interface SkillItem {
   catchTypes?: string[];
   /** 技の最中の受けが2つ同時キャッチか。`isCatch` 時のみ有効。 */
   catchTwo?: boolean;
+  /** 技の最中の手以外のキャッチの受け方（`NON_HAND_CATCH_KINDS` の id）。`isCatch` 時のみ有効。 */
+  nonHandKind?: string;
 }
 
 export interface MotionItem {

@@ -43,6 +43,10 @@ export function commonBlockers(list: Series[]): string[] {
         });
       if ((item.kind === "throw" || item.kind === "skill") && (item.throwTypes || []).includes("side"))
         reasons.add("横投げ");
+      if ((item.kind === "throw" || item.kind === "skill") && (item.throwTypes || []).includes("norotate"))
+        reasons.add("無回転");
+      if ((item.kind === "catch" || (item.kind === "skill" && item.isCatch)) && item.nonHandKind)
+        reasons.add("手以外のキャッチの受け方");
       if (item.kind === "throw" && (item.throwTypes || []).includes("useapp"))
         reasons.add("手具を使った投げ");
       if (item.kind === "skill" && (item.throwTypes || []).includes("useapp")) reasons.add("手具を使った投げ");

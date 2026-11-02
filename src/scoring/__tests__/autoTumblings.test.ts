@@ -300,9 +300,12 @@ describe("宙返りの連続の組み方", () => {
   });
 
   it("後方系を続けて実施しない（テンポ・後方伸身宙返りは例外）", () => {
-    expect(nextSaltoOptions("b_backsalto")).toEqual([]);
-    expect(nextSaltoOptions("b_backtuck")).toEqual([]);
-    expect(nextSaltoOptions("b_tempo").length).toBeGreaterThan(0);
+    // 後ろ向きに降りる後方系のあとに続けるのはテンポ宙返りだけ
+    // （後方宙返り2回ひねり→テンポ→ダイビング前宙 を実施する選手がいる）
+    expect(nextSaltoOptions("b_backsalto")).toEqual(["b_tempo"]);
+    expect(nextSaltoOptions("b_backtuck")).toEqual(["b_tempo"]);
+    expect(nextSaltoOptions("d_back2twist")).toEqual(["b_tempo"]);
+    expect(nextSaltoOptions("b_tempo")).toContain("b_divefront");
   });
 
   it("後方伸身宙返りの後は 前宙・きりもみ・きりもみ転回（ひねっても同じ）", () => {
@@ -492,7 +495,7 @@ describe("宙返りの連続の組み方", () => {
 
   it("前方の半ひねりからは後方系に続けられる（後方系どうしの連続はしない）", () => {
     nextSaltoOptions("b_fronthalf").forEach((id) => expect(skillDef(id)?.category).toBe(CATEGORY.BACKWARD));
-    expect(nextSaltoOptions("b_backsalto")).toEqual([]);
+    expect(nextSaltoOptions("b_backsalto")).toEqual(["b_tempo"]);
   });
 
   it("実際の連続の例どおりに組める", () => {
@@ -1092,8 +1095,8 @@ describe("つなぎ技", () => {
     expect(built.some((t) => t.series.items.filter((it) => it.kind === "skill").length > 2)).toBe(true);
     // 受ける技にロンダートと前宙の両方が出る。**ほとんどはロンダート**で、前宙は少ない
     // （前宙で受ける＝前方系から入るので、`FORWARD_ENTRY_WEIGHT` が高い要求値では下げる。
-    // 種8本で前宙が出たのは1本だけ）
-    const caught = [18, 20, 22, 24, 26, 43, 45, 47].flatMap((seed) =>
+    // 前宙は120種で数本なので、種を多めに引く）
+    const caught = Array.from({ length: 120 }, (_, k) => k + 1).flatMap((seed) =>
       autoTumblingTemplates("ring", { random: seeded(seed), targetScore: 4.5 })
         .filter((t) => t.spec.pattern.catchInSkill)
         .map((t) => {

@@ -104,7 +104,7 @@ describe("横投げ", () => {
       let thrown: string[] | null = null;
       series.items.forEach((item) => {
         // 視野外の投げ（背面の連続投げ）は押さえつけて受けない。押さえつけの相手は先に投げた横投げ
-        if ((item.kind === "throw" || (item.kind === "skill" && item.isThrow)) && !(item.throwTypes || []).includes("noview"))
+        if ((item.kind === "throw" || (item.kind === "skill" && item.isThrow)) && !((item.throwTypes || []).includes("noview") && !(item.throwTypes || []).includes("side")))
           thrown = item.throwTypes || [];
         if (item.kind === "catch" && (item.catchTypes || []).includes("useapp")) {
           expect(thrown).not.toBeNull();
@@ -157,7 +157,7 @@ describe("横投げ", () => {
     });
     // 徒手を置く場所は両方出る
     const places = new Set<string>();
-    for (let k = 0; k < 20; k++)
+    for (let k = 0; k < 60; k++)
       autoThrowSpecs("clubs").forEach((s) => {
         if (s.pattern.splitCatch && s.cheneCount > 0) places.add(s.splitMotionAt ?? "");
       });

@@ -75,6 +75,49 @@ export const SIDE_THROW_TAG = "side";
 export const THROW_OPTIONS_SIDE = [{ id: SIDE_THROW_TAG, name: "横投げ" }];
 export const canUseSideThrow = (apparatus: ApparatusKey): boolean => apparatus !== "rope";
 
+/**
+ * 無回転の投げ（スティックだけ）。投げ方の一種類として数えるだけで、技術加点（0.1）は付けない
+ * （横投げと同じ扱い）。スティックの手以外のキャッチは、無回転で投げたときだけ実施する
+ * （自動生成の現実則。入力画面は制限しない）。
+ */
+export const NO_ROTATION_TAG = "norotate";
+export const THROW_OPTIONS_NO_ROTATION = [{ id: NO_ROTATION_TAG, name: "無回転" }];
+export const canUseNoRotation = (apparatus: ApparatusKey): boolean => apparatus === "stick";
+
+/**
+ * 手以外のキャッチの受け方（手具ごと）。手以外のキャッチにチェックを入れたときのプルダウン。
+ * `needsSide` は横投げが前提の受け方（リング）。採点には影響しない（技術加点は手以外のキャッチの0.1のまま）。
+ */
+export interface NonHandCatchKind {
+  id: string;
+  name: string;
+  needsSide?: boolean;
+}
+export const NON_HAND_CATCH_KINDS: Record<ApparatusKey, NonHandCatchKind[]> = {
+  stick: [
+    { id: "neckShoulder", name: "首と肩に挟む" },
+    { id: "footPress", name: "足で押さえつけ" },
+    { id: "footClamp", name: "足で挟む" },
+    { id: "torsoClamp", name: "胴で挟む" },
+  ],
+  clubs: [
+    { id: "footPress", name: "足で押さえつけ" },
+    { id: "footClamp", name: "足で挟む" },
+  ],
+  rope: [
+    { id: "shoulder", name: "肩" },
+    { id: "footWrap", name: "足に巻き付け" },
+  ],
+  ring: [
+    { id: "handstandFoot", name: "後転倒立で足に入れる（横投げ前提）", needsSide: true },
+    { id: "upperBody", name: "上半身に入れる（横投げ前提）", needsSide: true },
+    { id: "bothFeetClamp", name: "両足で挟む" },
+    { id: "footPress", name: "足で押さえつける（横投げ前提）", needsSide: true },
+  ],
+};
+export const nonHandKindOf = (apparatus: ApparatusKey, id: string | undefined): NonHandCatchKind | undefined =>
+  id ? NON_HAND_CATCH_KINDS[apparatus].find((k) => k.id === id) : undefined;
+
 export const APPARATUS_USE: Record<ApparatusKey, boolean> = {
   stick: false,
   clubs: true,

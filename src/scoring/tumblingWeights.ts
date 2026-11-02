@@ -208,6 +208,30 @@ export const airPairTumExtraChance = (targetScore?: number | null): number => {
   const t = Math.min(1, (targetScore - AIR_PAIR_TUM_EXTRA_MIN_SCORE) / (AIR_PAIR_TUM_EXTRA_FULL_SCORE - AIR_PAIR_TUM_EXTRA_MIN_SCORE));
   return AIR_PAIR_TUM_EXTRA_CHANCE * Math.max(0.2, t);
 };
+/**
+ * **前宙の最中に2つ目を視野外で投げる形**（`airThrowInSkill`）：投げ→前宙（視野外投げ）→
+ * B難度の前方系・側方系→キャッチ→キャッチ。クラブ・リングだけ、要求する上限が
+ * `AIR_THROW_IN_SKILL_MIN_SCORE`（4.0。オーナー指定）以上のとき、生成ごとに1回
+ * `AIR_THROW_IN_SKILL_CHANCE` で候補に混ぜる。前宙の前には何も入れない。
+ */
+export const AIR_THROW_IN_SKILL_MIN_SCORE = 4.0;
+export const AIR_THROW_IN_SKILL_CHANCE = 1;
+/** 前宙の最中の視野外投げの候補の数（B難度の2本目は技ごとに別案） */
+export const AIR_THROW_IN_SKILL_VARIANTS = 4;
+/** 2本目はB難度の前方系・側方系のほか、きりもみ転回でもよい（オーナー指定） */
+export const AIR_THROW_IN_SKILL_ALSO = "c_kirimomiten";
+/**
+ * **きりもみの最中に2つ目を視野外で投げる形**（`airThrowAtKirimomi`）：投げ→C難度の前方系
+ * （補正無し）→きりもみ（視野外投げ）→キャッチ→キャッチ。条件と抽選は `airThrowInSkill` と同じ
+ * （クラブ・リング、要求する上限4.0以上）。1本目は**きりもみ転回にしない**（オーナー指定）。
+ */
+export const AIR_KIRIMOMI_SKILL_ID = "b_kirimomi";
+export const AIR_KIRIMOMI_FIRST_MIN_DIFF = "C" as const;
+export const AIR_KIRIMOMI_FIRST_EXCLUDED = ["c_kirimomiten"];
+export const AIR_KIRIMOMI_VARIANTS = 3;
+export const airThrowInSkillChance = (targetScore?: number | null): number =>
+  targetScore != null && targetScore < AIR_THROW_IN_SKILL_MIN_SCORE ? 0 : AIR_THROW_IN_SKILL_CHANCE;
+
 export const airPairTumChance = (targetScore?: number | null): number =>
   targetScore != null && targetScore < AIR_PAIR_TUM_MIN_SCORE ? 0 : AIR_PAIR_TUM_CHANCE;
 
@@ -254,7 +278,7 @@ export const CATCH_IN_SKILL_PRESS_CHANCE = 0.2;
  * 手具を使った投げ＋横投げ（視野外でない）は手具を使ったキャッチ（押さえつけ）で受けてよい
  * （受けは通常の抽選 `ROLL_FINISH_PRESS_CATCH_CHANCE` / `draws.sideThrow` に従う）。
  */
-export const THROW_IN_SKILL_USE_APPARATUS_CHANCE: Partial<Record<ApparatusKey, number>> = { clubs: 0.1 };
+export const THROW_IN_SKILL_USE_APPARATUS_CHANCE: Partial<Record<ApparatusKey, number>> = { clubs: 0.25 };
 
 /**
  * 宙返りの途中で投げる投げタン（`throwInSkill`）で、**ロンダートから入る**
@@ -446,6 +470,15 @@ export const DIFFICULTY_RISE_WEIGHT = 0.3;
  */
 export const KIRIMOMITEN_AFTER_FORWARD_FACTOR = 0.7;
 const KIRIMOMITEN_ID = "c_kirimomiten";
+/** 後ろ向きに降りる後方系のあとにテンポ宙返りを選ぶ重みの倍率（実施する選手がいるが少数） */
+export const TEMPO_AFTER_BACK_FACTOR = 0.3;
+/**
+ * 前方系の宙返りのあとにきりもみを選ぶ重みの倍率。きりもみは首から背中に着地するので
+ * あとに技は続かないが、何のあとでも実施できる。主流は後方伸身宙返りのあと（切り返し）なので、
+ * 前方系のあとは控えめにする。
+ */
+export const KIRIMOMI_AFTER_FORWARD_FACTOR = 0.5;
+const KIRIMOMI_ID = "b_kirimomi";
 
 /** 実施する技の選ばれやすさ（直前の技で変わる。表に無い技は1） */
 export function saltoWeights(
@@ -468,8 +501,12 @@ export function saltoWeights(
   // きりもみ転回は切り返し（後方伸身宙返り→きりもみ転回）のほうが前宙のあとより簡単なので、
   // 使うときは切り返しを優先する（前宙→きりもみ転回は選ばれにくくする）
   if (!isBackLayoutSalto(prevId)) {
+    // 後ろ向きに降りる後方系のあとのテンポ宙返りは控えめ（後方系を続けるのは稀）
+    if (weights[TEMPO_SKILL_ID] !== undefined && !TEMPO_SKILLS.includes(prevId))
+      weights[TEMPO_SKILL_ID] *= TEMPO_AFTER_BACK_FACTOR;
     if (weights[KIRIMOMITEN_ID] !== undefined)
       weights[KIRIMOMITEN_ID] *= KIRIMOMITEN_AFTER_FORWARD_FACTOR;
+    if (weights[KIRIMOMI_ID] !== undefined) weights[KIRIMOMI_ID] *= KIRIMOMI_AFTER_FORWARD_FACTOR;
     return withHarderThanRated(weights);
   }
   // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）。

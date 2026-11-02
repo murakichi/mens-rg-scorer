@@ -173,8 +173,9 @@ const endRule = (id: string) => ({
 
 /** その位置（直前の技 → この技）で投げてよいか */
 export const throwRuleFor = (prevId: string | undefined, id: string): ThrowRule => {
-  if (!isBackToForwardThrow(prevId, id)) return "ok";
-  return id === KIRIMOMI_THROW_SKILL_ID ? "kirimomiDraw" : "never";
+  // きりもみは何の技のあとでも視野外投げにできる（低確率）。切り返しは他の技では投げない
+  if (id === KIRIMOMI_THROW_SKILL_ID) return "kirimomiDraw";
+  return isBackToForwardThrow(prevId, id) ? "never" : "ok";
 };
 
 /** 辺1本を組み立てる */
