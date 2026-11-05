@@ -201,6 +201,97 @@ export function probe(opts: ProbeOptions): ProbeRow[] {
   return rows;
 }
 
+// ---------------------------------------------------------------------
+// 到達可能性（`--reach`）：生成（N本）を回さず、候補の抽選だけを多数の種で掃いて
+// 「理論上その形が候補に出うるか」を1回で調べる。
+//  - 評価・探索（`generateRoutine`）を呼ばないので、生成の何十倍も速い
+//  - 抽選（確率ゲート・候補数の上限）は毎回引き直すので、種を掃いた和集合を取る
+//  - 技の並びの組み合わせは膨大で形の空間は出し尽くせないので、「出ない」は
+//    抽選を掃いた範囲での否定（証明ではない）。代わりに検索語ごとの当たりを返し、
+//    連鎖のどの語が1つも出ないのか／各語は出るのに並びが出ないのかを切り分ける
+// ---------------------------------------------------------------------
+
+export interface ReachRow {
+  apparatus: ApparatusKey;
+  maxScore: number | null;
+  rarity: number;
+  /** 掃いた種の数 */
+  seeds: number;
+  /** 和集合に出た形（重複なし）の数と、そのうち当たったもの */
+  shapes: number;
+  hits: number;
+  /** 当たった種の数（高いほど出やすい。抽選ゲートの強さの目安） */
+  hitSeeds: number;
+  /** 検索語ごとに、その語を含むアイテムが1つでもある形の数（連鎖の切り分け用） */
+  termHits: { term: string; shapes: number }[];
+  examples: string[];
+}
+
+/** 乱数が常に一定値を返す（確率ゲートを全部開く0／全部閉じる 0.999 の両端を掃くため） */
+const constantRandom = (v: number) => () => v;
+
+export function reach(opts: ProbeOptions & { seeds?: number }): ReachRow[] {
+  const terms = parseQuery(opts.query);
+  const seeds = Math.max(1, opts.seeds ?? 200);
+  const base = opts.seed ?? 1;
+  const rows: ReachRow[] = [];
+  for (const apparatus of opts.apparatuses)
+    for (const maxScore of opts.maxScores)
+      for (const rarity of opts.rarities) {
+        const gen = {
+          apparatus,
+          junior: !!opts.junior,
+          future: opts.future ?? null,
+          minScore: opts.minScore ?? null,
+          maxScore,
+          rarity,
+        };
+        const seen = new Set<string>();
+        const termShapes = new Map<string, Set<string>>(terms.filter((t) => t !== "*").map((t) => [t, new Set()]));
+        const hitShapes = new Set<string>();
+        let hitSeeds = 0;
+        const sweep = (rand: () => number) => {
+          let hit = false;
+          for (const t of autoPool(gen, [], rand).flatMap((x) => [x, ...autoVariants(x)])) {
+            const key = describeText(t.series);
+            seen.add(key);
+            const texts = t.series.items.map(itemText);
+            for (const [term, set] of termShapes) if (texts.some((x) => x.includes(term))) set.add(key);
+            if (matchesChain(t.series, terms, opts.exact)) {
+              hit = true;
+              hitShapes.add(key);
+            }
+          }
+          if (hit) hitSeeds++;
+        };
+        sweep(constantRandom(0));
+        sweep(constantRandom(0.999));
+        for (let i = 0; i < seeds; i++) sweep(seededRandom(base + i));
+        rows.push({
+          apparatus,
+          maxScore,
+          rarity,
+          seeds,
+          shapes: seen.size,
+          hits: hitShapes.size,
+          hitSeeds,
+          termHits: [...termShapes].map(([term, set]) => ({ term, shapes: set.size })),
+          examples: [...hitShapes].slice(0, 3),
+        });
+      }
+  return rows;
+}
+
+export function reachVerdict(row: ReachRow): string {
+  if (row.hits > 0) return `候補に出る（${row.seeds + 2}回の抽選中 ${row.hitSeeds} 回）`;
+  const missing = row.termHits.filter((t) => t.shapes === 0).map((t) => t.term);
+  if (missing.length > 0)
+    return `候補に出ない（「${missing.join("」「")}」を含む形が1つも無い＝この条件では作られない。形・重み0・上限・手具の制約）`;
+  return row.termHits.length > 1
+    ? "各語は出るが、この並び・組み合わせは出ない（連鎖の規則か、抽選で外れた。--seeds を増やして確認）"
+    : "見つからず（抽選を掃いた範囲では出ない。--seeds を増やして確認）";
+}
+
 /** 結果の読み方：候補の段階で落ちているか、評価で落ちているか */
 export function verdict(row: ProbeRow): string {
   if (row.candidateHits === 0) return "この抽選の候補にない（形・連鎖・重み0・上限・手具の制約。抽選は毎回引き直すので、少ないときは --seed を変えて再確認）";

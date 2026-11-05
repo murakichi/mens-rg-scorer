@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { describeText, itemText, matchesChain, parseQuery, probe, seededRandom, verdict } from "../probe";
+import { describeText, itemText, matchesChain, parseQuery, probe, reach, reachVerdict, seededRandom, verdict } from "../probe";
 import type { Series } from "../types";
 
 const series = (items: Series["items"]): Series => ({ items } as Series);
@@ -61,5 +61,26 @@ describe("probe（○○は生成される？の確認）", () => {
     expect(
       verdict({ ...row, candidateHits: 0, routineHits: 0 }),
     ).toContain("候補にない");
+  });
+
+  describe("reach（生成を回さない到達可能性）", () => {
+    const base = { apparatuses: ["clubs", "stick"] as const, maxScores: [null], rarities: [50], runs: 0, seeds: 20 };
+
+    it("クラブは二つ投げが候補に出て、スティックは1つも出ない（語ごとに切り分ける）", () => {
+      const rows = reach({ ...base, apparatuses: [...base.apparatuses], query: "twothrow" });
+      const clubs = rows.find((r) => r.apparatus === "clubs")!;
+      const stick = rows.find((r) => r.apparatus === "stick")!;
+      expect(clubs.hits).toBeGreaterThan(0);
+      expect(reachVerdict(clubs)).toContain("候補に出る");
+      expect(stick.hits).toBe(0);
+      expect(stick.termHits).toEqual([{ term: "twothrow", shapes: 0 }]);
+      expect(reachVerdict(stick)).toContain("「twothrow」を含む形が1つも無い");
+    });
+
+    it("同じ seed なら結果が再現する", () => {
+      const a = reach({ ...base, apparatuses: ["clubs"], query: "twothrow", seed: 3 });
+      const b = reach({ ...base, apparatuses: ["clubs"], query: "twothrow", seed: 3 });
+      expect(a).toEqual(b);
+    });
   });
 });
