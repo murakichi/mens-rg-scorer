@@ -22,6 +22,9 @@ const HELP = `使い方: npm run probe -- "<技名 or 連鎖>" [オプション]
   --junior                            ジュニア
   --future F|G                        十年後モード
   --seed 1                            乱数の種（同じ値なら結果を再現できる）
+  --reach                             生成を回さず、候補の抽選だけを多数の種で掃いて
+                                      「理論上その形が候補に出うるか」を調べる（速い）
+  --seeds 200                         --reach で掃く種の数（既定: 200）
 `;
 
 const argv = process.argv.slice(2);
@@ -30,7 +33,7 @@ if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
   process.exit(argv.length === 0 ? 1 : 0);
 }
 
-const flags = new Set(["--junior", "--exact"]);
+const flags = new Set(["--junior", "--exact", "--reach"]);
 const named = {};
 const positional = [];
 for (let i = 0; i < argv.length; i++) {
@@ -103,6 +106,28 @@ try {
   }
 
   const t0 = Date.now();
+  if (named["--reach"]) {
+    const seeds = Number(named["--seeds"] ?? 200);
+    const rr = mod.reach({ ...opts, seeds });
+    console.log(`\n[到達可能性]  候補の抽選を ${seeds} 種（＋全ゲート開/閉）掃いた和集合。生成は回していません`);
+    for (const r of rr)
+      console.log(
+        `  ${r.apparatus.padEnd(5)} 上限${String(r.maxScore ?? "なし").padEnd(4)} 珍${String(r.rarity).padStart(3)}  形 ${String(r.hits).padStart(3)}/${String(r.shapes).padEnd(4)}  → ${mod.reachVerdict(r)}`,
+      );
+    const seenEx = new Set();
+    console.log("\n[例]");
+    for (const r of rr)
+      for (const e of r.examples) {
+        if (seenEx.has(e)) continue;
+        seenEx.add(e);
+        console.log(`  ${r.apparatus}: ${e}`);
+      }
+    if (seenEx.size === 0) console.log("  なし");
+    console.log(`\n${((Date.now() - t0) / 1000).toFixed(1)} 秒`);
+    process.exitCode = 0;
+    await server.close();
+    process.exit(0);
+  }
   const rows = mod.probe(opts);
   console.log("\n[結果]  候補＝自動生成の候補（宙返りの本数違いを含む）に当たる数 / 構成＝生成した構成のうち当たった数");
   const label = (r) =>
