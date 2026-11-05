@@ -76,13 +76,14 @@ export const THROW_OPTIONS_SIDE = [{ id: SIDE_THROW_TAG, name: "横投げ" }];
 export const canUseSideThrow = (apparatus: ApparatusKey): boolean => apparatus !== "rope";
 
 /**
- * 無回転の投げ（スティックだけ）。投げ方の一種類として数えるだけで、技術加点（0.1）は付けない
- * （横投げと同じ扱い）。スティックの手以外のキャッチは、無回転で投げたときだけ実施する
- * （自動生成の現実則。入力画面は制限しない）。
+ * 無回転の投げ（スティック・クラブ）。投げ方の一種類として数えるだけで、技術加点（0.1）は付けない
+ * （横投げと同じ扱い）。スティックの手以外のキャッチは、無回転で投げたときだけ実施する。
+ * クラブの足でのキャッチ（手以外のキャッチ）は、横投げか無回転のときだけ実施する
+ * （どちらも自動生成の現実則。入力画面は制限しない）。
  */
 export const NO_ROTATION_TAG = "norotate";
 export const THROW_OPTIONS_NO_ROTATION = [{ id: NO_ROTATION_TAG, name: "無回転" }];
-export const canUseNoRotation = (apparatus: ApparatusKey): boolean => apparatus === "stick";
+export const canUseNoRotation = (apparatus: ApparatusKey): boolean => apparatus === "stick" || apparatus === "clubs";
 
 /**
  * 手以外のキャッチの受け方（手具ごと）。手以外のキャッチにチェックを入れたときのプルダウン。
@@ -1078,7 +1079,9 @@ export function isBackwardSalto(id: string): boolean {
  * ひねりで表せないものだけ。
  * テンポひねり（テンポ宙返りで1回ひねり）は整数ひねりで後ろ向きに降りるので入れない。
  */
-export const FORWARD_LANDING_BACK_SALTOS: string[] = ["b_divefront"];
+/** ダイビング前宙のid */
+export const DIVING_FRONT_SALTO_ID = "b_divefront";
+export const FORWARD_LANDING_BACK_SALTOS: string[] = [DIVING_FRONT_SALTO_ID];
 
 /** 後方系か（バク転・後方の宙返り） */
 export function isBackwardSkill(id: string): boolean {

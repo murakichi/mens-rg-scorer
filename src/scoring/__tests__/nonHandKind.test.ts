@@ -69,10 +69,10 @@ describe("スティックの無回転", () => {
     expect(norot.techniqueBonus).toBe(plain.techniqueBonus);
   });
 
-  it("スティック以外では入力できない", () => {
+  it("スティック・クラブ以外では入力できない", () => {
     const list = [S({ kind: "throw", throwTypes: ["norotate"] }, { kind: "catch" })];
     expect(apparatusBlockers(list, "stick")).toEqual([]);
-    expect(apparatusBlockers(list, "clubs")).toContain("無回転");
+    expect(apparatusBlockers(list, "ring")).toContain("無回転");
     expect(commonBlockers(list)).toContain("無回転");
   });
 
@@ -93,7 +93,7 @@ describe("スティックの無回転", () => {
     expect(nonHand).toBeGreaterThan(0);
   });
 
-  it("スティックの自動生成に無回転の投げが出る。他の手具には出ない", () => {
+  it("スティック・クラブの自動生成に無回転の投げが出る。他の手具には出ない", () => {
     const has = (app: ApparatusKey) => {
       for (let seed = 1; seed <= 10; seed++)
         if (autoThrowTemplates(app, { random: seededRandom(seed) }).some((t) =>
@@ -101,6 +101,36 @@ describe("スティックの無回転", () => {
       return false;
     };
     expect(has("stick")).toBe(true);
-    expect(has("clubs")).toBe(false);
+    expect(has("clubs")).toBe(true);
+    expect(has("ring")).toBe(false);
+  });
+});
+
+describe("クラブの足でのキャッチは横投げか無回転のときだけ", () => {
+  it("クラブでも無回転を入力できる（スティック・クラブだけ）", () => {
+    const list = [S({ kind: "throw", throwTypes: ["norotate"] }, { kind: "catch" })];
+    expect(apparatusBlockers(list, "clubs")).toEqual([]);
+    expect(apparatusBlockers(list, "ring")).toContain("無回転");
+  });
+
+  it("自動生成：クラブの手以外のキャッチの投げは、横投げか無回転", () => {
+    let n = 0;
+    for (let seed = 1; seed <= 60; seed++) {
+      const all = [
+        ...autoThrowTemplates("clubs", { random: seededRandom(seed) }),
+        ...autoTumblingTemplates("clubs", { random: seededRandom(seed), apparatus: "clubs", targetScore: null }),
+      ];
+      all.forEach((t) => {
+        let types: string[] = [];
+        t.series.items.forEach((it) => {
+          if (it.kind === "throw" || (it.kind === "skill" && it.isThrow)) types = it.throwTypes ?? [];
+          if ((it.kind === "catch" || (it.kind === "skill" && it.isCatch)) && (it.catchTypes ?? []).includes("nonhand")) {
+            n++;
+            expect(types.includes("side") || types.includes("norotate")).toBe(true);
+          }
+        });
+      });
+    }
+    expect(n).toBeGreaterThan(0);
   });
 });

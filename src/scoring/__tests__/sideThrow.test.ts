@@ -167,7 +167,7 @@ describe("横投げ", () => {
     expect(autoThrowSpecs("rope").some((s) => s.pattern.splitCatch)).toBe(false);
   });
 
-  it("自動生成：リングは手以外のキャッチ（首・足にはめる）でも横投げになる。クラブでは付かない", () => {
+  it("自動生成：リングは手以外のキャッチ（首・足にはめる）でも横投げになる。クラブの足でのキャッチは横投げか無回転", () => {
     const count = (apparatus: "ring" | "clubs") => {
       let n = 0;
       for (let r = 0; r < 30; r++)
@@ -186,7 +186,14 @@ describe("横投げ", () => {
       return n;
     };
     expect(count("ring")).toBeGreaterThan(0);
-    expect(count("clubs")).toBe(0);
+    // クラブは足でのキャッチ（手以外のキャッチ）を横投げか無回転で投げたときだけ実施する
+    expect(count("clubs")).toBeGreaterThan(0);
+    for (let r = 0; r < 20; r++)
+      for (const spec of autoThrowSpecs("clubs")) {
+        if (!(spec.catchStyle.catchTypes || []).includes("nonhand") || spec.throwStyle.two) continue;
+        const types = spec.throwStyle.throwTypes || [];
+        expect(types.includes(SIDE_THROW_TAG) || types.includes("norotate")).toBe(true);
+      }
   });
 
   it("自動生成：リング・ロープの投げタンは手以外のキャッチで受けることがあり、リングは必ず横投げ", () => {

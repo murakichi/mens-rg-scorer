@@ -26,6 +26,7 @@ import {
   NO_VIEW_TAG,
   SIDE_THROW_TAG,
   NO_ROTATION_TAG,
+  canUseNoRotation,
   NON_HAND_CATCH_KINDS,
   USE_APPARATUS_TAG,
   canUseSideThrow,
@@ -289,7 +290,7 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   ];
   if (APPARATUS_USE[apparatus]) styles.push({ id: "useapp", name: "手具を使った投げ", throwTypes: ["useapp"] });
   // スティックの無回転の投げ（投げ方の一種類。スティックの手以外のキャッチはこの投げのときだけ実施する）
-  if (apparatus === "stick")
+  if (canUseNoRotation(apparatus))
     styles.push({ id: NO_ROTATION_TAG, name: "無回転の投げ", throwTypes: [NO_ROTATION_TAG] });
   // クラブ：背面（視野外）の横投げ→0〜1動作→手具を使ったキャッチ（`NO_VIEW_SIDE_STYLE_ID`）
   if (NO_VIEW_SIDE_PRESS_APPARATUS.includes(apparatus))
@@ -524,6 +525,13 @@ export function maybeSideThrow(
       : throwStyle;
   }
   if (!canAddSideThrow(throwStyle)) return throwStyle;
+  // クラブの足でのキャッチは、無回転でなければ必ず横投げにする
+  if (
+    apparatus === "clubs" &&
+    catchHasTag(catchStyle, NON_HAND_TAG) &&
+    !(throwStyle.throwTypes || []).includes(NO_ROTATION_TAG)
+  )
+    return withSideThrow(throwStyle);
   const press = catchHasTag(catchStyle, CATCH_USE_APPARATUS);
   const leftHandLow = (throwStyle.reqTypes || []).includes(LEFT_HAND_TAG) && motions <= SIDE_LEFT_HAND_MAX_MOTIONS;
   const nonHandP = catchHasTag(catchStyle, NON_HAND_TAG) ? (SIDE_THROW_NON_HAND_CHANCE[apparatus] ?? 0) : 0;
@@ -576,6 +584,17 @@ export function catchStyleWeight({
   const has = (tag: string) => catchHasTag(catchStyle, tag);
   // スティックの手以外のキャッチは、無回転で投げたときだけ実施する
   if (apparatus === "stick" && has(NON_HAND_TAG) && !(throwStyle.throwTypes || []).includes(NO_ROTATION_TAG))
+    return 0;
+  // クラブの足でのキャッチ（手以外のキャッチ）は、無回転か横投げのときだけ実施する
+  // （横投げは `maybeSideThrow` が付ける。横投げにできない投げ方＝二つ投げ・視野外・手以外は実施しない）
+  if (
+    apparatus === "clubs" &&
+    has(NON_HAND_TAG) &&
+    // 二つ投げは従来どおり（要求Dスコアが5を超えたときだけ出す。`twoThrowNonHandWeight`）
+    !throwStyle.two &&
+    !(throwStyle.throwTypes || []).includes(NO_ROTATION_TAG) &&
+    !canAddSideThrow(throwStyle)
+  )
     return 0;
   // 背面の横投げは手具を使ったキャッチ（押さえつけ）だけで受ける
   if (throwStyle.id === NO_VIEW_SIDE_STYLE_ID)
