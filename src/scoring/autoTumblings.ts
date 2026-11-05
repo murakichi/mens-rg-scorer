@@ -22,6 +22,7 @@ import {
   hasLeftHandThrow,
   skillDef,
   SKILL_LIST,
+  DIVING_FRONT_SALTO_ID,
   skillDifficulty,
   canOperateApparatus,
 } from "./constants";
@@ -55,6 +56,8 @@ import {
   noRollAfter,
   throwInSkillTypes,
   nextSaltoOptions,
+  SIDE_SALTO_ID,
+  TENCHU_SKILL_ID,
 } from "./tumblingChain";
 import {
   BACK_TO_FORWARD_THROW_CHANCE,
@@ -275,7 +278,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
     if (pattern.connect && i === (spec.connectAt ?? DEFAULT_CONNECT_AT) && spec.connectId)
       items.push(skillItem(spec.connectId));
     // 入力画面と同じで、そのままでは後方系に入れない位置ではロンダートを補う
-    const throwsHere = !!pattern.throwInSkill && i === saltos.length - 1;
+    // 投げるのは最後の技（`throwThenSide` は側宙が続くので最後から2本目）
+    const throwsHere = !!pattern.throwInSkill && i === saltos.length - (pattern.throwThenSide ? 2 : 1);
     // 2つ投げる形：1本目の前宙の最中に、2つ目を視野外で投げる
     const airThrowHere =
       (!!pattern.airThrowInSkill && i === 0) || (!!pattern.airThrowAtKirimomi && i === saltos.length - 1);
@@ -681,6 +685,35 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
   // （実施例：投げ→ロンダート（手具を使ったキャッチ）→後方宙返り1回半ひねり→ロンダート→
   // ダイビング前宙）。連鎖のルール・技の重み・前転の付き方は派生元の候補がそのまま持っている
   // ので、この形のために遷移表を書き直す必要はない。
+  // **ダイビング前宙(投げ)→側宙／転宙→キャッチ**：技の最中に投げる候補のうち、投げる技がダイビング前宙の
+  // ものから、側宙か転宙を1本足して派生させる（ロンダート→テンポ→ダイビング前宙(投げ)→側宙、
+  // テンポを使わずつなぎの後半でダイビング前宙(投げ)→側宙、のどちらも元の候補の連鎖のまま。
+  // 投げる技はダイビング前宙だけ。転宙は実施が少ない技なので `LIMITED_SKILLS` の重みが評価に効く）
+  const finishers = [SIDE_SALTO_ID, TENCHU_SKILL_ID].filter(
+    (id) => usableSkills(ctxBase)([id]).length === 1,
+  );
+  if (finishers.length > 0) {
+    const sideDerived = specs.flatMap((spec) => {
+      if (!spec.pattern.throwInSkill || spec.pattern.catchInSkill || spec.pattern.throwThenSide) return [];
+      const ids = spec.saltoIds.slice(0, spec.saltoCount);
+      if (ids[ids.length - 1] !== DIVING_FRONT_SALTO_ID) return [];
+      const n = ids.length + 1;
+      return finishers.map((finish) => ({
+        ...spec,
+        pattern: {
+          ...spec.pattern,
+          id: `${spec.pattern.id}Then${finish === SIDE_SALTO_ID ? "Side" : "Tenchu"}`,
+          throwThenSide: true,
+          rollFinish: false,
+          saltos: { min: n, max: n },
+        },
+        saltoCount: n,
+        saltoIds: [...ids, finish],
+      }));
+    });
+    specs.push(...sideDerived);
+  }
+
   if (keepCatchInSkill) {
     const derived = specs.flatMap((spec) => {
       // 投げタンの候補からは作らない（投げは1本。受けてから投げる形はここでは提案しない）
