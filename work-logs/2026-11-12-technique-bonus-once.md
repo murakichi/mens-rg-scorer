@@ -22,9 +22,9 @@
 
 ## 確認
 
-- `npm test`：全件緑
+- `npm test`：全件緑（1031件、slow 14件 skip）
 - `npm run build`：成功
-- `npm run test:slow`：結果は下の「結果」に記載
+- `npm run test:slow`：全件緑（1041件、4件 skip は既存の it.skip）。生成の傾向テストも通った
 
 ## 結果
 
