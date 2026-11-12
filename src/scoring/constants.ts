@@ -1150,7 +1150,10 @@ export function skillOptions(
 ): Skill[] {
   const allows = (category: string) =>
     category === CATEGORY.BACKWARD ? flow.backward : category === CATEGORY.SIDE ? flow.side : flow.forward;
-  return SKILL_LIST.filter((s) => skillAllowed(s.id, junior, future, team) && allows(s.category));
+  // 側転は徒手として統一したので、個人のタンブリング欄には出さない（徒手動作の選択肢に出る）
+  return SKILL_LIST.filter(
+    (s) => skillAllowed(s.id, junior, future, team) && allows(s.category) && (team || !s.isHandElement),
+  );
 }
 
 /** タンブリング技のプルダウンをまとめる系統の表示順 */

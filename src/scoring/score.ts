@@ -802,8 +802,9 @@ export function computeScore(
       key: "throwTum",
       label: "1本以上が投げタン",
       passed: hasThrowTumbling,
-      deduction: MISSING_ELEMENT_DEDUCTION,
-      tip: "投げ受けの間に転回系を実施する、または転回系の最中に投げる。1本あればよい（その転回系は難度が1ランク上がる）",
+      // 減点は §3.2 手具別必須要素「転回系の投げ受け」（−0.3）で1回だけ引く。ここでは引かない（二重計上しない）
+      deduction: 0,
+      tip: "投げ受けの間に転回系を実施する、または転回系の最中に投げる。1本あればよい（その転回系は難度が1ランク上がる）。不足の減点は手具別必須要素「転回系の投げ受け」の −0.3 で計上する",
     },
     {
       key: "triple",
@@ -908,8 +909,9 @@ export function computeScore(
   }
 
   const missing = required.filter((r) => r.passed === false);
-  // 投げタン・つなぎ技・タンブリング本数の欠如（他の項目は固有の減点として既に計上している）
-  const missingElementKeys = ["throwTum", "connect", "tumCount"];
+  // つなぎ技・タンブリング本数の欠如（他の項目は固有の減点として既に計上している）。
+  // 投げタンの欠如は手具別必須要素「転回系の投げ受け」と同じ内容なので、そちらで1回だけ引く
+  const missingElementKeys = ["connect", "tumCount"];
   const missingElementDeduction =
     missing.filter((r) => missingElementKeys.includes(r.key)).length * MISSING_ELEMENT_DEDUCTION;
 

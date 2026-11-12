@@ -48,7 +48,7 @@ export function aRows(r: ScoreResult): ScoreRow[] {
       label: `投げ方・受け方の種類不足（投げ${r.throwKindCount}/3・受け${r.catchKindCount}/3）`,
       value: r.varietyDeduction,
     },
-    { label: "必須要素の欠如（投げタン・つなぎ技・タンブリング本数）", value: r.missingElementDeduction },
+    { label: "必須要素の欠如（つなぎ技・タンブリング本数）", value: r.missingElementDeduction },
     { label: "深い徒手動作の不足", value: r.deepMotionDeduction },
     { label: "柔軟の徒手の不足", value: r.flexDeduction },
     { label: "手具操作の不足", value: r.handOpDeduction },

@@ -692,7 +692,16 @@ export const APPARATUS_INPUT_NAMES = {
   noRotation: "無回転",
   nonHandKind: "手以外のキャッチの受け方",
   other: "その他の投げ・キャッチ（削除済みの入力）",
+  cartwheelSkill: "タンブリング欄の側転（徒手動作に移す）",
 } as const;
+
+/**
+ * タンブリング欄に入った側転か。側転は徒手として統一したので、タンブリングの選択肢には出さず、
+ * 旧データに残っていれば `stripForApparatus` が徒手動作（1回）に移す。
+ * 技の最中に投げる・受ける側転は徒手動作で表せないので、そのまま残す。
+ */
+export const isCartwheelSkillItem = (item: Item): boolean =>
+  item.kind === "skill" && !!item.skillId && !!skillDef(item.skillId)?.isHandElement && !item.isThrow && !item.isCatch;
 
 /** その手具では入力できない内容の一覧（無ければ空。確認ダイアログの文面に使う） */
 export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): string[] {
@@ -703,6 +712,7 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
   list.forEach((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);
     ser.items.forEach((item, i) => {
+      if (isCartwheelSkillItem(item)) reasons.add(APPARATUS_INPUT_NAMES.cartwheelSkill);
       // 削除した「その他の投げ・キャッチ」はどの手具でも入力できない（旧データに残っていれば落とす）
       if (
         ((item.kind === "throw" || item.kind === "skill") && (item.throwTypes || []).includes(LEGACY_OTHER_STYLE_TAG)) ||
@@ -776,6 +786,12 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
       ...ser,
       items: ser.items
         .filter((item) => item.kind !== "ropeJump" || canUseRopeJump(apparatus))
+        // タンブリング欄の側転は徒手動作に移す（側転は徒手として統一）
+        .map((item): Item =>
+          isCartwheelSkillItem(item) && item.kind === "skill"
+            ? { kind: "motion", motionId: item.skillId, count: 1 }
+            : item,
+        )
         .map((item) => {
           // 投げている間は手具操作ができない
           if (item.kind === "skill" && item.hasApparatus && emptyOf.get(item))

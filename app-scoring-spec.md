@@ -243,7 +243,9 @@ UIのプルダウンは見出し（`optgroup`）で分類する。タンブリ�
   それ以外の技は `handMotionsOfSkill()` の動作数として徒手系難度に合算する
   - A難度技（側転・ロンダート・バク転・ハンドスプリング・とび前転）＝縦の一回転の徒手で **1動作**
   - **側転は徒手扱い**（`Skill.isHandElement`）：つなぎ技にならず（`isConnectA` なし）、
-    方向系の判定にも数えない。徒手動作としては従来どおり選べる
+    方向系の判定にも数えない。**徒手として統一**：個人のタンブリング欄の選択肢には出さず（`skillOptions`、団体は従来どおり）、
+    徒手動作で入力する。旧データのタンブリング欄の側転は `stripForApparatus` が徒手動作（1回）に移す
+    （技の最中に投げる・受ける側転だけは表せないので残す。`cartwheelAsMotion.test.ts`）
   - きりもみ（B）＝1動作、きりもみ転回（C）＝2動作（難度をそのまま徒手系難度に読み替え：`max(1, 難度値 − 1)`）
 - 徒手動作（`motion` アイテム）と技由来の動作数は**合算**する。
   例：投げ→2動作→バク転→キャッチ ＝ 3動作 → D難度
@@ -438,21 +440,22 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 | key | ラベル | 判定ロジック |
 |-----|--------|-------------|
 | `dir` | 前方系・側方系・後方系をすべて含む | タンブリングユニットの技の `category` 集合 |
-| `throwTum` | 1本以上が投げタン | `isThrowTumbling` なユニットの存在 |
+| `throwTum` | 1本以上が投げタン | `isThrowTumbling` なユニットの存在。**表示のみ（`deduction` 0）**：不足の −0.30 は手具別必須要素「転回系の投げ受け」（`*_rotthrow`）で1回だけ引く |
 | `triple` | 1本以上が宙返り3回以上連続 | `maxSaltoChain >= 3`（`saltoFlags` 経由） |
 | `connect` | 1本以上がつなぎ技 | `hasConnect()` で宙返り→A難度→宙返り パターン検出 |
 | `count3` | 投げをN回以上実施 | `totalThrowCount >= requiredThrowCount`（一般3／ジュニア2。ラベルもNに追従） |
 | （手具別必須投げは §3.2 手具別必須要素に統合） | — | `appThrow` は廃止し、`stick_left` / `*_twothrow` の自動判定で扱う |
 | `countMax` | 投げはN回以内（ジュニアのみ） | `performedThrowCount <= maxThrowCount`（5） |
 | `tumCount` | タンブリング3本以上 | `nonDupTumblingCount >= 3` |
-| `appThrow` | 手具別必須投げ | `REQUIRED_THROW_OPTIONS` の全IDが実施済みか |
 
 各行は `deduction`（不足時のA減点）を持ち、`SeriesCard`／`ScoreSummary` が金額を表示する。
-うち **投げタン・つなぎ技・タンブリング本数**の不足は `missingElementDeduction`（各 −0.30）として
+うち **つなぎ技・タンブリング本数**の不足は `missingElementDeduction`（各 −0.30）として
 A減点に加算する。方向系・連続宙返り・投げ回数は従来どおり固有の減点項目で計上するので二重計上しない。
+投げタンの不足も同じ理由で `missingElementDeduction` には入れず、§3.2 手具別必須要素「転回系の投げ受け」の
+−0.30 だけを引く（以前は両方で −0.60 になっていた）。
 
 `required[]` とは別に、`computeScore` は §3.2/§3.5.6.3 用の表示リストも返す：
-- `apparatusElementChecks[]`：`APPARATUS_REQUIRED_ELEMENTS[apparatus]` の手動チェック状況（未実施は `apparatusElementDeduction` に −0.3）。
+- `apparatusElementChecks[]`：`APPARATUS_REQUIRED_ELEMENTS[apparatus]` の充足状況（`auto` の付いた項目はシリーズ入力から自動判定、残り＝ころがし・まわしは手動チェック。未実施は `apparatusElementDeduction` に −0.3）。
 - `violationChecks[]`：`VIOLATION_OPTIONS` の該当状況（passed=違反なし。該当は `violationDeduction` に −0.3）。
 - `deepMotionChecks[]`：基本徒手から判定した深い運動の充足（`deepMotionDeduction`）。
 - `handOpChecks[]`：手具操作の多様性チェック（`handOpDeduction`）。
