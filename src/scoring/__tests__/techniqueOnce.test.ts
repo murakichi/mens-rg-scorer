@@ -151,3 +151,31 @@ describe("二つ投げ4動作加点：同じ内容は1回だけ（⑦）", () =>
     expect(r.twoThrowMotionBonus).toBeCloseTo(0.2, 5);
   });
 });
+
+// オーナー確認済みの例：シェネ後の背面キャッチと前転後の背面キャッチ
+describe("シェネ後の背面キャッチ と 前転後の背面キャッチ", () => {
+  const r = computeScore(
+    [
+      S({ kind: "throw" }, chene(1), { kind: "catch", catchTypes: ["noview"] }),
+      S({ kind: "throw" }, { kind: "motion", motionId: "fwd_roll", count: 1 }, { kind: "catch", catchTypes: ["noview"] }),
+    ],
+    "stick",
+  );
+
+  it("B難度の投げ受けを2回実施したものとして数える（どちらも難度に採用）", () => {
+    const rows = r.seriesBreakdowns.flatMap((b) => b.handRows);
+    expect(rows.map((x) => x.diff)).toEqual(["B", "B"]);
+    expect(rows.every((x) => x.adopted)).toBe(true);
+    expect(r.totalThrowCount).toBe(2);
+  });
+
+  it("受け方の種類としては1種類", () => {
+    expect(r.catchKindCount).toBe(1);
+  });
+
+  it("加点は1回目の背面キャッチの0.1だけ", () => {
+    expect(r.seriesBreakdowns[0].tech).toBeCloseTo(0.1, 5);
+    expect(r.seriesBreakdowns[1].tech).toBeCloseTo(0, 5);
+    expect(r.techniqueBonus).toBeCloseTo(0.1, 5);
+  });
+});
