@@ -118,11 +118,11 @@ describe("computeScore — 右投げ右受けの自動判定（§3.2 スティ�
 describe("computeScore — 重複シリーズの手動解除（notDuplicate）", () => {
   const dup = (): Series => S({ kind: "throw" }, { kind: "skill", skillId: "b_backsalto" }, { kind: "catch" });
 
-  it("同一構成の2本目は重複扱いで投げ回数・本数に不算入", () => {
+  it("同一構成の2本目は重複扱いで本数に不算入。投げ回数には数える", () => {
     const r = computeScore([dup(), dup()], "stick");
     expect(r.dupSignatureFlags).toEqual([false, true]);
     expect(r.dupFlags).toEqual([false, true]);
-    expect(r.totalThrowCount).toBe(1);
+    expect(r.totalThrowCount).toBe(2);
     expect(r.nonDupTumblingCount).toBe(1);
   });
 
@@ -140,7 +140,7 @@ describe("computeScore — 重複シリーズの手動解除（notDuplicate）",
     const r = computeScore([dup(), { ...dup(), notDuplicate: true }, dup()], "stick");
     expect(r.dupSignatureFlags).toEqual([false, true, true]);
     expect(r.dupFlags).toEqual([false, false, true]);
-    expect(r.totalThrowCount).toBe(2);
+    expect(r.totalThrowCount).toBe(3);
   });
 
   it("重複解除で加点（技術加点）も算入される", () => {
@@ -150,7 +150,8 @@ describe("computeScore — 重複シリーズの手動解除（notDuplicate）",
     // 重複シリーズは技術加点も不算入。解除すると2本分が計上される
     expect(base.techniqueBonus).toBeCloseTo(0.1, 5);
     expect(freed.techniqueBonus).toBeCloseTo(0.2, 5);
-    expect(base.totalThrowCount).toBe(1);
+    // 投げ回数は重複でも数える
+    expect(base.totalThrowCount).toBe(2);
     expect(freed.totalThrowCount).toBe(2);
     expect(base.throwCountDeduction).toBeCloseTo(0.3, 5);
     expect(freed.throwCountDeduction).toBeCloseTo(0.3, 5); // 一般は3回必要なので2回でも不足

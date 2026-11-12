@@ -351,11 +351,13 @@ export function computeScore(
   // ---- 投げ上げの上限（ジュニアのみ）----
   // 上限を超えた6回目以降の投げは、要素・難度ともにカウントしない。
   // 実施回数そのものは超過分の減点に使うため別に数える。
+  // 重複シリーズ（全く同じシリーズの2本目）の投げも実施した投げなので、回数には数える
+  // （難度・加点には数えないのは従来どおり）。
   const overLimitUnit = (() => {
     let n = 0;
-    return analysis.map((a, i) =>
+    return analysis.map((a) =>
       a.units.map((u) => {
-        if (dupFlags[i] || u.throwCount === 0) return false;
+        if (u.throwCount === 0) return false;
         const over = maxThrowCount !== null && n >= maxThrowCount;
         n += u.throwCount;
         return over;
@@ -365,10 +367,10 @@ export function computeScore(
   // アイテム単位（多様性・技術加点・必須投げの判定用）。投げと同じ順序で数える。
   const overLimitItem = (() => {
     let n = 0;
-    return series.map((ser, i) =>
+    return series.map((ser) =>
       ser.items.map((item) => {
         const isThrowItem = item.kind === "throw" || (item.kind === "skill" && !!item.isThrow);
-        if (!isThrowItem || dupFlags[i]) return false;
+        if (!isThrowItem) return false;
         const over = maxThrowCount !== null && n >= maxThrowCount;
         n += 1;
         return over;
@@ -389,7 +391,8 @@ export function computeScore(
   });
 
   // 実施した投げ回数（上限超過分も含む。減点の算出に使う）
-  const performedThrowCount = analysis.reduce((s, a, i) => s + (dupFlags[i] ? 0 : a.throwCount), 0);
+  // 重複シリーズの投げも実施した投げとして数える
+  const performedThrowCount = analysis.reduce((s, a) => s + a.throwCount, 0);
 
   // ---- 難度点に採用するユニットをシリーズ順に確定する ----
   // 重複シリーズは全除外。演技全体で同じ内容の難度は1回しか数えない（§3.4.4）。
@@ -699,10 +702,10 @@ export function computeScore(
   const apparatusOpBonus = seriesBreakdowns.some((b) => b.appOp > 0) ? APPARATUS_OP_BONUS : 0;
   const twoThrowMotionBonus = seriesBreakdowns.reduce((s, b) => s + b.twoMot, 0);
 
-  // 要素として数える投げ回数（ジュニアの上限超過分は含めない）
+  // 要素として数える投げ回数（ジュニアの上限超過分は含めない）。
+  // 全く同じシリーズの2本目（重複シリーズ）も投げ回数には数える
   const totalThrowCount = analysis.reduce(
-    (s, a, i) =>
-      s + (dupFlags[i] ? 0 : a.units.reduce((t, u, j) => t + (overLimitUnit[i][j] ? 0 : u.throwCount), 0)),
+    (s, a, i) => s + a.units.reduce((t, u, j) => t + (overLimitUnit[i][j] ? 0 : u.throwCount), 0),
     0,
   );
 

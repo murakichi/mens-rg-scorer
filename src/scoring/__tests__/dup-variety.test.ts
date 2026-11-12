@@ -10,11 +10,27 @@ const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 //   CLAUDE.md ゴッチャ：重複は「カウント・ほとんどの加点」から除外される。
 // -------------------------------------------------------------------------
 describe("重複シリーズ — カウントからの除外", () => {
-  it("完全に同一のシリーズは2本目の投げ回数を数えない", () => {
+  it("完全に同一のシリーズの2本目も投げ回数には数える（難度・加点には数えない）", () => {
+    const thr = () => S({ kind: "throw", throwTypes: ["noview"] }, { kind: "motion", motionId: "chene", count: 2 }, { kind: "catch" });
+    const r = computeScore([thr(), thr(), thr()], "stick");
+    expect(r.dupFlags).toEqual([false, true, true]);
+    expect(r.totalThrowCount).toBe(3);
+    expect(r.performedThrowCount).toBe(3);
+    expect(r.throwCountDeduction).toBe(0);
+    // 難度は1本分（C 0.3）、技術加点も1本分
+    expect(r.handScore).toBeCloseTo(0.3, 5);
+    expect(r.techniqueBonus).toBeCloseTo(0.1, 5);
+  });
+
+  it("ジュニアの投げ上限（5回）にも重複シリーズの投げを数える", () => {
     const thr = () => S({ kind: "throw" }, { kind: "catch" });
-    const r = computeScore([thr(), thr()], "stick");
-    // 2本とも同一シグネチャ → 2本目は dup。totalThrowCount は 1 のみ
-    expect(r.totalThrowCount).toBe(1);
+    const other = () => S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 1 }, { kind: "catch" });
+    const r = computeScore([thr(), thr(), thr(), thr(), thr(), other()], "stick", { junior: true });
+    expect(r.performedThrowCount).toBe(6);
+    expect(r.totalThrowCount).toBe(5);
+    expect(r.overThrowCount).toBe(1);
+    // 6回目（重複でないシリーズ）は上限超過なので難度にも数えない
+    expect(r.seriesBreakdowns[5].handRows.every((x) => !x.adopted || !x.inTop)).toBe(true);
   });
 
   it("構成が異なる投げシリーズは両方数える", () => {

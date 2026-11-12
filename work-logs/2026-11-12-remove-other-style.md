@@ -42,3 +42,11 @@
 
 - 旧データで「その他」を使って種類を埋めていた構成は、投げ方・受け方の種類不足減点が増えることがある（意図どおり）。
 - issue #2 は GitHub 上ではまだ open のはず。この変更で解消したのでクローズしてよい。
+
+## 追記：全く同じシリーズの2本目も投げ回数に数える（オーナー確認）
+
+- `score.ts`：`totalThrowCount`・`performedThrowCount` と、ジュニアの上限判定（`overLimitUnit`/`overLimitItem`）が
+  重複シリーズの投げも数えるようにした。難度・加点・種類・タンブリング本数には従来どおり数えない。
+- `npm test`・`npm run test:slow`（1038件）・`npm run build` すべて緑。
+- テスト：`dup-variety.test.ts`（3回目まで同じシリーズで投げ回数不足が出ない／ジュニアの上限にも数える）、
+  `score.test.ts` の期待値を更新。CLAUDE.md・app-scoring-spec.md に追記。
