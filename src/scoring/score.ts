@@ -212,6 +212,14 @@ export interface ScoreResult {
   violationDeduction: number;
   /** §3.5.6.4 欠点テーブルの合計減点 */
   artDeduction: number;
+  /**
+   * 欠点テーブルの項目のうち、自動判定の減点が同じ項目に属するもの（§3.5.6.4 と §7.4.1 の整合）。
+   * 「徒手系の種類・組み合わせの多様性」＝深い運動＋柔軟、「さまざまな操作」＝手具操作の多様性チェック（身体を離れる操作を含む）。
+   * 手入力ぶんと自動判定ぶんを合わせて項目の上限（各1.00）で頭打ちにする。
+   */
+  artItemTotals: { id: string; name: string; manual: number; auto: number; total: number; max: number }[];
+  /** 上の頭打ちで A減点から戻した量（自動判定と手入力の合計が項目の上限を超えた分） */
+  artCapExcess: number;
   /** 欠点テーブルの内訳（入力があった項目だけでなく全項目を返す） */
   artRows: { id: string; name: string; group: string; max: number; note: string; value: number }[];
   /**
@@ -762,8 +770,9 @@ export function computeScore(
         throwKinds.add(kindKey(types, "tumthrow"));
       } else if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
         if (isDup) return;
-        // 1回の受けは1種類（チェックの組み合わせ全体）として数える
-        catchKinds.add(kindKey(item.catchTypes || []));
+        // 1回の受けは1種類（チェックの組み合わせ全体）として数える。
+        // タンブリングの最中の受けは、最中の投げ（投げタン）と同じく別の1種類（チェックが無ければ「投げタン」の受け）
+        catchKinds.add(kindKey(item.catchTypes || [], item.kind === "skill" ? "tumcatch" : "normal"));
       }
     });
   });
@@ -1012,6 +1021,19 @@ export function computeScore(
     value: clampArtDeduction(item.id, artDeductions[item.id]),
   }));
   const artDeduction = artRows.reduce((s, r) => s + r.value, 0);
+  // 自動判定の減点は欠点テーブルの項目に属するので、手入力と合わせて項目の上限で頭打ちにする
+  const round1 = (v: number) => Math.round(v * 100) / 100;
+  const artAuto: Record<string, number> = {
+    handVariety: deepMotionDeduction + flexDeduction,
+    appVariety: handOpDeduction,
+  };
+  const artItemTotals = artRows
+    .filter((r) => r.id in artAuto)
+    .map((r) => {
+      const auto = round1(artAuto[r.id]);
+      return { id: r.id, name: r.name, manual: r.value, auto, total: round1(Math.min(r.max, r.value + auto)), max: r.max };
+    });
+  const artCapExcess = round1(artItemTotals.reduce((s, t) => s + (t.manual + t.auto - t.total), 0));
   // 転回系の多様性は自動で計算して返すだけ（A減点に入れるかは入力しだい）
   const tumVariety = tumblingVariety(series, junior);
   const tumOperation = tumblingOperation(series, apparatus);
@@ -1029,8 +1051,11 @@ export function computeScore(
     flexDeduction +
     handOpDeduction +
     apparatusElementDeduction +
-    violationDeduction;
-  const aScore = Math.max(0, AE_FULL - aDeduction);
+    violationDeduction -
+    artCapExcess;
+  // 減点はすべて 0.05 刻み以上なので、浮動小数の誤差（9.9999…）を 0.01 で丸める
+  const aDeductionRounded = Math.round(aDeduction * 100) / 100;
+  const aScore = Math.max(0, AE_FULL - aDeductionRounded);
   const eScore = Math.max(0, AE_FULL - executionDeduction);
   const grandTotal = dScore + aScore + eScore;
 
@@ -1059,6 +1084,8 @@ export function computeScore(
     violationChecks,
     violationDeduction,
     artDeduction,
+    artItemTotals,
+    artCapExcess,
     artRows,
     tumVariety,
     tumOperation,
@@ -1087,7 +1114,7 @@ export function computeScore(
     handOpDeduction,
     offBodyCount: Math.max(0, Math.floor(Number(offBodyCount) || 0)),
     offBodyShort,
-    aDeduction,
+    aDeduction: aDeductionRounded,
     aScore,
     seriesExecutionDeduction,
     overallExecutionDeduction: overallExec,

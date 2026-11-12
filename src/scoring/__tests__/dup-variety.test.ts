@@ -147,3 +147,31 @@ describe("難度採用 — 全く同じ技の二重計上（ルール §155）",
     expect(r.tumblingScore).toBeCloseTo(0.7, 5);
   });
 });
+
+// タンブリングの最中の受けは、最中の投げと同じく「投げタン」の受けとして別の1種類に数える（オーナー確認）
+describe("投げ方・受け方の種類 — タンブリングの最中の投げ・受け", () => {
+  it("最中の投げと最中の受けはどちらも通常とは別の1種類", () => {
+    const r = computeScore(
+      [
+        S({ kind: "throw" }, { kind: "catch" }),
+        S({ kind: "skill", skillId: "b_front", isThrow: true }, { kind: "catch" }),
+        S({ kind: "throw" }, { kind: "skill", skillId: "a_roundoff", isCatch: true }, { kind: "skill", skillId: "b_backsalto" }),
+      ],
+      "clubs",
+    );
+    // 投げ：通常／最中の投げ　受け：通常／最中の受け
+    expect(r.throwKindCount).toBe(2);
+    expect(r.catchKindCount).toBe(2);
+  });
+
+  it("タグの付いた最中の受けは、同じタグのキャッチと同じ種類", () => {
+    const r = computeScore(
+      [
+        S({ kind: "throw" }, { kind: "catch", catchTypes: ["useapp"] }),
+        S({ kind: "throw" }, { kind: "skill", skillId: "a_roundoff", isCatch: true, catchTypes: ["useapp"] }, { kind: "skill", skillId: "b_backsalto" }),
+      ],
+      "clubs",
+    );
+    expect(r.catchKindCount).toBe(1);
+  });
+});

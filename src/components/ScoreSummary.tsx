@@ -18,6 +18,7 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
     violationChecks,
     violationDeduction,
     artDeduction,
+    artCapExcess,
     artRows,
     connectNoApparatus,
     tumblingScore,
@@ -277,6 +278,12 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
           </span>
           <span>-{artDeduction.toFixed(1)} 点</span>
         </div>
+        {artCapExcess > 0 && (
+          <div className="total-row" title="徒手系の多様性（深い運動・柔軟）とさまざまな操作（手具操作の多様性）は、自動判定ぶんと手入力ぶんを合わせて欠点テーブルの項目上限1.00で頭打ちにする">
+            <span>欠点テーブルの項目上限（各1.00）を超えた分</span>
+            <span>+{artCapExcess.toFixed(1)} 点</span>
+          </div>
+        )}
         <div className="subtotal-row">
           <span>A 残点（10 − {aDeduction.toFixed(1)}）</span>
           <span>{aScore.toFixed(1)} 点</span>
