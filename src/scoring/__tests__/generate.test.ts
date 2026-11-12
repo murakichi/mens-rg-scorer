@@ -19,8 +19,6 @@ import {
   FINISH_CATCH_WEIGHT,
   DEFAULT_MAX_SERIES,
   autoSeriesMax,
-  otherStyleCount,
-  OTHER_STYLE_WEIGHT,
   requiresAllElements,
   saltoRepeatCount,
   SHAPE_PRIORITY_WEIGHT,
@@ -1174,38 +1172,6 @@ describe("自動生成の割合（ユーザー指定）", () => {
         (t) => t.auto,
       ).length;
     expect(few(0.25)).toBeLessThan(few(0.75));
-  }, 120_000);
-});
-
-describe("その他の投げ・その他のキャッチ", () => {
-  it("数えるのは投げ・キャッチ・技の最中の投げに付いたその他だけ", () => {
-    expect(
-      otherStyleCount([
-        S({ kind: "throw", throwTypes: ["other"] }, { kind: "catch", catchTypes: ["other"] }),
-        S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch" }),
-      ]),
-    ).toBe(2);
-    expect(otherStyleCount([S({ kind: "throw" }, { kind: "catch", catchTypes: ["nonhand"] })])).toBe(0);
-  });
-
-  it("技術加点より強い重みで嫌う（加点のためだけには実施しない）", () => {
-    expect(OTHER_STYLE_WEIGHT).toBeGreaterThan(TECHNIQUE_BONUS);
-  });
-
-  slowIt("生成される構成にはほとんど出ない", () => {
-    let others = 0;
-    let routines = 0;
-    for (let seed = 1; seed <= 24; seed++) {
-      const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed * 13 + 5) });
-      if (!r) continue;
-      routines += 1;
-      others += otherStyleCount(r.series);
-    }
-    expect(routines).toBeGreaterThan(0);
-    // 1構成に平均1つ強（「その他」は種類を埋めるときだけ使う）。転がり・前転のあとの背面キャッチを
-    // やめて受け方の種類が減ったぶん、種類を埋める「その他」が増えた（スティック40構成で 0.78 → 1.28/構成）。
-    // 標本が小さいので揺れを見込んで 1.5 まで
-    expect(others).toBeLessThanOrEqual(routines * 1.5);
   }, 120_000);
 });
 

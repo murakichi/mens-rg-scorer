@@ -215,7 +215,7 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
         </div>
         <div
           className="total-row"
-          title="投げ方・受け方それぞれ3種類必要（通常・左手投げ／二つ投げ・視野外・手以外・手具を使った・その他など）。1種類不足につき −0.1、合計の上限0.5。「その他」は別の種類として数える"
+          title="投げ方・受け方それぞれ3種類必要（通常・視野外・手以外・手具を使った・横投げ・無回転・技の最中の投げなど。チェックの組み合わせ全体で1種類。左手投げ・二つ投げは種類に数えない）。1種類不足につき −0.1、合計の上限0.5"
         >
           <span>
             投げ方・受け方の種類不足減点（投げ{throwKindCount}/3・受け{catchKindCount}/3｜上限0.5）

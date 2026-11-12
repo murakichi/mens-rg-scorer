@@ -8,7 +8,6 @@ const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 // -------------------------------------------------------------------------
 // 重複シリーズ（dupFlags）による除外
 //   CLAUDE.md ゴッチャ：重複は「カウント・ほとんどの加点」から除外される。
-//   ただし「その他（other）」の投げ/受けは重複でも数える例外。
 // -------------------------------------------------------------------------
 describe("重複シリーズ — カウントからの除外", () => {
   it("完全に同一のシリーズは2本目の投げ回数を数えない", () => {
@@ -36,18 +35,9 @@ describe("重複シリーズ — カウントからの除外", () => {
 });
 
 // -------------------------------------------------------------------------
-// 「その他（other）」の投げ/受けは重複シリーズでも数える例外
-//   score.ts: throwOtherCount/catchOtherCount は isDup ガードの前にある
+// 投げ方・受け方の種類は重複シリーズでは数えない
 // -------------------------------------------------------------------------
-describe("投げ方・受け方の多様性 — その他の例外", () => {
-  it("その他の投げ/受けは重複シリーズでも出現回数ぶん数える", () => {
-    const s = () => S({ kind: "throw", throwTypes: ["other"] }, { kind: "catch", catchTypes: ["other"] });
-    const r = computeScore([s(), s()], "stick");
-    // 2本目は dup だが「その他」は例外的に加算 → throw/catch とも 2
-    expect(r.throwKindCount).toBe(2);
-    expect(r.catchKindCount).toBe(2);
-  });
-
+describe("投げ方・受け方の多様性 — 重複シリーズ", () => {
   it("認識済みの種類（視野外など）は重複シリーズでは数えない（対照）", () => {
     const s = () => S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch", catchTypes: ["noview"] });
     const r = computeScore([s(), s()], "stick");

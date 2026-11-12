@@ -242,21 +242,6 @@ export const FINISH_CATCH_TAG: Partial<Record<ApparatusKey, string>> = {
 export const FINISH_CATCH_WEIGHT = 0.05;
 
 /**
- * その他の投げ・その他のキャッチは自動生成では**可能な限り使わない**。
- * 技術加点（`TECHNIQUE_BONUS`＝0.1）より強い重みで嫌うので、加点のためだけには実施せず、
- * 多様な投げ受け（必須要素＝`REQUIRED_ELEMENT_WEIGHT`）を満たすのにどうしても必要なときだけ入る。
- */
-export const OTHER_STYLE_WEIGHT = 0.15;
-
-/**
- * **演技の最初の投げ／最初のキャッチがその他**のときの重み。
- * その他は「ほかの受け方と違う」ことを示す入力なので、比べる相手（通常の投げ受け）より
- * 先には置けない。実質置かせないために、現実志向の重み（0.1〜0.9）より上にする
- * （必須要素の `REQUIRED_ELEMENT_WEIGHT`＝10 より下なので、要求は犠牲にしない）。
- */
-export const OTHER_FIRST_WEIGHT = 1;
-
-/**
  * **二つ投げのシリーズが2本目以降**のときの重み（1本あたり）。
  * 二つ投げは必須投げなので1回実施すれば満たし、投げ方の種類にも数えず、
  * 投げタンで実施しても加点にならない。投げのシリーズと投げタンの両方に入れたり、
@@ -272,13 +257,6 @@ export const TWO_THROW_EXTRA_WEIGHT = 1;
  * **優先度を下げる**だけ（現実志向の重み 0.1〜0.9 の下側）。
  */
 export const TWO_THROW_TUMBLING_WEIGHT = 0.3;
-
-/**
- * 余った「その他」のタグを外す繰り返しの回数（`trimSpareOtherStyles`）。
- * タグを1つ外すとその投げは**通常の投げ**になって種類が1つ増えるので、
- * 残っていたその他がまた余りに変わる。投げ・受けそれぞれ数本なので数回で足りる。
- */
-export const OTHER_TRIM_PASSES = 4;
 
 // **実施例の無い形**（現実的だが競技での実施例が無い形）の重みは、ここではなく
 // `unseenShapes.ts` に形ごとに宣言する（`UNSEEN_SHAPES` の `earns` ＋ `extra`）。

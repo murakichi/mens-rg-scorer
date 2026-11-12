@@ -13,7 +13,6 @@ import {
   SERIES_BONUS,
   SIDE_THROW_TAG,
   NO_ROTATION_TAG,
-  LEFT_HAND_THROW_TAG,
   TECHNIQUE_BONUS,
   APPARATUS_OP_BONUS,
   resolveRopeJump,
@@ -246,8 +245,6 @@ export interface ScoreResult {
   throwKindCount: number;
   catchKindCount: number;
   /** その他の投げ・その他のキャッチの回数（種類数に足されている分。重複シリーズでも数える） */
-  throwOtherCount: number;
-  catchOtherCount: number;
   varietyDeduction: number;
   /** 必須要素チェックのうち投げタン・つなぎ技・タンブリング本数の欠如（各 −0.30） */
   missingElementDeduction: number;
@@ -302,14 +299,12 @@ export interface ComputeOptions {
 
 /**
  * 1回の投げ・受けの種類。チェックした組み合わせ全体で1種類とし、被りは組み合わせが同じかで見る
- * （横投げ＋手具を使った投げ と 横投げだけ は別の投げ方）。「その他」は別カウントなので含めない。
- * 右手・左手・二つ投げ（必須投げ・`reqTypes`）は種類に影響しない。
- * チェックが無ければ `plain`、「その他」だけなら種類なし。
+ * （横投げ＋手具を使った投げ と 横投げだけ は別の投げ方）。
+ * 右手・左手・二つ投げ（必須投げ・`reqTypes`）は種類に影響しない。チェックが無ければ `plain`。
  */
-const kindKey = (types: string[], plain = "normal"): string | undefined => {
-  const parts = [...new Set(types.filter((t) => t !== "other"))].sort();
-  if (parts.length > 0) return parts.join("+");
-  return types.length === 0 ? plain : undefined;
+const kindKey = (types: string[], plain = "normal"): string => {
+  const parts = [...new Set(types)].sort();
+  return parts.length > 0 ? parts.join("+") : plain;
 };
 
 export function computeScore(
@@ -517,23 +512,19 @@ export function computeScore(
   // ---- 技術加点・二つ投げ4動作加点の重複判定（§3.5.5.5(2)「同じ技は重複して数えない」）----
   // ①〜⑦すべてに掛かる但し書き。演技全体で全く同じ投げ方・受け方は最初の1回だけ加点する。
   // 視野外の投げ・手具を使った投げ自体は何回やってもよく、ダメなのは姿勢まで全く同じもの。
-  // 「全く同じ」は投げ／受けに付いた入力すべてで判定する（技術タグに加えて加点にならない横投げ・無回転・
-  // その他・二つ投げ・2つ同時キャッチ・手以外の受け方の種類、技の最中ならその技）。
-  // 右手・左手・両手の違いは投げの種類とみなさないので、左手投げはキーに入れない。
-  // その他（other）は「規則上は同じだが実態は別」を表す入力なので、付いていれば別の技になる。
+  // 「全く同じ」は投げ／受けの技術タグに加え、加点にならない横投げ・無回転・手以外の受け方の種類、
+  // 技の最中ならその技まで含めて判定する。
+  // 右手・左手・両手の違いは投げ方の種類とみなさない：左手投げも二つ投げ（両手投げ）も、
+  // その受けの2つ同時キャッチもキーに入れない（必須要素の判定にだけ使う）。
   // 「重複ではない」と宣言されたシリーズは、難度と同じく他シリーズとキーを共有しない。
   const techSeen = new Set<string>();
   const twoMotSeen = new Set<string>();
   const sortedJoin = (xs: string[] | undefined) => [...(xs || [])].sort().join(",");
-  // 右手・左手・両手の違いは投げの種類とみなさない（左手投げは必須要素の判定にだけ使う）
-  const throwTechKey = (item: { throwTypes?: string[]; reqTypes?: string[] }, skillId: string) =>
-    `T|${skillId}|${sortedJoin(item.throwTypes)}|${sortedJoin((item.reqTypes || []).filter((t) => t !== LEFT_HAND_THROW_TAG))}`;
-  const catchTechKey = (
-    item: { catchTypes?: string[]; catchTwo?: boolean; nonHandKind?: string },
-    skillId: string,
-  ) => {
+  const throwTechKey = (item: { throwTypes?: string[] }, skillId: string) =>
+    `T|${skillId}|${sortedJoin(item.throwTypes)}`;
+  const catchTechKey = (item: { catchTypes?: string[]; nonHandKind?: string }, skillId: string) => {
     const kind = (item.catchTypes || []).includes("nonhand") ? item.nonHandKind || "" : "";
-    return `C|${skillId}|${sortedJoin(item.catchTypes)}|${item.catchTwo ? 2 : 1}|${kind}`;
+    return `C|${skillId}|${sortedJoin(item.catchTypes)}|${kind}`;
   };
 
   // ---- 各シリーズ内訳（先に算出し、総和系グローバル値はこれを再利用）----
@@ -750,40 +741,31 @@ export function computeScore(
   const saltoChainDeduction =
     maxChainAll >= 3 ? 0 : maxChainAll === 2 ? SALTO_CHAIN_2_DEDUCTION : SALTO_CHAIN_LOW_DEDUCTION;
 
-  // 投げ方・受け方の種類カウント（重複シリーズは「その他」以外を除外）
+  // 投げ方・受け方の種類カウント（重複シリーズは除外）
   const throwKinds = new Set<string>();
   const catchKinds = new Set<string>();
-  let throwOtherCount = 0;
-  let catchOtherCount = 0;
   series.forEach((ser, i) => {
     const isDup = dupFlags[i];
     ser.items.forEach((item, j) => {
       if (itemOver[i][j]) return; // 上限超過の投げ受けは種類にも数えない
       if (item.kind === "throw") {
-        const types = item.throwTypes || [];
-        if (types.includes("other")) throwOtherCount += 1;
         if (isDup) return;
         // 1回の投げは1種類（チェックの組み合わせ全体）として数える
-        const tk = kindKey(types);
-        if (tk) throwKinds.add(tk);
+        throwKinds.add(kindKey(item.throwTypes || []));
       } else if (item.kind === "skill" && item.isThrow) {
         const types = item.throwTypes || [];
         if (isDup) return;
         // 1回の投げは1種類（チェックの組み合わせ全体）。チェックが無ければ投げタン
-        const tk = kindKey(types, "tumthrow");
-        if (tk) throwKinds.add(tk);
+        throwKinds.add(kindKey(types, "tumthrow"));
       } else if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
-        const types = item.catchTypes || [];
-        if (types.includes("other")) catchOtherCount += 1;
         if (isDup) return;
         // 1回の受けは1種類（チェックの組み合わせ全体）として数える
-        const ck = kindKey(types);
-        if (ck) catchKinds.add(ck);
+        catchKinds.add(kindKey(item.catchTypes || []));
       }
     });
   });
-  const throwKindCount = throwKinds.size + throwOtherCount;
-  const catchKindCount = catchKinds.size + catchOtherCount;
+  const throwKindCount = throwKinds.size;
+  const catchKindCount = catchKinds.size;
   const throwShortage = Math.max(0, VARIETY_REQUIRED - throwKindCount);
   const catchShortage = Math.max(0, VARIETY_REQUIRED - catchKindCount);
   const varietyDeduction = Math.min(VARIETY_CAP, (throwShortage + catchShortage) * VARIETY_DEDUCTION_PER);
@@ -1090,8 +1072,6 @@ export function computeScore(
     saltoChainDeduction,
     throwKindCount,
     catchKindCount,
-    throwOtherCount,
-    catchOtherCount,
     varietyDeduction,
     missingElementDeduction,
     deepMotionChecks,

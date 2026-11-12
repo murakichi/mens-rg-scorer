@@ -9,8 +9,8 @@ const chene = (count: number): Item => ({ kind: "motion", motionId: "chene", cou
 // §3.5.5.5(2)「ただし同じ技は重複して数えない」は ⑦ だけでなく ①〜⑥ にも掛かる。
 // 全く同じ投げ方・受け方は演技全体で最初の1回だけ技術加点になる。
 // 視野外の投げ・手具を使った投げ自体は何回やってもよく、姿勢まで全く同じものだけが重複。
-// 「全く同じ」は投げ／受けに付いた入力すべて（技術タグ・横投げ・無回転・その他・二つ投げ・
-// 2つ同時キャッチ・手以外の受け方・技の最中ならその技）で判定する。右手・左手・両手の違いは数えない。
+// 「全く同じ」は投げ／受けの入力（技術タグ・横投げ・無回転・手以外の受け方・技の最中ならその技）で判定する。
+// 右手・左手・両手（二つ投げ・2つ同時キャッチ）の違いは数えない。
 // =========================================================================
 describe("技術加点：同じ投げ方・受け方は1回だけ", () => {
   it("同じシリーズの中で同じ背面投げ→背面キャッチを2回 → 0.2（2回目は0）", () => {
@@ -63,15 +63,6 @@ describe("技術加点：同じ投げ方・受け方は1回だけ", () => {
     expect(r.techniqueBonus).toBeCloseTo(0.2, 5);
   });
 
-  it("その他が付いていれば実態は別の技として数える", () => {
-    // その他そのものの加点の有無は issue #2 の範囲なので、単独で採点したときと同じだけ付くことを見る
-    const second = S({ kind: "throw", throwTypes: ["noview", "other"] }, chene(1), { kind: "catch" });
-    const alone = computeScore([second], "stick").techniqueBonus;
-    const r = computeScore([S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch" }), second], "stick");
-    expect(r.seriesBreakdowns[1].tech).toBeCloseTo(alone, 5);
-    expect(r.seriesBreakdowns[1].tech).toBeGreaterThan(0);
-  });
-
   it("手以外の受け方の種類が違えば別の受け方", () => {
     const r = computeScore(
       [
@@ -105,6 +96,21 @@ describe("技術加点：同じ投げ方・受け方は1回だけ", () => {
       "stick",
     );
     expect(r.techniqueBonus).toBeCloseTo(0.1, 5);
+  });
+
+  it("二つ投げ（両手投げ）と2つ同時キャッチは別の投げ方・受け方とみなさない", () => {
+    const r = computeScore(
+      [
+        S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch", catchTypes: ["noview"] }),
+        S(
+          { kind: "throw", throwTypes: ["noview"], reqTypes: ["twothrow"] },
+          chene(1),
+          { kind: "catch", catchTypes: ["noview"], catchTwo: true },
+        ),
+      ],
+      "clubs",
+    );
+    expect(r.techniqueBonus).toBeCloseTo(0.2, 5);
   });
 
   it("「重複ではない」と宣言したシリーズは他のシリーズと重複判定しない", () => {

@@ -36,13 +36,9 @@
 // =====================================================================
 
 import { APPARATUS } from "./constants";
-import { computeScore } from "./score";
-import { OTHER_TRIM_PASSES } from "./generateWeights";
 import {
-  evaluate,
   rangePenalty,
   seriesOf,
-  trimSpareOtherStyles,
   type Evaluation,
 } from "./generateEvaluate";
 import {
@@ -151,28 +147,6 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   //     採らない入れ替えではDスコアの上限の壁を越えられないので、はみ出しが減る向きに
   //     数手降りて、予算（`SPREAD_REPAIR_BUDGET`）の内でいちばん均ったところを採る。
   best = levelAdoptedDiffs(best, pool, opts, maxSeries);
-
-  // ⑧ 種類を埋めていない「その他の投げ受け」のタグを外す。その他は**実態が違うものを
-  //    別の種類として数えてもらう**ための入力なので、種類に効いていないものは意味がない。
-  //    外すと技術加点0.1が減るので、**要求したDスコアの範囲から外れるときは残す**。
-  //    テンプレート側（`used`）も同じ内容に差し替えて、シリーズと食い違わないようにする。
-  //    タグを1つ外すとその投げは「通常の投げ」になって種類が1つ増えるので、
-  //    残っていたその他がまた余りに変わる。取り切るまで繰り返す。
-  for (let pass = 0; pass < OTHER_TRIM_PASSES; pass++) {
-    const chosen = seriesOf(best.used);
-    const scored = computeScore(chosen, opts.apparatus, {
-      junior: !!opts.junior,
-      future: opts.future ?? null,
-    });
-    const trimmed = trimSpareOtherStyles(chosen, scored);
-    if (trimmed === chosen) break;
-    const ev = evaluate(trimmed, opts);
-    const worse =
-      rangePenalty(ev.dScore, opts.minScore, opts.maxScore) >
-      rangePenalty(best.ev.dScore, opts.minScore, opts.maxScore) + 1e-9;
-    if (worse) break;
-    best = { used: best.used.map((t, i) => ({ ...t, series: trimmed[i] })), ev };
-  }
 
   return {
     series: seriesOf(best.used),

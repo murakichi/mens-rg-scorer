@@ -32,7 +32,6 @@ export const APPARATUS: Record<ApparatusKey, { name: string; throws: string[] }>
 export const THROW_OPTIONS_COMMON = [
   { id: "noview", name: "視野外の投げ" },
   { id: "nonhand", name: "手以外の投げ" },
-  { id: "other", name: "その他の投げ" },
 ];
 /** 「手具を使った投げ・キャッチ」の技術タグ（もう一方の手具を使うのでクラブ・リングだけ） */
 export const USE_APPARATUS_TAG = "useapp";
@@ -45,8 +44,12 @@ export const SKILL_THROW_OPTIONS_COMMON = [
 export const CATCH_OPTIONS_COMMON = [
   { id: "noview", name: "視野外のキャッチ" },
   { id: "nonhand", name: "手以外のキャッチ" },
-  { id: "other", name: "その他のキャッチ" },
 ];
+/**
+ * 削除した「その他の投げ／その他のキャッチ」のタグ。投げ方・受け方がほぼ網羅されたので入力から外した。
+ * 旧データに残っていても採点しない（`apparatusBlockers` / `stripForApparatus` が全手具で落とす）。
+ */
+export const LEGACY_OTHER_STYLE_TAG = "other";
 export const CATCH_OPTIONS_APPARATUS = [{ id: USE_APPARATUS_TAG, name: "手具を使ったキャッチ" }];
 
 /**

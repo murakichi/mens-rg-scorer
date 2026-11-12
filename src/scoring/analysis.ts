@@ -15,6 +15,7 @@ import {
   USE_APPARATUS_TAG,
   SIDE_THROW_TAG,
   NO_ROTATION_TAG,
+  LEGACY_OTHER_STYLE_TAG,
   canUseNoRotation,
   nonHandKindOf,
   canUseSideThrow,
@@ -690,6 +691,7 @@ export const APPARATUS_INPUT_NAMES = {
   side: "横投げ",
   noRotation: "無回転",
   nonHandKind: "手以外のキャッチの受け方",
+  other: "その他の投げ・キャッチ（削除済みの入力）",
 } as const;
 
 /** その手具では入力できない内容の一覧（無ければ空。確認ダイアログの文面に使う） */
@@ -701,6 +703,12 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
   list.forEach((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);
     ser.items.forEach((item, i) => {
+      // 削除した「その他の投げ・キャッチ」はどの手具でも入力できない（旧データに残っていれば落とす）
+      if (
+        ((item.kind === "throw" || item.kind === "skill") && (item.throwTypes || []).includes(LEGACY_OTHER_STYLE_TAG)) ||
+        ((item.kind === "catch" || (item.kind === "skill" && item.isCatch)) && (item.catchTypes || []).includes(LEGACY_OTHER_STYLE_TAG))
+      )
+        reasons.add(APPARATUS_INPUT_NAMES.other);
       if ((item.kind === "throw" || item.kind === "skill") && !noRotation && (item.throwTypes || []).includes(NO_ROTATION_TAG))
         reasons.add(APPARATUS_INPUT_NAMES.noRotation);
       // 手以外のキャッチの受け方は、その手具の選択肢に無ければ入力できない
@@ -755,6 +763,7 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
   const withoutTag = (ids?: string[]) =>
     (ids || []).filter(
       (id) =>
+        id !== LEGACY_OTHER_STYLE_TAG &&
         (tags || id !== USE_APPARATUS_TAG) &&
         (side || id !== SIDE_THROW_TAG) &&
         (noRotation || id !== NO_ROTATION_TAG),
