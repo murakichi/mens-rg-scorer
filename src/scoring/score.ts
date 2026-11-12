@@ -13,6 +13,7 @@ import {
   SERIES_BONUS,
   SIDE_THROW_TAG,
   NO_ROTATION_TAG,
+  LEFT_HAND_THROW_TAG,
   TECHNIQUE_BONUS,
   APPARATUS_OP_BONUS,
   resolveRopeJump,
@@ -513,6 +514,28 @@ export function computeScore(
   const inTop = new Set<Unit>([...topTumbling, ...topHand]);
   const unitInTop = analysis.map((a) => a.units.map((u) => inTop.has(u)));
 
+  // ---- 技術加点・二つ投げ4動作加点の重複判定（§3.5.5.5(2)「同じ技は重複して数えない」）----
+  // ①〜⑦すべてに掛かる但し書き。演技全体で全く同じ投げ方・受け方は最初の1回だけ加点する。
+  // 視野外の投げ・手具を使った投げ自体は何回やってもよく、ダメなのは姿勢まで全く同じもの。
+  // 「全く同じ」は投げ／受けに付いた入力すべてで判定する（技術タグに加えて加点にならない横投げ・無回転・
+  // その他・二つ投げ・2つ同時キャッチ・手以外の受け方の種類、技の最中ならその技）。
+  // 右手・左手・両手の違いは投げの種類とみなさないので、左手投げはキーに入れない。
+  // その他（other）は「規則上は同じだが実態は別」を表す入力なので、付いていれば別の技になる。
+  // 「重複ではない」と宣言されたシリーズは、難度と同じく他シリーズとキーを共有しない。
+  const techSeen = new Set<string>();
+  const twoMotSeen = new Set<string>();
+  const sortedJoin = (xs: string[] | undefined) => [...(xs || [])].sort().join(",");
+  // 右手・左手・両手の違いは投げの種類とみなさない（左手投げは必須要素の判定にだけ使う）
+  const throwTechKey = (item: { throwTypes?: string[]; reqTypes?: string[] }, skillId: string) =>
+    `T|${skillId}|${sortedJoin(item.throwTypes)}|${sortedJoin((item.reqTypes || []).filter((t) => t !== LEFT_HAND_THROW_TAG))}`;
+  const catchTechKey = (
+    item: { catchTypes?: string[]; catchTwo?: boolean; nonHandKind?: string },
+    skillId: string,
+  ) => {
+    const kind = (item.catchTypes || []).includes("nonhand") ? item.nonHandKind || "" : "";
+    return `C|${skillId}|${sortedJoin(item.catchTypes)}|${item.catchTwo ? 2 : 1}|${kind}`;
+  };
+
   // ---- 各シリーズ内訳（先に算出し、総和系グローバル値はこれを再利用）----
   const seriesBreakdowns: SeriesBreakdown[] = series.map((ser, i) => {
     const a = analysis[i];
@@ -555,17 +578,27 @@ export function computeScore(
         : 0;
 
     let techCount = 0;
+    const techScope = ser.notDuplicate ? `${i}#` : "";
     if (!isDup) {
       ser.items.forEach((item, j) => {
         if (itemOver[i][j]) return; // 上限超過の投げ受けは加点も数えない
         // 横投げ・無回転は投げ方の種類として数えるだけで、技術加点にはしない
         const bonusThrowTypes = (item: { throwTypes?: string[] }) =>
           (item.throwTypes || []).filter((t) => t !== SIDE_THROW_TAG && t !== NO_ROTATION_TAG).length;
-        if (item.kind === "throw") techCount += bonusThrowTypes(item);
-        else if (item.kind === "catch") techCount += (item.catchTypes || []).length;
-        else if (item.kind === "skill" && item.isThrow) techCount += bonusThrowTypes(item);
+        // 同じ投げ方・受け方は演技全体で1回だけ（§3.5.5.5(2) の但し書き）
+        const once = (key: string, n: number) => {
+          if (n <= 0) return;
+          const k = techScope + key;
+          if (techSeen.has(k)) return;
+          techSeen.add(k);
+          techCount += n;
+        };
+        if (item.kind === "throw") once(throwTechKey(item, ""), bonusThrowTypes(item));
+        else if (item.kind === "catch") once(catchTechKey(item, ""), (item.catchTypes || []).length);
+        else if (item.kind === "skill" && item.isThrow) once(throwTechKey(item, item.skillId), bonusThrowTypes(item));
         // 技の最中の受けもキャッチと同じく技術加点に数える
-        else if (item.kind === "skill" && item.isCatch) techCount += (item.catchTypes || []).length;
+        else if (item.kind === "skill" && item.isCatch)
+          once(catchTechKey(item, item.skillId), (item.catchTypes || []).length);
       });
     }
     const tech = techCount * TECHNIQUE_BONUS;
@@ -594,13 +627,20 @@ export function computeScore(
       let inTwo = false;
       let motSum = 0;
       let added = false;
+      // 二つ投げの間の徒手の内容（種類→回数、順不同）。同じ内容は演技全体で1回だけ加点する（⑦の但し書き）
+      let motKeys = new Map<string, number>();
       const fin = () => {
         if (inTwo && motSum >= 4 && !added) {
-          twoMot += TWOTHROW_MOTION_BONUS;
+          const key = (ser.notDuplicate ? `${i}#` : "") + [...motKeys].map(([k, n]) => `${k}:${n}`).sort().join(",");
+          if (!twoMotSeen.has(key)) {
+            twoMotSeen.add(key);
+            twoMot += TWOTHROW_MOTION_BONUS;
+          }
           added = true;
         }
         inTwo = false;
         motSum = 0;
+        motKeys = new Map();
         added = false;
       };
       ser.items.forEach((item, j) => {
@@ -612,7 +652,12 @@ export function computeScore(
           fin();
         } else if (item.kind === "motion" && inTwo) {
           const m = motionDef(item.motionId, junior);
-          if (m) motSum += m.motions * motionTimes(item.count);
+          if (m) {
+            const times = motionTimes(item.count);
+            motSum += m.motions * times;
+            const mk = `${item.motionId}:${item.hands ? item.handsType || "h" : ""}`;
+            if (times > 0) motKeys.set(mk, (motKeys.get(mk) || 0) + times);
+          }
         }
       });
       fin();
