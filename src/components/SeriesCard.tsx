@@ -711,9 +711,10 @@ function ItemEditor({
         </select>
       )}
       {/* 二つ投げの間の徒手：4動作以上で二つ投げ4動作加点（§3.5.5.5(2)⑦） */}
-      {twoThrowMotionTotal !== null && (
+      {/* すでに4動作以上なら満たしているので出さない */}
+      {twoThrowMotionTotal !== null && twoThrowMotionTotal < 4 && (
         <div
-          className={twoThrowMotionTotal >= 4 ? "tech-status is-earned" : "tech-status"}
+          className="tech-status"
           title="二つ投げで投げてから受けるまでに徒手を4動作以上すると +0.1（同じ内容は演技全体で1回だけ）"
         >
           4動作以上で加点（二つ投げの間 {twoThrowMotionTotal}動作）
