@@ -16,6 +16,7 @@ import {
   TECHNIQUE_BONUS,
   APPARATUS_OP_BONUS,
   resolveRopeJump,
+  ROPE_JUMPS,
   ropeJumpShapeDef,
   ropeJumpDifficulty,
   ropeJumpKey,
@@ -134,6 +135,11 @@ export interface RopeJumpRow {
   adopted: boolean;
   /** 上位3つに入って徒手系難度点に数えたか */
   inTop: boolean;
+  /**
+   * 隣り合う3重跳びをまとめた連続の2つ目以降なら、まとめ役（連続の先頭）の `index`。
+   * この行は単独では難度に数えず、先頭の行が連続全体（回数の合計）で評価される。
+   */
+  runHead?: number;
 }
 
 export interface HandElementRow {
@@ -519,9 +525,57 @@ export function computeScore(
   // ---- ロープの跳び（構成全体のリスト）----
   // 跳び1つごとに §3.5.5.3 の表から難度を引く。回数0の跳びは数えず、同じ跳びは1回だけ数える（§3.4.4）。
   const seenJumpKeys = new Set<string>();
+  // 同じ跳びシリーズで隣り合う3重跳びは1つの連続として評価する（「3重とび2回」「3回以上の連続した3重跳び」）。
+  // 形を変えて跳んだ3重跳び（様々な跳び②）を1行ずつ入れても、連続の難度は失われない。回数0の跳びは並びを切らない。
+  const tripleRuns = ropeJumps.map((jumps) => {
+    const headOf: number[] = jumps.map(() => -1);
+    const totals = new Map<number, { count: number; allBack: boolean }>();
+    let head = -1;
+    jumps.forEach((item, index) => {
+      const r = resolveRopeJump(item);
+      if (!r || r.count === 0) return;
+      if (r.def.rotations !== 3) {
+        head = -1;
+        return;
+      }
+      if (head < 0) head = index;
+      headOf[index] = head;
+      const t = totals.get(head) ?? { count: 0, allBack: true };
+      totals.set(head, { count: t.count + r.count, allBack: t.allBack && r.def.direction === "back" });
+    });
+    return { headOf, totals };
+  });
   const ropeJumpRows: RopeJumpRow[] = ropeJumps.flatMap((jumps, group) => jumps.flatMap((item, index) => {
-    const r = resolveRopeJump(item);
-    if (!r) return [];
+    const resolved = resolveRopeJump(item);
+    if (!resolved) return [];
+    const run = tripleRuns[group];
+    const head = run.headOf[index];
+    const members = head >= 0 ? run.headOf.filter((h) => h === head).length : 1;
+    // 連続の2つ目以降：先頭の行にまとめるので、ここでは数えない
+    if (head >= 0 && head !== index && members > 1)
+      return [
+        {
+          group,
+          index,
+          name: resolved.def.name,
+          label: `${resolved.def.name}（前の3重跳びと連続）`,
+          difficulty: ropeJumpDifficulty(resolved),
+          score: 0,
+          duplicate: false,
+          adopted: false,
+          inTop: false,
+          runHead: head,
+        },
+      ];
+    // 連続の先頭：回数を連続全体の合計にして評価する（前後が混じる「2回」は前回し側で見る）
+    const total = head >= 0 && members > 1 ? run.totals.get(head)! : null;
+    const r = total
+      ? {
+          ...resolved,
+          def: total.allBack ? resolved.def : (ROPE_JUMPS.find((j) => j.rotations === 3 && j.direction === "front") ?? resolved.def),
+          count: total.count,
+        }
+      : resolved;
     const key = ropeJumpKey(r);
     const counted = r.count > 0;
     const duplicate = counted && seenJumpKeys.has(key);
@@ -532,7 +586,9 @@ export function computeScore(
         group,
         index,
         name: r.def.name,
-        label: `${r.def.name}${r.cross ? "・クロス" : ""}${r.count > 1 ? `×${r.count}` : ""}`,
+        label: total
+          ? `3重跳びの連続×${r.count}`
+          : `${r.def.name}${r.cross ? "・クロス" : ""}${r.count > 1 ? `×${r.count}` : ""}`,
         difficulty: diff,
         score: DIFF_SCORE[diff],
         duplicate,

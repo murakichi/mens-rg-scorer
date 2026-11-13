@@ -361,10 +361,12 @@ describe("computeScore — ロープ跳びリスト（構成全体・徒手・�
   });
 
   it("同じ跳びは1回だけ数える（回数の行が違えば別の技）", () => {
-    const same = score([J("3b"), J("3b", { count: 1 })]);
+    // 隣り合う3重跳びは1つの連続にまとまるので、別々の跳びシリーズ（別の実施）で比べる
+    const groups = (...g: ReturnType<typeof J>[][]) => computeScore([], "rope", { ropeJumps: g });
+    const same = groups([J("3b")], [J("3b", { count: 1 })]);
     expect(same.ropeJumpRows.map((x) => x.duplicate)).toEqual([false, true]);
     expect(same.handScore).toBeCloseTo(0.3, 5);
-    const other = score([J("3b"), J("3b", { count: 2 })]);
+    const other = groups([J("3b")], [J("3b", { count: 2 })]);
     expect(other.ropeJumpRows.map((x) => x.duplicate)).toEqual([false, false]);
     expect(other.handScore).toBeCloseTo(0.3 + 0.5, 5);
   });

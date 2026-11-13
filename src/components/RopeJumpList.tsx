@@ -3,7 +3,6 @@ import {
   ROPE_JUMPS,
   ROPE_JUMP_SHAPES,
   resolveRopeJump,
-  ropeJumpDifficulty,
   ropeJumpHasCross,
   ropeJumpTimes,
 } from "../scoring/constants";
@@ -125,9 +124,12 @@ export function RopeJumpList({ series, rows, onChange }: Props) {
                   />
                   6m以上移動
                 </label>
-                {r && count > 0 && row && (
+                {r && count > 0 && row && row.runHead !== undefined && (
+                  <span className="check-note">前の3重跳びと連続（まとめて評価）</span>
+                )}
+                {r && count > 0 && row && row.runHead === undefined && (
                   <span className={row.inTop ? "check-ok" : "check-ng"}>
-                    難度{ropeJumpDifficulty(r)}
+                    {row.label.startsWith("3重跳びの連続") ? `${row.label}：` : ""}難度{row.difficulty}
                     {row.inTop
                       ? `（+${row.score.toFixed(1)}）`
                       : row.duplicate
