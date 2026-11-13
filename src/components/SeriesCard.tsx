@@ -153,7 +153,7 @@ function OptGroup({ kind, children }: { kind: "bonus" | "kind" | "req"; children
   if (items.length === 0) return null;
   const head = {
     bonus: { label: "技術加点", title: "1つにつき +0.1。全く同じ投げ方・受け方は演技全体で1回だけ" },
-    kind: { label: "加点なし", title: "技術加点にはならない。投げ方の種類としては別に数える（受け方の種類は加点済みかの判定に使う）" },
+    kind: { label: "加点なし", title: "技術加点にはならない。横投げ・無回転・視野外の方向・手以外の受け方は投げ方・受け方の種類として別に数える（2つ同時キャッチは数えない）" },
     req: { label: "必須投げ", title: "手具別の必須投げの判定に使う。技術加点にはならず、投げ方の種類も変えない" },
   }[kind];
   return (
@@ -364,7 +364,7 @@ function NonHandKindSelect({
 }) {
   if (!(types || []).includes("nonhand")) return null;
   return (
-    <label className="check-req" title="受け方の違いは加点を変えないが、同じ受け方かどうか（2回目は加点なし）の判定には使う">
+    <label className="check-req" title="受け方の違いは技術加点を変えないが、受け方の種類として別に数える（同じ受け方の2回目は加点なし）">
       受け方
       <select value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
         <option value="">（未選択）</option>

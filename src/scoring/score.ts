@@ -64,6 +64,7 @@ import {
   countsAsFlex,
   FLEX_ELEMENT_DEDUCTION,
   APPARATUS_USE,
+  NON_HAND_CATCH_TAG,
 } from "./constants";
 import {
   analyzeSeries,
@@ -908,7 +909,12 @@ export function computeScore(
         if (isDup) return;
         // 1回の受けは1種類（チェックの組み合わせ全体）として数える。
         // タンブリングの最中の受けは、最中の投げ（投げタン）と同じく別の1種類（チェックが無ければ「投げタン」の受け）
-        catchKinds.add(kindKey(item.catchTypes || [], item.kind === "skill" ? "tumcatch" : "normal"));
+        // 手以外のキャッチは受け方（首と肩に挟む・足で挟むなど）ごとに別の種類。2つ同時キャッチは種類に数えない
+        const types = item.catchTypes || [];
+        const nonHandKind = types.includes(NON_HAND_CATCH_TAG) ? item.nonHandKind : undefined;
+        catchKinds.add(
+          kindKey(nonHandKind ? [...types, `nonhand:${nonHandKind}`] : types, item.kind === "skill" ? "tumcatch" : "normal"),
+        );
       }
     });
   });
