@@ -16,6 +16,7 @@ import {
   TECHNIQUE_BONUS,
   APPARATUS_OP_BONUS,
   resolveRopeJump,
+  ropeJumpShapeDef,
   ropeJumpDifficulty,
   ropeJumpKey,
   TWOTHROW_MOTION_BONUS,
@@ -920,12 +921,29 @@ export function computeScore(
     // 「連続」は同じ跳びシリーズの中で続けて並べた跳びで見る（シリーズが分かれていれば別々の実施）。
     // 回数入力があるので、1つの跳びに回数を入れても、種類の違う跳びを続けても数えられる。
     // 回数0の跳びは並びを切らずに数えない。
-    type Jump = { rotations: number; direction: "front" | "back"; moving: boolean; count: number };
+    type Jump = {
+      rotations: number;
+      direction: "front" | "back";
+      moving: boolean;
+      count: number;
+      /** 体の形と跳び方（クロス）の組。②の「形が違う」の判定に使う */
+      form: string;
+      spinTwice: boolean;
+    };
     const runs: Jump[][] = ropeJumps.map((jumps) =>
       jumps.flatMap((item) => {
         const r = resolveRopeJump(item);
         return r && r.count > 0
-          ? [{ rotations: r.def.rotations, direction: r.def.direction, moving: !!item.isMoving6m, count: r.count }]
+          ? [
+              {
+                rotations: r.def.rotations,
+                direction: r.def.direction,
+                moving: !!item.isMoving6m,
+                count: r.count,
+                form: `${ropeJumpShapeDef(item.shape)?.id ?? "plain"}:${r.cross ? "cross" : ""}`,
+                spinTwice: !!item.spinTwice,
+              },
+            ]
           : [];
       }),
     );
@@ -950,9 +968,9 @@ export function computeScore(
     ropeAuto.ropeFront = longestRun((j) => !j.moving && j.direction === "front") >= 2;
     ropeAuto.ropeBack = longestRun((j) => !j.moving && j.direction === "back") >= 2;
 
-    // §3.5.5.5(4)① 6m以上移動の連続跳びに2重跳び（rotations≧2）が3回以上 → 加点
-    // ②③（跳びの形の多様性 / その場回転跳び2回転）は入力未対応のため今後対応。
-    // 3回以上続く6m移動の跳びの並びの中に、2重跳び以上が3回以上ある。
+    // §3.5.5.5(4) 様々な跳びに対する加点（①〜③のどれか、最大0.10）
+    // ① 6m以上移動の連続跳びに2重跳び（rotations≧2）が3回以上：
+    //    3回以上続く6m移動の跳びの並びの中に、2重跳び以上が3回以上ある。
     const movingRunHasDoubles = runs.some((run) => {
       let total = 0;
       let doubles = 0;
@@ -970,7 +988,16 @@ export function computeScore(
       close();
       return hit;
     });
-    if (movingRunHasDoubles) jumpVarietyBonus = JUMP_VARIETY_BONUS;
+    // ② 3重跳びを3回続けた中で、各跳びの体の形・跳び方（伸身・抱え込み・開脚・屈伸・クロスなど）がすべて違う。
+    //    同じ跳びシリーズの中で3重跳びが途切れずに続く並びから、連続する3回を見る（回数は同じ形の繰り返し）。
+    const tripleFormsDiffer = runs.some((run) => {
+      const forms: (string | null)[] = run.flatMap((j) => Array<string | null>(j.count).fill(j.rotations === 3 ? j.form : null));
+      return forms.some((f, k) => k >= 2 && f !== null && forms[k - 1] !== null && forms[k - 2] !== null &&
+        new Set([f, forms[k - 1], forms[k - 2]]).size === 3);
+    });
+    // ③ その場での回転跳びで、2重跳び以上の間に体が2回転する
+    const spinDouble = allJumps.some((j) => j.spinTwice && !j.moving && j.rotations >= 2);
+    if (movingRunHasDoubles || tripleFormsDiffer || spinDouble) jumpVarietyBonus = JUMP_VARIETY_BONUS;
   }
 
   const missing = required.filter((r) => r.passed === false);

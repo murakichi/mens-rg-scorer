@@ -783,6 +783,15 @@ export function ropeJumpDifficulty({ def, cross, count }: ResolvedRopeJump): Dif
  * 同じ跳びかどうかを決めるキー（§3.4.4：全く同じ技は難度として数えない）。
  * 難度表の行が違えば別の技なので、回数は表の行（3重は1/2/3以上、4重は1/2以上）に丸めて入れる。
  */
+/** 跳びの体の形（§3.5.5.5(4)② の「体の形や跳び方の種類」。クロスは別の入力で、これも違いとして数える） */
+export const ROPE_JUMP_SHAPES: { id: string; name: string }[] = [
+  { id: "layout", name: "伸身" },
+  { id: "tuck", name: "抱え込み" },
+  { id: "straddle", name: "開脚" },
+  { id: "pike", name: "屈伸" },
+];
+export const ropeJumpShapeDef = (id: string | undefined) => ROPE_JUMP_SHAPES.find((s) => s.id === id);
+
 export function ropeJumpKey(r: ResolvedRopeJump): string {
   const row = r.def.rotations === 3 ? Math.min(r.count, 3) : r.def.rotations === 4 ? Math.min(r.count, 2) : 1;
   const cross = r.cross && !(r.def.rotations === 3 && r.count >= 3);
