@@ -38,6 +38,13 @@ The scoring logic is covered by vitest suites in `src/scoring/__tests__/` (analy
 短くてよく、判断の根拠・試して駄目だったこと・やり残しが書いてあればよい。ルール準拠テストの回だけは
 `test-reports/` に書き、work-logs からはそれを参照する。
 
+## 競技の実態はドキュメントに残す
+
+会話の中でオーナーから**競技の実態**（規則書に無い採点の運用、選手の構成の傾向、現場の感覚、規則の改定や運用されていない規定）を
+知ったら、その場で **`docs/competition-reality.md`** に1項目追記する（日付と、アプリにどう反映したか／しなかったか）。
+採点のしかたとして確定したものは `mens-rg-rules.md` の注記・`app-scoring-spec.md`・テストにも反映し、
+`docs/competition-reality.md` には現場側の理由を残す。採点や生成で「実際はどうか」を判断するときは、まずここを読む。
+
 ## Deployment
 
 GitHub Pages via `.github/workflows/deploy.yml` (builds on push to `main`, uploads `dist/`). The Pages source must be set to **GitHub Actions**. `vite.config.ts` sets `base: "/mens-rg-scorer/"` — this must match the repo name or assets 404 on Pages.
