@@ -37,6 +37,7 @@ import {
   parseTwistSkillId,
   twistLabel,
   skillFlowAfter,
+  techOptionKind,
 } from "../scoring/constants";
 import {
   checkApparatusFlow,
@@ -54,7 +55,7 @@ import { describeSeries, itemLabel } from "../scoring/templates";
 import type { AutoInputSuggestion } from "../scoring/autoInput";
 import type { SkillFlow } from "../scoring/constants";
 import type { ApparatusKey, FutureLevel, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
-import type { DiffRow, SeriesBreakdown } from "../scoring/score";
+import type { DiffRow, SeriesBreakdown, TechStatus } from "../scoring/score";
 import type { SeriesTemplateOption } from "./SeriesListEditor";
 
 type ItemKind = Item["kind"];
@@ -144,6 +145,44 @@ function toggle(list: string[] | undefined, id: string, checked: boolean): strin
 }
 
 /**
+ * 投げ方・受け方のチェックが技術加点になるかの目印（§3.5.5.5(2)）。
+ * 加点になるもの（視野外・手以外・手具を使った）は +0.1、横投げ・無回転は加点なしで種類だけ、
+ * 必須投げ（左手投げ・二つ投げ）は必須要素の判定だけで、どちらでもない。
+ */
+function OptionBadge({ id, required }: { id?: string; required?: boolean }) {
+  if (required)
+    return (
+      <span className="opt-badge is-req" title="手具別の必須投げ。技術加点にはならず、投げ方の種類も変えない">
+        必須
+      </span>
+    );
+  if (!id) return null;
+  return techOptionKind(id) === "bonus" ? (
+    <span className="opt-badge is-bonus" title="技術加点 +0.1（同じ投げ方・受け方は演技全体で1回だけ）">
+      +0.1
+    </span>
+  ) : (
+    <span className="opt-badge is-kind" title="技術加点にはならない。投げ方の種類としては別に数える">
+      種類
+    </span>
+  );
+}
+
+/** その投げ・受けが実際に技術加点になったか（同じ投げ方・受け方の2回目以降は0） */
+function TechStatusLine({ tech, what }: { tech?: TechStatus | null; what: "投げ" | "受け" }) {
+  if (!tech) return null;
+  const text: Record<TechStatus["status"], string> = {
+    earned: `技術加点 +${tech.points.toFixed(1)}`,
+    none: "技術加点なし（+0.1 のチェックなし）",
+    duplicate: `技術加点なし：全く同じ${what === "投げ" ? "投げ方" : "受け方"}は加点済み`,
+    dupSeries: "技術加点なし：重複シリーズ",
+    over: "技術加点なし：投げ回数の上限超過",
+  };
+  const cls = tech.status === "earned" ? "tech-status is-earned" : tech.bonusTags > 0 ? "tech-status is-lost" : "tech-status";
+  return <div className={cls}>{text[tech.status]}</div>;
+}
+
+/**
  * 視野外の投げの方向（真後ろ／横）。横は既存の横投げタグ（`side`）で表すので、
  * 点数の扱いは横投げと同じ（技術加点にはならず、投げ方の種類は真後ろと別に数える）。
  * 視野外のときは通常の「横投げ」チェックの代わりにこの選択を出す。
@@ -161,6 +200,9 @@ function NoViewDirection({ types, onChange }: { types: string[] | undefined; onC
       <label className="check">
         <input type="radio" checked={side} onChange={() => set(true)} />横
       </label>
+      <span className="opt-badge is-kind" title="真後ろと横は投げ方の種類として別に数える（加点は視野外の +0.1 のみ）">
+        種類
+      </span>
     </span>
   );
 }
@@ -182,7 +224,7 @@ function NonHandKindSelect({
 }) {
   if (!(types || []).includes("nonhand")) return null;
   return (
-    <label className="check-req">
+    <label className="check-req" title="受け方の違いは加点を変えないが、同じ受け方かどうか（2回目は加点なし）の判定には使う">
       受け方
       <select value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
         <option value="">（未選択）</option>
@@ -213,6 +255,7 @@ function ItemEditor({
   prevMotionId,
   handsEmpty,
   catchTwoAllowed,
+  tech,
   onUpdate,
 }: {
   item: Item;
@@ -235,6 +278,8 @@ function ItemEditor({
   handsEmpty?: boolean;
   /** このキャッチで2つ同時キャッチを入力できるか（2つとも空中にあるときだけ） */
   catchTwoAllowed?: boolean;
+  /** この投げ・受けの技術加点の状況（投げ・受けでなければ null） */
+  tech?: TechStatus | null;
   onUpdate: (patch: Partial<Item>) => void;
 }) {
   if (item.kind === "throw") {
@@ -246,6 +291,7 @@ function ItemEditor({
     return (
       <>
         <div className="throw-tag">投げ</div>
+        <TechStatusLine tech={tech} what="投げ" />
         {[
           ...THROW_OPTIONS_COMMON,
           ...(sideDirection && !noView ? THROW_OPTIONS_SIDE : []),
@@ -263,7 +309,7 @@ function ItemEditor({
                 disabled={blocked}
                 onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
               />
-              {opt.name}
+              {opt.name}<OptionBadge id={opt.id} />
             </label>
           );
         })}
@@ -281,7 +327,7 @@ function ItemEditor({
                 disabled={blocked}
                 onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
               />
-              {opt.name}
+              {opt.name}<OptionBadge required />
             </label>
           );
         })}
@@ -292,6 +338,7 @@ function ItemEditor({
     return (
       <>
         <div className="catch-tag">キャッチ</div>
+        <TechStatusLine tech={tech} what="受け" />
         {[...CATCH_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])].map((opt) => {
           // 手具を使ったキャッチと手以外のキャッチは同時に実施できない
           const blocked = catchOptionBlocked(opt.id, item.catchTypes);
@@ -309,7 +356,7 @@ function ItemEditor({
                   })
                 }
               />
-              {opt.name}
+              {opt.name}<OptionBadge id={opt.id} />
             </label>
           );
         })}
@@ -503,7 +550,7 @@ function ItemEditor({
                     })
                   }
                 />
-                {opt.name}
+                {opt.name}<OptionBadge id={opt.id} />
               </label>
             );
           })}
@@ -546,7 +593,7 @@ function ItemEditor({
                     disabled={blocked}
                     onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
                   />
-                  {opt.name}
+                  {opt.name}<OptionBadge id={opt.id} />
                 </label>
               );
             },
@@ -570,10 +617,11 @@ function ItemEditor({
                     disabled={blocked}
                     onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
                   />
-                  {opt.name}
+                  {opt.name}<OptionBadge required />
                 </label>
               );
             })}
+        {(item.isThrow || item.isCatch) && <TechStatusLine tech={tech} what={item.isThrow ? "投げ" : "受け"} />}
           </>
         )}
       </>
@@ -909,6 +957,7 @@ export function SeriesCard({
               prevMotionId={prevMotionId(ser.items, iIdx)}
               handsEmpty={handsEmpty[iIdx]}
               catchTwoAllowed={catchTwoAllowed[iIdx]}
+              tech={b.techItems[iIdx]}
               onUpdate={(patch) => updateItemAt(iIdx, patch)}
             />
             {/* 技の両端：隣の技と入れ替える矢印（中央は削除） */}

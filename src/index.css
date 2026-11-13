@@ -1838,6 +1838,43 @@ input[type="radio"] {
   color: var(--red);
 }
 
+/* 投げ方・受け方のチェックの目印：技術加点 +0.1／種類だけ／必須投げ */
+.opt-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.opt-badge.is-bonus {
+  color: var(--teal);
+  background: var(--teal-soft);
+}
+.opt-badge.is-kind {
+  color: var(--ink-mute);
+  background: var(--glass-soft);
+}
+.opt-badge.is-req {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+/* その投げ・受けが実際に技術加点になったか */
+.tech-status {
+  font-size: 11px;
+  color: var(--ink-mute);
+}
+.tech-status.is-earned {
+  color: var(--teal);
+  font-weight: 700;
+}
+.tech-status.is-lost {
+  color: var(--red);
+}
+
 .check-note {
   margin-left: 6px;
   font-size: 11px;

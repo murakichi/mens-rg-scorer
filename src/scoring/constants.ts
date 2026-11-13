@@ -86,6 +86,16 @@ export const canUseSideThrow = (apparatus: ApparatusKey): boolean => apparatus !
  */
 export const NO_ROTATION_TAG = "norotate";
 export const THROW_OPTIONS_NO_ROTATION = [{ id: NO_ROTATION_TAG, name: "無回転" }];
+
+/**
+ * 投げ・受けのチェックが技術加点（§3.5.5.5(2)）になるか。入力画面の目印に使う。
+ *  - `bonus`：視野外・手以外・手具を使った（1つにつき +0.1。同じ投げ方・受け方は演技全体で1回だけ）
+ *  - `kind`：横投げ・無回転（加点にならず、投げ方の種類として数えるだけ）
+ * 採点側（`score.ts` の `bonusThrowTypes`）と同じ分け方。
+ */
+export function techOptionKind(id: string): "bonus" | "kind" {
+  return id === SIDE_THROW_TAG || id === NO_ROTATION_TAG ? "kind" : "bonus";
+}
 export const canUseNoRotation = (apparatus: ApparatusKey): boolean => apparatus === "stick" || apparatus === "clubs";
 
 /**
