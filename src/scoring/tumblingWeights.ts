@@ -770,3 +770,10 @@ export const AFTER_TEMPO_TWIST_WEIGHT = 3;
  * なければ実施しない。
  */
 export const TEMPO_CONNECT_WEIGHT = 0.3;
+
+/**
+ * 後方系の宙返りに後方系の宙返りを続けるとき（後方→後方）、**先に実施するほうは伸身を優先する**
+ * （オーナー指定）。連鎖を組んだあとに、先のほうを同じひねりの伸身に置き換える確率。
+ * 置き換えても連鎖のルールを満たす（前後の技がつながる）ときだけ。
+ */
+export const LAYOUT_BEFORE_BACKWARD_CHANCE = 0.85;
