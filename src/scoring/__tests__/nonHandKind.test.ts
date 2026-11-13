@@ -177,3 +177,18 @@ describe("スティックの無回転＋横＋背面投げ→足で押さえつ�
     expect(n).toBeGreaterThan(0);
   });
 });
+
+describe("無回転は基本横投げとセット", () => {
+  it("自動生成の無回転の投げには必ず横投げが付く", () => {
+    let n = 0;
+    for (let seed = 1; seed <= 60; seed++)
+      autoThrowTemplates("stick", { random: seededRandom(seed) }).forEach((t) =>
+        t.series.items.forEach((it) => {
+          if (it.kind !== "throw" || !(it.throwTypes ?? []).includes("norotate")) return;
+          n++;
+          expect(it.throwTypes).toContain("side");
+        }),
+      );
+    expect(n).toBeGreaterThan(0);
+  });
+});

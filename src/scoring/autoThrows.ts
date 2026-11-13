@@ -296,10 +296,11 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   ];
   if (APPARATUS_USE[apparatus]) styles.push({ id: "useapp", name: "手具を使った投げ", throwTypes: ["useapp"] });
   // スティックの無回転の投げ（投げ方の一種類。スティックの手以外のキャッチはこの投げのときだけ実施する）
-  // 難度を取るための投げを無回転にした例はないので、無回転が要る手具（手以外のキャッチに無回転が要るスティック）だけ
+  // 無回転は基本的に横投げとセット（オーナー指定）。難度を取るための投げを無回転にした例はないので、
+  // 無回転が要る手具（手以外のキャッチに無回転が要るスティック）だけ
   // 作る。クラブは足でのキャッチを横投げで足りるので作らない
   if (apparatus === "stick")
-    styles.push({ id: NO_ROTATION_TAG, name: "無回転の投げ", throwTypes: [NO_ROTATION_TAG] });
+    styles.push({ id: NO_ROTATION_TAG, name: "無回転の横投げ", throwTypes: [NO_ROTATION_TAG, SIDE_THROW_TAG] });
   if (apparatus === "stick")
     styles.push({
       id: NO_ROTATION_BACK_SIDE_STYLE_ID,
