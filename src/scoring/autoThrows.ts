@@ -26,7 +26,6 @@ import {
   NO_VIEW_TAG,
   SIDE_THROW_TAG,
   NO_ROTATION_TAG,
-  canUseNoRotation,
   NON_HAND_CATCH_KINDS,
   USE_APPARATUS_TAG,
   canUseSideThrow,
@@ -271,8 +270,16 @@ export interface AutoCatchStyle {
  * 最低限の形（`NO_VIEW_SIDE_PATTERNS`）だけで使い、受け方は手具を使ったキャッチだけにする。
  */
 export const NO_VIEW_SIDE_STYLE_ID = "noview+side";
+/**
+ * スティックの**無回転＋横＋背面（視野外）の投げ**（実施例あり）。足で押さえつけて受ける形
+ * （手以外のキャッチ・`footPress`）で、最低限の形（`NO_VIEW_SIDE_PATTERNS`＝徒手0〜1動作）だけで使う。
+ */
+export const NO_ROTATION_BACK_SIDE_STYLE_ID = "norotate+noview+side";
 export const NO_VIEW_SIDE_PRESS_APPARATUS: ApparatusKey[] = ["clubs"];
 export const NO_VIEW_SIDE_PATTERNS: string[] = ["minimalNone", "minimalChene", "minimalRoll"];
+
+/** 無回転を含む投げ方か（手以外のキャッチのためだけに使う） */
+const isNoRotationStyle = (t: { throwTypes?: string[] }): boolean => (t.throwTypes || []).includes(NO_ROTATION_TAG);
 
 /** その手具で使える投げ方（通常の右投げ＋必須投げ＋技術タグ） */
 export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
@@ -289,8 +296,16 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   ];
   if (APPARATUS_USE[apparatus]) styles.push({ id: "useapp", name: "手具を使った投げ", throwTypes: ["useapp"] });
   // スティックの無回転の投げ（投げ方の一種類。スティックの手以外のキャッチはこの投げのときだけ実施する）
-  if (canUseNoRotation(apparatus))
+  // 難度を取るための投げを無回転にした例はないので、無回転が要る手具（手以外のキャッチに無回転が要るスティック）だけ
+  // 作る。クラブは足でのキャッチを横投げで足りるので作らない
+  if (apparatus === "stick")
     styles.push({ id: NO_ROTATION_TAG, name: "無回転の投げ", throwTypes: [NO_ROTATION_TAG] });
+  if (apparatus === "stick")
+    styles.push({
+      id: NO_ROTATION_BACK_SIDE_STYLE_ID,
+      name: "無回転の背面横投げ",
+      throwTypes: [NO_ROTATION_TAG, NO_VIEW_TAG, SIDE_THROW_TAG],
+    });
   // クラブ：背面（視野外）の横投げ→0〜1動作→手具を使ったキャッチ（`NO_VIEW_SIDE_STYLE_ID`）
   if (NO_VIEW_SIDE_PRESS_APPARATUS.includes(apparatus))
     styles.push({
@@ -563,6 +578,8 @@ export function catchStyleWeight({
   demandScore?: number | null;
 }): number {
   const has = (tag: string) => catchHasTag(catchStyle, tag);
+  // 無回転の投げは手以外のキャッチ（無回転が要る）のためだけ。ほかの受け方では無回転にしない
+  if ((throwStyle.throwTypes || []).includes(NO_ROTATION_TAG) && !has(NON_HAND_TAG)) return 0;
   // スティックの手以外のキャッチは、無回転で投げたときだけ実施する
   if (apparatus === "stick" && has(NON_HAND_TAG) && !(throwStyle.throwTypes || []).includes(NO_ROTATION_TAG))
     return 0;
@@ -672,8 +689,13 @@ export function throwStylesForPattern(
   pattern: AutoThrowPattern,
 ): AutoThrowStyle[] {
   // 背面の横投げは最低限の形（0〜1動作）だけで使う
+  // 無回転の投げは手以外のキャッチのためだけで、手以外のキャッチは徒手が少ない形（0〜1動作）でしか実施しない
+  const lowMotions = patternMotions(pattern, pattern.chene.max) <= NON_HAND_CATCH_MAX_MOTIONS;
   const styles = autoThrowStyles(apparatus).filter(
-    (t) => t.id !== NO_VIEW_SIDE_STYLE_ID || NO_VIEW_SIDE_PATTERNS.includes(pattern.id),
+    (t) =>
+      (t.id !== NO_VIEW_SIDE_STYLE_ID || NO_VIEW_SIDE_PATTERNS.includes(pattern.id)) &&
+      (t.id !== NO_ROTATION_BACK_SIDE_STYLE_ID || NO_VIEW_SIDE_PATTERNS.includes(pattern.id)) &&
+      (!isNoRotationStyle(t) || lowMotions),
   );
   // `leadPair` の本体は連続投げの**2回目**。手以外の投げは2回目には実施できず、
   // 二つ投げも「2回目 かつ 徒手を多く実施する（＝高難度）」形は実施されない
@@ -682,7 +704,7 @@ export function throwStylesForPattern(
   // 二つ投げ→キャッチ→押さえつけてキャッチの形は二つ投げだけ（手具が二つの種目）
   if (pattern.splitCatch) return styles.filter((t) => t.two);
   // 2つを別々に投げる形：二つ投げ（1つの投げ）・手以外の投げ・実施例の無い投げ方は使わない
-  if (pattern.overlap) return styles.filter((t) => !t.two && !t.rare && t.id !== NON_HAND_TAG);
+  if (pattern.overlap) return styles.filter((t) => !t.two && !t.rare && t.id !== NON_HAND_TAG && !isNoRotationStyle(t));
   // 2つとも空中にある形：2つ目は横投げ（通常の投げに横投げを付ける）。投げ方は1つに絞る
   if (pattern.airPair) return styles.filter((t) => t.id === "normal");
   return pattern.leadPair ? styles.filter((t) => t.id !== NON_HAND_TAG && !t.two) : styles;
@@ -1006,18 +1028,20 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     pickWeighted(autoHandsVariants(), rand, (h) => handsWeight(h) * cheneCountWeight(h, cheneCount), exp);
   // 先に足す投げ受けの投げ方。二つ投げは2つ同時キャッチで受ける形になるので使わない
   const nextLeadThrow = cycler(
-    throwStyles.filter((t) => !t.two && !t.rare),
+    throwStyles.filter((t) => !t.two && !t.rare && !isNoRotationStyle(t)),
     rand,
   );
   // 2つを別々に投げる形の1つ目の投げ（手以外の投げは続けて投げられないので使わない）
-  const firstThrowPool = throwStyles.filter((t) => !t.two && !t.rare && t.id !== NON_HAND_TAG);
+  const firstThrowPool = throwStyles.filter(
+    (t) => !t.two && !t.rare && t.id !== NON_HAND_TAG && !isNoRotationStyle(t),
+  );
   const nextFirstThrow = cycler(firstThrowPool, rand);
   // あとに足す投げ受けの投げ方（連続投げの2回目）。使える投げ方が直前の受け方で変わるので
   // （視野外で受けたら視野外には投げられない）、使える組み合わせごとに配る
   const trailCyclers = new Map<string, () => AutoThrowStyle>();
   const nextTrailThrow = (mainCatch: AutoCatchStyle): AutoThrowStyle => {
     const usable = trailThrowStylesAfter(
-      throwStyles.filter((t) => !t.rare),
+      throwStyles.filter((t) => !t.rare && !isNoRotationStyle(t)),
       mainCatch,
     );
     const key = usable.map((t) => t.id).join("|");
@@ -1194,15 +1218,24 @@ export interface AutoThrowTemplate extends SeriesTemplate {
  */
 export function withNonHandKinds(series: Series, apparatus: ApparatusKey): Series {
   let hasSide = false;
+  let throwNoRotationBack = false;
   let changed = false;
   const items = series.items.map((item, idx) => {
-    if ((item.kind === "throw" || item.kind === "skill") && (item.kind === "throw" || item.isThrow))
+    if ((item.kind === "throw" || item.kind === "skill") && (item.kind === "throw" || item.isThrow)) {
       hasSide = (item.throwTypes || []).includes(SIDE_THROW_TAG);
+      throwNoRotationBack =
+        (item.throwTypes || []).includes(NO_ROTATION_TAG) && (item.throwTypes || []).includes(NO_VIEW_TAG);
+    }
     const isNonHandCatch =
       (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) &&
       (item.catchTypes || []).includes(NON_HAND_TAG) &&
       !item.nonHandKind;
     if (!isNonHandCatch) return item;
+    // 無回転の背面横投げは足で押さえつけて受ける
+    if (apparatus === "stick" && throwNoRotationBack) {
+      changed = true;
+      return { ...item, nonHandKind: "footPress" };
+    }
     const kinds = NON_HAND_CATCH_KINDS[apparatus].filter((k) => !k.needsSide || hasSide);
     if (kinds.length === 0) return item;
     let h = idx + 1;
