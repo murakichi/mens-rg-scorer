@@ -22,6 +22,7 @@ import {
   hasLeftHandThrow,
   skillDef,
   SKILL_LIST,
+  isBackwardSalto,
   DIVING_FRONT_SALTO_ID,
   skillDifficulty,
   canOperateApparatus,
@@ -82,6 +83,7 @@ import {
   airPairTumChance,
   AIR_PAIR_TUM_LAST_CATCH,
   airPairTumExtraChance,
+  LAYOUT_BEFORE_BACKWARD_CHANCE,
   airThrowInSkillChance,
   saltoWeights,
   AIR_THROW_IN_SKILL_VARIANTS,
@@ -252,6 +254,43 @@ function applyApparatusOps(items: Item[], pattern: AutoTumblingPattern, junior: 
     .forEach(({ it }) => setOp(it));
   // E難度なら手具操作加点（操作2回以上）を狙う
   if (isE && saltoIdx.length >= 2) setOp(saltoIdx[0].it);
+}
+
+/** 同じひねりの後方伸身宙返り（無ければ undefined）。ひねりの無い技・すでに伸身の技は対象外 */
+function layoutCounterpart(id: string): string | undefined {
+  const t = skillDef(id)?.twist;
+  if (!t || t.base !== "back" || t.posture === "layout") return undefined;
+  return SKILL_LIST.find(
+    (s) => s.twist && s.twist.base === "back" && s.twist.twist === t.twist && s.twist.posture === "layout",
+  )?.id;
+}
+
+/**
+ * 後方系→後方系で続く宙返りの、**先に実施するほうを伸身に置き換える**（`LAYOUT_BEFORE_BACKWARD_CHANCE`）。
+ * つなぎ技を挟んだ境目は別の連続なので対象にしない。置き換えた技が前後とつながる（連鎖のルールを満たす）
+ * ときだけ置き換える。
+ */
+function preferLayoutBeforeBackward(
+  ids: string[],
+  connectIdx: number | null,
+  ctx: { junior: boolean; future: FutureLevel; usable: (ids: string[]) => string[] },
+  rand: () => number,
+  chance: (p: number) => number,
+): string[] {
+  const out = [...ids];
+  for (let i = 0; i < out.length - 1; i++) {
+    if (connectIdx !== null && i === connectIdx - 1) continue;
+    if (!isBackwardSalto(out[i]) || !isBackwardSalto(out[i + 1])) continue;
+    const layout = layoutCounterpart(out[i]);
+    if (!layout || ctx.usable([layout]).length !== 1) continue;
+    // 前の技からつながること（先頭・つなぎのあとは前の制約が無い）
+    const afterConnect = connectIdx !== null && i === connectIdx;
+    if (i > 0 && !afterConnect && !nextSaltoOptions(out[i - 1], ctx.junior, ctx.future).includes(layout)) continue;
+    // 次の技へつながること
+    if (!nextSaltoOptions(layout, ctx.junior, ctx.future).includes(out[i + 1])) continue;
+    if (rand() < chance(LAYOUT_BEFORE_BACKWARD_CHANCE)) out[i] = layout;
+  }
+  return out;
 }
 
 export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false): Series {
@@ -577,7 +616,13 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           if (!step()) break;
         }
         if (ids.length > saltoIds.length) {
-          saltoIds = ids;
+          saltoIds = preferLayoutBeforeBackward(
+            ids,
+            pattern.connect ? connectAt : null,
+            { junior, future: opts.future ?? null, usable: usableSkills(ctxBase) },
+            rand,
+            chance,
+          );
           connectId = cid;
         }
       }

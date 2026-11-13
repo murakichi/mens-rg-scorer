@@ -99,7 +99,7 @@ describe("リングの二つ投げは横投げで行うことがある", () => {
   it("リングの投げタンの二つ投げ＋2つ同時キャッチ＋手以外のキャッチは横投げで行う（クラブでは受けない）", () => {
     const nonHandTwo = (apparatus: ApparatusKey) => {
       const out: Series[] = [];
-      for (let seed = 1; seed <= 40; seed++)
+      for (let seed = 1; seed <= 150; seed++)
         autoTumblingTemplates(apparatus, { random: seededRandom(seed) }).forEach((t) => {
           if (!hasTwo(t.series)) return;
           if (t.series.items.some((it) => it.kind === "catch" && (it.catchTypes ?? []).includes("nonhand"))) out.push(t.series);
@@ -113,5 +113,5 @@ describe("リングの二つ投げは横投げで行うことがある", () => {
       expect(s.items.some((it) => it.kind === "catch" && it.catchTwo)).toBe(true);
     });
     expect(nonHandTwo("clubs")).toHaveLength(0);
-  }, 120_000);
+  }, 240_000);
 });

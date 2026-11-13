@@ -93,7 +93,7 @@ describe("スティックの無回転", () => {
     expect(nonHand).toBeGreaterThan(0);
   });
 
-  it("スティック・クラブの自動生成に無回転の投げが出る。他の手具には出ない", () => {
+  it("スティックの自動生成に無回転の投げが出る。他の手具には出ない", () => {
     const has = (app: ApparatusKey) => {
       for (let seed = 1; seed <= 10; seed++)
         if (autoThrowTemplates(app, { random: seededRandom(seed) }).some((t) =>
@@ -101,7 +101,8 @@ describe("スティックの無回転", () => {
       return false;
     };
     expect(has("stick")).toBe(true);
-    expect(has("clubs")).toBe(true);
+    // クラブは足でのキャッチを横投げで足りるので、無回転の投げは作らない
+    expect(has("clubs")).toBe(false);
     expect(has("ring")).toBe(false);
   });
 });
@@ -131,6 +132,63 @@ describe("クラブの足でのキャッチは横投げか無回転のときだ�
         });
       });
     }
+    expect(n).toBeGreaterThan(0);
+  });
+});
+
+describe("無回転の投げは手以外のキャッチのためだけ（難度を取る投げでは無回転にしない）", () => {
+  it("自動生成の無回転の投げは、必ず手以外のキャッチで受け、徒手は0〜1動作", () => {
+    let n = 0;
+    for (let seed = 1; seed <= 60; seed++)
+      autoThrowTemplates("stick", { random: seededRandom(seed) }).forEach((t) => {
+        const items = t.series.items;
+        items.forEach((it, i) => {
+          if (it.kind !== "throw" || !(it.throwTypes ?? []).includes("norotate")) return;
+          n++;
+          const c = items.slice(i + 1).find((x) => x.kind === "catch");
+          expect(c?.kind === "catch" && (c.catchTypes ?? []).includes("nonhand")).toBe(true);
+          const motions = items
+            .slice(i + 1, items.indexOf(c!))
+            .reduce((m, x) => m + (x.kind === "motion" ? (x.count ?? 1) : 0), 0);
+          expect(motions).toBeLessThanOrEqual(1);
+        });
+      });
+    expect(n).toBeGreaterThan(0);
+  });
+});
+
+describe("スティックの無回転＋横＋背面投げ→足で押さえつけてキャッチ", () => {
+  it("生成される。0〜1動作で、手以外のキャッチ（足で押さえつけ）で受ける", () => {
+    let n = 0;
+    for (let seed = 1; seed <= 80; seed++)
+      autoThrowTemplates("stick", { random: seededRandom(seed) }).forEach((t) => {
+        const items = t.series.items;
+        items.forEach((it, i) => {
+          const types = it.kind === "throw" ? (it.throwTypes ?? []) : [];
+          if (!(types.includes("norotate") && types.includes("noview"))) return;
+          expect(types).toContain("side");
+          n++;
+          const c = items.slice(i + 1).find((x) => x.kind === "catch");
+          // 視野外のキャッチと組み合わさることもある（背面＋手以外）
+          expect(c?.kind === "catch" && c.catchTypes).toContain("nonhand");
+          expect(c).toMatchObject({ nonHandKind: "footPress" });
+        });
+      });
+    expect(n).toBeGreaterThan(0);
+  });
+});
+
+describe("無回転は基本横投げとセット", () => {
+  it("自動生成の無回転の投げには必ず横投げが付く", () => {
+    let n = 0;
+    for (let seed = 1; seed <= 60; seed++)
+      autoThrowTemplates("stick", { random: seededRandom(seed) }).forEach((t) =>
+        t.series.items.forEach((it) => {
+          if (it.kind !== "throw" || !(it.throwTypes ?? []).includes("norotate")) return;
+          n++;
+          expect(it.throwTypes).toContain("side");
+        }),
+      );
     expect(n).toBeGreaterThan(0);
   });
 });
