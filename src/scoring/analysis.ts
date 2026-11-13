@@ -15,6 +15,7 @@ import {
   USE_APPARATUS_TAG,
   SIDE_THROW_TAG,
   NO_ROTATION_TAG,
+  LEGACY_OTHER_STYLE_TAG,
   canUseNoRotation,
   nonHandKindOf,
   canUseSideThrow,
@@ -509,6 +510,9 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
   const units: Unit[] = [];
   let throwCount = 0;
   let buf: UnitBuffer | null = null;
+  const unitOfItem: number[] = series.items.map(() => -1);
+  /** 今のバッファに入っているアイテムの添字（flush でユニットが確定したら割り当てる） */
+  let bufItems: number[] = [];
   const newBuf = (): UnitBuffer => ({
     skills: [],
     motionCount: 0,
@@ -523,16 +527,22 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
   const flush = () => {
     if (buf && (buf.skills.length || buf.motionCount > 0 || buf.throwItems > 0)) {
       const u = finalizeUnit(buf, junior, future);
-      if (u.finalDiff) units.push(u);
+      if (u.finalDiff) {
+        units.push(u);
+        bufItems.forEach((k) => (unitOfItem[k] = units.length - 1));
+      }
       const skillThrows = buf.skills.filter((s) => s.isThrow).length;
       throwCount += buf.throwItems + skillThrows;
     }
     buf = null;
+    bufItems = [];
   };
   const splitBefore = unitSplitFlags(series.items);
   series.items.forEach((item, i) => {
     // タンブリングの合間の徒手はここで区切る（徒手の手前・徒手の直後）
     if (splitBefore[i]) flush();
+    // キャッチは自分が閉じるユニットに属する。それ以外はこれから入るバッファに属する
+    if (item.kind !== "ropeJump") bufItems.push(i);
     if (item.kind === "catch") {
       flush();
     } else if (item.kind === "throw") {
@@ -578,7 +588,7 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
   });
   flush();
 
-  return { units, throwCount };
+  return { units, throwCount, unitOfItem };
 }
 
 // ---- その手具では入力できない内容（別の手具から残ったもの） ----
@@ -690,7 +700,17 @@ export const APPARATUS_INPUT_NAMES = {
   side: "横投げ",
   noRotation: "無回転",
   nonHandKind: "手以外のキャッチの受け方",
+  other: "その他の投げ・キャッチ（削除済みの入力）",
+  cartwheelSkill: "タンブリング欄の側転（徒手動作に移す）",
 } as const;
+
+/**
+ * タンブリング欄に入った側転か。側転は徒手として統一したので、タンブリングの選択肢には出さず、
+ * 旧データに残っていれば `stripForApparatus` が徒手動作（1回）に移す。
+ * 技の最中に投げる・受ける側転は徒手動作で表せないので、そのまま残す。
+ */
+export const isCartwheelSkillItem = (item: Item): boolean =>
+  item.kind === "skill" && !!item.skillId && !!skillDef(item.skillId)?.isHandElement && !item.isThrow && !item.isCatch;
 
 /** その手具では入力できない内容の一覧（無ければ空。確認ダイアログの文面に使う） */
 export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): string[] {
@@ -701,6 +721,13 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
   list.forEach((ser) => {
     const empty = handsEmptyFlags(ser.items, apparatus);
     ser.items.forEach((item, i) => {
+      if (isCartwheelSkillItem(item)) reasons.add(APPARATUS_INPUT_NAMES.cartwheelSkill);
+      // 削除した「その他の投げ・キャッチ」はどの手具でも入力できない（旧データに残っていれば落とす）
+      if (
+        ((item.kind === "throw" || item.kind === "skill") && (item.throwTypes || []).includes(LEGACY_OTHER_STYLE_TAG)) ||
+        ((item.kind === "catch" || (item.kind === "skill" && item.isCatch)) && (item.catchTypes || []).includes(LEGACY_OTHER_STYLE_TAG))
+      )
+        reasons.add(APPARATUS_INPUT_NAMES.other);
       if ((item.kind === "throw" || item.kind === "skill") && !noRotation && (item.throwTypes || []).includes(NO_ROTATION_TAG))
         reasons.add(APPARATUS_INPUT_NAMES.noRotation);
       // 手以外のキャッチの受け方は、その手具の選択肢に無ければ入力できない
@@ -755,6 +782,7 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
   const withoutTag = (ids?: string[]) =>
     (ids || []).filter(
       (id) =>
+        id !== LEGACY_OTHER_STYLE_TAG &&
         (tags || id !== USE_APPARATUS_TAG) &&
         (side || id !== SIDE_THROW_TAG) &&
         (noRotation || id !== NO_ROTATION_TAG),
@@ -767,6 +795,12 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
       ...ser,
       items: ser.items
         .filter((item) => item.kind !== "ropeJump" || canUseRopeJump(apparatus))
+        // タンブリング欄の側転は徒手動作に移す（側転は徒手として統一）
+        .map((item): Item =>
+          isCartwheelSkillItem(item) && item.kind === "skill"
+            ? { kind: "motion", motionId: item.skillId, count: 1 }
+            : item,
+        )
         .map((item) => {
           // 投げている間は手具操作ができない
           if (item.kind === "skill" && item.hasApparatus && emptyOf.get(item))
@@ -982,3 +1016,48 @@ export function seriesTags(series: Series, junior = false): SeriesTagId[] {
 
 /** 「三宙」とみなす連続宙返りの回数 */
 export const SALTO_CHAIN_TAG_MIN = 3;
+
+/**
+ * 演技全体で、手具別の必須投げ（左手投げ・二つ投げ）を実施した回数（投げアイテムと技の最中の投げ）。
+ * 入力画面で「この投げで必須投げを満たす必要があるか」を出すのに使う（採点は `computeScore` の `performedThrowTypes`）。
+ */
+export function requiredThrowCounts(list: Series[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  list.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "throw" || (item.kind === "skill" && item.isThrow))
+        (item.reqTypes || []).forEach((id) => (counts[id] = (counts[id] ?? 0) + 1));
+    }),
+  );
+  return counts;
+}
+
+/**
+ * 二つ投げで投げてから受けるまでの間にある徒手動作に、その間の動作数の合計を付ける（それ以外は null）。
+ * §3.5.5.5(2)⑦「2本投げで4動作をして受けた場合」の目安を入力画面に出すのに使う。
+ * 区間の切り方は採点（`score.ts` の二つ投げ4動作加点）と同じ：次の投げか受けで閉じる。
+ */
+export function twoThrowMotionTotals(items: Item[], junior = false, future: FutureLevel = null): (number | null)[] {
+  const out: (number | null)[] = items.map(() => null);
+  let span: number[] | null = null;
+  let total = 0;
+  const close = () => {
+    if (span) span.forEach((k) => (out[k] = total));
+    span = null;
+    total = 0;
+  };
+  items.forEach((item, k) => {
+    if (item.kind === "throw" || (item.kind === "skill" && item.isThrow)) {
+      close();
+      if ((item.reqTypes || []).includes(TWO_THROW_TAG)) span = [];
+    } else if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
+      close();
+    } else if (item.kind === "motion" && span) {
+      const m = motionDef(item.motionId, junior, future);
+      span.push(k);
+      if (m) total += m.motions * motionTimes(item.count);
+    }
+  });
+  close();
+  return out;
+}

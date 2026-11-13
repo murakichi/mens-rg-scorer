@@ -286,7 +286,6 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
     })),
     { id: "noview", name: "視野外の投げ", throwTypes: ["noview"] },
     { id: "nonhand", name: "手以外の投げ", throwTypes: ["nonhand"] },
-    { id: "other", name: "その他の投げ", throwTypes: ["other"] },
   ];
   if (APPARATUS_USE[apparatus]) styles.push({ id: "useapp", name: "手具を使った投げ", throwTypes: ["useapp"] });
   // スティックの無回転の投げ（投げ方の一種類。スティックの手以外のキャッチはこの投げのときだけ実施する）
@@ -321,7 +320,6 @@ export function autoCatchStyles(apparatus: ApparatusKey): AutoCatchStyle[] {
     { id: "normal", name: "通常のキャッチ" },
     { id: "noview", name: "視野外のキャッチ", catchTypes: ["noview"] },
     { id: "nonhand", name: "手以外のキャッチ", catchTypes: ["nonhand"] },
-    { id: "other", name: "その他のキャッチ", catchTypes: ["other"] },
   ];
   // クラブ・リングは、もう一方の手具で押さえつけて受けられる
   if (APPARATUS_USE[apparatus])
@@ -368,23 +366,6 @@ export const rollFinishShape = (pattern: AutoThrowPattern): boolean => {
 /** その形で手具を使ったキャッチ以外を引く重み（クラブ・リングのみ） */
 export const ROLL_FINISH_OTHER_CATCH_WEIGHT = 0.2;
 
-/**
- * その他の受け・投げの技術タグ。
- * **これは「珍しい投げ方・受け方」ではない**：規則の分類では同じ受け方に見えるが実態は
- * まったく違う、というものを**別の種類として数えてもらう**ための入力で、
- * 多様な投げ受け（必須要素）の種類数を埋める役割を持つ。
- * だから自動生成では「ほかの種類で足りないときだけ使う」＝可能な限り使わない扱いにし、
- * **珍しさのつまみ（`rarity`）の変形からも外す**（珍しさを上げてこれが増えても意味がない）。
- */
-export const OTHER_TAG = "other";
-/** その他のキャッチから次の投げに続ける確率は低い */
-export const OTHER_CATCH_BEFORE_THROW_WEIGHT = 0.2;
-/**
- * その他の投げ・その他のキャッチは自動生成では**可能な限り使わない**。
- * 受け方は引く重みを下げ（ここ）、投げ方は候補としては残したまま
- * 生成側の評価で嫌う（`generate.ts` の `OTHER_STYLE_WEIGHT`）。
- */
-export const OTHER_CATCH_WEIGHT = 0.1;
 
 /**
  * 2種類を同時に満たす受け方の重み。単独の受け方より実施は少ない。
@@ -609,10 +590,6 @@ export function catchStyleWeight({
   if (has(NON_HAND_TAG) && nonHandRule.lowDifficultyOnly && motions > NON_HAND_CATCH_MAX_MOTIONS)
     return 0;
   let weight = 1;
-  // その他のキャッチは可能な限り使わない
-  if (has(OTHER_TAG)) weight *= OTHER_CATCH_WEIGHT;
-  // その他のキャッチから次の投げに続けるのは少ない（`noViewPair` は受けたあと投げる形）
-  if (throwsAfterCatch(pattern) && has(OTHER_TAG)) weight *= OTHER_CATCH_BEFORE_THROW_WEIGHT;
   // 縦3動作の形は手具で押さえつけて受けるのが主流
   if (pattern.verticalThree && !has(CATCH_USE_APPARATUS)) weight *= VERTICAL_THREE_OTHER_CATCH_WEIGHT;
   // クラブ・リングは、転がり・前転で終わってから手具で押さえつけて受けるのが定番
@@ -1013,9 +990,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
         demandScore: opts.demandScore,
       });
     if (styles.some((c) => weight(c) !== 1))
-      // その他のキャッチは「珍しい受け方」ではなく**ルール上は同じ受け方に見えるが実態が違う
-      // ものを別の種類として数えてもらう**ための入力なので、珍しさの変形からは外す
-      return pickWeighted(styles, rand, weight, (c) => (catchHasTag(c, OTHER_TAG) ? 1 : exp));
+      return pickWeighted(styles, rand, weight, exp);
     // それ以外は被らないように配る
     const key = `${pattern.noViewPair ? "noViewPair" : "-"}:${twoThrow}`;
     let next = catchCyclers.get(key);

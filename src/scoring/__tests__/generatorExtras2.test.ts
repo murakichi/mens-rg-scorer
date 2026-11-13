@@ -17,7 +17,8 @@ describe("後方系の宙返りからテンポ宙返り", () => {
 
   it("後方宙返り2回ひねり→テンポ→ダイビング前宙の連鎖が生成に出る", () => {
     let n = 0;
-    for (let seed = 1; seed <= 60 && n === 0; seed++)
+    // 出現は数百シードに数回なので広く探す（見つかった時点で止める）
+    for (let seed = 1; seed <= 600 && n === 0; seed++)
       autoTumblingTemplates("stick", { random: seededRandom(seed), apparatus: "stick", targetScore: null }).forEach((t) => {
         if (describeText(t.series).includes("後方宙返り2回ひねり→テンポ宙返り→ダイビング前宙")) n++;
       });

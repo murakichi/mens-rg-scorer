@@ -8,14 +8,29 @@ const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 // -------------------------------------------------------------------------
 // 重複シリーズ（dupFlags）による除外
 //   CLAUDE.md ゴッチャ：重複は「カウント・ほとんどの加点」から除外される。
-//   ただし「その他（other）」の投げ/受けは重複でも数える例外。
 // -------------------------------------------------------------------------
 describe("重複シリーズ — カウントからの除外", () => {
-  it("完全に同一のシリーズは2本目の投げ回数を数えない", () => {
+  it("完全に同一のシリーズの2本目も投げ回数には数える（難度・加点には数えない）", () => {
+    const thr = () => S({ kind: "throw", throwTypes: ["noview"] }, { kind: "motion", motionId: "chene", count: 2 }, { kind: "catch" });
+    const r = computeScore([thr(), thr(), thr()], "stick");
+    expect(r.dupFlags).toEqual([false, true, true]);
+    expect(r.totalThrowCount).toBe(3);
+    expect(r.performedThrowCount).toBe(3);
+    expect(r.throwCountDeduction).toBe(0);
+    // 難度は1本分（C 0.3）、技術加点も1本分
+    expect(r.handScore).toBeCloseTo(0.3, 5);
+    expect(r.techniqueBonus).toBeCloseTo(0.1, 5);
+  });
+
+  it("ジュニアの投げ上限（5回）にも重複シリーズの投げを数える", () => {
     const thr = () => S({ kind: "throw" }, { kind: "catch" });
-    const r = computeScore([thr(), thr()], "stick");
-    // 2本とも同一シグネチャ → 2本目は dup。totalThrowCount は 1 のみ
-    expect(r.totalThrowCount).toBe(1);
+    const other = () => S({ kind: "throw" }, { kind: "motion", motionId: "chene", count: 1 }, { kind: "catch" });
+    const r = computeScore([thr(), thr(), thr(), thr(), thr(), other()], "stick", { junior: true });
+    expect(r.performedThrowCount).toBe(6);
+    expect(r.totalThrowCount).toBe(5);
+    expect(r.overThrowCount).toBe(1);
+    // 6回目（重複でないシリーズ）は上限超過なので難度にも数えない
+    expect(r.seriesBreakdowns[5].handRows.every((x) => !x.adopted || !x.inTop)).toBe(true);
   });
 
   it("構成が異なる投げシリーズは両方数える", () => {
@@ -36,18 +51,9 @@ describe("重複シリーズ — カウントからの除外", () => {
 });
 
 // -------------------------------------------------------------------------
-// 「その他（other）」の投げ/受けは重複シリーズでも数える例外
-//   score.ts: throwOtherCount/catchOtherCount は isDup ガードの前にある
+// 投げ方・受け方の種類は重複シリーズでは数えない
 // -------------------------------------------------------------------------
-describe("投げ方・受け方の多様性 — その他の例外", () => {
-  it("その他の投げ/受けは重複シリーズでも出現回数ぶん数える", () => {
-    const s = () => S({ kind: "throw", throwTypes: ["other"] }, { kind: "catch", catchTypes: ["other"] });
-    const r = computeScore([s(), s()], "stick");
-    // 2本目は dup だが「その他」は例外的に加算 → throw/catch とも 2
-    expect(r.throwKindCount).toBe(2);
-    expect(r.catchKindCount).toBe(2);
-  });
-
+describe("投げ方・受け方の多様性 — 重複シリーズ", () => {
   it("認識済みの種類（視野外など）は重複シリーズでは数えない（対照）", () => {
     const s = () => S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch", catchTypes: ["noview"] });
     const r = computeScore([s(), s()], "stick");
@@ -139,5 +145,71 @@ describe("難度採用 — 全く同じ技の二重計上（ルール §155）",
     // ルール §155：全く同じ技は難度として数えない → E 1つぶん = 0.7
     // 実装は 0.7+0.7 = 1.4 を返す（重複が top3 採用枠に残るため）
     expect(r.tumblingScore).toBeCloseTo(0.7, 5);
+  });
+});
+
+// タンブリングの最中の受けは、最中の投げと同じく「投げタン」の受けとして別の1種類に数える（オーナー確認）
+describe("投げ方・受け方の種類 — タンブリングの最中の投げ・受け", () => {
+  it("最中の投げと最中の受けはどちらも通常とは別の1種類", () => {
+    const r = computeScore(
+      [
+        S({ kind: "throw" }, { kind: "catch" }),
+        S({ kind: "skill", skillId: "b_front", isThrow: true }, { kind: "catch" }),
+        S({ kind: "throw" }, { kind: "skill", skillId: "a_roundoff", isCatch: true }, { kind: "skill", skillId: "b_backsalto" }),
+      ],
+      "clubs",
+    );
+    // 投げ：通常／最中の投げ　受け：通常／最中の受け
+    expect(r.throwKindCount).toBe(2);
+    expect(r.catchKindCount).toBe(2);
+  });
+
+  it("タグの付いた最中の受けは、同じタグのキャッチと同じ種類", () => {
+    const r = computeScore(
+      [
+        S({ kind: "throw" }, { kind: "catch", catchTypes: ["useapp"] }),
+        S({ kind: "throw" }, { kind: "skill", skillId: "a_roundoff", isCatch: true, catchTypes: ["useapp"] }, { kind: "skill", skillId: "b_backsalto" }),
+      ],
+      "clubs",
+    );
+    expect(r.catchKindCount).toBe(1);
+  });
+});
+
+// 手以外のキャッチの受け方は受け方の種類として別に数える／2つ同時キャッチは種類に数えない（オーナー確認）
+describe("受け方の種類 — 手以外の受け方と2つ同時キャッチ", () => {
+  const T: Item = { kind: "throw" };
+  it("手以外のキャッチの受け方が違えば別の種類", () => {
+    const r = computeScore(
+      [
+        S(T, { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "neckShoulder" }),
+        S(T, { kind: "motion", motionId: "chene", count: 1 }, { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "footClamp" }),
+        S(T, { kind: "motion", motionId: "chene", count: 2 }, { kind: "catch", catchTypes: ["nonhand"] }),
+      ],
+      "stick",
+    );
+    expect(r.catchKindCount).toBe(3);
+  });
+
+  it("同じ受け方なら1種類", () => {
+    const r = computeScore(
+      [
+        S(T, { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "neckShoulder" }),
+        S(T, { kind: "motion", motionId: "chene", count: 1 }, { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "neckShoulder" }),
+      ],
+      "stick",
+    );
+    expect(r.catchKindCount).toBe(1);
+  });
+
+  it("2つ同時キャッチは種類に数えない", () => {
+    const r = computeScore(
+      [
+        S({ kind: "throw", reqTypes: ["twothrow"] }, { kind: "catch", catchTwo: true }),
+        S(T, { kind: "motion", motionId: "chene", count: 1 }, { kind: "catch" }),
+      ],
+      "clubs",
+    );
+    expect(r.catchKindCount).toBe(1);
   });
 });

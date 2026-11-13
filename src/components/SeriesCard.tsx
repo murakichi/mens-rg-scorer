@@ -37,6 +37,7 @@ import {
   parseTwistSkillId,
   twistLabel,
   skillFlowAfter,
+  techOptionKind,
 } from "../scoring/constants";
 import {
   checkApparatusFlow,
@@ -47,6 +48,7 @@ import {
   prevSkillId,
   SERIES_TAGS,
   seriesTags,
+  twoThrowMotionTotals,
 } from "../scoring/analysis";
 import { tumblingChainEndErrors } from "../scoring/tumblingChain";
 import { seriesNickname } from "../scoring/nickname";
@@ -54,7 +56,7 @@ import { describeSeries, itemLabel } from "../scoring/templates";
 import type { AutoInputSuggestion } from "../scoring/autoInput";
 import type { SkillFlow } from "../scoring/constants";
 import type { ApparatusKey, FutureLevel, Item, Series, SeriesAnalysis, TwistParams } from "../scoring/types";
-import type { DiffRow, SeriesBreakdown } from "../scoring/score";
+import type { DiffRow, SeriesBreakdown, TechStatus } from "../scoring/score";
 import type { SeriesTemplateOption } from "./SeriesListEditor";
 
 type ItemKind = Item["kind"];
@@ -81,6 +83,11 @@ interface Props {
   /** 十年後モードの上限難度（null＝OFF）。技の選択肢・難度表示・ひねりの選択肢に反映する。 */
   future?: FutureLevel;
   analysis: SeriesAnalysis;
+  /**
+   * 演技全体で必須投げ（左手投げ・二つ投げ）を実施した回数（`requiredThrowCounts`）。
+   * ほかの投げですでに満たしていれば、その投げのチェックは「必須投げ」から外して「加点なし」に出す。
+   */
+  reqThrowCounts?: Record<string, number>;
   /** analysis.units と同じ並びで、そのユニットが難度点に採用されたか */
   unitAdopted: boolean[];
   breakdown: SeriesBreakdown;
@@ -144,6 +151,193 @@ function toggle(list: string[] | undefined, id: string, checked: boolean): strin
 }
 
 /**
+ * 投げ方・受け方のチェックを「技術加点」「加点なし」「必須投げ」の小見出しでまとめる（§3.5.5.5(2)）。
+ * 分類は `techOptionKind`（採点の `bonusThrowTypes` と同じ）。空のまとまりは見出しごと出さない。
+ */
+function OptGroup({ kind, children }: { kind: "bonus" | "kind" | "req"; children: React.ReactNode[] }) {
+  const items = children.filter(Boolean);
+  if (items.length === 0) return null;
+  const head = {
+    bonus: { label: "技術加点", title: "1つにつき +0.1。全く同じ投げ方・受け方は演技全体で1回だけ" },
+    kind: { label: "加点なし", title: "技術加点にはならない。横投げ・無回転・視野外の方向・手以外の受け方は投げ方・受け方の種類として別に数える（2つ同時キャッチは数えない）" },
+    req: { label: "必須投げ", title: "手具別の必須投げの判定に使う。技術加点にはならず、投げ方の種類も変えない" },
+  }[kind];
+  return (
+    <div className={`opt-group is-${kind}`}>
+      <div className="opt-group-head" title={head.title}>
+        {head.label}
+      </div>
+      {items}
+    </div>
+  );
+}
+
+/** 投げ（投げアイテム・技の最中の投げ）のチェック。技術加点／加点なし／必須投げに分けて出す */
+function ThrowChecks({
+  item,
+  apparatus,
+  common,
+  inSkill,
+  reqThrowCounts = {},
+  onUpdate,
+}: {
+  item: { throwTypes?: string[]; reqTypes?: string[] };
+  apparatus: ApparatusKey;
+  common?: boolean;
+  /** 技の最中の投げか（必須投げは二つ投げだけ出す） */
+  inSkill?: boolean;
+  /** 演技全体で必須投げを実施した回数（ほかの投げで満たしていれば「必須投げ」から外す） */
+  reqThrowCounts?: Record<string, number>;
+  onUpdate: (patch: { throwTypes?: string[]; reqTypes?: string[] }) => void;
+}) {
+  // 二つ投げ（両方を投げる）と手具を使った投げ（もう一方で押さえる）は排他
+  const twoThrow = (item.reqTypes || []).includes(TWO_THROW_TAG);
+  const useApparatusThrow = (item.throwTypes || []).includes(USE_APPARATUS_TAG);
+  const noView = (item.throwTypes || []).includes(NO_VIEW_TAG);
+  const sideDirection = !common && canUseSideThrow(apparatus);
+  const options = [
+    ...(inSkill ? SKILL_THROW_OPTIONS_COMMON : THROW_OPTIONS_COMMON),
+    ...(sideDirection && !noView ? THROW_OPTIONS_SIDE : []),
+    ...(!common && canUseNoRotation(apparatus) ? THROW_OPTIONS_NO_ROTATION : []),
+    ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
+  ];
+  const check = (opt: { id: string; name: string }) => {
+    const on = (item.throwTypes || []).includes(opt.id);
+    // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
+    const blocked = opt.id === USE_APPARATUS_TAG && !on && twoThrow;
+    return (
+      <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={blocked}
+          onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
+        />
+        {opt.name}
+      </label>
+    );
+  };
+  const reqOptions = common
+    ? []
+    : REQUIRED_THROW_OPTIONS[apparatus].filter((opt) => !inSkill || opt.id === TWO_THROW_TAG);
+  // この投げ以外ですでに実施していれば必須は満たしている → 「必須投げ」ではなく「加点なし」に出す
+  const doneElsewhere = (id: string) =>
+    (reqThrowCounts[id] ?? 0) - ((item.reqTypes || []).includes(id) ? 1 : 0) > 0;
+  const reqCheck = (opt: { id: string; name: string }) => {
+    const on = (item.reqTypes || []).includes(opt.id);
+    const blocked = opt.id === TWO_THROW_TAG && !on && useApparatusThrow;
+    return (
+      <label key={opt.id} className={blocked ? "check-req is-disabled" : "check-req"}>
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={blocked}
+          onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
+        />
+        {opt.name}
+      </label>
+    );
+  };
+  return (
+    <>
+      <OptGroup kind="bonus">{options.filter((o) => techOptionKind(o.id) === "bonus").map(check)}</OptGroup>
+      <OptGroup kind="kind">
+        {[
+          ...options.filter((o) => techOptionKind(o.id) === "kind").map(check),
+          sideDirection && noView ? (
+            <NoViewDirection key="dir" types={item.throwTypes} onChange={(throwTypes) => onUpdate({ throwTypes })} />
+          ) : null,
+          ...reqOptions.filter((o) => doneElsewhere(o.id)).map(reqCheck),
+        ]}
+      </OptGroup>
+      <OptGroup kind="req">{reqOptions.filter((o) => !doneElsewhere(o.id)).map(reqCheck)}</OptGroup>
+    </>
+  );
+}
+
+/** 受け（キャッチアイテム・技の最中の受け）のチェック。技術加点／加点なしに分けて出す */
+function CatchChecks({
+  item,
+  apparatus,
+  common,
+  catchTwoAllowed,
+  onUpdate,
+}: {
+  item: { catchTypes?: string[]; nonHandKind?: string; catchTwo?: boolean };
+  apparatus: ApparatusKey;
+  common?: boolean;
+  catchTwoAllowed?: boolean;
+  onUpdate: (patch: { catchTypes?: string[]; nonHandKind?: string; catchTwo?: boolean }) => void;
+}) {
+  const options = [...CATCH_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])];
+  return (
+    <>
+      <OptGroup kind="bonus">
+        {options.map((opt) => {
+          // 手具を使ったキャッチと手以外のキャッチは同時に実施できない
+          const blocked = catchOptionBlocked(opt.id, item.catchTypes);
+          return (
+            <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+              <input
+                type="checkbox"
+                checked={(item.catchTypes || []).includes(opt.id)}
+                disabled={blocked}
+                onChange={(e) =>
+                  onUpdate({
+                    catchTypes: toggle(item.catchTypes, opt.id, e.target.checked),
+                    // 手以外のキャッチを外したら受け方も消す
+                    ...(opt.id === "nonhand" && !e.target.checked ? { nonHandKind: undefined } : {}),
+                  })
+                }
+              />
+              {opt.name}
+            </label>
+          );
+        })}
+      </OptGroup>
+      <OptGroup kind="kind">
+        {[
+          !common && (item.catchTypes || []).includes("nonhand") ? (
+            <NonHandKindSelect
+              key="nonhand"
+              apparatus={apparatus}
+              types={item.catchTypes}
+              value={item.nonHandKind}
+              onChange={(nonHandKind) => onUpdate({ nonHandKind })}
+            />
+          ) : null,
+          // 2つ同時キャッチは二つ投げで2つとも空中にあるときだけ（すでに付いていれば外せるように残す）
+          !common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) ? (
+            <label key="two" className="check-req">
+              <input
+                type="checkbox"
+                checked={item.catchTwo || false}
+                onChange={(e) => onUpdate({ catchTwo: e.target.checked })}
+              />
+              2つ同時キャッチ
+            </label>
+          ) : null,
+        ]}
+      </OptGroup>
+    </>
+  );
+}
+
+/** その投げ・受けが実際に技術加点になったか（同じ投げ方・受け方の2回目以降は0） */
+function TechStatusLine({ tech, what }: { tech?: TechStatus | null; what: "投げ" | "受け" }) {
+  // 加点になるチェックが無い投げ・受けは技術加点の対象外なので、何も出さない
+  if (!tech || tech.bonusTags <= 0) return null;
+  const text: Record<Exclude<TechStatus["status"], "none">, string> = {
+    earned: `技術加点 +${tech.points.toFixed(1)}`,
+    duplicate: `技術加点なし：全く同じ${what === "投げ" ? "投げ方" : "受け方"}は加点済み`,
+    dupSeries: "技術加点なし：重複シリーズ",
+    over: "技術加点なし：投げ回数の上限超過",
+  };
+  if (tech.status === "none") return null;
+  return <div className={tech.status === "earned" ? "tech-status is-earned" : "tech-status is-lost"}>{text[tech.status]}</div>;
+}
+
+/**
  * 視野外の投げの方向（真後ろ／横）。横は既存の横投げタグ（`side`）で表すので、
  * 点数の扱いは横投げと同じ（技術加点にはならず、投げ方の種類は真後ろと別に数える）。
  * 視野外のときは通常の「横投げ」チェックの代わりにこの選択を出す。
@@ -182,7 +376,7 @@ function NonHandKindSelect({
 }) {
   if (!(types || []).includes("nonhand")) return null;
   return (
-    <label className="check-req">
+    <label className="check-req" title="受け方の違いは技術加点を変えないが、受け方の種類として別に数える（同じ受け方の2回目は加点なし）">
       受け方
       <select value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
         <option value="">（未選択）</option>
@@ -213,6 +407,9 @@ function ItemEditor({
   prevMotionId,
   handsEmpty,
   catchTwoAllowed,
+  tech,
+  reqThrowCounts = {},
+  twoThrowMotionTotal = null,
   onUpdate,
 }: {
   item: Item;
@@ -235,56 +432,20 @@ function ItemEditor({
   handsEmpty?: boolean;
   /** このキャッチで2つ同時キャッチを入力できるか（2つとも空中にあるときだけ） */
   catchTwoAllowed?: boolean;
+  /** この投げ・受けの技術加点の状況（投げ・受けでなければ null） */
+  tech?: TechStatus | null;
+  /** 演技全体で必須投げを実施した回数 */
+  reqThrowCounts?: Record<string, number>;
+  /** 二つ投げの間の徒手なら、その間の動作数の合計（それ以外は null） */
+  twoThrowMotionTotal?: number | null;
   onUpdate: (patch: Partial<Item>) => void;
 }) {
   if (item.kind === "throw") {
-    // 二つ投げ（両方を投げる）と手具を使った投げ（もう一方で押さえる）は排他
-    const twoThrow = (item.reqTypes || []).includes(TWO_THROW_TAG);
-    const useApparatusThrow = (item.throwTypes || []).includes(USE_APPARATUS_TAG);
-    const noView = (item.throwTypes || []).includes(NO_VIEW_TAG);
-    const sideDirection = !common && canUseSideThrow(apparatus);
     return (
       <>
         <div className="throw-tag">投げ</div>
-        {[
-          ...THROW_OPTIONS_COMMON,
-          ...(sideDirection && !noView ? THROW_OPTIONS_SIDE : []),
-          ...(!common && canUseNoRotation(apparatus) ? THROW_OPTIONS_NO_ROTATION : []),
-          ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
-        ].map((opt) => {
-          const on = (item.throwTypes || []).includes(opt.id);
-          // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
-          const blocked = opt.id === USE_APPARATUS_TAG && !on && twoThrow;
-          return (
-            <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
-              <input
-                type="checkbox"
-                checked={on}
-                disabled={blocked}
-                onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
-              />
-              {opt.name}
-            </label>
-          );
-        })}
-        {sideDirection && noView && (
-          <NoViewDirection types={item.throwTypes} onChange={(throwTypes) => onUpdate({ throwTypes })} />
-        )}
-        {(common ? [] : REQUIRED_THROW_OPTIONS[apparatus]).map((opt) => {
-          const on = (item.reqTypes || []).includes(opt.id);
-          const blocked = opt.id === TWO_THROW_TAG && !on && useApparatusThrow;
-          return (
-            <label key={opt.id} className={blocked ? "check-req is-disabled" : "check-req"}>
-              <input
-                type="checkbox"
-                checked={on}
-                disabled={blocked}
-                onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
-              />
-              {opt.name}
-            </label>
-          );
-        })}
+        <TechStatusLine tech={tech} what="投げ" />
+        <ThrowChecks item={item} apparatus={apparatus} common={common} reqThrowCounts={reqThrowCounts} onUpdate={onUpdate} />
       </>
     );
   }
@@ -292,52 +453,18 @@ function ItemEditor({
     return (
       <>
         <div className="catch-tag">キャッチ</div>
-        {[...CATCH_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])].map((opt) => {
-          // 手具を使ったキャッチと手以外のキャッチは同時に実施できない
-          const blocked = catchOptionBlocked(opt.id, item.catchTypes);
-          return (
-            <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
-              <input
-                type="checkbox"
-                checked={(item.catchTypes || []).includes(opt.id)}
-                disabled={blocked}
-                onChange={(e) =>
-                  onUpdate({
-                    catchTypes: toggle(item.catchTypes, opt.id, e.target.checked),
-                    // 手以外のキャッチを外したら受け方も消す
-                    ...(opt.id === "nonhand" && !e.target.checked ? { nonHandKind: undefined } : {}),
-                  })
-                }
-              />
-              {opt.name}
-            </label>
-          );
-        })}
-        {!common && (
-          <NonHandKindSelect
-            apparatus={apparatus}
-            types={item.catchTypes}
-            value={item.nonHandKind}
-            onChange={(nonHandKind) => onUpdate({ nonHandKind })}
-          />
-        )}
-        {/* 2つ同時キャッチは二つ投げで2つとも空中にあるときだけ（すでに付いていれば外せるように残す） */}
-        {!common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) && (
-          <label className="check-req">
-            <input
-              type="checkbox"
-              checked={item.catchTwo || false}
-              onChange={(e) => onUpdate({ catchTwo: e.target.checked })}
-            />
-            2つ同時キャッチ
-          </label>
-        )}
+        <TechStatusLine tech={tech} what="受け" />
+        <CatchChecks
+          item={item}
+          apparatus={apparatus}
+          common={common}
+          catchTwoAllowed={catchTwoAllowed}
+          onUpdate={onUpdate}
+        />
       </>
     );
   }
   if (item.kind === "skill") {
-    // 技の最中の投げでも二つ投げは実施できる（手具を使った投げとは排他）
-    const skillTwoThrow = (item.reqTypes || []).includes(TWO_THROW_TAG);
     const params = parseTwistSkillId(item.skillId);
     // 後ろ向きで終わった後は後方系しか出さない（初期値もそれに合わせる）
     const fallbackTwist = flow.forward ? DEFAULT_TWIST_FORWARD : DEFAULT_TWIST;
@@ -483,97 +610,27 @@ function ItemEditor({
           />
           この技の最中に受け
         </label>
-        {/* 受け方の種類はキャッチアイテムと同じ（点数の扱いも同じ） */}
-        {item.isCatch &&
-          [
-            ...CATCH_OPTIONS_COMMON,
-            ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : []),
-          ].map((opt) => {
-            const blocked = catchOptionBlocked(opt.id, item.catchTypes);
-            return (
-              <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
-                <input
-                  type="checkbox"
-                  checked={(item.catchTypes || []).includes(opt.id)}
-                  disabled={blocked}
-                  onChange={(e) =>
-                    onUpdate({
-                      catchTypes: toggle(item.catchTypes, opt.id, e.target.checked),
-                      ...(opt.id === "nonhand" && !e.target.checked ? { nonHandKind: undefined } : {}),
-                    })
-                  }
-                />
-                {opt.name}
-              </label>
-            );
-          })}
-        {item.isCatch && !common && (
-          <NonHandKindSelect
+        {/* 受け方・投げ方の種類はキャッチアイテム・投げアイテムと同じ（点数の扱いも同じ） */}
+        {item.isCatch && (
+          <CatchChecks
+            item={item}
             apparatus={apparatus}
-            types={item.catchTypes}
-            value={item.nonHandKind}
-            onChange={(nonHandKind) => onUpdate({ nonHandKind })}
+            common={common}
+            catchTwoAllowed={catchTwoAllowed}
+            onUpdate={onUpdate}
           />
         )}
-        {item.isCatch && !common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) && (
-          <label className="check-req">
-            <input
-              type="checkbox"
-              checked={item.catchTwo || false}
-              onChange={(e) => onUpdate({ catchTwo: e.target.checked })}
-            />
-            2つ同時キャッチ
-          </label>
+        {item.isThrow && (
+          <ThrowChecks
+            item={item}
+            apparatus={apparatus}
+            common={common}
+            inSkill
+            reqThrowCounts={reqThrowCounts}
+            onUpdate={onUpdate}
+          />
         )}
-        {item.isThrow &&
-          [
-            ...SKILL_THROW_OPTIONS_COMMON,
-            ...(!common && canUseSideThrow(apparatus) && !(item.throwTypes || []).includes(NO_VIEW_TAG)
-              ? THROW_OPTIONS_SIDE
-              : []),
-            ...(!common && canUseNoRotation(apparatus) ? THROW_OPTIONS_NO_ROTATION : []),
-            ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
-          ].map(
-            (opt) => {
-              const on = (item.throwTypes || []).includes(opt.id);
-              // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
-              const blocked = opt.id === USE_APPARATUS_TAG && !on && skillTwoThrow;
-              return (
-                <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    disabled={blocked}
-                    onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
-                  />
-                  {opt.name}
-                </label>
-              );
-            },
-          )}
-        {item.isThrow && !common && canUseSideThrow(apparatus) && (item.throwTypes || []).includes(NO_VIEW_TAG) && (
-          <NoViewDirection types={item.throwTypes} onChange={(throwTypes) => onUpdate({ throwTypes })} />
-        )}
-        {/* 技の最中の投げでも二つ投げ（両方を投げる）は実施できる */}
-        {item.isThrow &&
-          !common &&
-          REQUIRED_THROW_OPTIONS[apparatus]
-            .filter((opt) => opt.id === TWO_THROW_TAG)
-            .map((opt) => {
-              const on = (item.reqTypes || []).includes(opt.id);
-              const blocked = !on && (item.throwTypes || []).includes(USE_APPARATUS_TAG);
-              return (
-                <label key={opt.id} className={blocked ? "check-req is-disabled" : "check-req"}>
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    disabled={blocked}
-                    onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
-                  />
-                  {opt.name}
-                </label>
-              );
-            })}
+        {(item.isThrow || item.isCatch) && <TechStatusLine tech={tech} what={item.isThrow ? "投げ" : "受け"} />}
           </>
         )}
       </>
@@ -653,6 +710,16 @@ function ItemEditor({
           ))}
         </select>
       )}
+      {/* 二つ投げの間の徒手：4動作以上で二つ投げ4動作加点（§3.5.5.5(2)⑦） */}
+      {/* すでに4動作以上なら満たしているので出さない */}
+      {twoThrowMotionTotal !== null && twoThrowMotionTotal < 4 && (
+        <div
+          className="tech-status"
+          title="二つ投げで投げてから受けるまでに徒手を4動作以上すると +0.1（同じ内容は演技全体で1回だけ）"
+        >
+          4動作以上で加点（二つ投げの間 {twoThrowMotionTotal}動作）
+        </div>
+      )}
     </>
   );
 }
@@ -679,6 +746,7 @@ export function SeriesCard({
   junior,
   future = null,
   analysis: a,
+  reqThrowCounts = {},
   unitAdopted,
   breakdown: b,
   isDup,
@@ -711,6 +779,8 @@ export function SeriesCard({
   const handsEmpty = handsEmptyFlags(ser.items, apparatus);
   // 2つ同時キャッチは「2つとも空中にある（＝二つ投げの間）」ときだけ入力できる
   const catchTwoAllowed = catchTwoFlags(ser.items, apparatus);
+  // 二つ投げで投げてから受けるまでの徒手には「4動作以上で加点」と、その間の動作数を出す
+  const twoThrowMotions = twoThrowMotionTotals(ser.items, junior, future);
   // タンブリング技の入力パターン（一覧／手動入力）。既定は一覧で、
   // ボタンで切り替えたブロックだけを覚えておく（キーはアイテムの位置）。
   const [twistModes, setTwistModes] = useState<Record<number, boolean>>({});
@@ -909,6 +979,9 @@ export function SeriesCard({
               prevMotionId={prevMotionId(ser.items, iIdx)}
               handsEmpty={handsEmpty[iIdx]}
               catchTwoAllowed={catchTwoAllowed[iIdx]}
+              tech={b.techItems[iIdx]}
+              reqThrowCounts={reqThrowCounts}
+              twoThrowMotionTotal={twoThrowMotions[iIdx]}
               onUpdate={(patch) => updateItemAt(iIdx, patch)}
             />
             {/* 技の両端：隣の技と入れ替える矢印（中央は削除） */}

@@ -18,6 +18,7 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
     violationChecks,
     violationDeduction,
     artDeduction,
+    artCapExcess,
     artRows,
     connectNoApparatus,
     tumblingScore,
@@ -215,7 +216,7 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
         </div>
         <div
           className="total-row"
-          title="投げ方・受け方それぞれ3種類必要（通常・左手投げ／二つ投げ・視野外・手以外・手具を使った・その他など）。1種類不足につき −0.1、合計の上限0.5。「その他」は別の種類として数える"
+          title="投げ方・受け方それぞれ3種類必要（通常・視野外・手以外・手具を使った・横投げ・無回転・技の最中の投げなど。チェックの組み合わせ全体で1種類。左手投げ・二つ投げは種類に数えない）。1種類不足につき −0.1、合計の上限0.5"
         >
           <span>
             投げ方・受け方の種類不足減点（投げ{throwKindCount}/3・受け{catchKindCount}/3｜上限0.5）
@@ -277,6 +278,12 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
           </span>
           <span>-{artDeduction.toFixed(1)} 点</span>
         </div>
+        {artCapExcess > 0 && (
+          <div className="total-row" title="徒手系の多様性（深い運動・柔軟）とさまざまな操作（手具操作の多様性）は、自動判定ぶんと手入力ぶんを合わせて欠点テーブルの項目上限1.00で頭打ちにする">
+            <span>欠点テーブルの項目上限（各1.00）を超えた分</span>
+            <span>+{artCapExcess.toFixed(1)} 点</span>
+          </div>
+        )}
         <div className="subtotal-row">
           <span>A 残点（10 − {aDeduction.toFixed(1)}）</span>
           <span>{aScore.toFixed(1)} 点</span>

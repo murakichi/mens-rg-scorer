@@ -17,6 +17,7 @@ import {
   clampArtDeduction,
   normalizeFutureLevel,
   ropeJumpTimes,
+  ropeJumpShapeDef,
 } from "./constants";
 import { initialTeamState, normalizeTeamState, type TeamState } from "./team";
 import type { ApparatusKey, FutureLevel, Item, RopeJumpItem, Series } from "./types";
@@ -94,6 +95,8 @@ const normalizeRopeJumpItem = (x: unknown): RopeJumpItem[] => {
   if (o.cross === true) item.cross = true;
   if (o.isMoving6m === true) item.isMoving6m = true;
   if (o.count !== undefined) item.count = ropeJumpTimes(Number(o.count));
+  if (typeof o.shape === "string" && ropeJumpShapeDef(o.shape)) item.shape = o.shape;
+  if (o.spinTwice === true) item.spinTwice = true;
   return [item];
 };
 

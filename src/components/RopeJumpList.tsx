@@ -1,8 +1,8 @@
 import { Plus, X } from "lucide-react";
 import {
   ROPE_JUMPS,
+  ROPE_JUMP_SHAPES,
   resolveRopeJump,
-  ropeJumpDifficulty,
   ropeJumpHasCross,
   ropeJumpTimes,
 } from "../scoring/constants";
@@ -89,6 +89,33 @@ export function RopeJumpList({ series, rows, onChange }: Props) {
                     クロス
                   </label>
                 )}
+                {r && r.def.rotations === 3 && (
+                  // 体の形（3重跳びを3回続けて形がすべて違えば §3.5.5.5(4)② の加点）
+                  <select
+                    className="select"
+                    value={item.shape ?? ""}
+                    aria-label="体の形"
+                    title="3重跳びを3回続けて、体の形や跳び方（クロスも含む）がすべて違えば加点（様々な跳び②）"
+                    onChange={(e) => edit({ shape: e.target.value || undefined })}
+                  >
+                    <option value="">体の形：ふつう</option>
+                    {ROPE_JUMP_SHAPES.map((sh) => (
+                      <option key={sh.id} value={sh.id}>
+                        {sh.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {r && r.def.rotations >= 2 && (
+                  <label className="check" title="その場で跳びながら体が2回転すれば加点（様々な跳び③）">
+                    <input
+                      type="checkbox"
+                      checked={item.spinTwice || false}
+                      onChange={(e) => edit({ spinTwice: e.target.checked || undefined })}
+                    />
+                    体が2回転
+                  </label>
+                )}
                 <label className="check">
                   <input
                     type="checkbox"
@@ -97,9 +124,12 @@ export function RopeJumpList({ series, rows, onChange }: Props) {
                   />
                   6m以上移動
                 </label>
-                {r && count > 0 && row && (
+                {r && count > 0 && row && row.runHead !== undefined && (
+                  <span className="check-note">前の3重跳びと連続（まとめて評価）</span>
+                )}
+                {r && count > 0 && row && row.runHead === undefined && (
                   <span className={row.inTop ? "check-ok" : "check-ng"}>
-                    難度{ropeJumpDifficulty(r)}
+                    {row.label.startsWith("3重跳びの連続") ? `${row.label}：` : ""}難度{row.difficulty}
                     {row.inTop
                       ? `（+${row.score.toFixed(1)}）`
                       : row.duplicate
@@ -138,6 +168,8 @@ export function RopeJumpList({ series, rows, onChange }: Props) {
         （投げ受けの徒手と合わせて上位3つ。同じ跳びは何度実施しても1回だけ）。
         6m以上移動・その場の前回し／後ろ回しの連続は、<b>同じ跳びシリーズの中で</b>隣り合う跳びの回数の合計で
         判定します（シリーズが分かれていれば別々の実施で、つながりません）。
+        <b>様々な跳びの加点</b>（最大0.10）は、①6m以上移動の連続跳びに2重跳び以上が3回、
+        ②3重跳びを3回続けて体の形・跳び方（クロスを含む）がすべて違う、③その場で2重跳び以上をしながら体が2回転、のどれかで付きます。
       </p>
     </section>
   );

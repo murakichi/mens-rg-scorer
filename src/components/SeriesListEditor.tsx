@@ -1,6 +1,6 @@
 import { Plus } from "lucide-react";
 import { SeriesCard } from "./SeriesCard";
-import { needsRoundoffBefore, roundoffItem } from "../scoring/analysis";
+import { needsRoundoffBefore, requiredThrowCounts, roundoffItem } from "../scoring/analysis";
 import { autoInputSuggestions } from "../scoring/autoInput";
 import { duplicateSeriesAt } from "./seriesEdit";
 import { computeScore } from "../scoring/score";
@@ -83,6 +83,8 @@ export function SeriesListEditor({
   noApparatus = false,
 }: Props) {
   const score = result ?? computeScore(series, apparatus, { junior, future });
+  // 必須投げ（左手投げ・二つ投げ）を演技全体で何回実施したか。満たしていれば他の投げでは「必須」と出さない
+  const reqThrowCounts = requiredThrowCounts(series);
 
   const edit = (fn: (draft: Series[]) => void) => {
     const n = structuredClone(series);
@@ -140,6 +142,7 @@ export function SeriesListEditor({
           junior={junior}
           future={future}
           analysis={score.analysis[sIdx]}
+          reqThrowCounts={reqThrowCounts}
           unitAdopted={score.unitAdopted[sIdx]}
           breakdown={score.seriesBreakdowns[sIdx]}
           isDup={score.dupFlags[sIdx]}

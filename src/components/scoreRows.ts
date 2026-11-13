@@ -48,13 +48,17 @@ export function aRows(r: ScoreResult): ScoreRow[] {
       label: `投げ方・受け方の種類不足（投げ${r.throwKindCount}/3・受け${r.catchKindCount}/3）`,
       value: r.varietyDeduction,
     },
-    { label: "必須要素の欠如（投げタン・つなぎ技・タンブリング本数）", value: r.missingElementDeduction },
+    { label: "必須要素の欠如（つなぎ技・タンブリング本数）", value: r.missingElementDeduction },
     { label: "深い徒手動作の不足", value: r.deepMotionDeduction },
     { label: "柔軟の徒手の不足", value: r.flexDeduction },
     { label: "手具操作の不足", value: r.handOpDeduction },
     { label: "手具別必須要素の欠如（§3.2）", value: r.apparatusElementDeduction },
     { label: "違反・欠如（§3.5.6.3）", value: r.violationDeduction },
-    { label: "芸術と多様性の欠点（§3.5.6.4）", value: r.artDeduction },
+    {
+      // 自動判定（深い運動・柔軟・手具操作）と合わせて項目上限を超えた分は戻す
+      label: r.artCapExcess > 0 ? "芸術と多様性の欠点（§3.5.6.4／項目上限を超えた分を除く）" : "芸術と多様性の欠点（§3.5.6.4）",
+      value: Math.round((r.artDeduction - r.artCapExcess) * 100) / 100,
+    },
   ];
   const listed = rows.reduce((n, row) => n + row.value, 0);
   const other = Math.max(0, Math.round((r.aDeduction - listed) * 10) / 10);
