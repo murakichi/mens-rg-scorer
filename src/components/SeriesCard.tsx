@@ -146,7 +146,7 @@ function toggle(list: string[] | undefined, id: string, checked: boolean): strin
 
 /**
  * 投げ方・受け方のチェックが技術加点になるかの目印（§3.5.5.5(2)）。
- * 加点になるもの（視野外・手以外・手具を使った）は +0.1、横投げ・無回転は加点なしで種類だけ、
+ * 加点になるもの（視野外・手以外・手具を使った）は「加点」、横投げ・無回転は加点なしで種類だけ、
  * 必須投げ（左手投げ・二つ投げ）は必須要素の判定だけで、どちらでもない。
  */
 function OptionBadge({ id, required }: { id?: string; required?: boolean }) {
@@ -158,8 +158,8 @@ function OptionBadge({ id, required }: { id?: string; required?: boolean }) {
     );
   if (!id) return null;
   return techOptionKind(id) === "bonus" ? (
-    <span className="opt-badge is-bonus" title="技術加点 +0.1（同じ投げ方・受け方は演技全体で1回だけ）">
-      +0.1
+    <span className="opt-badge is-bonus" title="技術加点（1つにつき +0.1。同じ投げ方・受け方は演技全体で1回だけ）">
+      加点
     </span>
   ) : (
     <span className="opt-badge is-kind" title="技術加点にはならない。投げ方の種類としては別に数える">
