@@ -16,6 +16,8 @@ import {
   TECHNIQUE_BONUS,
   APPARATUS_OP_BONUS,
   resolveRopeJump,
+  ROPE_JUMPS,
+  ropeJumpShapeDef,
   ropeJumpDifficulty,
   ropeJumpKey,
   TWOTHROW_MOTION_BONUS,
@@ -61,6 +63,7 @@ import {
   soloHandElementScored,
   countsAsFlex,
   FLEX_ELEMENT_DEDUCTION,
+  APPARATUS_USE,
 } from "./constants";
 import {
   analyzeSeries,
@@ -77,8 +80,11 @@ import {
   type TumblingVariety,
   type TumblingOperation,
   hoistRopeJumps,
+  thrownCount,
+  caughtCount,
+  isCatchItem,
 } from "./analysis";
-import type { ApparatusKey, Difficulty, FutureLevel, RopeJumpItem, Series, SeriesAnalysis, Unit } from "./types";
+import type { ApparatusKey, Difficulty, FutureLevel, Item, RopeJumpItem, Series, SeriesAnalysis, Unit } from "./types";
 
 /** シリーズ内のユニット1つ分の難度点の内訳（表示用） */
 export interface DiffRow {
@@ -129,6 +135,11 @@ export interface RopeJumpRow {
   adopted: boolean;
   /** 上位3つに入って徒手系難度点に数えたか */
   inTop: boolean;
+  /**
+   * 隣り合う3重跳びをまとめた連続の2つ目以降なら、まとめ役（連続の先頭）の `index`。
+   * この行は単独では難度に数えず、先頭の行が連続全体（回数の合計）で評価される。
+   */
+  runHead?: number;
 }
 
 export interface HandElementRow {
@@ -212,6 +223,14 @@ export interface ScoreResult {
   violationDeduction: number;
   /** §3.5.6.4 欠点テーブルの合計減点 */
   artDeduction: number;
+  /**
+   * 欠点テーブルの項目のうち、自動判定の減点が同じ項目に属するもの（§3.5.6.4 と §7.4.1 の整合）。
+   * 「徒手系の種類・組み合わせの多様性」＝深い運動＋柔軟、「さまざまな操作」＝手具操作の多様性チェック（身体を離れる操作を含む）。
+   * 手入力ぶんと自動判定ぶんを合わせて項目の上限（各1.00）で頭打ちにする。
+   */
+  artItemTotals: { id: string; name: string; manual: number; auto: number; total: number; max: number }[];
+  /** 上の頭打ちで A減点から戻した量（自動判定と手入力の合計が項目の上限を超えた分） */
+  artCapExcess: number;
   /** 欠点テーブルの内訳（入力があった項目だけでなく全項目を返す） */
   artRows: { id: string; name: string; group: string; max: number; note: string; value: number }[];
   /**
@@ -245,8 +264,6 @@ export interface ScoreResult {
   throwKindCount: number;
   catchKindCount: number;
   /** その他の投げ・その他のキャッチの回数（種類数に足されている分。重複シリーズでも数える） */
-  throwOtherCount: number;
-  catchOtherCount: number;
   varietyDeduction: number;
   /** 必須要素チェックのうち投げタン・つなぎ技・タンブリング本数の欠如（各 −0.30） */
   missingElementDeduction: number;
@@ -301,15 +318,56 @@ export interface ComputeOptions {
 
 /**
  * 1回の投げ・受けの種類。チェックした組み合わせ全体で1種類とし、被りは組み合わせが同じかで見る
- * （横投げ＋手具を使った投げ と 横投げだけ は別の投げ方）。「その他」は別カウントなので含めない。
- * 右手・左手・二つ投げ（必須投げ・`reqTypes`）は種類に影響しない。
- * チェックが無ければ `plain`、「その他」だけなら種類なし。
+ * （横投げ＋手具を使った投げ と 横投げだけ は別の投げ方）。
+ * 右手・左手・二つ投げ（必須投げ・`reqTypes`）は種類に影響しない。チェックが無ければ `plain`。
  */
-const kindKey = (types: string[], plain = "normal"): string | undefined => {
-  const parts = [...new Set(types.filter((t) => t !== "other"))].sort();
-  if (parts.length > 0) return parts.join("+");
-  return types.length === 0 ? plain : undefined;
+const kindKey = (types: string[], plain = "normal"): string => {
+  const parts = [...new Set(types)].sort();
+  return parts.length > 0 ? parts.join("+") : plain;
 };
+
+/** 投げ上げか（技の最中の投げを含む） */
+const isThrowAt = (item: Item | undefined): boolean =>
+  !!item && (item.kind === "throw" || (item.kind === "skill" && !!item.isThrow));
+
+/**
+ * §3.5.5.5(1) 難易度の高い連続した投げ受けの「つながった投げ受け」を、属するユニットの添字の組で返す。
+ *  - ② 受けると同時に次の投げ（全手具）：キャッチの**直後**（間に何も挟まない）に次の投げがある →
+ *    そのキャッチのユニットと次の投げのユニット
+ *  - ① 次々に投げる（リング・クラブ）：手具が空中にあるうちに次を投げる → 1つ目を投げてから
+ *    空中の手具が無くなるまでに通ったユニットすべて
+ * 二つ投げ（1回の投げで2つ）だけでは「次々に」にならない。
+ */
+export function linkedThrowSpans(items: Item[], unitOfItem: number[], apparatus: ApparatusKey): number[][] {
+  const spans: number[][] = [];
+  const unitAt = (k: number) => unitOfItem[k] ?? -1;
+  items.forEach((item, k) => {
+    if (isCatchItem(item) && isThrowAt(items[k + 1])) spans.push([unitAt(k), unitAt(k + 1)]);
+  });
+  if (APPARATUS_USE[apparatus]) {
+    let inAir = 0;
+    let span: number[] | null = null;
+    let start: number[] = [];
+    items.forEach((item, k) => {
+      if (span || inAir > 0) (span ?? start).push(unitAt(k));
+      if (isThrowAt(item)) {
+        if (inAir > 0 && !span) span = [...start];
+        if (inAir === 0) start = [unitAt(k)];
+        inAir += thrownCount(item);
+      }
+      if (isCatchItem(item)) {
+        inAir = Math.max(0, inAir - caughtCount(item));
+        if (inAir === 0) {
+          if (span) spans.push(span);
+          span = null;
+          start = [];
+        }
+      }
+    });
+    if (span) spans.push(span);
+  }
+  return spans.map((s) => [...new Set(s.filter((u) => u >= 0))]);
+}
 
 export function computeScore(
   rawSeries: Series[],
@@ -355,11 +413,13 @@ export function computeScore(
   // ---- 投げ上げの上限（ジュニアのみ）----
   // 上限を超えた6回目以降の投げは、要素・難度ともにカウントしない。
   // 実施回数そのものは超過分の減点に使うため別に数える。
+  // 重複シリーズ（全く同じシリーズの2本目）の投げも実施した投げなので、回数には数える
+  // （難度・加点には数えないのは従来どおり）。
   const overLimitUnit = (() => {
     let n = 0;
-    return analysis.map((a, i) =>
+    return analysis.map((a) =>
       a.units.map((u) => {
-        if (dupFlags[i] || u.throwCount === 0) return false;
+        if (u.throwCount === 0) return false;
         const over = maxThrowCount !== null && n >= maxThrowCount;
         n += u.throwCount;
         return over;
@@ -369,10 +429,10 @@ export function computeScore(
   // アイテム単位（多様性・技術加点・必須投げの判定用）。投げと同じ順序で数える。
   const overLimitItem = (() => {
     let n = 0;
-    return series.map((ser, i) =>
+    return series.map((ser) =>
       ser.items.map((item) => {
         const isThrowItem = item.kind === "throw" || (item.kind === "skill" && !!item.isThrow);
-        if (!isThrowItem || dupFlags[i]) return false;
+        if (!isThrowItem) return false;
         const over = maxThrowCount !== null && n >= maxThrowCount;
         n += 1;
         return over;
@@ -393,7 +453,8 @@ export function computeScore(
   });
 
   // 実施した投げ回数（上限超過分も含む。減点の算出に使う）
-  const performedThrowCount = analysis.reduce((s, a, i) => s + (dupFlags[i] ? 0 : a.throwCount), 0);
+  // 重複シリーズの投げも実施した投げとして数える
+  const performedThrowCount = analysis.reduce((s, a) => s + a.throwCount, 0);
 
   // ---- 難度点に採用するユニットをシリーズ順に確定する ----
   // 重複シリーズは全除外。演技全体で同じ内容の難度は1回しか数えない（§3.4.4）。
@@ -464,9 +525,57 @@ export function computeScore(
   // ---- ロープの跳び（構成全体のリスト）----
   // 跳び1つごとに §3.5.5.3 の表から難度を引く。回数0の跳びは数えず、同じ跳びは1回だけ数える（§3.4.4）。
   const seenJumpKeys = new Set<string>();
+  // 同じ跳びシリーズで隣り合う3重跳びは1つの連続として評価する（「3重とび2回」「3回以上の連続した3重跳び」）。
+  // 形を変えて跳んだ3重跳び（様々な跳び②）を1行ずつ入れても、連続の難度は失われない。回数0の跳びは並びを切らない。
+  const tripleRuns = ropeJumps.map((jumps) => {
+    const headOf: number[] = jumps.map(() => -1);
+    const totals = new Map<number, { count: number; allBack: boolean }>();
+    let head = -1;
+    jumps.forEach((item, index) => {
+      const r = resolveRopeJump(item);
+      if (!r || r.count === 0) return;
+      if (r.def.rotations !== 3) {
+        head = -1;
+        return;
+      }
+      if (head < 0) head = index;
+      headOf[index] = head;
+      const t = totals.get(head) ?? { count: 0, allBack: true };
+      totals.set(head, { count: t.count + r.count, allBack: t.allBack && r.def.direction === "back" });
+    });
+    return { headOf, totals };
+  });
   const ropeJumpRows: RopeJumpRow[] = ropeJumps.flatMap((jumps, group) => jumps.flatMap((item, index) => {
-    const r = resolveRopeJump(item);
-    if (!r) return [];
+    const resolved = resolveRopeJump(item);
+    if (!resolved) return [];
+    const run = tripleRuns[group];
+    const head = run.headOf[index];
+    const members = head >= 0 ? run.headOf.filter((h) => h === head).length : 1;
+    // 連続の2つ目以降：先頭の行にまとめるので、ここでは数えない
+    if (head >= 0 && head !== index && members > 1)
+      return [
+        {
+          group,
+          index,
+          name: resolved.def.name,
+          label: `${resolved.def.name}（前の3重跳びと連続）`,
+          difficulty: ropeJumpDifficulty(resolved),
+          score: 0,
+          duplicate: false,
+          adopted: false,
+          inTop: false,
+          runHead: head,
+        },
+      ];
+    // 連続の先頭：回数を連続全体の合計にして評価する（前後が混じる「2回」は前回し側で見る）
+    const total = head >= 0 && members > 1 ? run.totals.get(head)! : null;
+    const r = total
+      ? {
+          ...resolved,
+          def: total.allBack ? resolved.def : (ROPE_JUMPS.find((j) => j.rotations === 3 && j.direction === "front") ?? resolved.def),
+          count: total.count,
+        }
+      : resolved;
     const key = ropeJumpKey(r);
     const counted = r.count > 0;
     const duplicate = counted && seenJumpKeys.has(key);
@@ -477,7 +586,9 @@ export function computeScore(
         group,
         index,
         name: r.def.name,
-        label: `${r.def.name}${r.cross ? "・クロス" : ""}${r.count > 1 ? `×${r.count}` : ""}`,
+        label: total
+          ? `3重跳びの連続×${r.count}`
+          : `${r.def.name}${r.cross ? "・クロス" : ""}${r.count > 1 ? `×${r.count}` : ""}`,
         difficulty: diff,
         score: DIFF_SCORE[diff],
         duplicate,
@@ -513,6 +624,24 @@ export function computeScore(
   const inTop = new Set<Unit>([...topTumbling, ...topHand]);
   const unitInTop = analysis.map((a) => a.units.map((u) => inTop.has(u)));
 
+  // ---- 技術加点・二つ投げ4動作加点の重複判定（§3.5.5.5(2)「同じ技は重複して数えない」）----
+  // ①〜⑦すべてに掛かる但し書き。演技全体で全く同じ投げ方・受け方は最初の1回だけ加点する。
+  // 視野外の投げ・手具を使った投げ自体は何回やってもよく、ダメなのは姿勢まで全く同じもの。
+  // 「全く同じ」は投げ／受けの技術タグに加え、加点にならない横投げ・無回転・手以外の受け方の種類、
+  // 技の最中ならその技まで含めて判定する。
+  // 右手・左手・両手の違いは投げ方の種類とみなさない：左手投げも二つ投げ（両手投げ）も、
+  // その受けの2つ同時キャッチもキーに入れない（必須要素の判定にだけ使う）。
+  // 「重複ではない」と宣言されたシリーズは、難度と同じく他シリーズとキーを共有しない。
+  const techSeen = new Set<string>();
+  const twoMotSeen = new Set<string>();
+  const sortedJoin = (xs: string[] | undefined) => [...(xs || [])].sort().join(",");
+  const throwTechKey = (item: { throwTypes?: string[] }, skillId: string) =>
+    `T|${skillId}|${sortedJoin(item.throwTypes)}`;
+  const catchTechKey = (item: { catchTypes?: string[]; nonHandKind?: string }, skillId: string) => {
+    const kind = (item.catchTypes || []).includes("nonhand") ? item.nonHandKind || "" : "";
+    return `C|${skillId}|${sortedJoin(item.catchTypes)}|${kind}`;
+  };
+
   // ---- 各シリーズ内訳（先に算出し、総和系グローバル値はこれを再利用）----
   const seriesBreakdowns: SeriesBreakdown[] = series.map((ser, i) => {
     const a = analysis[i];
@@ -547,25 +676,44 @@ export function computeScore(
     const handDiff = handRows.reduce((s, r) => s + (r.adopted && r.inTop ? r.score : 0), 0);
     // 上限超過（ジュニアの6回目以降）の投げは加点にも数えない
     const countedThrows = a.units.reduce((n, u, j) => n + (overLimitUnit[i][j] ? 0 : u.throwCount), 0);
+    // §3.5.5.5(1)：つながった投げ受け（受けると同時に次の投げ／リング・クラブで次々に投げる）の中に
+    // D難度以上の投げ受けがあるときだけ。同じシリーズに投げが2回あるだけでは加点しない
     const sBonus =
       !isDup &&
       countedThrows >= 2 &&
-      a.units.some((u, j) => !overLimitUnit[i][j] && u.type === "throw" && u.hasDPlus)
+      linkedThrowSpans(ser.items, a.unitOfItem ?? [], apparatus).some((span) =>
+        span.some((j) => {
+          const u = a.units[j];
+          if (!u || overLimitUnit[i][j] || u.type !== "throw") return false;
+          // ①で2つ目が空中にある間の徒手（投げを含まないユニット）は、その難度で見る
+          return u.hasDPlus || (!u.isThrow && DIFF_VALUE[u.finalDiff] >= DIFF_VALUE.D);
+        }),
+      )
         ? SERIES_BONUS
         : 0;
 
     let techCount = 0;
+    const techScope = ser.notDuplicate ? `${i}#` : "";
     if (!isDup) {
       ser.items.forEach((item, j) => {
         if (itemOver[i][j]) return; // 上限超過の投げ受けは加点も数えない
         // 横投げ・無回転は投げ方の種類として数えるだけで、技術加点にはしない
         const bonusThrowTypes = (item: { throwTypes?: string[] }) =>
           (item.throwTypes || []).filter((t) => t !== SIDE_THROW_TAG && t !== NO_ROTATION_TAG).length;
-        if (item.kind === "throw") techCount += bonusThrowTypes(item);
-        else if (item.kind === "catch") techCount += (item.catchTypes || []).length;
-        else if (item.kind === "skill" && item.isThrow) techCount += bonusThrowTypes(item);
+        // 同じ投げ方・受け方は演技全体で1回だけ（§3.5.5.5(2) の但し書き）
+        const once = (key: string, n: number) => {
+          if (n <= 0) return;
+          const k = techScope + key;
+          if (techSeen.has(k)) return;
+          techSeen.add(k);
+          techCount += n;
+        };
+        if (item.kind === "throw") once(throwTechKey(item, ""), bonusThrowTypes(item));
+        else if (item.kind === "catch") once(catchTechKey(item, ""), (item.catchTypes || []).length);
+        else if (item.kind === "skill" && item.isThrow) once(throwTechKey(item, item.skillId), bonusThrowTypes(item));
         // 技の最中の受けもキャッチと同じく技術加点に数える
-        else if (item.kind === "skill" && item.isCatch) techCount += (item.catchTypes || []).length;
+        else if (item.kind === "skill" && item.isCatch)
+          once(catchTechKey(item, item.skillId), (item.catchTypes || []).length);
       });
     }
     const tech = techCount * TECHNIQUE_BONUS;
@@ -594,13 +742,20 @@ export function computeScore(
       let inTwo = false;
       let motSum = 0;
       let added = false;
+      // 二つ投げの間の徒手の内容（種類→回数、順不同）。同じ内容は演技全体で1回だけ加点する（⑦の但し書き）
+      let motKeys = new Map<string, number>();
       const fin = () => {
         if (inTwo && motSum >= 4 && !added) {
-          twoMot += TWOTHROW_MOTION_BONUS;
+          const key = (ser.notDuplicate ? `${i}#` : "") + [...motKeys].map(([k, n]) => `${k}:${n}`).sort().join(",");
+          if (!twoMotSeen.has(key)) {
+            twoMotSeen.add(key);
+            twoMot += TWOTHROW_MOTION_BONUS;
+          }
           added = true;
         }
         inTwo = false;
         motSum = 0;
+        motKeys = new Map();
         added = false;
       };
       ser.items.forEach((item, j) => {
@@ -612,7 +767,12 @@ export function computeScore(
           fin();
         } else if (item.kind === "motion" && inTwo) {
           const m = motionDef(item.motionId, junior);
-          if (m) motSum += m.motions * motionTimes(item.count);
+          if (m) {
+            const times = motionTimes(item.count);
+            motSum += m.motions * times;
+            const mk = `${item.motionId}:${item.hands ? item.handsType || "h" : ""}`;
+            if (times > 0) motKeys.set(mk, (motKeys.get(mk) || 0) + times);
+          }
         }
       });
       fin();
@@ -663,10 +823,10 @@ export function computeScore(
   const apparatusOpBonus = seriesBreakdowns.some((b) => b.appOp > 0) ? APPARATUS_OP_BONUS : 0;
   const twoThrowMotionBonus = seriesBreakdowns.reduce((s, b) => s + b.twoMot, 0);
 
-  // 要素として数える投げ回数（ジュニアの上限超過分は含めない）
+  // 要素として数える投げ回数（ジュニアの上限超過分は含めない）。
+  // 全く同じシリーズの2本目（重複シリーズ）も投げ回数には数える
   const totalThrowCount = analysis.reduce(
-    (s, a, i) =>
-      s + (dupFlags[i] ? 0 : a.units.reduce((t, u, j) => t + (overLimitUnit[i][j] ? 0 : u.throwCount), 0)),
+    (s, a, i) => s + a.units.reduce((t, u, j) => t + (overLimitUnit[i][j] ? 0 : u.throwCount), 0),
     0,
   );
 
@@ -705,40 +865,32 @@ export function computeScore(
   const saltoChainDeduction =
     maxChainAll >= 3 ? 0 : maxChainAll === 2 ? SALTO_CHAIN_2_DEDUCTION : SALTO_CHAIN_LOW_DEDUCTION;
 
-  // 投げ方・受け方の種類カウント（重複シリーズは「その他」以外を除外）
+  // 投げ方・受け方の種類カウント（重複シリーズは除外）
   const throwKinds = new Set<string>();
   const catchKinds = new Set<string>();
-  let throwOtherCount = 0;
-  let catchOtherCount = 0;
   series.forEach((ser, i) => {
     const isDup = dupFlags[i];
     ser.items.forEach((item, j) => {
       if (itemOver[i][j]) return; // 上限超過の投げ受けは種類にも数えない
       if (item.kind === "throw") {
-        const types = item.throwTypes || [];
-        if (types.includes("other")) throwOtherCount += 1;
         if (isDup) return;
         // 1回の投げは1種類（チェックの組み合わせ全体）として数える
-        const tk = kindKey(types);
-        if (tk) throwKinds.add(tk);
+        throwKinds.add(kindKey(item.throwTypes || []));
       } else if (item.kind === "skill" && item.isThrow) {
         const types = item.throwTypes || [];
         if (isDup) return;
         // 1回の投げは1種類（チェックの組み合わせ全体）。チェックが無ければ投げタン
-        const tk = kindKey(types, "tumthrow");
-        if (tk) throwKinds.add(tk);
+        throwKinds.add(kindKey(types, "tumthrow"));
       } else if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
-        const types = item.catchTypes || [];
-        if (types.includes("other")) catchOtherCount += 1;
         if (isDup) return;
-        // 1回の受けは1種類（チェックの組み合わせ全体）として数える
-        const ck = kindKey(types);
-        if (ck) catchKinds.add(ck);
+        // 1回の受けは1種類（チェックの組み合わせ全体）として数える。
+        // タンブリングの最中の受けは、最中の投げ（投げタン）と同じく別の1種類（チェックが無ければ「投げタン」の受け）
+        catchKinds.add(kindKey(item.catchTypes || [], item.kind === "skill" ? "tumcatch" : "normal"));
       }
     });
   });
-  const throwKindCount = throwKinds.size + throwOtherCount;
-  const catchKindCount = catchKinds.size + catchOtherCount;
+  const throwKindCount = throwKinds.size;
+  const catchKindCount = catchKinds.size;
   const throwShortage = Math.max(0, VARIETY_REQUIRED - throwKindCount);
   const catchShortage = Math.max(0, VARIETY_REQUIRED - catchKindCount);
   const varietyDeduction = Math.min(VARIETY_CAP, (throwShortage + catchShortage) * VARIETY_DEDUCTION_PER);
@@ -772,8 +924,9 @@ export function computeScore(
       key: "throwTum",
       label: "1本以上が投げタン",
       passed: hasThrowTumbling,
-      deduction: MISSING_ELEMENT_DEDUCTION,
-      tip: "投げ受けの間に転回系を実施する、または転回系の最中に投げる。1本あればよい（その転回系は難度が1ランク上がる）",
+      // 減点は §3.2 手具別必須要素「転回系の投げ受け」（−0.3）で1回だけ引く。ここでは引かない（二重計上しない）
+      deduction: 0,
+      tip: "投げ受けの間に転回系を実施する、または転回系の最中に投げる。1本あればよい（その転回系は難度が1ランク上がる）。不足の減点は手具別必須要素「転回系の投げ受け」の −0.3 で計上する",
     },
     {
       key: "triple",
@@ -824,12 +977,29 @@ export function computeScore(
     // 「連続」は同じ跳びシリーズの中で続けて並べた跳びで見る（シリーズが分かれていれば別々の実施）。
     // 回数入力があるので、1つの跳びに回数を入れても、種類の違う跳びを続けても数えられる。
     // 回数0の跳びは並びを切らずに数えない。
-    type Jump = { rotations: number; direction: "front" | "back"; moving: boolean; count: number };
+    type Jump = {
+      rotations: number;
+      direction: "front" | "back";
+      moving: boolean;
+      count: number;
+      /** 体の形と跳び方（クロス）の組。②の「形が違う」の判定に使う */
+      form: string;
+      spinTwice: boolean;
+    };
     const runs: Jump[][] = ropeJumps.map((jumps) =>
       jumps.flatMap((item) => {
         const r = resolveRopeJump(item);
         return r && r.count > 0
-          ? [{ rotations: r.def.rotations, direction: r.def.direction, moving: !!item.isMoving6m, count: r.count }]
+          ? [
+              {
+                rotations: r.def.rotations,
+                direction: r.def.direction,
+                moving: !!item.isMoving6m,
+                count: r.count,
+                form: `${ropeJumpShapeDef(item.shape)?.id ?? "plain"}:${r.cross ? "cross" : ""}`,
+                spinTwice: !!item.spinTwice,
+              },
+            ]
           : [];
       }),
     );
@@ -854,9 +1024,9 @@ export function computeScore(
     ropeAuto.ropeFront = longestRun((j) => !j.moving && j.direction === "front") >= 2;
     ropeAuto.ropeBack = longestRun((j) => !j.moving && j.direction === "back") >= 2;
 
-    // §3.5.5.5(4)① 6m以上移動の連続跳びに2重跳び（rotations≧2）が3回以上 → 加点
-    // ②③（跳びの形の多様性 / その場回転跳び2回転）は入力未対応のため今後対応。
-    // 3回以上続く6m移動の跳びの並びの中に、2重跳び以上が3回以上ある。
+    // §3.5.5.5(4) 様々な跳びに対する加点（①〜③のどれか、最大0.10）
+    // ① 6m以上移動の連続跳びに2重跳び（rotations≧2）が3回以上：
+    //    3回以上続く6m移動の跳びの並びの中に、2重跳び以上が3回以上ある。
     const movingRunHasDoubles = runs.some((run) => {
       let total = 0;
       let doubles = 0;
@@ -874,12 +1044,22 @@ export function computeScore(
       close();
       return hit;
     });
-    if (movingRunHasDoubles) jumpVarietyBonus = JUMP_VARIETY_BONUS;
+    // ② 3重跳びを3回続けた中で、各跳びの体の形・跳び方（伸身・抱え込み・開脚・屈伸・クロスなど）がすべて違う。
+    //    同じ跳びシリーズの中で3重跳びが途切れずに続く並びから、連続する3回を見る（回数は同じ形の繰り返し）。
+    const tripleFormsDiffer = runs.some((run) => {
+      const forms: (string | null)[] = run.flatMap((j) => Array<string | null>(j.count).fill(j.rotations === 3 ? j.form : null));
+      return forms.some((f, k) => k >= 2 && f !== null && forms[k - 1] !== null && forms[k - 2] !== null &&
+        new Set([f, forms[k - 1], forms[k - 2]]).size === 3);
+    });
+    // ③ その場での回転跳びで、2重跳び以上の間に体が2回転する
+    const spinDouble = allJumps.some((j) => j.spinTwice && !j.moving && j.rotations >= 2);
+    if (movingRunHasDoubles || tripleFormsDiffer || spinDouble) jumpVarietyBonus = JUMP_VARIETY_BONUS;
   }
 
   const missing = required.filter((r) => r.passed === false);
-  // 投げタン・つなぎ技・タンブリング本数の欠如（他の項目は固有の減点として既に計上している）
-  const missingElementKeys = ["throwTum", "connect", "tumCount"];
+  // つなぎ技・タンブリング本数の欠如（他の項目は固有の減点として既に計上している）。
+  // 投げタンの欠如は手具別必須要素「転回系の投げ受け」と同じ内容なので、そちらで1回だけ引く
+  const missingElementKeys = ["connect", "tumCount"];
   const missingElementDeduction =
     missing.filter((r) => missingElementKeys.includes(r.key)).length * MISSING_ELEMENT_DEDUCTION;
 
@@ -980,6 +1160,19 @@ export function computeScore(
     value: clampArtDeduction(item.id, artDeductions[item.id]),
   }));
   const artDeduction = artRows.reduce((s, r) => s + r.value, 0);
+  // 自動判定の減点は欠点テーブルの項目に属するので、手入力と合わせて項目の上限で頭打ちにする
+  const round1 = (v: number) => Math.round(v * 100) / 100;
+  const artAuto: Record<string, number> = {
+    handVariety: deepMotionDeduction + flexDeduction,
+    appVariety: handOpDeduction,
+  };
+  const artItemTotals = artRows
+    .filter((r) => r.id in artAuto)
+    .map((r) => {
+      const auto = round1(artAuto[r.id]);
+      return { id: r.id, name: r.name, manual: r.value, auto, total: round1(Math.min(r.max, r.value + auto)), max: r.max };
+    });
+  const artCapExcess = round1(artItemTotals.reduce((s, t) => s + (t.manual + t.auto - t.total), 0));
   // 転回系の多様性は自動で計算して返すだけ（A減点に入れるかは入力しだい）
   const tumVariety = tumblingVariety(series, junior);
   const tumOperation = tumblingOperation(series, apparatus);
@@ -997,8 +1190,11 @@ export function computeScore(
     flexDeduction +
     handOpDeduction +
     apparatusElementDeduction +
-    violationDeduction;
-  const aScore = Math.max(0, AE_FULL - aDeduction);
+    violationDeduction -
+    artCapExcess;
+  // 減点はすべて 0.05 刻み以上なので、浮動小数の誤差（9.9999…）を 0.01 で丸める
+  const aDeductionRounded = Math.round(aDeduction * 100) / 100;
+  const aScore = Math.max(0, AE_FULL - aDeductionRounded);
   const eScore = Math.max(0, AE_FULL - executionDeduction);
   const grandTotal = dScore + aScore + eScore;
 
@@ -1027,6 +1223,8 @@ export function computeScore(
     violationChecks,
     violationDeduction,
     artDeduction,
+    artItemTotals,
+    artCapExcess,
     artRows,
     tumVariety,
     tumOperation,
@@ -1045,8 +1243,6 @@ export function computeScore(
     saltoChainDeduction,
     throwKindCount,
     catchKindCount,
-    throwOtherCount,
-    catchOtherCount,
     varietyDeduction,
     missingElementDeduction,
     deepMotionChecks,
@@ -1057,7 +1253,7 @@ export function computeScore(
     handOpDeduction,
     offBodyCount: Math.max(0, Math.floor(Number(offBodyCount) || 0)),
     offBodyShort,
-    aDeduction,
+    aDeduction: aDeductionRounded,
     aScore,
     seriesExecutionDeduction,
     overallExecutionDeduction: overallExec,

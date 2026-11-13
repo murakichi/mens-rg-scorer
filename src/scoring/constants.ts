@@ -32,7 +32,6 @@ export const APPARATUS: Record<ApparatusKey, { name: string; throws: string[] }>
 export const THROW_OPTIONS_COMMON = [
   { id: "noview", name: "視野外の投げ" },
   { id: "nonhand", name: "手以外の投げ" },
-  { id: "other", name: "その他の投げ" },
 ];
 /** 「手具を使った投げ・キャッチ」の技術タグ（もう一方の手具を使うのでクラブ・リングだけ） */
 export const USE_APPARATUS_TAG = "useapp";
@@ -45,8 +44,12 @@ export const SKILL_THROW_OPTIONS_COMMON = [
 export const CATCH_OPTIONS_COMMON = [
   { id: "noview", name: "視野外のキャッチ" },
   { id: "nonhand", name: "手以外のキャッチ" },
-  { id: "other", name: "その他のキャッチ" },
 ];
+/**
+ * 削除した「その他の投げ／その他のキャッチ」のタグ。投げ方・受け方がほぼ網羅されたので入力から外した。
+ * 旧データに残っていても採点しない（`apparatusBlockers` / `stripForApparatus` が全手具で落とす）。
+ */
+export const LEGACY_OTHER_STYLE_TAG = "other";
 export const CATCH_OPTIONS_APPARATUS = [{ id: USE_APPARATUS_TAG, name: "手具を使ったキャッチ" }];
 
 /**
@@ -345,7 +348,7 @@ export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
     name: "徒手系の種類・組み合わせの多様性",
     max: 1.0,
     note: "0.1 / 0.2",
-    tip: "上半身・下半身の深い運動の不足は「基本徒手」カードで自動判定して別に引いている。ここはそれ以外の主観評価ぶん",
+    tip: "上半身・下半身の深い運動と柔軟の不足は「基本徒手」「徒手系要素」から自動判定して引いている。ここはそれ以外の主観評価ぶんで、自動判定ぶんと合わせてこの項目の上限1.00まで",
   },
   {
     id: "tumVariety",
@@ -361,7 +364,7 @@ export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
     name: "さまざまな操作",
     max: 1.0,
     note: "0.1 / 0.2",
-    tip: "投げ受けの種類の不足は「投げ方・受け方の種類不足」として自動で引いている（投げ方・受け方それぞれ3種類、1種類不足につき −0.1・合計上限0.5）。ここはそれ以外の操作の多様性",
+    tip: "2部位以上を通る操作・特性を生かした操作（スティックは左手の操作も）・身体を離れる操作の不足は「手具操作の多様性」で自動判定して引いている。ここはそれ以外の操作の多様性で、自動判定ぶんと合わせてこの項目の上限1.00まで",
   },
   {
     id: "appInTumbling",
@@ -780,6 +783,15 @@ export function ropeJumpDifficulty({ def, cross, count }: ResolvedRopeJump): Dif
  * 同じ跳びかどうかを決めるキー（§3.4.4：全く同じ技は難度として数えない）。
  * 難度表の行が違えば別の技なので、回数は表の行（3重は1/2/3以上、4重は1/2以上）に丸めて入れる。
  */
+/** 跳びの体の形（§3.5.5.5(4)② の「体の形や跳び方の種類」。クロスは別の入力で、これも違いとして数える） */
+export const ROPE_JUMP_SHAPES: { id: string; name: string }[] = [
+  { id: "layout", name: "伸身" },
+  { id: "tuck", name: "抱え込み" },
+  { id: "straddle", name: "開脚" },
+  { id: "pike", name: "屈伸" },
+];
+export const ropeJumpShapeDef = (id: string | undefined) => ROPE_JUMP_SHAPES.find((s) => s.id === id);
+
 export function ropeJumpKey(r: ResolvedRopeJump): string {
   const row = r.def.rotations === 3 ? Math.min(r.count, 3) : r.def.rotations === 4 ? Math.min(r.count, 2) : 1;
   const cross = r.cross && !(r.def.rotations === 3 && r.count >= 3);
@@ -1147,7 +1159,10 @@ export function skillOptions(
 ): Skill[] {
   const allows = (category: string) =>
     category === CATEGORY.BACKWARD ? flow.backward : category === CATEGORY.SIDE ? flow.side : flow.forward;
-  return SKILL_LIST.filter((s) => skillAllowed(s.id, junior, future, team) && allows(s.category));
+  // 側転は徒手として統一したので、個人のタンブリング欄には出さない（徒手動作の選択肢に出る）
+  return SKILL_LIST.filter(
+    (s) => skillAllowed(s.id, junior, future, team) && allows(s.category) && (team || !s.isHandElement),
+  );
 }
 
 /** タンブリング技のプルダウンをまとめる系統の表示順 */

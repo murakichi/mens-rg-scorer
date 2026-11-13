@@ -85,7 +85,7 @@ describe("手具操作加点 §3.5.5.5(3)〔2回以上の操作〕", () => {
     const r = computeScore(
       [S(
         { kind: "skill", skillId: "e_doublelay", hasApparatus: true },
-        { kind: "skill", skillId: "a_cartwheel", hasApparatus: true },
+        { kind: "skill", skillId: "a_roundoff", hasApparatus: true },
         { kind: "catch" },
       )],
       "stick",

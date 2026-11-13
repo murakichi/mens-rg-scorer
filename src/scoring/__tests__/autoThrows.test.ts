@@ -23,8 +23,6 @@ import {
   catchHasTag,
   COMBINED_CATCH_WEIGHT,
   NO_VIEW_USE_APPARATUS_WEIGHT,
-  OTHER_CATCH_WEIGHT,
-  OTHER_TAG,
   NON_HAND_TAG,
   NON_HAND_CATCH_MAX_MOTIONS,
   patternMotions,
@@ -601,30 +599,6 @@ describe("ランダム生成への組み込み", () => {
         });
       }),
     );
-  });
-
-  it("その他のキャッチは可能な限り引かない", () => {
-    const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.verticalThree && !rollFinishShape(x))!;
-    const normalThrow = autoThrowStyles("stick").find((t) => t.id === "normal")!;
-    const w = (catchId: string) =>
-      catchStyleWeight({
-        throwStyle: normalThrow,
-        catchStyle: autoCatchStyles("stick").find((c) => c.id === catchId)!,
-        pattern: plain,
-        apparatus: "stick",
-        motions: 0,
-      });
-    expect(w(OTHER_TAG)).toBe(OTHER_CATCH_WEIGHT);
-    expect(w(OTHER_TAG)).toBeLessThan(w("normal"));
-    // 組み立てた候補でも、その他のキャッチはほかの受け方よりずっと少ない
-    let other = 0;
-    let all = 0;
-    for (let seed = 1; seed <= 10; seed++)
-      autoThrowSpecs("stick", { random: seeded(seed) }).forEach((sp) => {
-        all += 1;
-        if (catchHasTag(sp.catchStyle, OTHER_TAG)) other += 1;
-      });
-    expect(other).toBeLessThan(all * 0.1);
   });
 
   it("2種類を同時に満たすキャッチを作れる（視野外＋手以外／視野外＋手具を使った）", () => {

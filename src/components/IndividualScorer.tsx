@@ -955,6 +955,13 @@ export function IndividualScorer({ initialData }: Props = {}) {
                   <span className="art-row-note">
                     上限 {item.max.toFixed(2)}／減点幅 {item.note}
                     {auto && <> ／{auto.note}</>}
+                    {(() => {
+                      // 自動判定の減点が同じ項目に属するもの：手入力と合わせて上限で頭打ち
+                      const t = result.artItemTotals.find((x) => x.id === item.id);
+                      return t && t.auto > 0 ? (
+                        <> ／自動判定 −{t.auto.toFixed(1)}（手入力と合わせて −{t.total.toFixed(1)}）</>
+                      ) : null;
+                    })()}
                     {junior && JUNIOR_MAX_ART_ITEMS.includes(item.id) && (
                       <span className="check-note">
                         ジュニアは既定で上限まで引く（この水準では一部のトップクラスしか達成できないため）。手で下げられます

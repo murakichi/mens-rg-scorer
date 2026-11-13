@@ -223,8 +223,7 @@ function styleTags(list: Series[], apparatus: ApparatusKey): Candidate[] {
         kind,
         seriesIndex: sIdx,
         target: `${kind}:${sIdx}:${iIdx}`,
-        // その他の投げ・受けは可能な限り使わない（生成器と同じ扱い）
-        realism: opt.id === "other" ? 0.1 : 1,
+        realism: 1,
         label: `シリーズ${sIdx + 1}の${what}を「${opt.name}」にする`,
         series: withItems(list, sIdx, items),
       });

@@ -7,8 +7,9 @@ const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 // =========================================================================
 // 技術加点 TECHNIQUE_BONUS（ルール §3.5.5.5(2) 難易度の高い投げ受け）
 //   対象①〜⑥：手以外の投げ/受け・視野外の投げ/受け・手具を使った投げ/受け。
-//   「制限なし・各その都度0.10点」＝上限なし、出現ごとに加算、重複排除なし。
-//   （その他 other は対象外 → issue #2 で既報）
+//   「制限なし・各その都度0.10点」＝上限なし、出現ごとに加算。ただし「同じ技は重複して数えない」
+//   （⑦の但し書きは①〜⑥にも掛かる）ので、全く同じ投げ方・受け方は演技全体で1回だけ（techniqueOnce.test.ts）。
+//   （その他 other は入力から削除した。旧データに残っていても採点しない）
 // =========================================================================
 describe("技術加点 §3.5.5.5(2)", () => {
   it("視野外の投げ1回で +0.10", () => {
@@ -49,12 +50,11 @@ describe("技術加点 §3.5.5.5(2)", () => {
     expect(r.techniqueBonus).toBeCloseTo(0.4, 5);
   });
 
-  it("各その都度：視野外投げを2回、別の内容のシリーズで出現ごとに加算 → +0.20", () => {
-    // §3.5.5.5(2) は「各その都度」。別のシリーズなら出現回数ぶん数える
+  it("同じ視野外投げは別の内容のシリーズでも1回だけ → +0.10（同じ技は重複して数えない）", () => {
     const a = S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch" });
     const b = S({ kind: "throw", throwTypes: ["noview"] }, { kind: "motion", motionId: "chene", count: 1 }, { kind: "catch" });
     const r = computeScore([a, b], "stick");
-    expect(r.techniqueBonus).toBeCloseTo(0.2, 5);
+    expect(r.techniqueBonus).toBeCloseTo(0.1, 5);
   });
 
   it("完全に同じシリーズ（重複シリーズ）はDに算入しないので技術加点も数えない → +0.10", () => {
@@ -68,10 +68,8 @@ describe("技術加点 §3.5.5.5(2)", () => {
     expect(sameButDeclared.techniqueBonus).toBeCloseTo(0.2, 5);
   });
 
-  it.skip("その他（other）の投げは技術加点の対象外＝0（→ issue #2、修正後に skip 解除）", () => {
-    // ルール §3.5.5.5(2) の対象は①〜⑥のみ。other は含まれない。
-    // 実装は throwTypes.length で数えるため other も +0.1 してしまう。
-    const r = computeScore([S({ kind: "throw", throwTypes: ["other"] }, { kind: "catch" })], "stick");
+  it("削除した「その他の投げ・キャッチ」が旧データに残っていても技術加点にしない", () => {
+    const r = computeScore([S({ kind: "throw", throwTypes: ["other"] }, { kind: "catch", catchTypes: ["other"] })], "stick");
     expect(r.techniqueBonus).toBeCloseTo(0, 5);
   });
 });

@@ -18,14 +18,14 @@ describe("computeScore — 空の演技（回帰アンカー）", () => {
     expect(r.dScore).toBe(0);
     expect(r.eScore).toBe(10);
     // 方向系3不足(0.9) + 投げ不足(0.3) + 宙返り連続なし(0.2) + 多様性上限(0.5)
-    //  + 必須要素の欠如3項目(投げタン・つなぎ技・タンブリング本数 3×0.3=0.9)
+    //  + 必須要素の欠如2項目(つなぎ技・タンブリング本数 2×0.3=0.6。投げタンは手具別必須要素で計上)
     //  + 深い運動2部位不足(0.2) + 柔軟なし(0.1) + 手具操作チェック3件(スティックは左手の操作も／0.3)
-    //  + 身体を離れる操作4回不足(0.4) + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 5.0
-    expect(r.aDeduction).toBeCloseTo(5.0, 5);
-    expect(r.aScore).toBeCloseTo(5.0, 5);
-    expect(r.grandTotal).toBeCloseTo(15.0, 5);
+    //  + 身体を離れる操作4回不足(0.4) + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 4.7
+    expect(r.aDeduction).toBeCloseTo(4.7, 5);
+    expect(r.aScore).toBeCloseTo(5.3, 5);
+    expect(r.grandTotal).toBeCloseTo(15.3, 5);
     expect(r.missing.length).toBeGreaterThan(0);
-    expect(r.missingElementDeduction).toBeCloseTo(0.9, 5);
+    expect(r.missingElementDeduction).toBeCloseTo(0.6, 5);
     // 手具別必須要素は未実施4項目で −1.2
     expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
     expect(r.deepMotionDeduction).toBeCloseTo(0.2, 5);
@@ -118,11 +118,11 @@ describe("computeScore — 右投げ右受けの自動判定（§3.2 スティ�
 describe("computeScore — 重複シリーズの手動解除（notDuplicate）", () => {
   const dup = (): Series => S({ kind: "throw" }, { kind: "skill", skillId: "b_backsalto" }, { kind: "catch" });
 
-  it("同一構成の2本目は重複扱いで投げ回数・本数に不算入", () => {
+  it("同一構成の2本目は重複扱いで本数に不算入。投げ回数には数える", () => {
     const r = computeScore([dup(), dup()], "stick");
     expect(r.dupSignatureFlags).toEqual([false, true]);
     expect(r.dupFlags).toEqual([false, true]);
-    expect(r.totalThrowCount).toBe(1);
+    expect(r.totalThrowCount).toBe(2);
     expect(r.nonDupTumblingCount).toBe(1);
   });
 
@@ -140,7 +140,7 @@ describe("computeScore — 重複シリーズの手動解除（notDuplicate）",
     const r = computeScore([dup(), { ...dup(), notDuplicate: true }, dup()], "stick");
     expect(r.dupSignatureFlags).toEqual([false, true, true]);
     expect(r.dupFlags).toEqual([false, false, true]);
-    expect(r.totalThrowCount).toBe(2);
+    expect(r.totalThrowCount).toBe(3);
   });
 
   it("重複解除で加点（技術加点）も算入される", () => {
@@ -150,7 +150,8 @@ describe("computeScore — 重複シリーズの手動解除（notDuplicate）",
     // 重複シリーズは技術加点も不算入。解除すると2本分が計上される
     expect(base.techniqueBonus).toBeCloseTo(0.1, 5);
     expect(freed.techniqueBonus).toBeCloseTo(0.2, 5);
-    expect(base.totalThrowCount).toBe(1);
+    // 投げ回数は重複でも数える
+    expect(base.totalThrowCount).toBe(2);
     expect(freed.totalThrowCount).toBe(2);
     expect(base.throwCountDeduction).toBeCloseTo(0.3, 5);
     expect(freed.throwCountDeduction).toBeCloseTo(0.3, 5); // 一般は3回必要なので2回でも不足
@@ -360,10 +361,12 @@ describe("computeScore — ロープ跳びリスト（構成全体・徒手・�
   });
 
   it("同じ跳びは1回だけ数える（回数の行が違えば別の技）", () => {
-    const same = score([J("3b"), J("3b", { count: 1 })]);
+    // 隣り合う3重跳びは1つの連続にまとまるので、別々の跳びシリーズ（別の実施）で比べる
+    const groups = (...g: ReturnType<typeof J>[][]) => computeScore([], "rope", { ropeJumps: g });
+    const same = groups([J("3b")], [J("3b", { count: 1 })]);
     expect(same.ropeJumpRows.map((x) => x.duplicate)).toEqual([false, true]);
     expect(same.handScore).toBeCloseTo(0.3, 5);
-    const other = score([J("3b"), J("3b", { count: 2 })]);
+    const other = groups([J("3b")], [J("3b", { count: 2 })]);
     expect(other.ropeJumpRows.map((x) => x.duplicate)).toEqual([false, false]);
     expect(other.handScore).toBeCloseTo(0.3 + 0.5, 5);
   });
@@ -1045,12 +1048,27 @@ describe("computeScore — ロープの跳び要求要素は手具別必須要�
 });
 
 describe("computeScore — 必須要素チェックの不足も減点する", () => {
-  it("投げタン・つなぎ技・タンブリング本数はそれぞれ −0.30", () => {
+  it("つなぎ技・タンブリング本数はそれぞれ −0.30", () => {
     const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
     expect(r.required.find((c) => c.key === "throwTum")?.passed).toBe(false);
     expect(r.required.find((c) => c.key === "connect")?.passed).toBe(false);
     expect(r.required.find((c) => c.key === "tumCount")?.passed).toBe(false);
-    expect(r.missingElementDeduction).toBeCloseTo(0.9, 5);
+    expect(r.missingElementDeduction).toBeCloseTo(0.6, 5);
+  });
+
+  it("投げタンが無いときの減点は手具別必須要素「転回系の投げ受け」の −0.30 だけ（二重に引かない）", () => {
+    (["stick", "clubs", "ring", "rope"] as const).forEach((ap) => {
+      const without = computeScore([S({ kind: "throw" }, { kind: "catch" })], ap);
+      const withTum = computeScore([S({ kind: "throw" }, { kind: "skill", skillId: "b_backsalto" }, { kind: "catch" })], ap);
+      expect(without.required.find((c) => c.key === "throwTum")?.passed).toBe(false);
+      expect(without.apparatusElementChecks.find((c) => c.key === `appEl_${ap}_rotthrow`)?.passed).toBe(false);
+      expect(withTum.apparatusElementChecks.find((c) => c.key === `appEl_${ap}_rotthrow`)?.passed).toBe(true);
+      // 投げタンの有無で変わるA減点は 0.3 だけ（転回系が加わるぶんの方向系・本数などは差し引いて比べる）
+      const diff =
+        without.missingElementDeduction + without.apparatusElementDeduction -
+        (withTum.missingElementDeduction + withTum.apparatusElementDeduction);
+      expect(diff).toBeCloseTo(0.3, 5);
+    });
   });
 
   it("満たせば減点されない", () => {
@@ -1079,7 +1097,8 @@ describe("computeScore — 必須要素チェックの不足も減点する", ()
   it("各行に減点額が入る（表示用）", () => {
     const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
     const byKey = (k: string) => r.required.find((c) => c.key === k);
-    expect(byKey("throwTum")?.deduction).toBeCloseTo(0.3, 5);
+    // 投げタンの行は表示だけ（減点は手具別必須要素で計上）
+    expect(byKey("throwTum")?.deduction).toBe(0);
     expect(byKey("dir")?.deduction).toBeCloseTo(r.directionDeduction, 5);
     expect(byKey("triple")?.deduction).toBeCloseTo(r.saltoChainDeduction, 5);
     expect(byKey("count3")?.deduction).toBeCloseTo(0.3, 5);

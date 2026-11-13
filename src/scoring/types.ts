@@ -98,6 +98,13 @@ export interface RopeJumpItem {
   cross?: boolean;
   /** 跳んだ回数（未指定は1回）。3重の2回・3回以上、4重の2回以上は回数で難度が変わる。 */
   count?: number;
+  /**
+   * 体の形（`ROPE_JUMP_SHAPES` の id。未指定はふつうの跳び）。難度には効かず、
+   * §3.5.5.5(4)② の「3重跳び連続3回で各跳びの形が違う」の判定に使う（クロスも形の違いとして数える）。
+   */
+  shape?: string;
+  /** その場で体が2回転する回転跳び（§3.5.5.5(4)③。2重跳び以上で判定） */
+  spinTwice?: boolean;
 }
 
 export interface Series {
@@ -216,6 +223,11 @@ export interface Unit {
 export interface SeriesAnalysis {
   units: Unit[];
   throwCount: number;
+  /**
+   * アイテムごとに属するユニットの添字（`units` の位置。どのユニットにも入らないアイテムは -1）。
+   * キャッチアイテムは自分が閉じたユニットに属する。連続投げ加点の「並び」の判定に使う。
+   */
+  unitOfItem?: number[];
 }
 
 /** 採点保存フォーマット */

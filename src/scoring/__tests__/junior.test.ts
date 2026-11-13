@@ -230,7 +230,8 @@ describe("ジュニア適用規則 — 2回宙返り系は禁止", () => {
   const doubles = ["d_doubleback", "e_doublelay", "e_divedouble", "e_moonsault", "e_rudolph"];
 
   /** 十年後モード専用（F・G難度）の技を除いた一覧 */
-  const currentSkills = SKILL_LIST.filter((s) => !s.future);
+  // 側転は徒手として統一したのでタンブリングの選択肢には出ない
+  const currentSkills = SKILL_LIST.filter((s) => !s.future && !s.isHandElement);
 
   it("一般では選択肢に出る", () => {
     const ids = skillOptions().map((s) => s.id);
