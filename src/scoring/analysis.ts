@@ -1016,3 +1016,48 @@ export function seriesTags(series: Series, junior = false): SeriesTagId[] {
 
 /** 「三宙」とみなす連続宙返りの回数 */
 export const SALTO_CHAIN_TAG_MIN = 3;
+
+/**
+ * 演技全体で、手具別の必須投げ（左手投げ・二つ投げ）を実施した回数（投げアイテムと技の最中の投げ）。
+ * 入力画面で「この投げで必須投げを満たす必要があるか」を出すのに使う（採点は `computeScore` の `performedThrowTypes`）。
+ */
+export function requiredThrowCounts(list: Series[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  list.forEach((ser) =>
+    ser.items.forEach((item) => {
+      if (item.kind === "throw" || (item.kind === "skill" && item.isThrow))
+        (item.reqTypes || []).forEach((id) => (counts[id] = (counts[id] ?? 0) + 1));
+    }),
+  );
+  return counts;
+}
+
+/**
+ * 二つ投げで投げてから受けるまでの間にある徒手動作に、その間の動作数の合計を付ける（それ以外は null）。
+ * §3.5.5.5(2)⑦「2本投げで4動作をして受けた場合」の目安を入力画面に出すのに使う。
+ * 区間の切り方は採点（`score.ts` の二つ投げ4動作加点）と同じ：次の投げか受けで閉じる。
+ */
+export function twoThrowMotionTotals(items: Item[], junior = false, future: FutureLevel = null): (number | null)[] {
+  const out: (number | null)[] = items.map(() => null);
+  let span: number[] | null = null;
+  let total = 0;
+  const close = () => {
+    if (span) span.forEach((k) => (out[k] = total));
+    span = null;
+    total = 0;
+  };
+  items.forEach((item, k) => {
+    if (item.kind === "throw" || (item.kind === "skill" && item.isThrow)) {
+      close();
+      if ((item.reqTypes || []).includes(TWO_THROW_TAG)) span = [];
+    } else if (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) {
+      close();
+    } else if (item.kind === "motion" && span) {
+      const m = motionDef(item.motionId, junior, future);
+      span.push(k);
+      if (m) total += m.motions * motionTimes(item.count);
+    }
+  });
+  close();
+  return out;
+}

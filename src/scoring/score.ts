@@ -64,6 +64,7 @@ import {
   countsAsFlex,
   FLEX_ELEMENT_DEDUCTION,
   APPARATUS_USE,
+  NON_HAND_CATCH_TAG,
 } from "./constants";
 import {
   analyzeSeries,
@@ -101,6 +102,21 @@ export interface DiffRow {
 /** 旧名（徒手系の行）。互換のため別名として残す。 */
 export type HandDiffRow = DiffRow;
 
+/**
+ * 投げ・受け1つの技術加点の状況（UIの表示用）。
+ *  - `earned`：加点になった（`points` 点）
+ *  - `none`：加点になるチェック（視野外・手以外・手具を使った）が無い
+ *  - `duplicate`：全く同じ投げ方・受け方がすでに加点済み（§3.5.5.5(2)「同じ技は重複して数えない」）
+ *  - `dupSeries`：シリーズ全体が重複なので加点しない
+ *  - `over`：投げの上限を超えた（ジュニアの6回目以降）
+ */
+export interface TechStatus {
+  status: "earned" | "none" | "duplicate" | "dupSeries" | "over";
+  points: number;
+  /** その投げ・受けに付いた加点になるチェックの数（加点されたかどうかに関係なく） */
+  bonusTags: number;
+}
+
 export interface SeriesBreakdown {
   tumDiff: number;
   handDiff: number;
@@ -110,6 +126,8 @@ export interface SeriesBreakdown {
   handRows: DiffRow[];
   sBonus: number;
   tech: number;
+  /** アイテムごとの技術加点の状況（投げ・受けでないアイテムは null） */
+  techItems: (TechStatus | null)[];
   appOp: number;
   twoMot: number;
   noApp: number;
@@ -694,28 +712,34 @@ export function computeScore(
 
     let techCount = 0;
     const techScope = ser.notDuplicate ? `${i}#` : "";
-    if (!isDup) {
-      ser.items.forEach((item, j) => {
-        if (itemOver[i][j]) return; // 上限超過の投げ受けは加点も数えない
-        // 横投げ・無回転は投げ方の種類として数えるだけで、技術加点にはしない
-        const bonusThrowTypes = (item: { throwTypes?: string[] }) =>
-          (item.throwTypes || []).filter((t) => t !== SIDE_THROW_TAG && t !== NO_ROTATION_TAG).length;
-        // 同じ投げ方・受け方は演技全体で1回だけ（§3.5.5.5(2) の但し書き）
-        const once = (key: string, n: number) => {
-          if (n <= 0) return;
-          const k = techScope + key;
-          if (techSeen.has(k)) return;
-          techSeen.add(k);
-          techCount += n;
-        };
-        if (item.kind === "throw") once(throwTechKey(item, ""), bonusThrowTypes(item));
-        else if (item.kind === "catch") once(catchTechKey(item, ""), (item.catchTypes || []).length);
-        else if (item.kind === "skill" && item.isThrow) once(throwTechKey(item, item.skillId), bonusThrowTypes(item));
-        // 技の最中の受けもキャッチと同じく技術加点に数える
-        else if (item.kind === "skill" && item.isCatch)
-          once(catchTechKey(item, item.skillId), (item.catchTypes || []).length);
-      });
-    }
+    // 横投げ・無回転は投げ方の種類として数えるだけで、技術加点にはしない
+    const bonusThrowTypes = (item: { throwTypes?: string[] }) =>
+      (item.throwTypes || []).filter((t) => t !== SIDE_THROW_TAG && t !== NO_ROTATION_TAG).length;
+    const techItems: (TechStatus | null)[] = ser.items.map((item, j) => {
+      // 投げ・受けごとに、加点の対象になるチェック数とキーを出す
+      const target =
+        item.kind === "throw"
+          ? { key: throwTechKey(item, ""), n: bonusThrowTypes(item) }
+          : item.kind === "catch"
+            ? { key: catchTechKey(item, ""), n: (item.catchTypes || []).length }
+            : item.kind === "skill" && item.isThrow
+              ? { key: throwTechKey(item, item.skillId), n: bonusThrowTypes(item) }
+              : // 技の最中の受けもキャッチと同じく技術加点に数える
+                item.kind === "skill" && item.isCatch
+                ? { key: catchTechKey(item, item.skillId), n: (item.catchTypes || []).length }
+                : null;
+      if (!target) return null;
+      const st = (status: TechStatus["status"], points = 0): TechStatus => ({ status, points, bonusTags: target.n });
+      if (isDup) return st("dupSeries");
+      if (itemOver[i][j]) return st("over"); // 上限超過の投げ受けは加点も数えない
+      if (target.n <= 0) return st("none");
+      // 同じ投げ方・受け方は演技全体で1回だけ（§3.5.5.5(2) の但し書き）
+      const k = techScope + target.key;
+      if (techSeen.has(k)) return st("duplicate");
+      techSeen.add(k);
+      techCount += target.n;
+      return st("earned", target.n * TECHNIQUE_BONUS);
+    });
     const tech = techCount * TECHNIQUE_BONUS;
 
     let appOp = 0;
@@ -802,7 +826,7 @@ export function computeScore(
     const exec = Number(ser.executionDeduction) || 0;
     const dPart = tumDiff + handDiff + sBonus + tech + appOp + twoMot;
     const aPart = noApp;
-    return { tumDiff, handDiff, tumRows, handRows, sBonus, tech, appOp, twoMot, noApp, exec, dPart, aPart };
+    return { tumDiff, handDiff, tumRows, handRows, sBonus, tech, techItems, appOp, twoMot, noApp, exec, dPart, aPart };
   });
 
   // ---- D（難度）----
@@ -885,7 +909,12 @@ export function computeScore(
         if (isDup) return;
         // 1回の受けは1種類（チェックの組み合わせ全体）として数える。
         // タンブリングの最中の受けは、最中の投げ（投げタン）と同じく別の1種類（チェックが無ければ「投げタン」の受け）
-        catchKinds.add(kindKey(item.catchTypes || [], item.kind === "skill" ? "tumcatch" : "normal"));
+        // 手以外のキャッチは受け方（首と肩に挟む・足で挟むなど）ごとに別の種類。2つ同時キャッチは種類に数えない
+        const types = item.catchTypes || [];
+        const nonHandKind = types.includes(NON_HAND_CATCH_TAG) ? item.nonHandKind : undefined;
+        catchKinds.add(
+          kindKey(nonHandKind ? [...types, `nonhand:${nonHandKind}`] : types, item.kind === "skill" ? "tumcatch" : "normal"),
+        );
       }
     });
   });

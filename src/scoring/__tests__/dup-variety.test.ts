@@ -175,3 +175,41 @@ describe("投げ方・受け方の種類 — タンブリングの最中の投�
     expect(r.catchKindCount).toBe(1);
   });
 });
+
+// 手以外のキャッチの受け方は受け方の種類として別に数える／2つ同時キャッチは種類に数えない（オーナー確認）
+describe("受け方の種類 — 手以外の受け方と2つ同時キャッチ", () => {
+  const T: Item = { kind: "throw" };
+  it("手以外のキャッチの受け方が違えば別の種類", () => {
+    const r = computeScore(
+      [
+        S(T, { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "neckShoulder" }),
+        S(T, { kind: "motion", motionId: "chene", count: 1 }, { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "footClamp" }),
+        S(T, { kind: "motion", motionId: "chene", count: 2 }, { kind: "catch", catchTypes: ["nonhand"] }),
+      ],
+      "stick",
+    );
+    expect(r.catchKindCount).toBe(3);
+  });
+
+  it("同じ受け方なら1種類", () => {
+    const r = computeScore(
+      [
+        S(T, { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "neckShoulder" }),
+        S(T, { kind: "motion", motionId: "chene", count: 1 }, { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "neckShoulder" }),
+      ],
+      "stick",
+    );
+    expect(r.catchKindCount).toBe(1);
+  });
+
+  it("2つ同時キャッチは種類に数えない", () => {
+    const r = computeScore(
+      [
+        S({ kind: "throw", reqTypes: ["twothrow"] }, { kind: "catch", catchTwo: true }),
+        S(T, { kind: "motion", motionId: "chene", count: 1 }, { kind: "catch" }),
+      ],
+      "clubs",
+    );
+    expect(r.catchKindCount).toBe(1);
+  });
+});

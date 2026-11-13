@@ -1838,6 +1838,47 @@ input[type="radio"] {
   color: var(--red);
 }
 
+/* 投げ方・受け方のチェックのまとまり：技術加点／加点なし／必須投げ */
+.opt-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 6px;
+  border-left: 2px solid var(--glass-border);
+}
+.opt-group + .opt-group {
+  margin-top: 4px;
+}
+.opt-group.is-bonus {
+  border-left-color: var(--teal);
+}
+.opt-group.is-req {
+  border-left-color: var(--amber);
+}
+.opt-group-head {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink-mute);
+}
+.opt-group.is-bonus .opt-group-head {
+  color: var(--teal);
+}
+.opt-group.is-req .opt-group-head {
+  color: var(--amber);
+}
+/* その投げ・受けが実際に技術加点になったか */
+.tech-status {
+  font-size: 11px;
+}
+.tech-status.is-earned {
+  color: var(--teal);
+  font-weight: 700;
+}
+.tech-status.is-lost {
+  color: var(--red);
+}
+
 .check-note {
   margin-left: 6px;
   font-size: 11px;
