@@ -48,6 +48,7 @@ import {
   prevSkillId,
   SERIES_TAGS,
   seriesTags,
+  twoThrowMotionTotals,
 } from "../scoring/analysis";
 import { tumblingChainEndErrors } from "../scoring/tumblingChain";
 import { seriesNickname } from "../scoring/nickname";
@@ -82,6 +83,11 @@ interface Props {
   /** 十年後モードの上限難度（null＝OFF）。技の選択肢・難度表示・ひねりの選択肢に反映する。 */
   future?: FutureLevel;
   analysis: SeriesAnalysis;
+  /**
+   * 演技全体で必須投げ（左手投げ・二つ投げ）を実施した回数（`requiredThrowCounts`）。
+   * ほかの投げですでに満たしていれば、その投げのチェックは「必須投げ」から外して「加点なし」に出す。
+   */
+  reqThrowCounts?: Record<string, number>;
   /** analysis.units と同じ並びで、そのユニットが難度点に採用されたか */
   unitAdopted: boolean[];
   breakdown: SeriesBreakdown;
@@ -172,6 +178,7 @@ function ThrowChecks({
   apparatus,
   common,
   inSkill,
+  reqThrowCounts = {},
   onUpdate,
 }: {
   item: { throwTypes?: string[]; reqTypes?: string[] };
@@ -179,6 +186,8 @@ function ThrowChecks({
   common?: boolean;
   /** 技の最中の投げか（必須投げは二つ投げだけ出す） */
   inSkill?: boolean;
+  /** 演技全体で必須投げを実施した回数（ほかの投げで満たしていれば「必須投げ」から外す） */
+  reqThrowCounts?: Record<string, number>;
   onUpdate: (patch: { throwTypes?: string[]; reqTypes?: string[] }) => void;
 }) {
   // 二つ投げ（両方を投げる）と手具を使った投げ（もう一方で押さえる）は排他
@@ -211,6 +220,24 @@ function ThrowChecks({
   const reqOptions = common
     ? []
     : REQUIRED_THROW_OPTIONS[apparatus].filter((opt) => !inSkill || opt.id === TWO_THROW_TAG);
+  // この投げ以外ですでに実施していれば必須は満たしている → 「必須投げ」ではなく「加点なし」に出す
+  const doneElsewhere = (id: string) =>
+    (reqThrowCounts[id] ?? 0) - ((item.reqTypes || []).includes(id) ? 1 : 0) > 0;
+  const reqCheck = (opt: { id: string; name: string }) => {
+    const on = (item.reqTypes || []).includes(opt.id);
+    const blocked = opt.id === TWO_THROW_TAG && !on && useApparatusThrow;
+    return (
+      <label key={opt.id} className={blocked ? "check-req is-disabled" : "check-req"}>
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={blocked}
+          onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
+        />
+        {opt.name}
+      </label>
+    );
+  };
   return (
     <>
       <OptGroup kind="bonus">{options.filter((o) => techOptionKind(o.id) === "bonus").map(check)}</OptGroup>
@@ -220,25 +247,10 @@ function ThrowChecks({
           sideDirection && noView ? (
             <NoViewDirection key="dir" types={item.throwTypes} onChange={(throwTypes) => onUpdate({ throwTypes })} />
           ) : null,
+          ...reqOptions.filter((o) => doneElsewhere(o.id)).map(reqCheck),
         ]}
       </OptGroup>
-      <OptGroup kind="req">
-        {reqOptions.map((opt) => {
-          const on = (item.reqTypes || []).includes(opt.id);
-          const blocked = opt.id === TWO_THROW_TAG && !on && useApparatusThrow;
-          return (
-            <label key={opt.id} className={blocked ? "check-req is-disabled" : "check-req"}>
-              <input
-                type="checkbox"
-                checked={on}
-                disabled={blocked}
-                onChange={(e) => onUpdate({ reqTypes: toggle(item.reqTypes, opt.id, e.target.checked) })}
-              />
-              {opt.name}
-            </label>
-          );
-        })}
-      </OptGroup>
+      <OptGroup kind="req">{reqOptions.filter((o) => !doneElsewhere(o.id)).map(reqCheck)}</OptGroup>
     </>
   );
 }
@@ -396,6 +408,8 @@ function ItemEditor({
   handsEmpty,
   catchTwoAllowed,
   tech,
+  reqThrowCounts = {},
+  twoThrowMotionTotal = null,
   onUpdate,
 }: {
   item: Item;
@@ -420,6 +434,10 @@ function ItemEditor({
   catchTwoAllowed?: boolean;
   /** この投げ・受けの技術加点の状況（投げ・受けでなければ null） */
   tech?: TechStatus | null;
+  /** 演技全体で必須投げを実施した回数 */
+  reqThrowCounts?: Record<string, number>;
+  /** 二つ投げの間の徒手なら、その間の動作数の合計（それ以外は null） */
+  twoThrowMotionTotal?: number | null;
   onUpdate: (patch: Partial<Item>) => void;
 }) {
   if (item.kind === "throw") {
@@ -427,7 +445,7 @@ function ItemEditor({
       <>
         <div className="throw-tag">投げ</div>
         <TechStatusLine tech={tech} what="投げ" />
-        <ThrowChecks item={item} apparatus={apparatus} common={common} onUpdate={onUpdate} />
+        <ThrowChecks item={item} apparatus={apparatus} common={common} reqThrowCounts={reqThrowCounts} onUpdate={onUpdate} />
       </>
     );
   }
@@ -602,7 +620,16 @@ function ItemEditor({
             onUpdate={onUpdate}
           />
         )}
-        {item.isThrow && <ThrowChecks item={item} apparatus={apparatus} common={common} inSkill onUpdate={onUpdate} />}
+        {item.isThrow && (
+          <ThrowChecks
+            item={item}
+            apparatus={apparatus}
+            common={common}
+            inSkill
+            reqThrowCounts={reqThrowCounts}
+            onUpdate={onUpdate}
+          />
+        )}
         {(item.isThrow || item.isCatch) && <TechStatusLine tech={tech} what={item.isThrow ? "投げ" : "受け"} />}
           </>
         )}
@@ -683,6 +710,15 @@ function ItemEditor({
           ))}
         </select>
       )}
+      {/* 二つ投げの間の徒手：4動作以上で二つ投げ4動作加点（§3.5.5.5(2)⑦） */}
+      {twoThrowMotionTotal !== null && (
+        <div
+          className={twoThrowMotionTotal >= 4 ? "tech-status is-earned" : "tech-status"}
+          title="二つ投げで投げてから受けるまでに徒手を4動作以上すると +0.1（同じ内容は演技全体で1回だけ）"
+        >
+          4動作以上で加点（二つ投げの間 {twoThrowMotionTotal}動作）
+        </div>
+      )}
     </>
   );
 }
@@ -709,6 +745,7 @@ export function SeriesCard({
   junior,
   future = null,
   analysis: a,
+  reqThrowCounts = {},
   unitAdopted,
   breakdown: b,
   isDup,
@@ -741,6 +778,8 @@ export function SeriesCard({
   const handsEmpty = handsEmptyFlags(ser.items, apparatus);
   // 2つ同時キャッチは「2つとも空中にある（＝二つ投げの間）」ときだけ入力できる
   const catchTwoAllowed = catchTwoFlags(ser.items, apparatus);
+  // 二つ投げで投げてから受けるまでの徒手には「4動作以上で加点」と、その間の動作数を出す
+  const twoThrowMotions = twoThrowMotionTotals(ser.items, junior, future);
   // タンブリング技の入力パターン（一覧／手動入力）。既定は一覧で、
   // ボタンで切り替えたブロックだけを覚えておく（キーはアイテムの位置）。
   const [twistModes, setTwistModes] = useState<Record<number, boolean>>({});
@@ -940,6 +979,8 @@ export function SeriesCard({
               handsEmpty={handsEmpty[iIdx]}
               catchTwoAllowed={catchTwoAllowed[iIdx]}
               tech={b.techItems[iIdx]}
+              reqThrowCounts={reqThrowCounts}
+              twoThrowMotionTotal={twoThrowMotions[iIdx]}
               onUpdate={(patch) => updateItemAt(iIdx, patch)}
             />
             {/* 技の両端：隣の技と入れ替える矢印（中央は削除） */}
