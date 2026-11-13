@@ -216,6 +216,11 @@ export interface Unit {
 export interface SeriesAnalysis {
   units: Unit[];
   throwCount: number;
+  /**
+   * アイテムごとに属するユニットの添字（`units` の位置。どのユニットにも入らないアイテムは -1）。
+   * キャッチアイテムは自分が閉じたユニットに属する。連続投げ加点の「並び」の判定に使う。
+   */
+  unitOfItem?: number[];
 }
 
 /** 採点保存フォーマット */

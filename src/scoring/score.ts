@@ -61,6 +61,7 @@ import {
   soloHandElementScored,
   countsAsFlex,
   FLEX_ELEMENT_DEDUCTION,
+  APPARATUS_USE,
 } from "./constants";
 import {
   analyzeSeries,
@@ -77,8 +78,11 @@ import {
   type TumblingVariety,
   type TumblingOperation,
   hoistRopeJumps,
+  thrownCount,
+  caughtCount,
+  isCatchItem,
 } from "./analysis";
-import type { ApparatusKey, Difficulty, FutureLevel, RopeJumpItem, Series, SeriesAnalysis, Unit } from "./types";
+import type { ApparatusKey, Difficulty, FutureLevel, Item, RopeJumpItem, Series, SeriesAnalysis, Unit } from "./types";
 
 /** シリーズ内のユニット1つ分の難度点の内訳（表示用） */
 export interface DiffRow {
@@ -314,6 +318,49 @@ const kindKey = (types: string[], plain = "normal"): string => {
   const parts = [...new Set(types)].sort();
   return parts.length > 0 ? parts.join("+") : plain;
 };
+
+/** 投げ上げか（技の最中の投げを含む） */
+const isThrowAt = (item: Item | undefined): boolean =>
+  !!item && (item.kind === "throw" || (item.kind === "skill" && !!item.isThrow));
+
+/**
+ * §3.5.5.5(1) 難易度の高い連続した投げ受けの「つながった投げ受け」を、属するユニットの添字の組で返す。
+ *  - ② 受けると同時に次の投げ（全手具）：キャッチの**直後**（間に何も挟まない）に次の投げがある →
+ *    そのキャッチのユニットと次の投げのユニット
+ *  - ① 次々に投げる（リング・クラブ）：手具が空中にあるうちに次を投げる → 1つ目を投げてから
+ *    空中の手具が無くなるまでに通ったユニットすべて
+ * 二つ投げ（1回の投げで2つ）だけでは「次々に」にならない。
+ */
+export function linkedThrowSpans(items: Item[], unitOfItem: number[], apparatus: ApparatusKey): number[][] {
+  const spans: number[][] = [];
+  const unitAt = (k: number) => unitOfItem[k] ?? -1;
+  items.forEach((item, k) => {
+    if (isCatchItem(item) && isThrowAt(items[k + 1])) spans.push([unitAt(k), unitAt(k + 1)]);
+  });
+  if (APPARATUS_USE[apparatus]) {
+    let inAir = 0;
+    let span: number[] | null = null;
+    let start: number[] = [];
+    items.forEach((item, k) => {
+      if (span || inAir > 0) (span ?? start).push(unitAt(k));
+      if (isThrowAt(item)) {
+        if (inAir > 0 && !span) span = [...start];
+        if (inAir === 0) start = [unitAt(k)];
+        inAir += thrownCount(item);
+      }
+      if (isCatchItem(item)) {
+        inAir = Math.max(0, inAir - caughtCount(item));
+        if (inAir === 0) {
+          if (span) spans.push(span);
+          span = null;
+          start = [];
+        }
+      }
+    });
+    if (span) spans.push(span);
+  }
+  return spans.map((s) => [...new Set(s.filter((u) => u >= 0))]);
+}
 
 export function computeScore(
   rawSeries: Series[],
@@ -572,10 +619,19 @@ export function computeScore(
     const handDiff = handRows.reduce((s, r) => s + (r.adopted && r.inTop ? r.score : 0), 0);
     // 上限超過（ジュニアの6回目以降）の投げは加点にも数えない
     const countedThrows = a.units.reduce((n, u, j) => n + (overLimitUnit[i][j] ? 0 : u.throwCount), 0);
+    // §3.5.5.5(1)：つながった投げ受け（受けると同時に次の投げ／リング・クラブで次々に投げる）の中に
+    // D難度以上の投げ受けがあるときだけ。同じシリーズに投げが2回あるだけでは加点しない
     const sBonus =
       !isDup &&
       countedThrows >= 2 &&
-      a.units.some((u, j) => !overLimitUnit[i][j] && u.type === "throw" && u.hasDPlus)
+      linkedThrowSpans(ser.items, a.unitOfItem ?? [], apparatus).some((span) =>
+        span.some((j) => {
+          const u = a.units[j];
+          if (!u || overLimitUnit[i][j] || u.type !== "throw") return false;
+          // ①で2つ目が空中にある間の徒手（投げを含まないユニット）は、その難度で見る
+          return u.hasDPlus || (!u.isThrow && DIFF_VALUE[u.finalDiff] >= DIFF_VALUE.D);
+        }),
+      )
         ? SERIES_BONUS
         : 0;
 

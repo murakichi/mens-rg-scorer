@@ -510,6 +510,9 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
   const units: Unit[] = [];
   let throwCount = 0;
   let buf: UnitBuffer | null = null;
+  const unitOfItem: number[] = series.items.map(() => -1);
+  /** 今のバッファに入っているアイテムの添字（flush でユニットが確定したら割り当てる） */
+  let bufItems: number[] = [];
   const newBuf = (): UnitBuffer => ({
     skills: [],
     motionCount: 0,
@@ -524,16 +527,22 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
   const flush = () => {
     if (buf && (buf.skills.length || buf.motionCount > 0 || buf.throwItems > 0)) {
       const u = finalizeUnit(buf, junior, future);
-      if (u.finalDiff) units.push(u);
+      if (u.finalDiff) {
+        units.push(u);
+        bufItems.forEach((k) => (unitOfItem[k] = units.length - 1));
+      }
       const skillThrows = buf.skills.filter((s) => s.isThrow).length;
       throwCount += buf.throwItems + skillThrows;
     }
     buf = null;
+    bufItems = [];
   };
   const splitBefore = unitSplitFlags(series.items);
   series.items.forEach((item, i) => {
     // タンブリングの合間の徒手はここで区切る（徒手の手前・徒手の直後）
     if (splitBefore[i]) flush();
+    // キャッチは自分が閉じるユニットに属する。それ以外はこれから入るバッファに属する
+    if (item.kind !== "ropeJump") bufItems.push(i);
     if (item.kind === "catch") {
       flush();
     } else if (item.kind === "throw") {
@@ -579,7 +588,7 @@ export function analyzeSeries(series: Series, junior = false, future: FutureLeve
   });
   flush();
 
-  return { units, throwCount };
+  return { units, throwCount, unitOfItem };
 }
 
 // ---- その手具では入力できない内容（別の手具から残ったもの） ----
