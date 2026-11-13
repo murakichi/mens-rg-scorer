@@ -1865,7 +1865,6 @@ input[type="radio"] {
 /* その投げ・受けが実際に技術加点になったか */
 .tech-status {
   font-size: 11px;
-  color: var(--ink-mute);
 }
 .tech-status.is-earned {
   color: var(--teal);

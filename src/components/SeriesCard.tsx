@@ -170,16 +170,16 @@ function OptionBadge({ id, required }: { id?: string; required?: boolean }) {
 
 /** その投げ・受けが実際に技術加点になったか（同じ投げ方・受け方の2回目以降は0） */
 function TechStatusLine({ tech, what }: { tech?: TechStatus | null; what: "投げ" | "受け" }) {
-  if (!tech) return null;
-  const text: Record<TechStatus["status"], string> = {
+  // 加点になるチェックが無い投げ・受けは技術加点の対象外なので、何も出さない
+  if (!tech || tech.bonusTags <= 0) return null;
+  const text: Record<Exclude<TechStatus["status"], "none">, string> = {
     earned: `技術加点 +${tech.points.toFixed(1)}`,
-    none: "技術加点なし（+0.1 のチェックなし）",
     duplicate: `技術加点なし：全く同じ${what === "投げ" ? "投げ方" : "受け方"}は加点済み`,
     dupSeries: "技術加点なし：重複シリーズ",
     over: "技術加点なし：投げ回数の上限超過",
   };
-  const cls = tech.status === "earned" ? "tech-status is-earned" : tech.bonusTags > 0 ? "tech-status is-lost" : "tech-status";
-  return <div className={cls}>{text[tech.status]}</div>;
+  if (tech.status === "none") return null;
+  return <div className={tech.status === "earned" ? "tech-status is-earned" : "tech-status is-lost"}>{text[tech.status]}</div>;
 }
 
 /**
