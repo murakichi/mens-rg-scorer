@@ -34,6 +34,7 @@ import {
   REQUIRED_THROW_OPTIONS,
   hasLeftHandThrow,
   hasTwoThrow,
+  nonHandKindForcesNoView,
 } from "./constants";
 
 /** 視野外の投げ・キャッチの技術タグ（`constants.ts` が持ち主。ここからも参照できるよう再輸出する） */
@@ -1277,7 +1278,11 @@ export function withNonHandKinds(series: Series, apparatus: ApparatusKey): Serie
     let h = idx + 1;
     for (const ch of JSON.stringify(series.items)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     changed = true;
-    return { ...item, nonHandKind: kinds[h % kinds.length].id };
+    const kind = kinds[h % kinds.length].id;
+    // 首と肩に挟む受け方は視野外のキャッチでもある
+    if (nonHandKindForcesNoView(kind) && !(item.catchTypes || []).includes(NO_VIEW_TAG))
+      return { ...item, nonHandKind: kind, catchTypes: [...(item.catchTypes || []), NO_VIEW_TAG] };
+    return { ...item, nonHandKind: kind };
   });
   return changed ? { ...series, items } : series;
 }

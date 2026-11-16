@@ -175,6 +175,14 @@ export const NON_HAND_CATCH_KINDS: Record<ApparatusKey, NonHandCatchKind[]> = {
 export const nonHandKindOf = (apparatus: ApparatusKey, id: string | undefined): NonHandCatchKind | undefined =>
   id ? NON_HAND_CATCH_KINDS[apparatus].find((k) => k.id === id) : undefined;
 
+/**
+ * 視野外のキャッチを伴う手以外の受け方（首と肩に挟む＝頭の後ろで受ける）。
+ * 選ぶとエディタは視野外のキャッチにチェックを入れて変えられなくし、生成も視野外を付ける（オーナー 2026-11-16）。
+ */
+export const NO_VIEW_NON_HAND_KINDS: string[] = ["neckShoulder"];
+export const nonHandKindForcesNoView = (kind: string | undefined): boolean =>
+  !!kind && NO_VIEW_NON_HAND_KINDS.includes(kind);
+
 export const APPARATUS_USE: Record<ApparatusKey, boolean> = {
   stick: false,
   clubs: true,

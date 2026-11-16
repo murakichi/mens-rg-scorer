@@ -8,6 +8,7 @@ import {
   canUseNoRotation,
   NON_HAND_CATCH_KINDS,
   NO_VIEW_TAG,
+  nonHandKindForcesNoView,
   canUseSideThrow,
   SKILL_THROW_OPTIONS_COMMON,
   CATCH_OPTIONS_COMMON,
@@ -312,12 +313,14 @@ function CatchChecks({
         {options.flatMap((opt) => {
           // 手具を使ったキャッチと手以外のキャッチは同時に実施できない
           const blocked = catchOptionBlocked(opt.id, item.catchTypes);
+          // 首と肩に挟む受け方は視野外のキャッチでもあるので、視野外はチェックしたまま変えられない
+          const forced = opt.id === NO_VIEW_TAG && nonHandKindForcesNoView(item.nonHandKind);
           return [
-            <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+            <label key={opt.id} className={blocked || forced ? "check is-disabled" : "check"}>
               <input
                 type="checkbox"
-                checked={(item.catchTypes || []).includes(opt.id)}
-                disabled={blocked}
+                checked={forced || (item.catchTypes || []).includes(opt.id)}
+                disabled={blocked || forced}
                 onChange={(e) =>
                   onUpdate({
                     catchTypes: toggle(item.catchTypes, opt.id, e.target.checked),
@@ -335,7 +338,13 @@ function CatchChecks({
                 apparatus={apparatus}
                 types={item.catchTypes}
                 value={item.nonHandKind}
-                onChange={(nonHandKind) => onUpdate({ nonHandKind })}
+                onChange={(nonHandKind) =>
+                  onUpdate(
+                    nonHandKindForcesNoView(nonHandKind)
+                      ? { nonHandKind, catchTypes: toggle(item.catchTypes, NO_VIEW_TAG, true) }
+                      : { nonHandKind },
+                  )
+                }
               />
             ) : null,
           ];

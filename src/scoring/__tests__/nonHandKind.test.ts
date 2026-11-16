@@ -220,3 +220,19 @@ describe("無回転の投げは投げタンのあとに足す投げにも使わ�
     );
   });
 });
+
+describe("首と肩に挟む受け方は視野外のキャッチ（2026-11-16）", () => {
+  it("生成で首と肩に挟む受け方を選んだ受けには必ず視野外が付く", () => {
+    let n = 0;
+    for (let seed = 1; seed <= 80; seed++)
+      autoThrowTemplates("stick", { random: seededRandom(seed) }).forEach((t) =>
+        t.series.items.forEach((it) => {
+          if ((it.kind === "catch" || it.kind === "skill") && it.nonHandKind === "neckShoulder") {
+            n++;
+            expect(it.catchTypes).toContain("noview");
+          }
+        }),
+      );
+    expect(n).toBeGreaterThan(0);
+  }, 60_000);
+});
