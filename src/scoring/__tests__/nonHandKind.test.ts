@@ -93,7 +93,7 @@ describe("スティックの無回転", () => {
     expect(nonHand).toBeGreaterThan(0);
   });
 
-  it("スティックの自動生成に無回転の投げが出る。他の手具には出ない", () => {
+  it("スティック・クラブの自動生成に無回転の投げが出る。リング・ロープには出ない", () => {
     const has = (app: ApparatusKey) => {
       for (let seed = 1; seed <= 10; seed++)
         if (autoThrowTemplates(app, { random: seededRandom(seed) }).some((t) =>
@@ -101,9 +101,25 @@ describe("スティックの無回転", () => {
       return false;
     };
     expect(has("stick")).toBe(true);
-    // クラブは足でのキャッチを横投げで足りるので、無回転の投げは作らない
-    expect(has("clubs")).toBe(false);
+    // クラブでも「無回転投げ→0〜1動作→手以外のキャッチ」が増えてきている（オーナー、2026-11-13）
+    expect(has("clubs")).toBe(true);
     expect(has("ring")).toBe(false);
+    expect(has("rope")).toBe(false);
+  });
+
+  it("クラブの無回転の投げは0〜1動作で手以外のキャッチ（足）で受ける", () => {
+    for (let seed = 1; seed <= 20; seed++)
+      autoThrowTemplates("clubs", { random: seededRandom(seed) }).forEach((t) => {
+        const items = t.series.items;
+        items.forEach((it, k) => {
+          if (it.kind !== "throw" || !(it.throwTypes ?? []).includes("norotate")) return;
+          const c = items.findIndex((x, j) => j > k && x.kind === "catch");
+          const catchItem = items[c];
+          expect(catchItem?.kind === "catch" && (catchItem.catchTypes ?? []).includes("nonhand")).toBe(true);
+          const motions = items.slice(k + 1, c).reduce((m, x) => m + (x.kind === "motion" ? (x.count ?? 1) : 0), 0);
+          expect(motions).toBeLessThanOrEqual(1);
+        });
+      });
   });
 });
 
@@ -190,5 +206,14 @@ describe("無回転は基本横投げとセット", () => {
         }),
       );
     expect(n).toBeGreaterThan(0);
+  });
+});
+
+describe("無回転の投げは投げタンのあとに足す投げにも使わない", () => {
+  it("secondThrowStyles に無回転は入らない（スティック・クラブ）", async () => {
+    const { secondThrowStyles } = await import("../tumblingPatterns");
+    (["stick", "clubs"] as const).forEach((ap) =>
+      expect(secondThrowStyles(ap).some((t) => (t.throwTypes ?? []).includes("norotate"))).toBe(false),
+    );
   });
 });

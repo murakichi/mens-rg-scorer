@@ -6,7 +6,7 @@
 // その2つから導いた遷移表は `tumblingTransitions.ts`、実際の候補づくりは `autoTumblings.ts`。
 // =====================================================================
 
-import { DIFF_VALUE, hasTwoThrow, maxDiff } from "./constants";
+import { DIFF_VALUE, NO_ROTATION_TAG, hasTwoThrow, maxDiff } from "./constants";
 import { NON_HAND_TAG, autoThrowStyles, type AutoThrowStyle } from "./autoThrows";
 import type { ApparatusKey, Difficulty, FutureLevel } from "./types";
 
@@ -107,7 +107,10 @@ export const canTwoThrowTumbling = (
  * 要求Dスコアによらず必ず一定の割合で出てしまう（`unseenShapes.ts` の抽選が効かない）。
  */
 export function secondThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
-  return autoThrowStyles(apparatus).filter((t) => t.id !== NON_HAND_TAG && !t.rare);
+  // 無回転の投げは手以外のキャッチ（0〜1動作）のためだけなので、投げタンのあとに足す投げには使わない
+  return autoThrowStyles(apparatus).filter(
+    (t) => t.id !== NON_HAND_TAG && !t.rare && !(t.throwTypes || []).includes(NO_ROTATION_TAG),
+  );
 }
 
 /**

@@ -7,7 +7,6 @@ import {
   THROW_OPTIONS_NO_ROTATION,
   canUseNoRotation,
   NON_HAND_CATCH_KINDS,
-  SIDE_THROW_TAG,
   NO_VIEW_TAG,
   canUseSideThrow,
   SKILL_THROW_OPTIONS_COMMON,
@@ -38,6 +37,10 @@ import {
   twistLabel,
   skillFlowAfter,
   techOptionKind,
+  BETWEEN_LEGS_TAG,
+  NO_VIEW_DIRECTIONS,
+  noViewDirectionOf,
+  withNoViewDirection,
 } from "../scoring/constants";
 import {
   checkApparatusFlow,
@@ -211,7 +214,13 @@ function ThrowChecks({
           type="checkbox"
           checked={on}
           disabled={blocked}
-          onChange={(e) => onUpdate({ throwTypes: toggle(item.throwTypes, opt.id, e.target.checked) })}
+          onChange={(e) => {
+            const next = toggle(item.throwTypes, opt.id, e.target.checked);
+            // 視野外を外したら股下（視野外の投げ方）も外す
+            onUpdate({
+              throwTypes: opt.id === NO_VIEW_TAG && !e.target.checked ? next.filter((t) => t !== BETWEEN_LEGS_TAG) : next,
+            });
+          }}
         />
         {opt.name}
       </label>
@@ -244,8 +253,13 @@ function ThrowChecks({
       <OptGroup kind="kind">
         {[
           ...options.filter((o) => techOptionKind(o.id) === "kind").map(check),
-          sideDirection && noView ? (
-            <NoViewDirection key="dir" types={item.throwTypes} onChange={(throwTypes) => onUpdate({ throwTypes })} />
+          noView ? (
+            <NoViewDirection
+              key="dir"
+              types={item.throwTypes}
+              allowSide={sideDirection}
+              onChange={(throwTypes) => onUpdate({ throwTypes })}
+            />
           ) : null,
           ...reqOptions.filter((o) => doneElsewhere(o.id)).map(reqCheck),
         ]}
@@ -338,24 +352,31 @@ function TechStatusLine({ tech, what }: { tech?: TechStatus | null; what: "投�
 }
 
 /**
- * 視野外の投げの方向（真後ろ／横）。横は既存の横投げタグ（`side`）で表すので、
- * 点数の扱いは横投げと同じ（技術加点にはならず、投げ方の種類は真後ろと別に数える）。
- * 視野外のときは通常の「横投げ」チェックの代わりにこの選択を出す。
+ * 視野外の投げの方向（真後ろ／横／股下）のプルダウン。横は既存の横投げタグ（`side`）、股下は `BETWEEN_LEGS_TAG`。
+ * どれも技術加点にはならず（加点は視野外の 0.1 だけ）、投げ方の種類としては別に数える。
+ * 視野外のときは通常の「横投げ」チェックの代わりにこの選択を出す。横を選べない手具（ロープ・共通）では横を出さない。
  */
-function NoViewDirection({ types, onChange }: { types: string[] | undefined; onChange: (next: string[]) => void }) {
-  const side = (types || []).includes(SIDE_THROW_TAG);
-  const set = (toSide: boolean) => onChange(toggle(types, SIDE_THROW_TAG, toSide));
+function NoViewDirection({
+  types,
+  allowSide,
+  onChange,
+}: {
+  types: string[] | undefined;
+  allowSide: boolean;
+  onChange: (next: string[]) => void;
+}) {
+  const cur = noViewDirectionOf(types);
   return (
-    <span className="check-req">
-      視野外の方向
-      <label className="check">
-        <input type="radio" checked={!side} onChange={() => set(false)} />
-        真後ろ
-      </label>
-      <label className="check">
-        <input type="radio" checked={side} onChange={() => set(true)} />横
-      </label>
-    </span>
+    <label className="check-req">
+      視野外の投げ方
+      <select value={cur} onChange={(e) => onChange(withNoViewDirection(types, e.target.value))}>
+        {NO_VIEW_DIRECTIONS.filter((d) => allowSide || d.id !== "side" || cur === "side").map((d) => (
+          <option key={d.id} value={d.id}>
+            {d.name}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

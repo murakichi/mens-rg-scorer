@@ -88,13 +88,37 @@ export const NO_ROTATION_TAG = "norotate";
 export const THROW_OPTIONS_NO_ROTATION = [{ id: NO_ROTATION_TAG, name: "無回転" }];
 
 /**
+ * 視野外の投げを**股下**から投げる（2026-11-16 オーナー追加）。横投げと同じく技術加点は付けず
+ * （加点は視野外の 0.1 だけ）、投げ方の種類として真後ろ・横とは別に数える。視野外の投げにだけ付く。
+ */
+export const BETWEEN_LEGS_TAG = "betweenlegs";
+/**
+ * 視野外の投げの方向の選択肢（入力画面のプルダウン）。真後ろはタグなし、横は横投げタグ、股下は `BETWEEN_LEGS_TAG`。
+ * 横はロープ・共通テンプレートでは選べない（`canUseSideThrow`）。
+ */
+export const NO_VIEW_DIRECTIONS: { id: string; name: string; tag: string | null }[] = [
+  { id: "back", name: "真後ろ", tag: null },
+  { id: "side", name: "横", tag: SIDE_THROW_TAG },
+  { id: "legs", name: "股下", tag: BETWEEN_LEGS_TAG },
+];
+/** 投げのタグから視野外の方向を読む */
+export const noViewDirectionOf = (types: string[] | undefined): string =>
+  (types || []).includes(BETWEEN_LEGS_TAG) ? "legs" : (types || []).includes(SIDE_THROW_TAG) ? "side" : "back";
+/** 視野外の方向を付け替えたタグ（方向のタグだけを入れ替え、ほかのタグは残す） */
+export function withNoViewDirection(types: string[] | undefined, dir: string): string[] {
+  const rest = (types || []).filter((t) => t !== SIDE_THROW_TAG && t !== BETWEEN_LEGS_TAG);
+  const tag = NO_VIEW_DIRECTIONS.find((d) => d.id === dir)?.tag;
+  return tag ? [...rest, tag] : rest;
+}
+
+/**
  * 投げ・受けのチェックが技術加点（§3.5.5.5(2)）になるか。入力画面の目印に使う。
  *  - `bonus`：視野外・手以外・手具を使った（1つにつき +0.1。同じ投げ方・受け方は演技全体で1回だけ）
  *  - `kind`：横投げ・無回転（加点にならず、投げ方の種類として数えるだけ）
  * 採点側（`score.ts` の `bonusThrowTypes`）と同じ分け方。
  */
 export function techOptionKind(id: string): "bonus" | "kind" {
-  return id === SIDE_THROW_TAG || id === NO_ROTATION_TAG ? "kind" : "bonus";
+  return id === SIDE_THROW_TAG || id === NO_ROTATION_TAG || id === BETWEEN_LEGS_TAG ? "kind" : "bonus";
 }
 export const canUseNoRotation = (apparatus: ApparatusKey): boolean => apparatus === "stick" || apparatus === "clubs";
 

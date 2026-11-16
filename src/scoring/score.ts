@@ -11,8 +11,7 @@ import {
   DIFF_VALUE,
   DIFF_SCORE,
   SERIES_BONUS,
-  SIDE_THROW_TAG,
-  NO_ROTATION_TAG,
+  techOptionKind,
   TECHNIQUE_BONUS,
   APPARATUS_OP_BONUS,
   resolveRopeJump,
@@ -714,7 +713,7 @@ export function computeScore(
     const techScope = ser.notDuplicate ? `${i}#` : "";
     // 横投げ・無回転は投げ方の種類として数えるだけで、技術加点にはしない
     const bonusThrowTypes = (item: { throwTypes?: string[] }) =>
-      (item.throwTypes || []).filter((t) => t !== SIDE_THROW_TAG && t !== NO_ROTATION_TAG).length;
+      (item.throwTypes || []).filter((t) => techOptionKind(t) === "bonus").length;
     const techItems: (TechStatus | null)[] = ser.items.map((item, j) => {
       // 投げ・受けごとに、加点の対象になるチェック数とキーを出す
       const target =
