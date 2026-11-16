@@ -16,6 +16,8 @@ import {
   SIDE_THROW_TAG,
   NO_ROTATION_TAG,
   LEGACY_OTHER_STYLE_TAG,
+  BETWEEN_LEGS_TAG,
+  NO_VIEW_TAG,
   canUseNoRotation,
   nonHandKindOf,
   canUseSideThrow,
@@ -620,6 +622,10 @@ export function hoistRopeJumps(list: Series[]): { series: Series[]; jumps: RopeJ
   return { series, jumps };
 }
 
+/** 視野外でない投げに股下が残っているか */
+const legsWithoutNoView = (types: string[] | undefined): boolean =>
+  (types || []).includes(BETWEEN_LEGS_TAG) && !(types || []).includes(NO_VIEW_TAG);
+
 /** 手具固有の入力（その手具で入力できるものだけを true にする） */
 const canUseApparatusTag = (apparatus: ApparatusKey): boolean => APPARATUS_USE[apparatus];
 const canUseReqType = (apparatus: ApparatusKey, id: string): boolean =>
@@ -702,6 +708,7 @@ export const APPARATUS_INPUT_NAMES = {
   nonHandKind: "手以外のキャッチの受け方",
   other: "その他の投げ・キャッチ（削除済みの入力）",
   cartwheelSkill: "タンブリング欄の側転（徒手動作に移す）",
+  legsWithoutNoView: "視野外でない投げに残った股下",
 } as const;
 
 /**
@@ -722,6 +729,9 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
     const empty = handsEmptyFlags(ser.items, apparatus);
     ser.items.forEach((item, i) => {
       if (isCartwheelSkillItem(item)) reasons.add(APPARATUS_INPUT_NAMES.cartwheelSkill);
+      // 股下は視野外の投げ方なので、視野外でない投げに残っていれば落とす
+      if ((item.kind === "throw" || item.kind === "skill") && legsWithoutNoView(item.throwTypes))
+        reasons.add(APPARATUS_INPUT_NAMES.legsWithoutNoView);
       // 削除した「その他の投げ・キャッチ」はどの手具でも入力できない（旧データに残っていれば落とす）
       if (
         ((item.kind === "throw" || item.kind === "skill") && (item.throwTypes || []).includes(LEGACY_OTHER_STYLE_TAG)) ||
@@ -780,7 +790,7 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
   const side = canUseSideThrow(apparatus);
   const noRotation = canUseNoRotation(apparatus);
   const withoutTag = (ids?: string[]) =>
-    (ids || []).filter(
+    (ids || []).filter((id, _k, all) => id !== BETWEEN_LEGS_TAG || all.includes(NO_VIEW_TAG)).filter(
       (id) =>
         id !== LEGACY_OTHER_STYLE_TAG &&
         (tags || id !== USE_APPARATUS_TAG) &&

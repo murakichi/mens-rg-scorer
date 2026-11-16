@@ -26,6 +26,7 @@ import {
   NO_VIEW_TAG,
   SIDE_THROW_TAG,
   NO_ROTATION_TAG,
+  BETWEEN_LEGS_TAG,
   canUseNoRotation,
   NON_HAND_CATCH_KINDS,
   USE_APPARATUS_TAG,
@@ -470,7 +471,24 @@ export const SIDE_LEFT_HAND_CHANCE = 0.8;
  * 主流なので半分より少なくするが、エディタで選べる以上は両方を生成する。横は技術加点にならず、
  * 真後ろとは別の投げ方の種類として数える。
  */
-export const NO_VIEW_SIDE_CHANCE = 0.4;
+export const NO_VIEW_SIDE_CHANCE = 0.1;
+/**
+ * 手具ごとの「視野外の投げを横にする」確率（無ければ `NO_VIEW_SIDE_CHANCE`）。
+ * クラブは横向きの背面投げが背面投げ全体の1割程度（オーナー、2026-11-16）。
+ * クラブは最低限の形の「背面の横投げ→0〜1動作→押さえつけ」（`NO_VIEW_SIDE_STYLE_ID`）と2つ投げの形だけで
+ * 背面投げの13%前後が横になるので（実測：4.5・3.0・上限なし×20構成で 11/87）、ほかの視野外の投げは横にしない。
+ */
+/** 視野外の投げを股下から投げる確率（全手具。実戦での投入例はまだないので1割程度。オーナー、2026-11-16） */
+export const NO_VIEW_LEGS_CHANCE = 0.1;
+/**
+ * 手具ごとの股下の確率（無ければ `NO_VIEW_LEGS_CHANCE`）。視野外の投げのうち、この抽選を通らない形
+ * （無回転の背面横投げ・タンブリング中のきりもみの視野外投げなど）の割合が手具で違うので、
+ * 生成された視野外の投げ全体で1割程度になるように合わせる。
+ */
+export const NO_VIEW_LEGS_CHANCE_BY_APPARATUS: Partial<Record<ApparatusKey, number>> = { stick: 0.15, ring: 0.15, rope: 0.07 };
+export const noViewLegsChance = (apparatus: ApparatusKey): number =>
+  NO_VIEW_LEGS_CHANCE_BY_APPARATUS[apparatus] ?? NO_VIEW_LEGS_CHANCE;
+export const NO_VIEW_SIDE_CHANCE_BY_APPARATUS: Partial<Record<ApparatusKey, number>> = { clubs: 0, stick: 0 };
 export const SIDE_LEFT_HAND_MAX_MOTIONS = 1;
 
 /**
@@ -498,6 +516,22 @@ export function maybeSideThrow(
   rand: () => number,
   chance: (p: number) => number = (p) => p,
 ): AutoThrowStyle {
+  // 視野外の投げ：真後ろ／横／股下を引く（二つ投げ・手以外の投げは視野外と組まない）。
+  // ロープは横投げをしないが股下はあるので、手具の判定より先に引く
+  const types0 = throwStyle.throwTypes || [];
+  if (types0.includes(NO_VIEW_TAG) && !throwStyle.two) {
+    const free = !types0.includes(SIDE_THROW_TAG) && !types0.includes(NON_HAND_TAG);
+    if (!free) return throwStyle;
+    // 方向は1回の乱数で決める：股下（全手具・1割程度）／横（ロープ以外）／真後ろ。
+    // 股下も横向きの背面投げも実戦での投入例はまだない（オーナー、2026-11-16）ので少なめにする
+    const r = rand();
+    const legs = chance(noViewLegsChance(apparatus));
+    if (r < legs) return { ...throwStyle, throwTypes: [...types0, BETWEEN_LEGS_TAG] };
+    const side = canUseSideThrow(apparatus)
+      ? chance(NO_VIEW_SIDE_CHANCE_BY_APPARATUS[apparatus] ?? NO_VIEW_SIDE_CHANCE)
+      : 0;
+    return r < legs + (1 - legs) * side ? { ...throwStyle, throwTypes: [...types0, SIDE_THROW_TAG] } : throwStyle;
+  }
   if (!canUseSideThrow(apparatus)) return throwStyle;
   if (throwStyle.two) {
     // 二つ投げ：横投げにするのは `SIDE_THROW_TWO_THROW_CHANCE` を持つ手具（リング）だけ。
@@ -512,14 +546,6 @@ export function maybeSideThrow(
     const blocked = [SIDE_THROW_TAG, NON_HAND_TAG, NO_VIEW_TAG].some((t) => types.includes(t));
     return pTwo > 0 && !blocked && rand() < chance(pTwo)
       ? { ...throwStyle, throwTypes: [...types, SIDE_THROW_TAG] }
-      : throwStyle;
-  }
-  // 視野外の投げ：真後ろか横かを引く（二つ投げ・手以外の投げは視野外と組まない）
-  const types0 = throwStyle.throwTypes || [];
-  if (types0.includes(NO_VIEW_TAG)) {
-    const free = !types0.includes(SIDE_THROW_TAG) && !types0.includes(NON_HAND_TAG);
-    return free && rand() < chance(NO_VIEW_SIDE_CHANCE)
-      ? { ...throwStyle, throwTypes: [...types0, SIDE_THROW_TAG] }
       : throwStyle;
   }
   if (!canAddSideThrow(throwStyle)) return throwStyle;
@@ -767,6 +793,8 @@ export interface AutoThrowSpec {
   trailCatchStyle?: AutoCatchStyle;
   /** `pattern.overlap` のときの1つ目の投げ（2つ目の投げは `throwStyle`、最後のキャッチは `catchStyle`） */
   firstThrowStyle?: AutoThrowStyle;
+  /** `pattern.noViewPair` のとき、あとに足す視野外の投げを股下から投げるか（`NO_VIEW_LEGS_CHANCE`） */
+  noViewPairLegs?: boolean;
   /** `pattern.airPair` のときの、高難度でないほうの徒手の動作数（`AIR_PAIR_LOW_COUNTS`） */
   airLowCount?: number;
   /** `pattern.airPair` のとき、2つのキャッチの間に転がりを入れるか（`AIR_PAIR_ROLL_CHANCE`） */
@@ -908,7 +936,7 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
     ...(throwStyle.two ? { catchTwo: true } : {}),
   });
   if (pattern.noViewPair) {
-    items.push({ kind: "throw", throwTypes: [NO_VIEW_TAG] });
+    items.push({ kind: "throw", throwTypes: spec.noViewPairLegs ? [NO_VIEW_TAG, BETWEEN_LEGS_TAG] : [NO_VIEW_TAG] });
     items.push({ kind: "catch", catchTypes: [NO_VIEW_TAG] });
   }
   // あとに最低限の投げ受けを1本（徒手なし・通常のキャッチ）
@@ -1187,6 +1215,8 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, motions, rand, chance),
       catchStyle,
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
+      // 連続投げで足す視野外の投げも、股下から投げることがある（ほかの視野外の投げと同じ割合）
+      ...(pattern.noViewPair ? { noViewPairLegs: rand() < chance(noViewLegsChance(apparatus)) } : {}),
       ...(pattern.trailPair
         ? (() => {
             const trailThrowStyle = nextTrailThrow(catchStyle);
