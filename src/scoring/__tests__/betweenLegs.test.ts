@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { computeScore } from "../score";
 import { noViewDirectionOf, withNoViewDirection, techOptionKind, BETWEEN_LEGS_TAG } from "../constants";
 import type { Series, Item } from "../types";
+import { maybeSideThrow } from "../autoThrows";
 
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 const chene = (count: number): Item => ({ kind: "motion", motionId: "chene", count });
@@ -91,5 +92,17 @@ describe("視野外の投げ方：両手持ち無回転（スティック）", (
     );
     expect(r.throwKindCount).toBe(2);
     expect(r.techniqueBonus).toBeCloseTo(0.1 + 0.1 + 0.1, 5);
+  });
+});
+
+describe("生成：股下で投げたあとは手以外のキャッチで受けない（2026-11-16）", () => {
+  it("手以外のキャッチで受ける視野外の投げは、乱数が股下に当たっても股下にしない", () => {
+    const nv = { id: "noview", name: "視野外の投げ", throwTypes: ["noview"] };
+    const nonHand = { id: "nonhand", name: "手以外のキャッチ", catchTypes: ["nonhand"] };
+    const plain = { id: "normal", name: "通常のキャッチ" };
+    (["stick", "clubs", "ring", "rope"] as const).forEach((app) => {
+      expect(maybeSideThrow(app, nv, nonHand, 0, () => 0).throwTypes).not.toContain(BETWEEN_LEGS_TAG);
+      expect(maybeSideThrow(app, nv, plain, 0, () => 0).throwTypes).toContain(BETWEEN_LEGS_TAG);
+    });
   });
 });

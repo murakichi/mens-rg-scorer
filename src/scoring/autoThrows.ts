@@ -530,7 +530,8 @@ export function maybeSideThrow(
     // 方向は1回の乱数で決める：股下（全手具・1割程度）／横（ロープ以外）／真後ろ。
     // 股下も横向きの背面投げも実戦での投入例はまだない（オーナー、2026-11-16）ので少なめにする
     const r = rand();
-    const legs = chance(noViewLegsChance(apparatus));
+    // 股下で投げたあとは手以外のキャッチでは受けない（オーナー 2026-11-16）。乱数の消費は変えない
+    const legs = catchHasTag(catchStyle, NON_HAND_TAG) ? 0 : chance(noViewLegsChance(apparatus));
     if (r < legs) return { ...throwStyle, throwTypes: [...types0, BETWEEN_LEGS_TAG] };
     const side = canUseSideThrow(apparatus)
       ? chance(NO_VIEW_SIDE_CHANCE_BY_APPARATUS[apparatus] ?? NO_VIEW_SIDE_CHANCE)

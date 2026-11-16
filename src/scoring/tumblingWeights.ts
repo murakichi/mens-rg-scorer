@@ -25,6 +25,8 @@ import {
 import {
   AFTER_BACK_LAYOUT_BACKWARD_SALTOS,
   AFTER_BACK_LAYOUT_SALTOS,
+  AFTER_BACK_LAYOUT_HALF_SALTOS,
+  isBackLayoutHalf,
   CHAIN_END_SKILLS,
   DIFFICULTY_RISE_AFTER,
   TEMPO_SKILL_ID,
@@ -511,7 +513,11 @@ export function saltoWeights(
   }
   // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）。
   // 後方系を続ける形（抱え込みの半ひねり系）はさらに少ない
-  const listed = [...AFTER_BACK_LAYOUT_SALTOS, ...AFTER_BACK_LAYOUT_BACKWARD_SALTOS];
+  const listed = [
+    ...AFTER_BACK_LAYOUT_SALTOS,
+    ...AFTER_BACK_LAYOUT_BACKWARD_SALTOS,
+    ...(isBackLayoutHalf(prevId) ? AFTER_BACK_LAYOUT_HALF_SALTOS : []),
+  ];
   return withHarderThanRated(
     { ...weights, ...Object.fromEntries(listed.map((x) => [x.id, x.weight])) },
     userWeights,

@@ -7,15 +7,32 @@ import { slowIt } from "./slow";
 // 後方宙返り半ひねり（抱え込み）は実戦ではほぼ使われないので、伸身に置き換える（オーナー 2026-11-16）
 const TUCK = "b_backhalf";
 const LAYOUT = "b_backlayhalf";
-const isSalto = (id: string) => !["b_roundoff", "b_backhand", "a_cartwheel"].includes(id);
 
 describe("後方宙返り半ひねりは伸身を優先する", () => {
-  it("伸身の半ひねりのあとに続けられない技（側宙・転宙など）があるので、その位置は抱え込みのまま", () => {
-    const tuckNext = nextSaltoOptions(TUCK);
+  it("伸身の半ひねりのあとにも、抱え込みと同じく側宙・転宙・前方1回ひねりを続けられる（オーナー 2026-11-16）", () => {
     const layoutNext = nextSaltoOptions(LAYOUT);
-    expect(layoutNext.every((id) => tuckNext.includes(id))).toBe(true);
-    expect(tuckNext.filter(isSalto).length).toBeGreaterThan(layoutNext.length);
+    ["b_sidesalto", "b_tenchu", "c_front1full", "b_front"].forEach((id) => expect(layoutNext).toContain(id));
+    // 前向きに降りるので後方系は続けない
+    expect(layoutNext).not.toContain("c_back15");
   });
+
+  it("連鎖として抱え込みでも伸身でも組める並びは、候補ではほぼ伸身になる", () => {
+    let tuck = 0;
+    let layout = 0;
+    for (let seed = 1; seed <= 30; seed++)
+      autoTumblingTemplates("stick", { random: seededRandom(seed) }).forEach((t) =>
+        t.series.items.forEach((it, i, all) => {
+          if (it.kind !== "skill") return;
+          const next = all[i + 1];
+          // 側宙・転宙が続く位置（以前は抱え込みのままだった位置）
+          if (!(next?.kind === "skill" && ["b_sidesalto", "b_tenchu"].includes(next.skillId))) return;
+          if (it.skillId === TUCK) tuck++;
+          if (it.skillId === LAYOUT) layout++;
+        }),
+      );
+    expect(layout + tuck).toBeGreaterThan(0);
+    expect(layout).toBeGreaterThan(tuck);
+  }, 60_000);
 });
 
 slowIt("（傾向）全手具で抱え込みの半ひねりは伸身より十分少ない", () => {

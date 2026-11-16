@@ -236,3 +236,15 @@ describe("首と肩に挟む受け方は視野外のキャッチ（2026-11-16）
     expect(n).toBeGreaterThan(0);
   }, 60_000);
 });
+
+describe("旧データの首と肩に挟むキャッチは視野外として採点する（2026-11-16）", () => {
+  it("視野外のチェックが無くても、視野外＋手以外の加点と同じ", () => {
+    const mk = (catchTypes: string[]) =>
+      computeScore(
+        [{ items: [{ kind: "throw", throwTypes: ["norotate", "side"] }, { kind: "catch", catchTypes, nonHandKind: "neckShoulder" }] } as any],
+        "stick",
+      ).techniqueBonus;
+    expect(mk(["nonhand"])).toBeCloseTo(mk(["nonhand", "noview"]), 5);
+    expect(mk(["nonhand"])).toBeCloseTo(0.2, 5);
+  });
+});
