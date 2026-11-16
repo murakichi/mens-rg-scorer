@@ -93,20 +93,39 @@ export const THROW_OPTIONS_NO_ROTATION = [{ id: NO_ROTATION_TAG, name: "無回�
  */
 export const BETWEEN_LEGS_TAG = "betweenlegs";
 /**
- * 視野外の投げの方向の選択肢（入力画面のプルダウン）。真後ろはタグなし、横は横投げタグ、股下は `BETWEEN_LEGS_TAG`。
- * 横はロープ・共通テンプレートでは選べない（`canUseSideThrow`）。
+ * 視野外の投げ方の選択肢（入力画面のプルダウン）。真後ろはタグなし、横は横投げタグ、股下は `BETWEEN_LEGS_TAG`、
+ * **両手持ち無回転**（スティックだけ。2026-11-16 オーナー追加）は無回転タグ（`NO_ROTATION_TAG`）で表す。
+ * 横はロープ・共通テンプレートでは選べない（`canUseSideThrow`）。両手持ち無回転はスティックだけ（`canUseTwoHandNoRotation`）。
  */
 export const NO_VIEW_DIRECTIONS: { id: string; name: string; tag: string | null }[] = [
   { id: "back", name: "真後ろ", tag: null },
   { id: "side", name: "横", tag: SIDE_THROW_TAG },
   { id: "legs", name: "股下", tag: BETWEEN_LEGS_TAG },
+  { id: "twohand", name: "両手持ち無回転", tag: NO_ROTATION_TAG },
 ];
-/** 投げのタグから視野外の方向を読む */
-export const noViewDirectionOf = (types: string[] | undefined): string =>
-  (types || []).includes(BETWEEN_LEGS_TAG) ? "legs" : (types || []).includes(SIDE_THROW_TAG) ? "side" : "back";
-/** 視野外の方向を付け替えたタグ（方向のタグだけを入れ替え、ほかのタグは残す） */
-export function withNoViewDirection(types: string[] | undefined, dir: string): string[] {
-  const rest = (types || []).filter((t) => t !== SIDE_THROW_TAG && t !== BETWEEN_LEGS_TAG);
+/**
+ * 視野外の投げ方に「両手持ち無回転」を出す手具（スティック）。スティックでは視野外の投げの無回転は
+ * この投げ方として扱い、無回転のチェックは出さない（両手で持つので左手投げとも組まない）。
+ */
+export const canUseTwoHandNoRotation = (apparatus: ApparatusKey): boolean => apparatus === "stick";
+/** 投げのタグから視野外の投げ方を読む（`twoHand`＝両手持ち無回転を使う手具か） */
+export const noViewDirectionOf = (types: string[] | undefined, twoHand = false): string =>
+  twoHand && (types || []).includes(NO_ROTATION_TAG)
+    ? "twohand"
+    : (types || []).includes(BETWEEN_LEGS_TAG)
+      ? "legs"
+      : (types || []).includes(SIDE_THROW_TAG)
+        ? "side"
+        : "back";
+/**
+ * 視野外の投げ方を付け替えたタグ（投げ方のタグだけを入れ替え、ほかのタグは残す）。
+ * 両手持ち無回転を使う手具（`twoHand`）では無回転も投げ方のタグとして入れ替える
+ * （旧データの「無回転＋横＋背面」も両手持ち無回転として読み、付け替えで横も外れる）。
+ */
+export function withNoViewDirection(types: string[] | undefined, dir: string, twoHand = false): string[] {
+  const rest = (types || []).filter(
+    (t) => t !== SIDE_THROW_TAG && t !== BETWEEN_LEGS_TAG && !(twoHand && t === NO_ROTATION_TAG),
+  );
   const tag = NO_VIEW_DIRECTIONS.find((d) => d.id === dir)?.tag;
   return tag ? [...rest, tag] : rest;
 }

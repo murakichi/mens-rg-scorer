@@ -63,7 +63,8 @@ describe("横投げ", () => {
   });
 
   it("自動生成：視野外の投げは真後ろも横も作る（横は手以外の投げと組まない。ロープは横なし）", () => {
-    (["stick", "clubs", "ring"] as const).forEach((apparatus) => {
+    // スティックは視野外の投げを横にしない（実在するのは両手持ち無回転。2026-11-16）
+    (["clubs", "ring"] as const).forEach((apparatus) => {
       let both = 0;
       for (let k = 0; k < 20; k++)
         autoThrowSpecs(apparatus).forEach((spec) => {

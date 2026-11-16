@@ -45,10 +45,16 @@ describe("視野外の投げ — 自動生成は真後ろも横も作る", () =>
     return { back, side };
   };
 
-  it.each(["stick", "clubs", "ring"] as const)("%s：両方出て、真後ろのほうが多い", (app) => {
+  it.each(["clubs", "ring"] as const)("%s：両方出て、真後ろのほうが多い", (app) => {
     const { back, side } = noViewThrows(app);
     expect(side).toBeGreaterThan(0);
     expect(back).toBeGreaterThan(side);
+  });
+
+  it("スティックは視野外の投げを横にしない（実在するのは両手持ち無回転。2026-11-16）", () => {
+    const { back, side } = noViewThrows("stick");
+    expect(back).toBeGreaterThan(0);
+    expect(side).toBe(0);
   });
 
   it("ロープは横投げをしないので真後ろだけ", () => {

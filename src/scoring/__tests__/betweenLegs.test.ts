@@ -65,3 +65,31 @@ describe("股下の入力の後始末と生成", () => {
     });
   });
 });
+
+// スティックの視野外の投げ方「両手持ち無回転」（2026-11-16）：無回転タグで表し、視野外の投げ方として入れ替える
+describe("視野外の投げ方：両手持ち無回転（スティック）", () => {
+  it("スティックでは無回転の視野外の投げを両手持ち無回転として読む（旧データの無回転＋横＋背面も）", () => {
+    expect(noViewDirectionOf(["noview", "norotate"], true)).toBe("twohand");
+    expect(noViewDirectionOf(["noview", "norotate", "side"], true)).toBe("twohand");
+    // クラブ（両手持ち無回転なし）では無回転は投げ方ではない
+    expect(noViewDirectionOf(["noview", "norotate", "side"], false)).toBe("side");
+  });
+
+  it("投げ方の付け替えで無回転・横・股下を入れ替える（スティック）。クラブでは無回転を残す", () => {
+    expect(withNoViewDirection(["noview", "norotate", "side"], "back", true)).toEqual(["noview"]);
+    expect(withNoViewDirection(["noview"], "twohand", true)).toEqual(["noview", "norotate"]);
+    expect(withNoViewDirection(["noview", "norotate"], "legs", false)).toEqual(["noview", "norotate", BETWEEN_LEGS_TAG]);
+  });
+
+  it("採点：視野外の0.1だけ加点し、ほかの視野外の投げ方とは別の種類", () => {
+    const r = computeScore(
+      [
+        S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch" }),
+        S({ kind: "throw", throwTypes: ["noview", "norotate"] }, chene(1), { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "footPress" }),
+      ],
+      "stick",
+    );
+    expect(r.throwKindCount).toBe(2);
+    expect(r.techniqueBonus).toBeCloseTo(0.1 + 0.1 + 0.1, 5);
+  });
+});

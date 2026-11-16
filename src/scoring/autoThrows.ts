@@ -273,7 +273,9 @@ export interface AutoCatchStyle {
  */
 export const NO_VIEW_SIDE_STYLE_ID = "noview+side";
 /**
- * スティックの**無回転＋横＋背面（視野外）の投げ**（実施例あり）。足で押さえつけて受ける形
+ * スティックの**両手持ち無回転の背面（視野外）投げ**（実施例あり。視野外の投げ方「両手持ち無回転」＝
+ * `noview`＋`norotate`、横投げは付けない・両手で持つので左手投げとも組まない。2026-11-16 までは
+ * 「無回転＋横＋背面」と表していた。id は互換のため据え置き）。足で押さえつけて受ける形
  * （手以外のキャッチ・`footPress`）で、最低限の形（`NO_VIEW_SIDE_PATTERNS`＝徒手0〜1動作）だけで使う。
  */
 export const NO_ROTATION_BACK_SIDE_STYLE_ID = "norotate+noview+side";
@@ -306,8 +308,9 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   if (apparatus === "stick")
     styles.push({
       id: NO_ROTATION_BACK_SIDE_STYLE_ID,
-      name: "無回転の背面横投げ",
-      throwTypes: [NO_ROTATION_TAG, NO_VIEW_TAG, SIDE_THROW_TAG],
+      // 視野外の投げ方「両手持ち無回転」（2026-11-16 オーナー）。両手で持つので左手投げとは組まない
+      name: "両手持ち無回転の背面投げ",
+      throwTypes: [NO_ROTATION_TAG, NO_VIEW_TAG],
     });
   // クラブ：背面（視野外）の横投げ→0〜1動作→手具を使ったキャッチ（`NO_VIEW_SIDE_STYLE_ID`）
   if (NO_VIEW_SIDE_PRESS_APPARATUS.includes(apparatus))
@@ -520,7 +523,8 @@ export function maybeSideThrow(
   // ロープは横投げをしないが股下はあるので、手具の判定より先に引く
   const types0 = throwStyle.throwTypes || [];
   if (types0.includes(NO_VIEW_TAG) && !throwStyle.two) {
-    const free = !types0.includes(SIDE_THROW_TAG) && !types0.includes(NON_HAND_TAG);
+    // 両手持ち無回転（無回転の視野外の投げ）はそれ自体が投げ方なので、股下・横にはしない
+    const free = !types0.includes(SIDE_THROW_TAG) && !types0.includes(NON_HAND_TAG) && !types0.includes(NO_ROTATION_TAG);
     if (!free) return throwStyle;
     // 方向は1回の乱数で決める：股下（全手具・1割程度）／横（ロープ以外）／真後ろ。
     // 股下も横向きの背面投げも実戦での投入例はまだない（オーナー、2026-11-16）ので少なめにする

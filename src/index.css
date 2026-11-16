@@ -1855,6 +1855,10 @@ input[type="radio"] {
 .opt-group.is-req {
   border-left-color: var(--amber);
 }
+/* 親のチェックの中身（視野外の投げ方・手以外の受け方）は、親のすぐ下に字下げして出す */
+.opt-group .opt-sub {
+  margin-left: 18px;
+}
 .opt-group-head {
   font-size: 10px;
   font-weight: 700;
