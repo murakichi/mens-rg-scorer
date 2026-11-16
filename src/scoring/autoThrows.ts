@@ -34,6 +34,7 @@ import {
   REQUIRED_THROW_OPTIONS,
   hasLeftHandThrow,
   hasTwoThrow,
+  nonHandKindForcesNoView,
 } from "./constants";
 
 /** 視野外の投げ・キャッチの技術タグ（`constants.ts` が持ち主。ここからも参照できるよう再輸出する） */
@@ -273,7 +274,9 @@ export interface AutoCatchStyle {
  */
 export const NO_VIEW_SIDE_STYLE_ID = "noview+side";
 /**
- * スティックの**無回転＋横＋背面（視野外）の投げ**（実施例あり）。足で押さえつけて受ける形
+ * スティックの**両手持ち無回転の背面（視野外）投げ**（実施例あり。視野外の投げ方「両手持ち無回転」＝
+ * `noview`＋`norotate`、横投げは付けない・両手で持つので左手投げとも組まない。2026-11-16 までは
+ * 「無回転＋横＋背面」と表していた。id は互換のため据え置き）。足で押さえつけて受ける形
  * （手以外のキャッチ・`footPress`）で、最低限の形（`NO_VIEW_SIDE_PATTERNS`＝徒手0〜1動作）だけで使う。
  */
 export const NO_ROTATION_BACK_SIDE_STYLE_ID = "norotate+noview+side";
@@ -306,8 +309,9 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   if (apparatus === "stick")
     styles.push({
       id: NO_ROTATION_BACK_SIDE_STYLE_ID,
-      name: "無回転の背面横投げ",
-      throwTypes: [NO_ROTATION_TAG, NO_VIEW_TAG, SIDE_THROW_TAG],
+      // 視野外の投げ方「両手持ち無回転」（2026-11-16 オーナー）。両手で持つので左手投げとは組まない
+      name: "両手持ち無回転の背面投げ",
+      throwTypes: [NO_ROTATION_TAG, NO_VIEW_TAG],
     });
   // クラブ：背面（視野外）の横投げ→0〜1動作→手具を使ったキャッチ（`NO_VIEW_SIDE_STYLE_ID`）
   if (NO_VIEW_SIDE_PRESS_APPARATUS.includes(apparatus))
@@ -520,12 +524,14 @@ export function maybeSideThrow(
   // ロープは横投げをしないが股下はあるので、手具の判定より先に引く
   const types0 = throwStyle.throwTypes || [];
   if (types0.includes(NO_VIEW_TAG) && !throwStyle.two) {
-    const free = !types0.includes(SIDE_THROW_TAG) && !types0.includes(NON_HAND_TAG);
+    // 両手持ち無回転（無回転の視野外の投げ）はそれ自体が投げ方なので、股下・横にはしない
+    const free = !types0.includes(SIDE_THROW_TAG) && !types0.includes(NON_HAND_TAG) && !types0.includes(NO_ROTATION_TAG);
     if (!free) return throwStyle;
     // 方向は1回の乱数で決める：股下（全手具・1割程度）／横（ロープ以外）／真後ろ。
     // 股下も横向きの背面投げも実戦での投入例はまだない（オーナー、2026-11-16）ので少なめにする
     const r = rand();
-    const legs = chance(noViewLegsChance(apparatus));
+    // 股下で投げたあとは手以外のキャッチでは受けない（オーナー 2026-11-16）。乱数の消費は変えない
+    const legs = catchHasTag(catchStyle, NON_HAND_TAG) ? 0 : chance(noViewLegsChance(apparatus));
     if (r < legs) return { ...throwStyle, throwTypes: [...types0, BETWEEN_LEGS_TAG] };
     const side = canUseSideThrow(apparatus)
       ? chance(NO_VIEW_SIDE_CHANCE_BY_APPARATUS[apparatus] ?? NO_VIEW_SIDE_CHANCE)
@@ -735,8 +741,25 @@ export function throwStylesForPattern(
   if (pattern.overlap) return styles.filter((t) => !t.two && !t.rare && t.id !== NON_HAND_TAG && !isNoRotationStyle(t));
   // 2つとも空中にある形：2つ目は横投げ（通常の投げに横投げを付ける）。投げ方は1つに絞る
   if (pattern.airPair) return styles.filter((t) => t.id === "normal");
-  return pattern.leadPair ? styles.filter((t) => t.id !== NON_HAND_TAG && !t.two) : styles;
+  return pattern.leadPair
+    ? styles.filter(
+        (t) =>
+          t.id !== NON_HAND_TAG &&
+          !t.two &&
+          // スティックの連続投げの2回目を左手で投げるときは横投げで、背面（視野外）にはしない
+          !(LEAD_PAIR_LEFT_HAND_SIDE_APPARATUS.includes(apparatus) && isLeftHandStyle(t) && (t.throwTypes || []).includes(NO_VIEW_TAG)),
+      )
+    : styles;
 }
+
+/**
+ * 連続投げの2回目（`leadPair` の本体＝徒手を多く実施する高難度の投げ）を**左手で投げるときは横投げ**にし、
+ * 背面（視野外）にはしない手具（オーナー 2026-11-16）。
+ */
+export const LEAD_PAIR_LEFT_HAND_SIDE_APPARATUS: ApparatusKey[] = ["stick"];
+const isLeftHandStyle = (t: AutoThrowStyle): boolean => (t.reqTypes || []).includes(LEFT_HAND_TAG);
+const leadPairLeftHandSide = (apparatus: ApparatusKey, t: AutoThrowStyle): boolean =>
+  LEAD_PAIR_LEFT_HAND_SIDE_APPARATUS.includes(apparatus) && isLeftHandStyle(t);
 
 /** シェネの手の使い方（null＝手なし。手ありは HANDS_TYPES の種類ごとに別の技） */
 export type AutoHands = string | null;
@@ -1211,8 +1234,12 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       cheneCount,
       // シェネが無い形では手の種類は使わない
       hands: cheneCount > 0 ? nextHands(cheneCount) : null,
-      // 押さえつけキャッチ・低難度の左手投げは横投げにする（`maybeSideThrow`）
-      throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, motions, rand, chance),
+      // 押さえつけキャッチ・低難度の左手投げは横投げにする（`maybeSideThrow`）。
+      // スティックの連続投げの2回目（`leadPair` の本体＝高難度）を左手で投げるときは必ず横投げ
+      throwStyle:
+        pattern.leadPair && leadPairLeftHandSide(apparatus, throwStyle)
+          ? withSideThrow(throwStyle)
+          : maybeSideThrow(apparatus, throwStyle, catchStyle, motions, rand, chance),
       catchStyle,
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
       // 連続投げで足す視野外の投げも、股下から投げることがある（ほかの視野外の投げと同じ割合）
@@ -1273,7 +1300,11 @@ export function withNonHandKinds(series: Series, apparatus: ApparatusKey): Serie
     let h = idx + 1;
     for (const ch of JSON.stringify(series.items)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     changed = true;
-    return { ...item, nonHandKind: kinds[h % kinds.length].id };
+    const kind = kinds[h % kinds.length].id;
+    // 首と肩に挟む受け方は視野外のキャッチでもある
+    if (nonHandKindForcesNoView(kind) && !(item.catchTypes || []).includes(NO_VIEW_TAG))
+      return { ...item, nonHandKind: kind, catchTypes: [...(item.catchTypes || []), NO_VIEW_TAG] };
+    return { ...item, nonHandKind: kind };
   });
   return changed ? { ...series, items } : series;
 }

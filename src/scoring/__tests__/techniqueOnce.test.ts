@@ -66,9 +66,9 @@ describe("技術加点：同じ投げ方・受け方は1回だけ", () => {
   it("手以外の受け方の種類が違えば別の受け方", () => {
     const r = computeScore(
       [
-        S({ kind: "throw" }, { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "neckShoulder" }),
+        S({ kind: "throw" }, { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "torsoClamp" }),
         S({ kind: "throw" }, chene(1), { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "footPress" }),
-        S({ kind: "throw" }, chene(2), { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "neckShoulder" }),
+        S({ kind: "throw" }, chene(2), { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "torsoClamp" }),
       ],
       "stick",
     );
@@ -128,7 +128,7 @@ describe("技術加点：同じ投げ方・受け方は1回だけ", () => {
     const r = computeScore(
       [
         S({ kind: "throw", throwTypes: ["noview"] }, { kind: "catch", catchTypes: ["noview"] }),
-        S({ kind: "throw", throwTypes: ["noview"] }, chene(1), { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "neckShoulder" }),
+        S({ kind: "throw", throwTypes: ["noview"] }, chene(1), { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "torsoClamp" }),
       ],
       "stick",
     );

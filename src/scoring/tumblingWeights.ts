@@ -25,6 +25,8 @@ import {
 import {
   AFTER_BACK_LAYOUT_BACKWARD_SALTOS,
   AFTER_BACK_LAYOUT_SALTOS,
+  AFTER_BACK_LAYOUT_HALF_SALTOS,
+  isBackLayoutHalf,
   CHAIN_END_SKILLS,
   DIFFICULTY_RISE_AFTER,
   TEMPO_SKILL_ID,
@@ -511,7 +513,11 @@ export function saltoWeights(
   }
   // 後方伸身宙返りの後は 前宙＞きりもみ＞＞きりもみ転回（難度の重みより優先する）。
   // 後方系を続ける形（抱え込みの半ひねり系）はさらに少ない
-  const listed = [...AFTER_BACK_LAYOUT_SALTOS, ...AFTER_BACK_LAYOUT_BACKWARD_SALTOS];
+  const listed = [
+    ...AFTER_BACK_LAYOUT_SALTOS,
+    ...AFTER_BACK_LAYOUT_BACKWARD_SALTOS,
+    ...(isBackLayoutHalf(prevId) ? AFTER_BACK_LAYOUT_HALF_SALTOS : []),
+  ];
   return withHarderThanRated(
     { ...weights, ...Object.fromEntries(listed.map((x) => [x.id, x.weight])) },
     userWeights,
@@ -777,3 +783,10 @@ export const TEMPO_CONNECT_WEIGHT = 0.3;
  * 置き換えても連鎖のルールを満たす（前後の技がつながる）ときだけ。
  */
 export const LAYOUT_BEFORE_BACKWARD_CHANCE = 0.85;
+
+/**
+ * **後方宙返り半ひねり（抱え込み）は実戦ではほぼ使われない**（オーナー 2026-11-16）。位置を問わず、
+ * 伸身（後方伸身宙返り半ひねり）に置き換えてもつながるときは、この確率で置き換える。
+ * 伸身がつながらない位置（後方伸身2回ひねり→抱え込みの半ひねり→前方系 など）は抱え込みのまま残る。
+ */
+export const LAYOUT_BACK_HALF_CHANCE = 0.9;

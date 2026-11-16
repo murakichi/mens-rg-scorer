@@ -84,6 +84,7 @@ import {
   AIR_PAIR_TUM_LAST_CATCH,
   airPairTumExtraChance,
   LAYOUT_BEFORE_BACKWARD_CHANCE,
+  LAYOUT_BACK_HALF_CHANCE,
   airThrowInSkillChance,
   saltoWeights,
   AIR_THROW_IN_SKILL_VARIANTS,
@@ -292,6 +293,33 @@ function preferLayoutBeforeBackward(
   }
   return out;
 }
+
+/**
+ * 後方宙返り半ひねり（抱え込み）を伸身に置き換える（`LAYOUT_BACK_HALF_CHANCE`）。抱え込みの半ひねりは
+ * 実戦ではほぼ使われない。前後とつながるときだけ置き換える（つなぎ技の直後は前の制約が無い）。
+ */
+function preferLayoutBackHalf(
+  ids: string[],
+  connectIdx: number | null,
+  ctx: { junior: boolean; future: FutureLevel; usable: (ids: string[]) => string[] },
+  rand: () => number,
+): string[] {
+  const out = [...ids];
+  for (let i = 0; i < out.length; i++) {
+    if (out[i] !== BACK_HALF_TUCK_ID) continue;
+    // 同じシリーズに同じ技は2本入れない（生成の原則）
+    if (out.includes(BACK_HALF_LAYOUT_ID)) continue;
+    if (ctx.usable([BACK_HALF_LAYOUT_ID]).length !== 1) continue;
+    const afterConnect = connectIdx !== null && i === connectIdx;
+    if (i > 0 && !afterConnect && !nextSaltoOptions(out[i - 1], ctx.junior, ctx.future).includes(BACK_HALF_LAYOUT_ID)) continue;
+    const beforeConnect = connectIdx !== null && i === connectIdx - 1;
+    if (i < out.length - 1 && !beforeConnect && !nextSaltoOptions(BACK_HALF_LAYOUT_ID, ctx.junior, ctx.future).includes(out[i + 1])) continue;
+    if (rand() < LAYOUT_BACK_HALF_CHANCE) out[i] = BACK_HALF_LAYOUT_ID;
+  }
+  return out;
+}
+const BACK_HALF_TUCK_ID = "b_backhalf";
+const BACK_HALF_LAYOUT_ID = "b_backlayhalf";
 
 export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false): Series {
   const { pattern, draws } = spec;
@@ -616,12 +644,13 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           if (!step()) break;
         }
         if (ids.length > saltoIds.length) {
-          saltoIds = preferLayoutBeforeBackward(
-            ids,
-            pattern.connect ? connectAt : null,
-            { junior, future: opts.future ?? null, usable: usableSkills(ctxBase) },
+          const layoutCtx = { junior, future: opts.future ?? null, usable: usableSkills(ctxBase) };
+          const connectIdx = pattern.connect ? connectAt : null;
+          saltoIds = preferLayoutBackHalf(
+            preferLayoutBeforeBackward(ids, connectIdx, layoutCtx, rand, chance),
+            connectIdx,
+            layoutCtx,
             rand,
-            chance,
           );
           connectId = cid;
         }

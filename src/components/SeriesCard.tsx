@@ -8,6 +8,7 @@ import {
   canUseNoRotation,
   NON_HAND_CATCH_KINDS,
   NO_VIEW_TAG,
+  nonHandKindForcesNoView,
   canUseSideThrow,
   SKILL_THROW_OPTIONS_COMMON,
   CATCH_OPTIONS_COMMON,
@@ -37,6 +38,9 @@ import {
   twistLabel,
   skillFlowAfter,
   techOptionKind,
+  canUseTwoHandNoRotation,
+  LEFT_HAND_THROW_TAG,
+  NO_ROTATION_TAG,
   BETWEEN_LEGS_TAG,
   NO_VIEW_DIRECTIONS,
   noViewDirectionOf,
@@ -162,7 +166,7 @@ function OptGroup({ kind, children }: { kind: "bonus" | "kind" | "req"; children
   if (items.length === 0) return null;
   const head = {
     bonus: { label: "技術加点", title: "1つにつき +0.1。全く同じ投げ方・受け方は演技全体で1回だけ" },
-    kind: { label: "加点なし", title: "技術加点にはならない。横投げ・無回転・視野外の方向・手以外の受け方は投げ方・受け方の種類として別に数える（2つ同時キャッチは数えない）" },
+    kind: { label: "加点なし", title: "技術加点にはならない。横投げ・無回転は投げ方の種類として別に数える（2つ同時キャッチは数えない）" },
     req: { label: "必須投げ", title: "手具別の必須投げの判定に使う。技術加点にはならず、投げ方の種類も変えない" },
   }[kind];
   return (
@@ -198,10 +202,13 @@ function ThrowChecks({
   const useApparatusThrow = (item.throwTypes || []).includes(USE_APPARATUS_TAG);
   const noView = (item.throwTypes || []).includes(NO_VIEW_TAG);
   const sideDirection = !common && canUseSideThrow(apparatus);
+  // スティックの視野外の投げの無回転は「両手持ち無回転」（視野外の投げ方）として選ぶので、無回転のチェックは出さない
+  const twoHand = !common && canUseTwoHandNoRotation(apparatus);
+  const twoHandOn = twoHand && noView && (item.throwTypes || []).includes(NO_ROTATION_TAG);
   const options = [
     ...(inSkill ? SKILL_THROW_OPTIONS_COMMON : THROW_OPTIONS_COMMON),
     ...(sideDirection && !noView ? THROW_OPTIONS_SIDE : []),
-    ...(!common && canUseNoRotation(apparatus) ? THROW_OPTIONS_NO_ROTATION : []),
+    ...(!common && canUseNoRotation(apparatus) && !(twoHand && noView) ? THROW_OPTIONS_NO_ROTATION : []),
     ...(!common && APPARATUS_USE[apparatus] ? THROW_OPTIONS_APPARATUS : []),
   ];
   const check = (opt: { id: string; name: string }) => {
@@ -216,9 +223,12 @@ function ThrowChecks({
           disabled={blocked}
           onChange={(e) => {
             const next = toggle(item.throwTypes, opt.id, e.target.checked);
-            // 視野外を外したら股下（視野外の投げ方）も外す
+            // 視野外を外したら、視野外の投げ方（股下・スティックの両手持ち無回転）も外す
             onUpdate({
-              throwTypes: opt.id === NO_VIEW_TAG && !e.target.checked ? next.filter((t) => t !== BETWEEN_LEGS_TAG) : next,
+              throwTypes:
+                opt.id === NO_VIEW_TAG && !e.target.checked
+                  ? next.filter((t) => t !== BETWEEN_LEGS_TAG && !(twoHand && t === NO_ROTATION_TAG))
+                  : next,
             });
           }}
         />
@@ -228,7 +238,12 @@ function ThrowChecks({
   };
   const reqOptions = common
     ? []
-    : REQUIRED_THROW_OPTIONS[apparatus].filter((opt) => !inSkill || opt.id === TWO_THROW_TAG);
+    : REQUIRED_THROW_OPTIONS[apparatus].filter(
+        (opt) =>
+          (!inSkill || opt.id === TWO_THROW_TAG) &&
+          // 両手持ち無回転は両手で持つので左手投げとは組まない（すでに付いていれば外せるように残す）
+          !(twoHandOn && opt.id === LEFT_HAND_THROW_TAG && !(item.reqTypes || []).includes(opt.id)),
+      );
   // この投げ以外ですでに実施していれば必須は満たしている → 「必須投げ」ではなく「加点なし」に出す
   const doneElsewhere = (id: string) =>
     (reqThrowCounts[id] ?? 0) - ((item.reqTypes || []).includes(id) ? 1 : 0) > 0;
@@ -249,18 +264,26 @@ function ThrowChecks({
   };
   return (
     <>
-      <OptGroup kind="bonus">{options.filter((o) => techOptionKind(o.id) === "bonus").map(check)}</OptGroup>
+      <OptGroup kind="bonus">
+        {options
+          .filter((o) => techOptionKind(o.id) === "bonus")
+          .flatMap((o) => [
+            check(o),
+            // 視野外の投げ方は視野外の投げの中身なので、視野外のすぐ下に出す
+            o.id === NO_VIEW_TAG && noView ? (
+              <NoViewDirection
+                key="dir"
+                types={item.throwTypes}
+                allowSide={sideDirection}
+                allowTwoHand={twoHand}
+                onChange={(throwTypes) => onUpdate({ throwTypes })}
+              />
+            ) : null,
+          ])}
+      </OptGroup>
       <OptGroup kind="kind">
         {[
           ...options.filter((o) => techOptionKind(o.id) === "kind").map(check),
-          noView ? (
-            <NoViewDirection
-              key="dir"
-              types={item.throwTypes}
-              allowSide={sideDirection}
-              onChange={(throwTypes) => onUpdate({ throwTypes })}
-            />
-          ) : null,
           ...reqOptions.filter((o) => doneElsewhere(o.id)).map(reqCheck),
         ]}
       </OptGroup>
@@ -287,15 +310,17 @@ function CatchChecks({
   return (
     <>
       <OptGroup kind="bonus">
-        {options.map((opt) => {
+        {options.flatMap((opt) => {
           // 手具を使ったキャッチと手以外のキャッチは同時に実施できない
           const blocked = catchOptionBlocked(opt.id, item.catchTypes);
-          return (
-            <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
+          // 首と肩に挟む受け方は視野外のキャッチでもあるので、視野外はチェックしたまま変えられない
+          const forced = opt.id === NO_VIEW_TAG && nonHandKindForcesNoView(item.nonHandKind);
+          return [
+            <label key={opt.id} className={blocked || forced ? "check is-disabled" : "check"}>
               <input
                 type="checkbox"
-                checked={(item.catchTypes || []).includes(opt.id)}
-                disabled={blocked}
+                checked={forced || (item.catchTypes || []).includes(opt.id)}
+                disabled={blocked || forced}
                 onChange={(e) =>
                   onUpdate({
                     catchTypes: toggle(item.catchTypes, opt.id, e.target.checked),
@@ -305,21 +330,28 @@ function CatchChecks({
                 }
               />
               {opt.name}
-            </label>
-          );
+            </label>,
+            // 手以外のキャッチの受け方は手以外のキャッチの中身なので、そのすぐ下に出す
+            opt.id === "nonhand" && !common && (item.catchTypes || []).includes("nonhand") ? (
+              <NonHandKindSelect
+                key="nonhand-kind"
+                apparatus={apparatus}
+                types={item.catchTypes}
+                value={item.nonHandKind}
+                onChange={(nonHandKind) =>
+                  onUpdate(
+                    nonHandKindForcesNoView(nonHandKind)
+                      ? { nonHandKind, catchTypes: toggle(item.catchTypes, NO_VIEW_TAG, true) }
+                      : { nonHandKind },
+                  )
+                }
+              />
+            ) : null,
+          ];
         })}
       </OptGroup>
       <OptGroup kind="kind">
         {[
-          !common && (item.catchTypes || []).includes("nonhand") ? (
-            <NonHandKindSelect
-              key="nonhand"
-              apparatus={apparatus}
-              types={item.catchTypes}
-              value={item.nonHandKind}
-              onChange={(nonHandKind) => onUpdate({ nonHandKind })}
-            />
-          ) : null,
           // 2つ同時キャッチは二つ投げで2つとも空中にあるときだけ（すでに付いていれば外せるように残す）
           !common && APPARATUS_USE[apparatus] && (catchTwoAllowed || item.catchTwo) ? (
             <label key="two" className="check-req">
@@ -359,18 +391,23 @@ function TechStatusLine({ tech, what }: { tech?: TechStatus | null; what: "投�
 function NoViewDirection({
   types,
   allowSide,
+  allowTwoHand,
   onChange,
 }: {
   types: string[] | undefined;
   allowSide: boolean;
+  /** 「両手持ち無回転」を出すか（スティック） */
+  allowTwoHand: boolean;
   onChange: (next: string[]) => void;
 }) {
-  const cur = noViewDirectionOf(types);
+  const cur = noViewDirectionOf(types, allowTwoHand);
+  const shown = (id: string) =>
+    id === cur || (id === "side" ? allowSide : id === "twohand" ? allowTwoHand : true);
   return (
-    <label className="check-req">
+    <label className="check-req opt-sub">
       視野外の投げ方
-      <select value={cur} onChange={(e) => onChange(withNoViewDirection(types, e.target.value))}>
-        {NO_VIEW_DIRECTIONS.filter((d) => allowSide || d.id !== "side" || cur === "side").map((d) => (
+      <select value={cur} onChange={(e) => onChange(withNoViewDirection(types, e.target.value, allowTwoHand))}>
+        {NO_VIEW_DIRECTIONS.filter((d) => shown(d.id)).map((d) => (
           <option key={d.id} value={d.id}>
             {d.name}
           </option>
@@ -397,7 +434,7 @@ function NonHandKindSelect({
 }) {
   if (!(types || []).includes("nonhand")) return null;
   return (
-    <label className="check-req" title="受け方の違いは技術加点を変えないが、受け方の種類として別に数える（同じ受け方の2回目は加点なし）">
+    <label className="check-req opt-sub" title="受け方の違いは技術加点を変えないが、受け方の種類として別に数える（同じ受け方の2回目は加点なし）">
       受け方
       <select value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
         <option value="">（未選択）</option>

@@ -75,6 +75,7 @@ import {
   hasConnect,
   hasConnectWithoutApparatus,
   stripForApparatus,
+  withForcedNoViewCatches,
   tumblingVariety,
   tumblingOperation,
   type TumblingVariety,
@@ -396,7 +397,8 @@ export function computeScore(
   // ロープ跳びなど）は入力画面に出ないので、採点にも効かせない
   // 旧データでシリーズの中に入っていたロープ跳びは、構成全体の跳びリストへ移して数える
   const hoisted = hoistRopeJumps(rawSeries);
-  const series = stripForApparatus(hoisted.series, apparatus);
+  // 首と肩に挟む受け方は視野外のキャッチでもある（旧データで視野外が付いていなくても視野外として採点）
+  const series = withForcedNoViewCatches(stripForApparatus(hoisted.series, apparatus));
   const {
     overallExecutionDeduction = 0,
     apparatusElements = [],

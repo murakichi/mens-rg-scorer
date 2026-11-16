@@ -20,6 +20,7 @@ import {
   NO_VIEW_TAG,
   canUseNoRotation,
   nonHandKindOf,
+  nonHandKindForcesNoView,
   canUseSideThrow,
   requiredThrowName,
   skillDef,
@@ -863,6 +864,30 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
         ),
     };
   });
+}
+
+/**
+ * 視野外のキャッチを伴う手以外の受け方（首と肩に挟む）に、視野外のタグを補う（オーナー 2026-11-16）。
+ * エディタは選んだ時点で視野外を付けるが、それ以前に保存したデータには付いていないことがあるので、
+ * 採点の前にここで揃える。補うものが無ければ同じ配列を返す。
+ */
+export function withForcedNoViewCatches(list: Series[]): Series[] {
+  let changed = false;
+  const out = list.map((ser) => {
+    let touched = false;
+    const items = ser.items.map((item) => {
+      if (!(item.kind === "catch" || (item.kind === "skill" && item.isCatch))) return item;
+      const types = item.catchTypes || [];
+      if (!types.includes("nonhand") || !nonHandKindForcesNoView(item.nonHandKind) || types.includes(NO_VIEW_TAG))
+        return item;
+      touched = true;
+      return { ...item, catchTypes: [...types, NO_VIEW_TAG] };
+    });
+    if (!touched) return ser;
+    changed = true;
+    return { ...ser, items };
+  });
+  return changed ? out : list;
 }
 
 /** 手元/空中の手具数をシミュレートし、投げ・キャッチの過不足を警告として返す（採点には非影響） */

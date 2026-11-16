@@ -42,6 +42,7 @@ import {
   autoTumblingTemplates,
   buildAutoTumblingSeries,
   AFTER_BACK_LAYOUT_SALTOS,
+  AFTER_BACK_LAYOUT_HALF_SALTOS,
   connectOptionsAfter,
   firstSaltoOptions,
   isBackLayoutSalto,
@@ -316,8 +317,12 @@ describe("宙返りの連続の組み方", () => {
       );
     });
     // 前向きに降りる半ひねり系の後は前方系だけ（後方系に入るならロンダートが要る＝つなぎ）
-    ["b_backlayhalf", "c_backlay15", "d_backlay25"].forEach((id) =>
+    ["c_backlay15", "d_backlay25"].forEach((id) =>
       expect(nextSaltoOptions(id)).toEqual(AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id)),
+    );
+    // 伸身の半ひねりだけは抱え込みと同じく側宙・転宙・前方1回ひねりにも続けられる（オーナー 2026-11-16）
+    expect(nextSaltoOptions("b_backlayhalf")).toEqual(
+      [...AFTER_BACK_LAYOUT_SALTOS, ...AFTER_BACK_LAYOUT_HALF_SALTOS].map((x) => x.id),
     );
     // 後ろ向きに降りる後方伸身の後だけ、難度が上がらない範囲で後方系も続けられる
     expect(nextSaltoOptions("d_backlay2twist")).toContain("c_back15");
@@ -639,8 +644,10 @@ describe("つなぎ技", () => {
     for (let seed = 0; seed < 60 && !found; seed++)
       autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
         const ids = sp.saltoIds.slice(0, sp.saltoCount);
-        const i = ids.indexOf("b_backhalf");
-        if (i >= 0 && ids[i + 1] === "c_front1full") found = true;
+        // 抱え込みの半ひねりはほぼ伸身に置き換わる（`preferLayoutBackHalf`）ので、どちらの半ひねりでもよい
+        ids.forEach((id, i) => {
+          if ((id === "b_backhalf" || id === "b_backlayhalf") && ids[i + 1] === "c_front1full") found = true;
+        });
       });
     expect(found).toBe(true);
   }, 60_000);

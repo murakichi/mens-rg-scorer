@@ -182,7 +182,9 @@ describe("スティックの無回転＋横＋背面投げ→足で押さえつ�
         items.forEach((it, i) => {
           const types = it.kind === "throw" ? (it.throwTypes ?? []) : [];
           if (!(types.includes("norotate") && types.includes("noview"))) return;
-          expect(types).toContain("side");
+          // 両手持ち無回転（視野外の投げ方）：横は付けず、両手で持つので左手投げとも組まない
+          expect(types).not.toContain("side");
+          expect(it.kind === "throw" && (it.reqTypes ?? [])).not.toContain("lefthand");
           n++;
           const c = items.slice(i + 1).find((x) => x.kind === "catch");
           // 視野外のキャッチと組み合わさることもある（背面＋手以外）
@@ -195,12 +197,13 @@ describe("スティックの無回転＋横＋背面投げ→足で押さえつ�
 });
 
 describe("無回転は基本横投げとセット", () => {
-  it("自動生成の無回転の投げには必ず横投げが付く", () => {
+  it("自動生成の無回転の投げには必ず横投げが付く（視野外の両手持ち無回転を除く）", () => {
     let n = 0;
     for (let seed = 1; seed <= 60; seed++)
       autoThrowTemplates("stick", { random: seededRandom(seed) }).forEach((t) =>
         t.series.items.forEach((it) => {
           if (it.kind !== "throw" || !(it.throwTypes ?? []).includes("norotate")) return;
+          if ((it.throwTypes ?? []).includes("noview")) return;
           n++;
           expect(it.throwTypes).toContain("side");
         }),
@@ -215,5 +218,33 @@ describe("無回転の投げは投げタンのあとに足す投げにも使わ�
     (["stick", "clubs"] as const).forEach((ap) =>
       expect(secondThrowStyles(ap).some((t) => (t.throwTypes ?? []).includes("norotate"))).toBe(false),
     );
+  });
+});
+
+describe("首と肩に挟む受け方は視野外のキャッチ（2026-11-16）", () => {
+  it("生成で首と肩に挟む受け方を選んだ受けには必ず視野外が付く", () => {
+    let n = 0;
+    for (let seed = 1; seed <= 80; seed++)
+      autoThrowTemplates("stick", { random: seededRandom(seed) }).forEach((t) =>
+        t.series.items.forEach((it) => {
+          if ((it.kind === "catch" || it.kind === "skill") && it.nonHandKind === "neckShoulder") {
+            n++;
+            expect(it.catchTypes).toContain("noview");
+          }
+        }),
+      );
+    expect(n).toBeGreaterThan(0);
+  }, 60_000);
+});
+
+describe("旧データの首と肩に挟むキャッチは視野外として採点する（2026-11-16）", () => {
+  it("視野外のチェックが無くても、視野外＋手以外の加点と同じ", () => {
+    const mk = (catchTypes: string[]) =>
+      computeScore(
+        [{ items: [{ kind: "throw", throwTypes: ["norotate", "side"] }, { kind: "catch", catchTypes, nonHandKind: "neckShoulder" }] } as any],
+        "stick",
+      ).techniqueBonus;
+    expect(mk(["nonhand"])).toBeCloseTo(mk(["nonhand", "noview"]), 5);
+    expect(mk(["nonhand"])).toBeCloseTo(0.2, 5);
   });
 });

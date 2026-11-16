@@ -157,6 +157,23 @@ export const AFTER_BACK_LAYOUT_SALTOS: { id: string; weight: number }[] = [
 ];
 
 /**
+ * **後方伸身宙返り半ひねり**（前向きに降りる）の後にも続けられる技（オーナー 2026-11-16）。
+ * 抱え込みの半ひねりと同じく側宙・転宙・前方1回ひねり（難度が上がる例外）に続けられる。
+ * 抱え込みの半ひねりは実戦ではほぼ使われないので、これらの並びも伸身で作る（`preferLayoutBackHalf`）。
+ * 重みは `AFTER_BACK_LAYOUT_SALTOS`（前宙5・きりもみ3）より下げる。
+ */
+export const AFTER_BACK_LAYOUT_HALF_SALTOS: { id: string; weight: number }[] = [
+  { id: SIDE_SALTO_ID, weight: 1.5 },
+  { id: TENCHU_SKILL_ID, weight: 1 },
+  { id: "c_front1full", weight: 0.3 },
+];
+/** 後方伸身宙返り半ひねりか（伸身で、前向きに降りる＝半ひねり系） */
+export const isBackLayoutHalf = (id: string): boolean => {
+  const t = skillDef(id)?.twist;
+  return t?.base === "back" && t.posture === "layout" && t.twist === 0.5;
+};
+
+/**
  * 後方伸身宙返りの後に**後方系で**続けられる技。
  * 主流は上の前方系だが、後方伸身2回ひねり→抱え込みの1回半ひねり のように
  * 後方系を続ける選手もいる。数は少ないので重みは低くし、連続の原則どおり
@@ -290,6 +307,7 @@ export function nextSaltoOptions(prevId: string, junior = false, future: FutureL
     const ceiling = difficultyValue(prevId, junior, future);
     return [
       ...AFTER_BACK_LAYOUT_SALTOS.map((x) => x.id),
+      ...(isBackLayoutHalf(prevId) ? AFTER_BACK_LAYOUT_HALF_SALTOS.map((x) => x.id) : []),
       // 後方系をそのまま続けられるのは**後ろ向きに降りる**後方伸身（整数ひねり）の後だけ。
       // 前向きに降りる半ひねり系から後方系に入るにはロンダートが要り、それはつなぎの形になる
       ...(leadsBackward(prevId)
