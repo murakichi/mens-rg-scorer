@@ -740,8 +740,25 @@ export function throwStylesForPattern(
   if (pattern.overlap) return styles.filter((t) => !t.two && !t.rare && t.id !== NON_HAND_TAG && !isNoRotationStyle(t));
   // 2つとも空中にある形：2つ目は横投げ（通常の投げに横投げを付ける）。投げ方は1つに絞る
   if (pattern.airPair) return styles.filter((t) => t.id === "normal");
-  return pattern.leadPair ? styles.filter((t) => t.id !== NON_HAND_TAG && !t.two) : styles;
+  return pattern.leadPair
+    ? styles.filter(
+        (t) =>
+          t.id !== NON_HAND_TAG &&
+          !t.two &&
+          // スティックの連続投げの2回目を左手で投げるときは横投げで、背面（視野外）にはしない
+          !(LEAD_PAIR_LEFT_HAND_SIDE_APPARATUS.includes(apparatus) && isLeftHandStyle(t) && (t.throwTypes || []).includes(NO_VIEW_TAG)),
+      )
+    : styles;
 }
+
+/**
+ * 連続投げの2回目（`leadPair` の本体＝徒手を多く実施する高難度の投げ）を**左手で投げるときは横投げ**にし、
+ * 背面（視野外）にはしない手具（オーナー 2026-11-16）。
+ */
+export const LEAD_PAIR_LEFT_HAND_SIDE_APPARATUS: ApparatusKey[] = ["stick"];
+const isLeftHandStyle = (t: AutoThrowStyle): boolean => (t.reqTypes || []).includes(LEFT_HAND_TAG);
+const leadPairLeftHandSide = (apparatus: ApparatusKey, t: AutoThrowStyle): boolean =>
+  LEAD_PAIR_LEFT_HAND_SIDE_APPARATUS.includes(apparatus) && isLeftHandStyle(t);
 
 /** シェネの手の使い方（null＝手なし。手ありは HANDS_TYPES の種類ごとに別の技） */
 export type AutoHands = string | null;
@@ -1216,8 +1233,12 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       cheneCount,
       // シェネが無い形では手の種類は使わない
       hands: cheneCount > 0 ? nextHands(cheneCount) : null,
-      // 押さえつけキャッチ・低難度の左手投げは横投げにする（`maybeSideThrow`）
-      throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, motions, rand, chance),
+      // 押さえつけキャッチ・低難度の左手投げは横投げにする（`maybeSideThrow`）。
+      // スティックの連続投げの2回目（`leadPair` の本体＝高難度）を左手で投げるときは必ず横投げ
+      throwStyle:
+        pattern.leadPair && leadPairLeftHandSide(apparatus, throwStyle)
+          ? withSideThrow(throwStyle)
+          : maybeSideThrow(apparatus, throwStyle, catchStyle, motions, rand, chance),
       catchStyle,
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
       // 連続投げで足す視野外の投げも、股下から投げることがある（ほかの視野外の投げと同じ割合）

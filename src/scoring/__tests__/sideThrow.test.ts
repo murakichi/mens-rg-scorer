@@ -94,7 +94,7 @@ describe("横投げ", () => {
         if (motions <= 1) {
           low += 1;
           if (side) lowSide += 1;
-        } else if (!(spec.catchStyle.catchTypes || []).includes("useapp")) expect(side).toBe(false);
+        } else if (!(spec.catchStyle.catchTypes || []).includes("useapp") && !spec.pattern.leadPair) expect(side).toBe(false);
       });
     expect(low).toBeGreaterThan(0);
     expect(lowSide / low).toBeGreaterThan(0.6);
@@ -275,5 +275,24 @@ describe("1回の投げ・受けは組み合わせ全体で1種類", () => {
     expect(combo.catchKindCount).toBe(2);
     const same = computeScore([catchSer(["noview", "nonhand"]), catchSer(["nonhand", "noview"])], "clubs");
     expect(same.catchKindCount).toBe(1);
+  });
+});
+
+describe("スティックの連続投げの2回目（高難度）を左手で投げるときは横投げ・背面にしない（2026-11-16）", () => {
+  it("leadPair の本体が左手投げなら必ず横投げで、視野外は付かない（クラブ・リングには効かない）", () => {
+    let n = 0;
+    for (let k = 0; k < 60; k++)
+      autoThrowSpecs("stick").forEach((spec) => {
+        if (!spec.pattern.leadPair || !(spec.throwStyle.reqTypes || []).includes("lefthand")) return;
+        n++;
+        expect(spec.throwStyle.throwTypes ?? []).toContain(SIDE_THROW_TAG);
+        expect(spec.throwStyle.throwTypes ?? []).not.toContain("noview");
+      });
+    expect(n).toBeGreaterThan(0);
+    for (let k = 0; k < 30; k++)
+      autoThrowSpecs("ring").forEach((spec) => {
+        if (!spec.pattern.leadPair || !(spec.throwStyle.reqTypes || []).includes("lefthand")) return;
+        expect(spec.throwStyle.throwTypes ?? []).not.toContain(SIDE_THROW_TAG);
+      });
   });
 });
