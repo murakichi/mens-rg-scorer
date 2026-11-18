@@ -76,6 +76,7 @@ import {
   CATCH_IN_SKILL_PRESS_CHANCE,
   THROW_IN_SKILL_USE_APPARATUS_CHANCE,
   CATCH_IN_SKILL_SKILLS,
+  CATCH_IN_ROUNDOFF_APPARATUS,
   catchInSkillChance,
   throwInSkillChance,
   AIR_PAIR_TUM_MIN_DIFF,
@@ -125,7 +126,8 @@ export * from "./tumblingTransitions";
  * 候補（`AutoTumblingSpec`）に持たせる（`withSaltoCount`）。
  */
 /** 投げタンの着地（前転のあと）を手以外のキャッチで受ける確率（リング・ロープ） */
-export const TUMBLING_NON_HAND_CATCH_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.3, rope: 0.3 };
+// ロープの手以外のキャッチはほかの手具より少ない（オーナー 2026-11-18）
+export const TUMBLING_NON_HAND_CATCH_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 0.3, rope: 0.15 };
 /** 手以外のキャッチで受ける投げタンの投げが横投げになる確率（リングは必ず。ロープは横投げを持たない） */
 export const TUMBLING_NON_HAND_SIDE_CHANCE: Partial<Record<ApparatusKey, number>> = { ring: 1 };
 
@@ -794,6 +796,8 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       if (spec.pattern.throwCatch) return [];
       const firstSkill = spec.entry[0] ?? spec.saltoIds[0];
       if (!CATCH_IN_SKILL_SKILLS.includes(firstSkill)) return [];
+      // 投げ→ロンダートで受ける形はリングだけ
+      if (firstSkill === ROUNDOFF_SKILL_ID && !(apparatus && CATCH_IN_ROUNDOFF_APPARATUS.includes(apparatus))) return [];
       // 押さえつけて受けるのは床に手をつくロンダートの最中だけ（実施例。クラブ・リング）
       const pressCatch =
         firstSkill === ROUNDOFF_SKILL_ID &&

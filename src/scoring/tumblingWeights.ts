@@ -259,6 +259,11 @@ export const catchInSkillChance = (targetScore?: number | null): number =>
  * （`catchSkillContinues`）。
  */
 export const CATCH_IN_SKILL_SKILLS = [ROUNDOFF_SKILL_ID, FRONT_SALTO_ID];
+/**
+ * **ロンダートの最中に受ける**形を生成する手具（実施例はリング。オーナー 2026-11-18：リングでのみ生成）。
+ * 前宙の最中に受ける形は手具を問わない。
+ */
+export const CATCH_IN_ROUNDOFF_APPARATUS: ApparatusKey[] = ["ring"];
 
 /**
  * 技の最中の受けを**手具を使ったキャッチ（押さえつけ）**にする確率（クラブ・リングだけ）。

@@ -48,6 +48,8 @@ import {
   autoLimitOf,
   autoSeriesMax,
   preferredThrowCount,
+  ROPE_FOOT_WRAP_KIND,
+  ROLL_MOTIONS,
 } from "./generateWeights";
 import { shuffled } from "./pick";
 import { isCommonApparatus, type SeriesTemplate } from "./templates";
@@ -638,6 +640,69 @@ export function dropDuplicateTechTags(
       }
     }
     if (!improved) break;
+  }
+  return cur;
+}
+
+/**
+ * **ロープの足に巻き付けたキャッチは最後のシリーズだけ・前転や転がりの直後にはしない**（オーナー 2026-11-18）。
+ * 受け方（`nonHandKind`）はシリーズの中身から決めるので、並び（最後かどうか）は候補を作る時点では分からない。
+ * そこで並べ終わったあとに、自動生成の候補の受け方を書き換える：
+ *  - 最後以外のシリーズ・前転や転がりの直後の足に巻き付け → 肩
+ *  - 最後のシリーズの最後の受けが肩（前転・転がりの直後でない）→ 足に巻き付け（締めは足に巻き付けが圧倒的に多い）
+ * 評価が下がる書き換えはしない（同じ受け方の技術加点の重複など）。ユーザーのテンプレートはそのまま。
+ */
+export function arrangeRopeFootWrap(
+  best: { used: SeriesTemplate[]; ev: Evaluation },
+  opts: GenerateOptions,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  if (opts.apparatus !== "rope") return best;
+  let cur = best;
+  const lastIdx = cur.used.length - 1;
+  if (lastIdx < 0) return cur;
+  const isRoll = (it: Series["items"][number] | undefined) => it?.kind === "motion" && ROLL_MOTIONS.includes(it.motionId);
+  const tryKind = (i: number, j: number, kind: string, allowEqual: boolean) => {
+    const items = cur.used[i].series.items.map((it, k) => (k === j ? ({ ...it, nonHandKind: kind } as typeof it) : it));
+    const used = cur.used.map((t, k) => (k === i ? { ...t, series: { ...t.series, items } } : t));
+    const ev = evaluateUsed(used, opts);
+    if (ev.value > cur.ev.value + 1e-9 || (allowEqual && ev.value >= cur.ev.value - 1e-9)) cur = { used, ev };
+  };
+  cur.used.forEach((t, i) => {
+    if (!t.auto) return;
+    t.series.items.forEach((item, j) => {
+      const isCatch = item.kind === "catch" || (item.kind === "skill" && !!item.isCatch);
+      if (!isCatch) return;
+      const kind = (item as { nonHandKind?: string }).nonHandKind;
+      const afterRoll = isRoll(t.series.items[j - 1]);
+      if (kind === ROPE_FOOT_WRAP_KIND && (i !== lastIdx || afterRoll)) tryKind(i, j, "shoulder", false);
+      // 投げタン（技を含むシリーズ）を足で受けるのはレアなので、締めでも書き換えない
+      else if (
+        kind === "shoulder" &&
+        i === lastIdx &&
+        j === t.series.items.length - 1 &&
+        !afterRoll &&
+        !t.series.items.some((it) => it.kind === "skill")
+      )
+        tryKind(i, j, ROPE_FOOT_WRAP_KIND, true);
+    });
+  });
+  // 最後のシリーズが通常のキャッチで終わっていれば、足に巻き付けて締める形を試す（評価が上がるときだけ）
+  const last = cur.used[lastIdx];
+  const end = last?.series.items[last.series.items.length - 1];
+  if (
+    last?.auto &&
+    !last.series.items.some((it) => it.kind === "skill") &&
+    end?.kind === "catch" &&
+    !(end.catchTypes || []).length &&
+    !isRoll(last.series.items[last.series.items.length - 2])
+  ) {
+    const j = last.series.items.length - 1;
+    const items = last.series.items.map((it, k) =>
+      k === j ? ({ ...it, catchTypes: ["nonhand"], nonHandKind: ROPE_FOOT_WRAP_KIND } as typeof it) : it,
+    );
+    const used = cur.used.map((t, k) => (k === lastIdx ? { ...t, series: { ...t.series, items } } : t));
+    const ev = evaluateUsed(used, opts);
+    if (ev.value > cur.ev.value + 1e-9) cur = { used, ev };
   }
   return cur;
 }

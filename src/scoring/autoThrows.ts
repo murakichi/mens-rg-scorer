@@ -62,6 +62,8 @@ export interface AutoThrowPattern {
    * 通常の連続投げ・通常の前転3回キャッチより少ないので、候補に入れるかを1回だけ引く（`VERTICAL_THREE_PAIR_CHANCE`）。
    */
   rollsPair?: boolean;
+  /** 連続投げの2回目の受け方を引くための形か（受け方の重みだけに使う。`PAIR_SECOND_PATTERN`） */
+  pairSecond?: boolean;
   /**
    * 先に投げ受けを1本足すか（連続投げの1回目。`LEAD_THROW_CHENE_COUNT` 回のシェネを挟む）。
    * 投げ方を1種類増やすのに操作を足さずに済むので、日本トップの演技でも
@@ -256,10 +258,26 @@ export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
   },
 ];
 
+/**
+ * 連続投げの2回目の視野外キャッチ（背面キャッチ）の割合。**通常のキャッチより少なめ**（オーナー 2026-11-18）。
+ * 背面投げを足す形（`noViewPair`）で、2回目を視野外で受ける確率。
+ */
+export const PAIR_SECOND_NO_VIEW_CATCH_CHANCE = 0.4;
+/** 連続投げの2回目（`trailPair` の1本）の受け方を引くとき、視野外を含む受け方に掛ける重み */
+export const PAIR_SECOND_NO_VIEW_CATCH_WEIGHT = 0.5;
+/**
+ * ロープの手以外のキャッチ・視野外のキャッチは、ほかの手具より少ない（オーナー 2026-11-18）。
+ * 受け方を引くときに掛ける重み（締めの足に巻き付けは、評価の重み `ROPE_FINISH_CATCH_WEIGHT` で別に入れる）。
+ */
+export const ROPE_TECH_CATCH_WEIGHT = 0.5;
+
 /** 徒手なしの投げ受けの形（`trailPair` のあとの1本など、手具ごとの規則だけで受け方を引くのに使う） */
 export const MINIMAL_PATTERN: AutoThrowPattern =
   AUTO_THROW_PATTERNS.find((p) => p.id === "minimalNone") ??
   { id: "minimalNone", chene: { min: 0, max: 0 }, after: [], noViewPair: false };
+
+/** 連続投げの2回目（`trailPair` で足す1本）の受け方を引く形。徒手なし＋2回目の印（`pairSecond`） */
+export const PAIR_SECOND_PATTERN: AutoThrowPattern = { ...MINIMAL_PATTERN, id: "pairSecond", pairSecond: true };
 
 /** そのキャッチのあとに投げが続く形か（そこから投げに繋げない受け方を外すのに使う） */
 export const throwsAfterCatch = (pattern: AutoThrowPattern): boolean =>
@@ -559,6 +577,8 @@ export function maybeSideThrow(
   chance: (p: number) => number = (p) => p,
   /** 連続投げの2回目の投げか（股下から投げてよい。`legsAllowed`） */
   secondOfPair = false,
+  /** 前転3回（縦3動作）の投げか。視野外の横向きの投げは前転3回では実施しない（オーナー 2026-11-18） */
+  verticalThree = false,
 ): AutoThrowStyle {
   // 視野外の投げ：真後ろ／横／股下を引く（二つ投げ・手以外の投げは視野外と組まない）。
   // ロープは横投げをしないが股下はあるので、手具の判定より先に引く
@@ -578,9 +598,10 @@ export function maybeSideThrow(
         ? 0
         : chance(noViewLegsChance(apparatus));
     if (r < legs) return { ...throwStyle, throwTypes: [...types0, BETWEEN_LEGS_TAG] };
-    const side = canUseSideThrow(apparatus)
-      ? chance(NO_VIEW_SIDE_CHANCE_BY_APPARATUS[apparatus] ?? NO_VIEW_SIDE_CHANCE)
-      : 0;
+    const side =
+      canUseSideThrow(apparatus) && !verticalThree
+        ? chance(NO_VIEW_SIDE_CHANCE_BY_APPARATUS[apparatus] ?? NO_VIEW_SIDE_CHANCE)
+        : 0;
     return r < legs + (1 - legs) * side ? { ...throwStyle, throwTypes: [...types0, SIDE_THROW_TAG] } : throwStyle;
   }
   if (!canUseSideThrow(apparatus)) return throwStyle;
@@ -698,6 +719,12 @@ export function catchStyleWeight({
     weight *= LEFT_HAND_NO_VIEW_CATCH_WEIGHT;
   // 手以外のキャッチの実施しやすさは手具で違う
   if (has(NON_HAND_TAG)) weight *= nonHandRule.weight;
+  // 連続投げの2回目を視野外で受けるのは、通常のキャッチより少ない
+  if (pattern.pairSecond && has(NO_VIEW_TAG)) weight *= PAIR_SECOND_NO_VIEW_CATCH_WEIGHT;
+  // ロープの手以外・視野外のキャッチはほかの手具より少ない
+  if (apparatus === "rope" && (has(NON_HAND_TAG) || has(NO_VIEW_TAG))) weight *= ROPE_TECH_CATCH_WEIGHT;
+  // ロープは転がりの直後に手以外では受けない（足に巻き付けも肩も実施しない。オーナー 2026-11-18）
+  if (apparatus === "rope" && has(NON_HAND_TAG) && pattern.after[pattern.after.length - 1]?.motionId === ROLL) return 0;
   // クラブの二つ投げを手以外で受けるのはほぼ不可能（点数がどうしても要るときだけ）
   if (throwStyle.two && has(NON_HAND_TAG)) weight *= twoThrowNonHandWeight(apparatus, demandScore);
   // 2種類を同時に満たす受け方は単独より少ない（視野外＋手具を使ったキャッチはクラブでさらに低く）
@@ -866,6 +893,11 @@ export interface AutoThrowSpec {
   firstThrowStyle?: AutoThrowStyle;
   /** `pattern.noViewPair` のとき、あとに足す視野外の投げを股下から投げるか（`NO_VIEW_LEGS_CHANCE`） */
   noViewPairLegs?: boolean;
+  /**
+   * `pattern.noViewPair` のとき、あとに足す背面投げを**通常のキャッチ**で受けるか
+   * （連続投げの2回目の視野外キャッチは通常のキャッチより少ない。`PAIR_SECOND_NO_VIEW_CATCH_CHANCE`）
+   */
+  noViewPairPlainCatch?: boolean;
   /** `pattern.airPair` のときの、高難度でないほうの徒手の動作数（`AIR_PAIR_LOW_COUNTS`） */
   airLowCount?: number;
   /** `pattern.airPair` のとき、2つのキャッチの間に転がりを入れるか（`AIR_PAIR_ROLL_CHANCE`） */
@@ -1008,7 +1040,7 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
   });
   if (pattern.noViewPair) {
     items.push({ kind: "throw", throwTypes: spec.noViewPairLegs ? [NO_VIEW_TAG, BETWEEN_LEGS_TAG] : [NO_VIEW_TAG] });
-    items.push({ kind: "catch", catchTypes: [NO_VIEW_TAG] });
+    items.push(spec.noViewPairPlainCatch ? { kind: "catch" } : { kind: "catch", catchTypes: [NO_VIEW_TAG] });
   }
   // あとに最低限の投げ受けを1本（徒手なし・通常のキャッチ）
   if (pattern.trailPair && spec.trailThrowStyle) {
@@ -1156,6 +1188,13 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     }
     return next();
   };
+  // 背面投げを足す形（`noViewPair`）の2回目を通常のキャッチで受けるか。出現順に配る
+  // （`PAIR_SECOND_NO_VIEW_CATCH_CHANCE` の割合で視野外。乱数は使わない）
+  let pairCount = 0;
+  const nextPairPlain = (): boolean => {
+    const k = pairCount++;
+    return Math.floor((k + 1) * PAIR_SECOND_NO_VIEW_CATCH_CHANCE) === Math.floor(k * PAIR_SECOND_NO_VIEW_CATCH_CHANCE);
+  };
   // シェネの回数は形ごとに配る（その形で取り得る回数がひととおり出るように）
   const nextCount = new Map<string, () => number>();
   return combos.slice(0, limit).map(({ pattern, throwStyle }) => {
@@ -1292,17 +1331,33 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
         pattern.leadPair && leadPairLeftHandSide(apparatus, throwStyle)
           ? withSideThrow(throwStyle)
           : // 先に投げ受けを置く形（leadPair）の本体は連続投げの2回目
-            maybeSideThrow(apparatus, throwStyle, catchStyle, motions, rand, chance, !!pattern.leadPair),
+            maybeSideThrow(
+              apparatus,
+              throwStyle,
+              catchStyle,
+              motions,
+              rand,
+              chance,
+              !!pattern.leadPair,
+              !!pattern.verticalThree,
+            ),
       catchStyle,
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
       // 連続投げで足す視野外の投げも、股下から投げることがある（ほかの視野外の投げと同じ割合）
-      ...(pattern.noViewPair ? { noViewPairLegs: rand() < chance(noViewLegsChance(apparatus)) } : {}),
+      ...(pattern.noViewPair
+        ? {
+            noViewPairLegs: rand() < chance(noViewLegsChance(apparatus)),
+            // 連続投げの2回目の背面投げは、視野外より通常のキャッチで受けるほうが多い。
+            // 乱数を引くとほかの候補の抽選がずれるので、背面投げを足す形の出現順で決める
+            ...(nextPairPlain() ? { noViewPairPlainCatch: true } : {}),
+          }
+        : {}),
       ...(pattern.trailPair
         ? (() => {
             const trailThrowStyle = nextTrailThrow(catchStyle);
             // 受け方は「徒手なしの投げ受け」として引く（手具ごとの規則だけが効く）。
             // クラブの押さえつけ・ロープの足に絡めた受けが出るので、演技の締めにもなる
-            const trailCatchStyle = nextCatchFor(MINIMAL_PATTERN, trailThrowStyle, 0);
+            const trailCatchStyle = nextCatchFor(PAIR_SECOND_PATTERN, trailThrowStyle, 0);
             return {
               trailThrowStyle: maybeSideThrow(apparatus, trailThrowStyle, trailCatchStyle, 0, rand, chance, true),
               trailCatchStyle,
@@ -1331,6 +1386,8 @@ export interface AutoThrowTemplate extends SeriesTemplate {
 export function withNonHandKinds(series: Series, apparatus: ApparatusKey): Series {
   let hasSide = false;
   let throwNoRotationBack = false;
+  /** 直前の投げが技の最中の投げ（投げタン）か */
+  let throwTumbling = false;
   /** 直前の投げから今までの徒手・技（受け方の決め手。低難度の足で押さえつけは前転・転がり1回のあと） */
   let between: number[] = [];
   let changed = false;
@@ -1342,6 +1399,7 @@ export function withNonHandKinds(series: Series, apparatus: ApparatusKey): Serie
       hasSide = (item.throwTypes || []).includes(SIDE_THROW_TAG);
       throwNoRotationBack =
         (item.throwTypes || []).includes(NO_ROTATION_TAG) && (item.throwTypes || []).includes(NO_VIEW_TAG);
+      throwTumbling = item.kind === "skill";
       between = [];
       return;
     }
@@ -1366,12 +1424,31 @@ export function withNonHandKinds(series: Series, apparatus: ApparatusKey): Serie
     let h = (h0 + idx + 1) >>> 0;
     h = (h * 31 + idx) >>> 0;
     let kind: string | undefined;
+    // 投げタンを足で受けるのはレア（オーナー 2026-11-18）。中身から決めた N 本に1本だけ足を残す
+    const tumbling = throwTumbling || between.some((k) => series.items[k].kind === "skill");
+    const avoidFoot = tumbling && (h >>> 5) % TUMBLING_FOOT_CATCH_ONE_IN !== 0;
     // 両手持ち無回転の背面投げは足で押さえつけて受ける（形は前転1回に絞ってある）
     if (apparatus === "stick" && throwNoRotationBack && footPressOk) kind = FOOT_PRESS_KIND;
+    // ロープは前転・転がりの直後には足に巻き付けて受けない（肩で受ける。オーナー 2026-11-18）
+    else if (
+      apparatus === "rope" &&
+      series.items[idx - 1]?.kind === "motion" &&
+      ROLL_BEFORE_FOOT_PRESS.includes((series.items[idx - 1] as { motionId: string }).motionId)
+    )
+      kind = ROPE_SHOULDER_KIND;
+    // ロープの締め（シリーズの最後の受け）は足に巻き付けが圧倒的に多い。途中の受けは肩
+    // （最後のシリーズかどうかは並べたあとで決まるので、`arrangeRopeFootWrap` が最後以外を肩に直す）
+    else if (apparatus === "rope")
+      kind = idx === series.items.length - 1 && !avoidFoot ? ROPE_FOOT_WRAP_KIND_ID : ROPE_SHOULDER_KIND;
     else {
-      const kinds = NON_HAND_CATCH_KINDS[apparatus].filter(
+      let kinds = NON_HAND_CATCH_KINDS[apparatus].filter(
         (k) => (!k.needsSide || hasSide) && (footPressOk || k.id !== FOOT_PRESS_KIND),
       );
+      // 投げタンは、足以外の受け方があればほとんどそちら
+      if (avoidFoot) {
+        const notFoot = kinds.filter((k) => !FOOT_CATCH_KINDS.includes(k.id));
+        if (notFoot.length > 0) kinds = notFoot;
+      }
       if (kinds.length === 0) return;
       kind = kinds[h % kinds.length].id;
     }
@@ -1388,6 +1465,14 @@ export function withNonHandKinds(series: Series, apparatus: ApparatusKey): Serie
   return changed ? { ...series, items } : series;
 }
 
+/** 足で受ける手以外のキャッチの受け方（投げタンではレア） */
+export const FOOT_CATCH_KINDS: string[] = ["footPress", "footClamp", "footWrap", "handstandFoot", "bothFeetClamp"];
+/** 投げタンを足で受ける候補を残す割合（中身から決めた N 本に1本） */
+export const TUMBLING_FOOT_CATCH_ONE_IN = 8;
+/** ロープの足に巻き付けたキャッチの受け方id */
+const ROPE_FOOT_WRAP_KIND_ID = "footWrap";
+/** ロープの肩でのキャッチの受け方id */
+const ROPE_SHOULDER_KIND = "shoulder";
 /** 足で押さえつけるキャッチの受け方id */
 const FOOT_PRESS_KIND = "footPress";
 /** 低難度の足で押さえつけるキャッチの前に実施する徒手（前転・転がり） */

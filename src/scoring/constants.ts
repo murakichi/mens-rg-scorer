@@ -143,7 +143,8 @@ export const canUseNoRotation = (apparatus: ApparatusKey): boolean => apparatus 
 
 /**
  * 手以外のキャッチの受け方（手具ごと）。手以外のキャッチにチェックを入れたときのプルダウン。
- * `needsSide` は横投げが前提の受け方（リング）。採点には影響しない（技術加点は手以外のキャッチの0.1のまま）。
+ * `needsSide` は横投げが前提の受け方（リング）。エディタは横投げで投げたときだけ選択肢に出す（`sideThrowCatchFlags`。
+ * 表示名に「横投げ前提」とは書かない、オーナー 2026-11-18）。採点には影響しない（技術加点は手以外のキャッチの0.1のまま）。
  */
 export interface NonHandCatchKind {
   id: string;
@@ -166,10 +167,10 @@ export const NON_HAND_CATCH_KINDS: Record<ApparatusKey, NonHandCatchKind[]> = {
     { id: "footWrap", name: "足に巻き付け" },
   ],
   ring: [
-    { id: "handstandFoot", name: "後転倒立で足に入れる（横投げ前提）", needsSide: true },
-    { id: "upperBody", name: "上半身に入れる（横投げ前提）", needsSide: true },
+    { id: "handstandFoot", name: "後転倒立で足に入れる", needsSide: true },
+    { id: "upperBody", name: "上半身に入れる", needsSide: true },
     { id: "bothFeetClamp", name: "両足で挟む" },
-    { id: "footPress", name: "足で押さえつける（横投げ前提）", needsSide: true },
+    { id: "footPress", name: "足で押さえつける", needsSide: true },
   ],
 };
 export const nonHandKindOf = (apparatus: ApparatusKey, id: string | undefined): NonHandCatchKind | undefined =>

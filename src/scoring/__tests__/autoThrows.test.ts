@@ -683,9 +683,10 @@ describe("ランダム生成への組み込み", () => {
     expect(w("clubs", 0)).toBeLessThan(1);
     expect(w("clubs", 0)).toBeGreaterThan(0);
     expect(w("clubs", NON_HAND_CATCH_MAX_MOTIONS + 1)).toBe(0);
-    // リング・ロープは普通に実施する
+    // リングは普通に実施する。ロープはほかの手具より少ない（徒手の量では絞らない。2026-11-18）
     expect(w("ring", 4)).toBe(1);
-    expect(w("rope", 4)).toBe(1);
+    expect(w("rope", 4)).toBeLessThan(1);
+    expect(w("rope", 4)).toBeGreaterThan(0);
     // 組み立てた候補でも、スティックの手以外のキャッチは徒手0〜1動作のものだけ
     (["stick", "clubs"] as ApparatusKey[]).forEach((app) =>
       autoThrowSpecs(app).forEach((sp) => {
@@ -694,8 +695,9 @@ describe("ランダム生成への組み込み", () => {
       }),
     );
     // リング・ロープは徒手の多い投げでも手以外で受ける候補が出る
+    // ロープは手以外のキャッチが少ないので、何回か引いて確かめる
     const many = (app: ApparatusKey) =>
-      autoThrowSpecs(app).some(
+      Array.from({ length: 10 }, () => autoThrowSpecs(app)).flat().some(
         (sp) =>
           sp.catchStyle.id === NON_HAND_TAG &&
           patternMotions(sp.pattern, sp.cheneCount) > NON_HAND_CATCH_MAX_MOTIONS,

@@ -240,6 +240,12 @@ export const FINISH_CATCH_TAG: Partial<Record<ApparatusKey, string>> = {
  * （Dスコア平均は 4.32／4.13 のまま変わらない）。
  */
 export const FINISH_CATCH_WEIGHT = 0.05;
+/**
+ * ロープの締め（足に巻き付けたキャッチ）だけの重み。足に巻き付けは前転・転がりの直後にはしない
+ * （`ROPE_FOOT_WRAP_AFTER_ROLL_WEIGHT`）ので、締めの形の候補が減り、0.05 では半分近くが締めずに終わった。
+ * 締めは足に巻き付けが圧倒的に多い（オーナー 2026-11-18）。
+ */
+export const ROPE_FINISH_CATCH_WEIGHT = 0.3;
 
 /**
  * **二つ投げのシリーズが2本目以降**のときの重み（1本あたり）。
@@ -257,6 +263,27 @@ export const TWO_THROW_EXTRA_WEIGHT = 1;
  * （タグの無い投げ・別の投げ方）が選べるなら必ずそちらにする強さにする。範囲外・必須要素の不足には勝てない。
  */
 export const DUPLICATE_TECH_WEIGHT = 1;
+
+/**
+ * **ロープの足に巻き付けたキャッチは最後のシリーズだけ**（演技の締め、オーナー 2026-11-18）。
+ * 最後以外のシリーズにある1つあたりの重み。肩で受ければ点数は同じなので、必ず避ける強さにする。
+ */
+export const ROPE_FOOT_WRAP_NOT_LAST_WEIGHT = 1;
+/**
+ * **ロープの足に巻き付けたキャッチは、前転・転がりの直後には実施しない**（オーナー 2026-11-18）。
+ * 難度を稼ぐためにどうしても必要なら可なので、範囲外・必須要素の不足には負ける「実世界の好み」の重み。
+ */
+export const ROPE_FOOT_WRAP_AFTER_ROLL_WEIGHT = 0.5;
+/** ロープの足に巻き付けたキャッチ（手以外のキャッチの受け方id） */
+export const ROPE_FOOT_WRAP_KIND = "footWrap";
+/**
+ * ロープの手以外・視野外のキャッチは**ほかの手具より少ない**（オーナー 2026-11-18）。技術加点が付く受け方は
+ * 引きを下げても貪欲法が拾うので、評価で1つにつき加点（0.1）ぶんを打ち消して、頻度を候補の引きに戻す。
+ * 演技の締め（最後のシリーズの最後の足に巻き付け）は数えない。
+ */
+export const ROPE_TECH_CATCH_EVAL_WEIGHT = 0.2;
+/** 足に巻き付けて受ける前にしない徒手（前転・転がり） */
+export const ROLL_MOTIONS = ["fwd_roll", "roll"];
 
 /**
  * **投げタンで実施する二つ投げ**の重み（1本あたり）。二つ投げは通常の投げ（二つ投げ→キャッチ）で

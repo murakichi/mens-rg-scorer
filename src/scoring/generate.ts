@@ -57,6 +57,7 @@ import {
   upgradeHandUnits,
   dropExtraTwoThrow,
   dropDuplicateTechTags,
+  arrangeRopeFootWrap,
   usableTemplates,
 } from "./generateSearch";
 import type { GenerateOptions, GenerateResult } from "./generateOptions";
@@ -152,6 +153,9 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   // ⑧ 加点済みと全く同じ投げ方・受け方（加点にならない技術タグ）が残っていれば、そのタグを外す。
   //    入れ替えは候補を丸ごと替えるだけなので、タグの無い同じ形には届かない
   best = dropDuplicateTechTags(best, opts);
+
+  // ⑨ ロープの足に巻き付けたキャッチは最後のシリーズだけ・前転や転がりの直後にはしない（受け方の書き換え）
+  best = arrangeRopeFootWrap(best, opts);
 
   return {
     series: seriesOf(best.used),
