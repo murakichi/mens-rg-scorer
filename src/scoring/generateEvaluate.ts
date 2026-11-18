@@ -43,6 +43,7 @@ import {
   EXTRA_THROW_OPERATION_WEIGHT,
   FINISH_CATCH_TAG,
   FINISH_CATCH_WEIGHT,
+  ROPE_FINISH_CATCH_WEIGHT,
   HARD_THROW_MAX_MOTIONS,
   HARD_THROW_TAGS,
   HARD_THROW_WEIGHT,
@@ -50,6 +51,11 @@ import {
   LIMITED_SKILL_WEIGHT,
   TWO_THROW_EXTRA_WEIGHT,
   DUPLICATE_TECH_WEIGHT,
+  ROPE_FOOT_WRAP_NOT_LAST_WEIGHT,
+  ROPE_FOOT_WRAP_AFTER_ROLL_WEIGHT,
+  ROPE_FOOT_WRAP_KIND,
+  ROPE_TECH_CATCH_EVAL_WEIGHT,
+  ROLL_MOTIONS,
   TWO_THROW_TUMBLING_WEIGHT,
   REPEATABLE_SALTOS,
   REQUIRED_ELEMENT_WEIGHT,
@@ -195,7 +201,10 @@ export function endsWithFinishCatch(series: Series, apparatus: ApparatusKey): bo
   const tag = FINISH_CATCH_TAG[apparatus];
   if (!tag) return false;
   const last = series.items[series.items.length - 1];
-  return last?.kind === "catch" && (last.catchTypes || []).includes(tag);
+  if (!(last?.kind === "catch" && (last.catchTypes || []).includes(tag))) return false;
+  // ロープの締めは足に巻き付けたキャッチ（肩ではない。オーナー 2026-11-18）。受け方が未定（旧データ）なら締めとみなす
+  if (apparatus === "rope" && last.nonHandKind && last.nonHandKind !== ROPE_FOOT_WRAP_KIND) return false;
+  return true;
 }
 
 /** 構成が手具の締めの受け方で終わっていないか（締め方の無い手具では常に false） */
@@ -213,7 +222,7 @@ export function verticalThreeThrowCount(
   series.forEach((ser) => {
     let vertical = 0;
     let open = false;
-    ser.items.forEach((item) => {
+    ser.items.forEach((item, idx) => {
       if (item.kind === "throw") {
         vertical = 0;
         open = true;
@@ -225,7 +234,10 @@ export function verticalThreeThrowCount(
         return;
       }
       if (item.kind === "catch" && open) {
-        if (vertical >= VERTICAL_THREE_MOTIONS && !(item.catchTypes || []).includes(USE_APPARATUS_TAG))
+        // 通常のキャッチからそのまま連続投げに続ける形は実施される（オーナー 2026-11-18）ので嫌わない
+        const next = ser.items[idx + 1];
+        const pairs = !(item.catchTypes || []).length && next?.kind === "throw";
+        if (vertical >= VERTICAL_THREE_MOTIONS && !(item.catchTypes || []).includes(USE_APPARATUS_TAG) && !pairs)
           count += 1;
         open = false;
       }
@@ -433,10 +445,20 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
   const twoThrowExtra = extraTwoThrowSeriesCount(series) * TWO_THROW_EXTRA_WEIGHT;
   // 加点済みと全く同じ投げ方・受け方（加点にならない技術タグ）は意味がないので入れない
   const duplicateTech = duplicateTechCount(r) * DUPLICATE_TECH_WEIGHT;
+  // ロープの足に巻き付けたキャッチは最後のシリーズだけ・前転や転がりの直後にはしない
+  const footWrap = ropeFootWrapIssues(series, opts.apparatus);
+  const ropeFootWrap =
+    footWrap.notLast * ROPE_FOOT_WRAP_NOT_LAST_WEIGHT +
+    footWrap.afterRoll * ROPE_FOOT_WRAP_AFTER_ROLL_WEIGHT +
+    footWrap.techCatches * ROPE_TECH_CATCH_EVAL_WEIGHT;
   // 二つ投げの投げタンは通常の二つ投げより優先度を下げる（禁止ではない）
   const twoThrowTumbling = twoThrowTumblingCount(series, r) * TWO_THROW_TUMBLING_WEIGHT;
   // クラブは押さえてキャッチ、ロープは足に絡めたキャッチで演技を締める
-  const finishCatch = missesFinishCatch(series, opts.apparatus) ? FINISH_CATCH_WEIGHT : 0;
+  const finishCatch = missesFinishCatch(series, opts.apparatus)
+    ? opts.apparatus === "rope"
+      ? ROPE_FINISH_CATCH_WEIGHT
+      : FINISH_CATCH_WEIGHT
+    : 0;
   // 手以外・手具を使った投げのあとに徒手を多く実施する形は、要求値が5.0を超えるまで嫌う
   const hardThrow = suppressHardThrow(opts)
     ? hardThrowCount(series, !!opts.junior, opts.future ?? null) * HARD_THROW_WEIGHT
@@ -478,6 +500,7 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
       rareStyle -
       twoThrowExtra -
       duplicateTech -
+      ropeFootWrap -
       seriesBonusExtra -
       twoThrowTumbling -
       finishCatch -
@@ -494,6 +517,46 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
     diffSpread: adoptedDiffSpread(r),
     spreadCost,
   };
+}
+
+/**
+ * ロープの足に巻き付けたキャッチのうち、**最後以外のシリーズにあるもの**と、**前転・転がりの直後のもの**の数
+ * （afterRoll には**転がりの直後の肩でのキャッチ**も数える）
+ * （オーナー 2026-11-18）。ロープ以外は常に0。
+ */
+export function ropeFootWrapIssues(
+  series: Series[],
+  apparatus: ApparatusKey,
+): { notLast: number; afterRoll: number; techCatches: number } {
+  const out = { notLast: 0, afterRoll: 0, techCatches: 0 };
+  if (apparatus !== "rope") return out;
+  series.forEach((ser, i) => {
+    ser.items.forEach((item, j) => {
+      const isCatch = item.kind === "catch" || (item.kind === "skill" && !!item.isCatch);
+      // 手以外・視野外のキャッチ（締めの足に巻き付けは除く）
+      if (isCatch) {
+        const tags = (item as { catchTypes?: string[] }).catchTypes || [];
+        // 締めの足に巻き付けは数えない。ただし背面と組み合わせた受け方はメジャーな4種類
+        // （肩・足・通常・背面、オーナー 2026-11-18）から外れるので数える
+        const finish =
+          i === series.length - 1 &&
+          j === ser.items.length - 1 &&
+          item.nonHandKind === ROPE_FOOT_WRAP_KIND &&
+          tags.length === 1;
+        if (!finish && (tags.includes("nonhand") || tags.includes("noview"))) out.techCatches += 1;
+      }
+      if (!isCatch || !item.nonHandKind) return;
+      const prev = ser.items[j - 1];
+      // 転がりの直後は肩でも受けない（オーナー 2026-11-18）
+      if (item.nonHandKind !== ROPE_FOOT_WRAP_KIND) {
+        if (prev?.kind === "motion" && prev.motionId === "roll") out.afterRoll += 1;
+        return;
+      }
+      if (i !== series.length - 1) out.notLast += 1;
+      if (prev?.kind === "motion" && ROLL_MOTIONS.includes(prev.motionId)) out.afterRoll += 1;
+    });
+  });
+  return out;
 }
 
 /**

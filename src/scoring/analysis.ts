@@ -698,6 +698,32 @@ export function catchTwoFlags(items: Item[], apparatus: ApparatusKey): boolean[]
   });
 }
 
+/**
+ * 受けるときに、空中にある手具のどれかが**横投げ**で投げられているか（キャッチアイテム・技の最中の受けの位置で true）。
+ * 横投げ前提の手以外の受け方（`NonHandCatchKind.needsSide`、リング）をエディタで出すかに使う。
+ * 2つとも空中にあるとき、どちらを受けたかは入力から分からないので、どれかが横投げなら出す。
+ */
+export function sideThrowCatchFlags(items: Item[]): boolean[] {
+  let inAir: boolean[] = [];
+  return items.map((item) => {
+    const isThrow = item.kind === "throw" || (item.kind === "skill" && !!item.isThrow);
+    if (isThrow) {
+      const side = (item.throwTypes || []).includes(SIDE_THROW_TAG);
+      for (let k = 0; k < thrownCount(item); k++) inAir.push(side);
+      return false;
+    }
+    const isCatch = item.kind === "catch" || (item.kind === "skill" && !!item.isCatch);
+    if (!isCatch) return false;
+    const flag = inAir.some(Boolean);
+    // 受けた分を空中から外す（横投げの手具を先に受けたとみなす）
+    for (let k = 0; k < caughtCount(item) && inAir.length > 0; k++) {
+      const at = inAir.indexOf(true);
+      inAir = at >= 0 ? inAir.filter((_, i) => i !== at) : inAir.slice(1);
+    }
+    return flag;
+  });
+}
+
 /** 手具固有の入力の表示名（`apparatusBlockers` が返す） */
 export const APPARATUS_INPUT_NAMES = {
   useapp: "手具を使った投げ・キャッチ",

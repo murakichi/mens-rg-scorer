@@ -50,6 +50,7 @@ import {
   checkApparatusFlow,
   handsEmptyFlags,
   catchTwoFlags,
+  sideThrowCatchFlags,
   maxSaltoChain,
   needsRoundoffBefore,
   prevSkillId,
@@ -298,12 +299,15 @@ function CatchChecks({
   apparatus,
   common,
   catchTwoAllowed,
+  sideThrown,
   onUpdate,
 }: {
   item: { catchTypes?: string[]; nonHandKind?: string; catchTwo?: boolean };
   apparatus: ApparatusKey;
   common?: boolean;
   catchTwoAllowed?: boolean;
+  /** 受ける手具が横投げで投げられているか（横投げが前提の受け方を出すか） */
+  sideThrown?: boolean;
   onUpdate: (patch: { catchTypes?: string[]; nonHandKind?: string; catchTwo?: boolean }) => void;
 }) {
   const options = [...CATCH_OPTIONS_COMMON, ...(!common && APPARATUS_USE[apparatus] ? CATCH_OPTIONS_APPARATUS : [])];
@@ -338,6 +342,7 @@ function CatchChecks({
                 apparatus={apparatus}
                 types={item.catchTypes}
                 value={item.nonHandKind}
+                sideThrown={sideThrown}
                 onChange={(nonHandKind) =>
                   onUpdate(
                     nonHandKindForcesNoView(nonHandKind)
@@ -425,11 +430,14 @@ function NonHandKindSelect({
   apparatus,
   types,
   value,
+  sideThrown,
   onChange,
 }: {
   apparatus: ApparatusKey;
   types: string[] | undefined;
   value: string | undefined;
+  /** 受ける手具が横投げで投げられているか。横投げが前提の受け方（リング）はそのときだけ出す */
+  sideThrown?: boolean;
   onChange: (id: string | undefined) => void;
 }) {
   if (!(types || []).includes("nonhand")) return null;
@@ -438,7 +446,8 @@ function NonHandKindSelect({
       受け方
       <select value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
         <option value="">（未選択）</option>
-        {NON_HAND_CATCH_KINDS[apparatus].map((k) => (
+        {/* 横投げが前提の受け方は横投げのときだけ（選択済みなら外せるように残す） */}
+        {NON_HAND_CATCH_KINDS[apparatus].filter((k) => !k.needsSide || sideThrown || k.id === value).map((k) => (
           <option key={k.id} value={k.id}>
             {k.name}
           </option>
@@ -465,6 +474,7 @@ function ItemEditor({
   prevMotionId,
   handsEmpty,
   catchTwoAllowed,
+  sideThrown,
   tech,
   reqThrowCounts = {},
   twoThrowMotionTotal = null,
@@ -490,6 +500,8 @@ function ItemEditor({
   handsEmpty?: boolean;
   /** このキャッチで2つ同時キャッチを入力できるか（2つとも空中にあるときだけ） */
   catchTwoAllowed?: boolean;
+  /** 受ける手具が横投げで投げられているか（横投げが前提の受け方を出すか） */
+  sideThrown?: boolean;
   /** この投げ・受けの技術加点の状況（投げ・受けでなければ null） */
   tech?: TechStatus | null;
   /** 演技全体で必須投げを実施した回数 */
@@ -517,6 +529,7 @@ function ItemEditor({
           apparatus={apparatus}
           common={common}
           catchTwoAllowed={catchTwoAllowed}
+          sideThrown={sideThrown}
           onUpdate={onUpdate}
         />
       </>
@@ -675,6 +688,7 @@ function ItemEditor({
             apparatus={apparatus}
             common={common}
             catchTwoAllowed={catchTwoAllowed}
+            sideThrown={sideThrown}
             onUpdate={onUpdate}
           />
         )}
@@ -837,6 +851,8 @@ export function SeriesCard({
   const handsEmpty = handsEmptyFlags(ser.items, apparatus);
   // 2つ同時キャッチは「2つとも空中にある（＝二つ投げの間）」ときだけ入力できる
   const catchTwoAllowed = catchTwoFlags(ser.items, apparatus);
+  // 横投げが前提の手以外の受け方（リング）は、横投げで投げた手具を受けるときだけ出す
+  const sideThrown = sideThrowCatchFlags(ser.items);
   // 二つ投げで投げてから受けるまでの徒手には「4動作以上で加点」と、その間の動作数を出す
   const twoThrowMotions = twoThrowMotionTotals(ser.items, junior, future);
   // タンブリング技の入力パターン（一覧／手動入力）。既定は一覧で、
@@ -1037,6 +1053,7 @@ export function SeriesCard({
               prevMotionId={prevMotionId(ser.items, iIdx)}
               handsEmpty={handsEmpty[iIdx]}
               catchTwoAllowed={catchTwoAllowed[iIdx]}
+              sideThrown={sideThrown[iIdx]}
               tech={b.techItems[iIdx]}
               reqThrowCounts={reqThrowCounts}
               twoThrowMotionTotal={twoThrowMotions[iIdx]}
