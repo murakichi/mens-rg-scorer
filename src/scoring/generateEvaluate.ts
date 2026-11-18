@@ -213,7 +213,7 @@ export function verticalThreeThrowCount(
   series.forEach((ser) => {
     let vertical = 0;
     let open = false;
-    ser.items.forEach((item) => {
+    ser.items.forEach((item, idx) => {
       if (item.kind === "throw") {
         vertical = 0;
         open = true;
@@ -225,7 +225,10 @@ export function verticalThreeThrowCount(
         return;
       }
       if (item.kind === "catch" && open) {
-        if (vertical >= VERTICAL_THREE_MOTIONS && !(item.catchTypes || []).includes(USE_APPARATUS_TAG))
+        // 通常のキャッチからそのまま連続投げに続ける形は実施される（オーナー 2026-11-18）ので嫌わない
+        const next = ser.items[idx + 1];
+        const pairs = !(item.catchTypes || []).length && next?.kind === "throw";
+        if (vertical >= VERTICAL_THREE_MOTIONS && !(item.catchTypes || []).includes(USE_APPARATUS_TAG) && !pairs)
           count += 1;
         open = false;
       }

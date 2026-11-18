@@ -285,8 +285,8 @@ describe("あとに投げ受けを1本足す形（連続投げの1回目で難�
   it("主役の投げ受けのあとに徒手なしの投げ受けが1本付く", () => {
     expect(trail().length).toBeGreaterThan(0);
     trail().forEach((pattern) => {
-      // 徒手（シェネ・前転）は1回目に付く＝1回目のほうが難度が高い
-      expect(pattern.chene.max).toBeGreaterThan(0);
+      // 徒手（シェネ・前転）は1回目に付く＝1回目のほうが難度が高い（前転3回の形はシェネなし）
+      expect(pattern.chene.max + pattern.after.reduce((n, m) => n + m.count, 0)).toBeGreaterThan(0);
       const style = autoThrowStyles("stick").find((t) => t.id === "normal")!;
       const items = buildAutoThrowSeries({
         pattern,

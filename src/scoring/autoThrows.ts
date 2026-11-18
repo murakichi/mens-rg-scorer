@@ -58,6 +58,11 @@ export interface AutoThrowPattern {
    */
   verticalThree?: boolean;
   /**
+   * 縦3動作（前転3回）を**通常のキャッチ**で受けて、そのまま連続投げに続ける形か（オーナー 2026-11-18）。
+   * 通常の連続投げ・通常の前転3回キャッチより少ないので、候補に入れるかを1回だけ引く（`VERTICAL_THREE_PAIR_CHANCE`）。
+   */
+  rollsPair?: boolean;
+  /**
    * 先に投げ受けを1本足すか（連続投げの1回目。`LEAD_THROW_CHENE_COUNT` 回のシェネを挟む）。
    * 投げ方を1種類増やすのに操作を足さずに済むので、日本トップの演技でも
    * 「手以外の投げ→キャッチ→視野外の投げ→シェネ→キャッチ」のように実施する。
@@ -195,6 +200,24 @@ export const AUTO_THROW_PATTERNS: AutoThrowPattern[] = [
     after: [times(FWD_ROLL, 3)],
     noViewPair: false,
     verticalThree: true,
+  },
+  // 前転3回→通常のキャッチ→そのまま連続投げ（背面投げ→背面キャッチ／徒手なしの投げ受け）。少なめ
+  {
+    id: "rollsNoView",
+    chene: { min: 0, max: 0 },
+    after: [times(FWD_ROLL, 3)],
+    noViewPair: true,
+    verticalThree: true,
+    rollsPair: true,
+  },
+  {
+    id: "rollsTrailPair",
+    chene: { min: 0, max: 0 },
+    after: [times(FWD_ROLL, 3)],
+    noViewPair: false,
+    trailPair: true,
+    verticalThree: true,
+    rollsPair: true,
   },
   // 最低限の操作で必須要素（左手投げ・二つ投げ）を満たす形。
   // スティックの「1シェネキャッチ」、クラブ・リングの「二つ投げ→前転／シェネ→キャッチ」。
@@ -440,6 +463,13 @@ export const verticalThreeChance = (demandScore?: number | null): number =>
 export const VERTICAL_THREE_OTHER_CATCH_WEIGHT = 0.2;
 
 /**
+ * 前転3回を通常のキャッチで受けて連続投げに続ける形（`AutoThrowPattern.rollsPair`）を、
+ * 候補に入れる確率（前転3回の形が候補に入ったうえで、さらに1回引く）。
+ * 通常の連続投げ・通常の前転3回キャッチより少なくする（オーナー 2026-11-18）。
+ */
+export const VERTICAL_THREE_PAIR_CHANCE = 0.3;
+
+/**
  * **横投げ**（`SIDE_THROW_TAG`）を付ける確率。技術加点にはならず、投げ方の種類として
  * 数えるだけなので、実際に実施しやすい形だけに寄せる（ロープは横投げをしない）。
  *  - 手具を使ったキャッチ（押さえつけ）で受ける投げ：もう一方の手具を体側に構えて受けるので
@@ -655,6 +685,8 @@ export function catchStyleWeight({
   // 手以外のキャッチを低難度の投げでしか実施しない手具では、徒手が多い形では実施しない
   if (has(NON_HAND_TAG) && nonHandRule.lowDifficultyOnly && motions > NON_HAND_CATCH_MAX_MOTIONS)
     return 0;
+  // 前転3回から連続投げに続けるのは通常のキャッチのときだけ
+  if (pattern.rollsPair) return (catchStyle.catchTypes || []).length === 0 ? 1 : 0;
   let weight = 1;
   // 縦3動作の形は手具で押さえつけて受けるのが主流
   if (pattern.verticalThree && !has(CATCH_USE_APPARATUS)) weight *= VERTICAL_THREE_OTHER_CATCH_WEIGHT;
@@ -1041,6 +1073,8 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   const rareChance = chance(unseenShapeChance("leftHandNoViewThrow", opts.demandScore));
   // 前転3回（縦3動作）は珍しい寄りの技。候補に入れるかどうかは1回だけ引く
   const keepVerticalThree = rand() < chance(verticalThreeChance(opts.demandScore));
+  // 前転3回→通常のキャッチ→連続投げ は、さらに少なめ（前転3回の形が入ったうえで1回だけ引く）
+  const keepRollsPair = keepVerticalThree && rand() < chance(VERTICAL_THREE_PAIR_CHANCE);
   // 2つを別々に投げる形は手具が二つの種目だけ。候補に入れるかも1回だけ引く
   const keepOverlap = hasTwoThrow(apparatus) && rand() < chance(OVERLAP_PATTERN_CHANCE);
   // 2つとも空中にある形（2つ目は横投げ→手具を使ったキャッチ）。横投げをしない手具では出さない
@@ -1051,6 +1085,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       (pattern) =>
         throwPatternAllowed(pattern, opts.future ?? null) &&
         (!pattern.verticalThree || keepVerticalThree) &&
+        (!pattern.rollsPair || keepRollsPair) &&
         (!pattern.overlap || keepOverlap) &&
         (!pattern.airPair || keepAirPair),
     )
