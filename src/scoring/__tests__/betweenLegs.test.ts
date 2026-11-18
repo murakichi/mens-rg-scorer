@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { computeScore } from "../score";
 import { noViewDirectionOf, withNoViewDirection, techOptionKind, BETWEEN_LEGS_TAG } from "../constants";
 import type { Series, Item } from "../types";
-import { maybeSideThrow } from "../autoThrows";
+import { maybeSideThrow, autoThrowTemplates } from "../autoThrows";
+import { seededRandom } from "../probe";
 
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
 const chene = (count: number): Item => ({ kind: "motion", motionId: "chene", count });
@@ -105,4 +106,37 @@ describe("生成：股下で投げたあとは手以外のキャッチで受け�
       expect(maybeSideThrow(app, nv, plain, 0, () => 0).throwTypes).toContain(BETWEEN_LEGS_TAG);
     });
   });
+});
+
+describe("生成：股下からの視野外投げは低難度か連続投げの2回目だけ（2026-11-18）", () => {
+  const nv = { id: "noview", name: "視野外の投げ", throwTypes: ["noview"] };
+  const plain = { id: "normal", name: "通常のキャッチ" };
+  it("3動作以上の投げは、連続投げの2回目でなければ股下にしない", () => {
+    expect(maybeSideThrow("stick", nv, plain, 3, () => 0).throwTypes).not.toContain(BETWEEN_LEGS_TAG);
+    expect(maybeSideThrow("stick", nv, plain, 3, () => 0, (p) => p, true).throwTypes).toContain(BETWEEN_LEGS_TAG);
+    expect(maybeSideThrow("stick", nv, plain, 1, () => 0).throwTypes).toContain(BETWEEN_LEGS_TAG);
+  });
+
+  it("候補の股下の投げは、受けまで0〜1動作か、同じシリーズの2つ目以降の投げ", () => {
+    let n = 0;
+    (["stick", "clubs", "ring", "rope"] as const).forEach((app) => {
+      for (let seed = 1; seed <= 40; seed++)
+        autoThrowTemplates(app, { random: seededRandom(seed) }).forEach((t) => {
+          const items = t.series.items;
+          items.forEach((it, i) => {
+            if (it.kind !== "throw" || !(it.throwTypes ?? []).includes(BETWEEN_LEGS_TAG)) return;
+            n++;
+            const second = items.slice(0, i).some((x) => x.kind === "throw");
+            let motions = 0;
+            for (let k = i + 1; k < items.length; k++) {
+              const x = items[k];
+              if (x.kind === "catch" || x.kind === "throw") break;
+              motions += x.kind === "motion" ? (x.count ?? 0) : 1;
+            }
+            expect(second || motions <= 1).toBe(true);
+          });
+        });
+    });
+    expect(n).toBeGreaterThan(0);
+  }, 120_000);
 });

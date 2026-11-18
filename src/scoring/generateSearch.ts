@@ -16,6 +16,7 @@
 // =====================================================================
 
 import { analyzeSeries } from "./analysis";
+import { computeScore } from "./score";
 import { autoThrowTemplates, cheneCountRange, isAutoThrowTemplate, withCheneCount } from "./autoThrows";
 import {
   autoTumblingTemplates,
@@ -585,4 +586,58 @@ export function satisfying(
     ),
   ].slice(0, THROW_REBUILD_CANDIDATES);
   return [...new Set([...list, ...throwers])];
+}
+
+/** 加点済みと重複したとき外してよい技術タグ（外しても投げ受けとして成り立つもの）と、一緒に外す付随タグ */
+const DROPPABLE_DUPLICATE_TAGS: Record<string, string[]> = {
+  noview: ["noview", "betweenlegs"],
+  useapp: ["useapp"],
+};
+
+/**
+ * **加点済みと全く同じ投げ方・受け方**（技術タグが付いているのに加点にならない投げ・受け）から、
+ * そのタグを外す（オーナー 2026-11-18：意味のない投げを入れない）。入れ替え（`swapIn`）は候補を丸ごと
+ * 替えるだけなので、「タグの無い同じ投げ受け」には届かない。外して評価が上がるときだけ採り、
+ * 自動生成の候補（`auto`）だけを書き換える（ユーザーのテンプレートはそのまま）。
+ * 手以外の受け・投げは前後の形（無回転・横投げ）と組で決めているので外さない（評価の重みで避ける）。
+ */
+export function dropDuplicateTechTags(
+  best: { used: SeriesTemplate[]; ev: Evaluation },
+  opts: GenerateOptions,
+): { used: SeriesTemplate[]; ev: Evaluation } {
+  let cur = best;
+  for (let round = 0; round < 8; round++) {
+    const r = computeScore(cur.used.map((t) => t.series), opts.apparatus, {
+      junior: !!opts.junior,
+      future: opts.future ?? null,
+    });
+    let improved = false;
+    for (let i = 0; i < cur.used.length && !improved; i++) {
+      if (!cur.used[i].auto) continue;
+      const tech = r.seriesBreakdowns[i]?.techItems ?? [];
+      for (let j = 0; j < tech.length && !improved; j++) {
+        if (tech[j]?.status !== "duplicate") continue;
+        const item = cur.used[i].series.items[j];
+        const isThrowSide = item.kind === "throw" || (item.kind === "skill" && !!item.isThrow);
+        const tags = (isThrowSide ? item.throwTypes : (item as { catchTypes?: string[] }).catchTypes) ?? [];
+        for (const tag of Object.keys(DROPPABLE_DUPLICATE_TAGS)) {
+          if (!tags.includes(tag)) continue;
+          const drop = DROPPABLE_DUPLICATE_TAGS[tag];
+          const kept = tags.filter((t) => !drop.includes(t));
+          const items = cur.used[i].series.items.map((it, k) =>
+            k !== j ? it : isThrowSide ? { ...it, throwTypes: kept } : { ...it, catchTypes: kept },
+          );
+          const used = cur.used.map((t, k) => (k === i ? { ...t, series: { ...t.series, items } } : t));
+          const ev = evaluateUsed(used, opts);
+          if (ev.value > cur.ev.value + 1e-9) {
+            cur = { used, ev };
+            improved = true;
+            break;
+          }
+        }
+      }
+    }
+    if (!improved) break;
+  }
+  return cur;
 }

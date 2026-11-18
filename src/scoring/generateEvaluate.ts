@@ -49,6 +49,7 @@ import {
   HIGH_DIFFICULTY_WEIGHT,
   LIMITED_SKILL_WEIGHT,
   TWO_THROW_EXTRA_WEIGHT,
+  DUPLICATE_TECH_WEIGHT,
   TWO_THROW_TUMBLING_WEIGHT,
   REPEATABLE_SALTOS,
   REQUIRED_ELEMENT_WEIGHT,
@@ -430,6 +431,8 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
   const seriesBonusExtra = seriesBonusExcess(r) * SERIES_BONUS_WEIGHT;
   // 二つ投げのシリーズは1構成に1本まで（必須投げを1回満たせば足りる）
   const twoThrowExtra = extraTwoThrowSeriesCount(series) * TWO_THROW_EXTRA_WEIGHT;
+  // 加点済みと全く同じ投げ方・受け方（加点にならない技術タグ）は意味がないので入れない
+  const duplicateTech = duplicateTechCount(r) * DUPLICATE_TECH_WEIGHT;
   // 二つ投げの投げタンは通常の二つ投げより優先度を下げる（禁止ではない）
   const twoThrowTumbling = twoThrowTumblingCount(series, r) * TWO_THROW_TUMBLING_WEIGHT;
   // クラブは押さえてキャッチ、ロープは足に絡めたキャッチで演技を締める
@@ -474,6 +477,7 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
       verticalThree -
       rareStyle -
       twoThrowExtra -
+      duplicateTech -
       seriesBonusExtra -
       twoThrowTumbling -
       finishCatch -
@@ -490,6 +494,17 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
     diffSpread: adoptedDiffSpread(r),
     spreadCost,
   };
+}
+
+/**
+ * 技術加点のタグが付いているのに、全く同じ投げ方・受け方がすでに加点されているため
+ * 加点にならない投げ・受けの数（`TechStatus.status === "duplicate"`）。
+ */
+export function duplicateTechCount(r: ScoreResult): number {
+  return r.seriesBreakdowns.reduce(
+    (n, b) => n + b.techItems.filter((t) => t?.status === "duplicate").length,
+    0,
+  );
 }
 
 /**
