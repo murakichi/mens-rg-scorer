@@ -536,7 +536,13 @@ export function ropeFootWrapIssues(
       // 手以外・視野外のキャッチ（締めの足に巻き付けは除く）
       if (isCatch) {
         const tags = (item as { catchTypes?: string[] }).catchTypes || [];
-        const finish = i === series.length - 1 && j === ser.items.length - 1 && item.nonHandKind === ROPE_FOOT_WRAP_KIND;
+        // 締めの足に巻き付けは数えない。ただし背面と組み合わせた受け方はメジャーな4種類
+        // （肩・足・通常・背面、オーナー 2026-11-18）から外れるので数える
+        const finish =
+          i === series.length - 1 &&
+          j === ser.items.length - 1 &&
+          item.nonHandKind === ROPE_FOOT_WRAP_KIND &&
+          tags.length === 1;
         if (!finish && (tags.includes("nonhand") || tags.includes("noview"))) out.techCatches += 1;
       }
       if (!isCatch || !item.nonHandKind) return;

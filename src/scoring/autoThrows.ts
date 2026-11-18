@@ -270,6 +270,11 @@ export const PAIR_SECOND_NO_VIEW_CATCH_WEIGHT = 0.5;
  * 受け方を引くときに掛ける重み（締めの足に巻き付けは、評価の重み `ROPE_FINISH_CATCH_WEIGHT` で別に入れる）。
  */
 export const ROPE_TECH_CATCH_WEIGHT = 0.5;
+/**
+ * ロープのメジャーな受け方は大きく分けて **肩・足・通常・背面の4種類**（オーナー 2026-11-18）。
+ * 背面と手以外を組み合わせた受け方（背面で足に巻き付けるなど）を引くときに掛ける重み。
+ */
+export const ROPE_COMBINED_CATCH_WEIGHT = 0.1;
 
 /** 徒手なしの投げ受けの形（`trailPair` のあとの1本など、手具ごとの規則だけで受け方を引くのに使う） */
 export const MINIMAL_PATTERN: AutoThrowPattern =
@@ -723,6 +728,8 @@ export function catchStyleWeight({
   if (pattern.pairSecond && has(NO_VIEW_TAG)) weight *= PAIR_SECOND_NO_VIEW_CATCH_WEIGHT;
   // ロープの手以外・視野外のキャッチはほかの手具より少ない
   if (apparatus === "rope" && (has(NON_HAND_TAG) || has(NO_VIEW_TAG))) weight *= ROPE_TECH_CATCH_WEIGHT;
+  // ロープのメジャーな受け方は 肩・足・通常・背面 の4種類。背面と手以外を組み合わせた受け方はまれ
+  if (apparatus === "rope" && (catchStyle.catchTypes || []).length >= 2) weight *= ROPE_COMBINED_CATCH_WEIGHT;
   // ロープは転がりの直後に手以外では受けない（足に巻き付けも肩も実施しない。オーナー 2026-11-18）
   if (apparatus === "rope" && has(NON_HAND_TAG) && pattern.after[pattern.after.length - 1]?.motionId === ROLL) return 0;
   // クラブの二つ投げを手以外で受けるのはほぼ不可能（点数がどうしても要るときだけ）

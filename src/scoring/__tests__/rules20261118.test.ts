@@ -155,3 +155,21 @@ describe("投げ→ロンダートで受ける形はリングだけ（2026-11-18
     expect(count("ring")).toBeGreaterThan(0);
   }, 240_000);
 });
+
+describe("ロープのメジャーな受け方は 肩・足・通常・背面 の4種類（2026-11-18）", () => {
+  it("背面と手以外を組み合わせた受け方の候補はまれ（引きの重みが低い）", async () => {
+    const { ROPE_COMBINED_CATCH_WEIGHT } = await import("../autoThrows");
+    expect(ROPE_COMBINED_CATCH_WEIGHT).toBeLessThan(0.5);
+    let combo = 0;
+    let all = 0;
+    for (let seed = 1; seed <= 40; seed++)
+      autoThrowTemplates("rope", { random: seededRandom(seed) }).forEach((t) =>
+        t.series.items.forEach((it) => {
+          if (it.kind !== "catch") return;
+          all++;
+          if ((it.catchTypes ?? []).length >= 2) combo++;
+        }),
+      );
+    expect(combo / all).toBeLessThan(0.05);
+  }, 60_000);
+});
