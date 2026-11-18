@@ -56,6 +56,7 @@ import {
   upgradeTumblings,
   upgradeHandUnits,
   dropExtraTwoThrow,
+  dropDuplicateTechTags,
   usableTemplates,
 } from "./generateSearch";
 import type { GenerateOptions, GenerateResult } from "./generateOptions";
@@ -147,6 +148,10 @@ export function generateRoutine(templates: SeriesTemplate[], opts: GenerateOptio
   //     採らない入れ替えではDスコアの上限の壁を越えられないので、はみ出しが減る向きに
   //     数手降りて、予算（`SPREAD_REPAIR_BUDGET`）の内でいちばん均ったところを採る。
   best = levelAdoptedDiffs(best, pool, opts, maxSeries);
+
+  // ⑧ 加点済みと全く同じ投げ方・受け方（加点にならない技術タグ）が残っていれば、そのタグを外す。
+  //    入れ替えは候補を丸ごと替えるだけなので、タグの無い同じ形には届かない
+  best = dropDuplicateTechTags(best, opts);
 
   return {
     series: seriesOf(best.used),

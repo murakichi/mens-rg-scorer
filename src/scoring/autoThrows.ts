@@ -490,6 +490,14 @@ export const NO_VIEW_LEGS_CHANCE = 0.1;
  * 生成された視野外の投げ全体で1割程度になるように合わせる。
  */
 export const NO_VIEW_LEGS_CHANCE_BY_APPARATUS: Partial<Record<ApparatusKey, number>> = { stick: 0.15, ring: 0.15, rope: 0.07 };
+/**
+ * 股下からの視野外投げを作ってよい投げか：**低難度**（投げから受けまで0〜1動作）か、
+ * **連続投げの2回目**（オーナー 2026-11-18）。難度を取る高い投げを股下からは投げない。
+ */
+export const legsAllowed = (motions: number, secondOfPair: boolean): boolean =>
+  secondOfPair || motions <= LEGS_MAX_MOTIONS;
+/** 低難度とみなす徒手の量（手以外のキャッチの低難度と同じ0〜1動作） */
+export const LEGS_MAX_MOTIONS = 1;
 export const noViewLegsChance = (apparatus: ApparatusKey): number =>
   NO_VIEW_LEGS_CHANCE_BY_APPARATUS[apparatus] ?? NO_VIEW_LEGS_CHANCE;
 export const NO_VIEW_SIDE_CHANCE_BY_APPARATUS: Partial<Record<ApparatusKey, number>> = { clubs: 0, stick: 0 };
@@ -519,6 +527,8 @@ export function maybeSideThrow(
   motions: number,
   rand: () => number,
   chance: (p: number) => number = (p) => p,
+  /** 連続投げの2回目の投げか（股下から投げてよい。`legsAllowed`） */
+  secondOfPair = false,
 ): AutoThrowStyle {
   // 視野外の投げ：真後ろ／横／股下を引く（二つ投げ・手以外の投げは視野外と組まない）。
   // ロープは横投げをしないが股下はあるので、手具の判定より先に引く
@@ -531,7 +541,12 @@ export function maybeSideThrow(
     // 股下も横向きの背面投げも実戦での投入例はまだない（オーナー、2026-11-16）ので少なめにする
     const r = rand();
     // 股下で投げたあとは手以外のキャッチでは受けない（オーナー 2026-11-16）。乱数の消費は変えない
-    const legs = catchHasTag(catchStyle, NON_HAND_TAG) ? 0 : chance(noViewLegsChance(apparatus));
+    // 股下は低難度（0〜1動作）の投げか連続投げの2回目だけ（オーナー 2026-11-18）。
+    // 股下で投げたあとは手以外のキャッチでは受けない（2026-11-16）。乱数の消費は変えない
+    const legs =
+      catchHasTag(catchStyle, NON_HAND_TAG) || !legsAllowed(motions, secondOfPair)
+        ? 0
+        : chance(noViewLegsChance(apparatus));
     if (r < legs) return { ...throwStyle, throwTypes: [...types0, BETWEEN_LEGS_TAG] };
     const side = canUseSideThrow(apparatus)
       ? chance(NO_VIEW_SIDE_CHANCE_BY_APPARATUS[apparatus] ?? NO_VIEW_SIDE_CHANCE)
@@ -728,7 +743,8 @@ export function throwStylesForPattern(
   const styles = autoThrowStyles(apparatus).filter(
     (t) =>
       (t.id !== NO_VIEW_SIDE_STYLE_ID || NO_VIEW_SIDE_PATTERNS.includes(pattern.id)) &&
-      (t.id !== NO_ROTATION_BACK_SIDE_STYLE_ID || NO_VIEW_SIDE_PATTERNS.includes(pattern.id)) &&
+      // 両手持ち無回転の背面投げ→足で押さえつけは、投げたあとに前転（転がり）をする形だけ
+      (t.id !== NO_ROTATION_BACK_SIDE_STYLE_ID || pattern.id === "minimalRoll") &&
       (!isNoRotationStyle(t) || lowMotions),
   );
   // `leadPair` の本体は連続投げの**2回目**。手以外の投げは2回目には実施できず、
@@ -1152,7 +1168,8 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
           // 転がり・前転のあとに背面（視野外）キャッチはしない
           ...(catchHasTag(catchStyle, NO_VIEW_TAG) ? {} : closeProp),
           firstThrowStyle: nextFirstThrow(),
-          throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, cheneCount, rand, chance),
+          // 2つを別々に投げる形の2つ目は連続投げの2回目
+          throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, cheneCount, rand, chance, true),
           catchStyle,
         };
       }
@@ -1207,7 +1224,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
         hands,
         ...closeProp,
         firstThrowStyle: nextFirstThrow(),
-        throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, 1, rand, chance),
+        throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, 1, rand, chance, true),
         catchStyle,
         overlapLow: "plain",
         lowMotionId: catchHasTag(catchStyle, NO_VIEW_TAG) ? CHENE : pickLowMotion(),
@@ -1239,7 +1256,8 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       throwStyle:
         pattern.leadPair && leadPairLeftHandSide(apparatus, throwStyle)
           ? withSideThrow(throwStyle)
-          : maybeSideThrow(apparatus, throwStyle, catchStyle, motions, rand, chance),
+          : // 先に投げ受けを置く形（leadPair）の本体は連続投げの2回目
+            maybeSideThrow(apparatus, throwStyle, catchStyle, motions, rand, chance, !!pattern.leadPair),
       catchStyle,
       ...(pattern.leadPair ? { leadThrowStyle: nextLeadThrow() } : {}),
       // 連続投げで足す視野外の投げも、股下から投げることがある（ほかの視野外の投げと同じ割合）
@@ -1251,7 +1269,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
             // クラブの押さえつけ・ロープの足に絡めた受けが出るので、演技の締めにもなる
             const trailCatchStyle = nextCatchFor(MINIMAL_PATTERN, trailThrowStyle, 0);
             return {
-              trailThrowStyle: maybeSideThrow(apparatus, trailThrowStyle, trailCatchStyle, 0, rand, chance),
+              trailThrowStyle: maybeSideThrow(apparatus, trailThrowStyle, trailCatchStyle, 0, rand, chance, true),
               trailCatchStyle,
             };
           })()
@@ -1278,36 +1296,67 @@ export interface AutoThrowTemplate extends SeriesTemplate {
 export function withNonHandKinds(series: Series, apparatus: ApparatusKey): Series {
   let hasSide = false;
   let throwNoRotationBack = false;
+  /** 直前の投げから今までの徒手・技（受け方の決め手。低難度の足で押さえつけは前転・転がり1回のあと） */
+  let between: number[] = [];
   let changed = false;
-  const items = series.items.map((item, idx) => {
+  const items: Item[] = [...series.items];
+  let h0 = 0;
+  for (const ch of JSON.stringify(series.items)) h0 = (h0 * 31 + ch.charCodeAt(0)) >>> 0;
+  series.items.forEach((item, idx) => {
     if ((item.kind === "throw" || item.kind === "skill") && (item.kind === "throw" || item.isThrow)) {
       hasSide = (item.throwTypes || []).includes(SIDE_THROW_TAG);
       throwNoRotationBack =
         (item.throwTypes || []).includes(NO_ROTATION_TAG) && (item.throwTypes || []).includes(NO_VIEW_TAG);
+      between = [];
+      return;
     }
     const isNonHandCatch =
       (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) &&
       (item.catchTypes || []).includes(NON_HAND_TAG) &&
       !item.nonHandKind;
-    if (!isNonHandCatch) return item;
-    // 無回転の背面横投げは足で押さえつけて受ける
-    if (apparatus === "stick" && throwNoRotationBack) {
-      changed = true;
-      return { ...item, nonHandKind: "footPress" };
+    if (!isNonHandCatch) {
+      if (item.kind === "motion" || item.kind === "skill") between.push(idx);
+      return;
     }
-    const kinds = NON_HAND_CATCH_KINDS[apparatus].filter((k) => !k.needsSide || hasSide);
-    if (kinds.length === 0) return item;
-    let h = idx + 1;
-    for (const ch of JSON.stringify(series.items)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    // 投げてから受けるまでの徒手の量と、それが前転か転がり1回だけか
+    const motions = between.reduce((n, k) => {
+      const it = series.items[k];
+      return n + (it.kind === "motion" ? (it.count ?? 0) : 1);
+    }, 0);
+    const single = between.length === 1 ? series.items[between[0]] : undefined;
+    const rollOnly =
+      single?.kind === "motion" && (single.count ?? 0) === 1 && ROLL_BEFORE_FOOT_PRESS.includes(single.motionId);
+    // 低難度（0〜1動作）で足で押さえつけて受けるのは、投げたあとに前転か転がりをしたときだけ（オーナー 2026-11-18）
+    const footPressOk = motions > NON_HAND_CATCH_MAX_MOTIONS || rollOnly;
+    let h = (h0 + idx + 1) >>> 0;
+    h = (h * 31 + idx) >>> 0;
+    let kind: string | undefined;
+    // 両手持ち無回転の背面投げは足で押さえつけて受ける（形は前転1回に絞ってある）
+    if (apparatus === "stick" && throwNoRotationBack && footPressOk) kind = FOOT_PRESS_KIND;
+    else {
+      const kinds = NON_HAND_CATCH_KINDS[apparatus].filter(
+        (k) => (!k.needsSide || hasSide) && (footPressOk || k.id !== FOOT_PRESS_KIND),
+      );
+      if (kinds.length === 0) return;
+      kind = kinds[h % kinds.length].id;
+    }
     changed = true;
-    const kind = kinds[h % kinds.length].id;
     // 首と肩に挟む受け方は視野外のキャッチでもある
-    if (nonHandKindForcesNoView(kind) && !(item.catchTypes || []).includes(NO_VIEW_TAG))
-      return { ...item, nonHandKind: kind, catchTypes: [...(item.catchTypes || []), NO_VIEW_TAG] };
-    return { ...item, nonHandKind: kind };
+    items[idx] =
+      nonHandKindForcesNoView(kind) && !(item.catchTypes || []).includes(NO_VIEW_TAG)
+        ? { ...item, nonHandKind: kind, catchTypes: [...(item.catchTypes || []), NO_VIEW_TAG] }
+        : { ...item, nonHandKind: kind };
+    // 低難度の足で押さえつけは、前転のほか転がりでも受ける（同じ候補は同じ形になるよう中身から決める）
+    if (kind === FOOT_PRESS_KIND && rollOnly && single?.kind === "motion" && single.motionId === FWD_ROLL && (h >>> 3) % 2 === 1)
+      items[between[0]] = { ...single, motionId: ROLL };
   });
   return changed ? { ...series, items } : series;
 }
+
+/** 足で押さえつけるキャッチの受け方id */
+const FOOT_PRESS_KIND = "footPress";
+/** 低難度の足で押さえつけるキャッチの前に実施する徒手（前転・転がり） */
+export const ROLL_BEFORE_FOOT_PRESS: string[] = [FWD_ROLL, ROLL];
 
 const autoTemplate = (apparatus: ApparatusKey, spec: AutoThrowSpec, id = newTemplateId()): AutoThrowTemplate => ({
   id,
