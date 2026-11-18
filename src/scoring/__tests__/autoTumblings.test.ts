@@ -326,7 +326,9 @@ describe("宙返りの連続の組み方", () => {
     );
     // 後ろ向きに降りる後方伸身の後だけ、難度が上がらない範囲で後方系も続けられる
     expect(nextSaltoOptions("d_backlay2twist")).toContain("c_back15");
-    expect(nextSaltoOptions("b_backlayout")).toContain("b_backhalf");
+    // 後ろ側の半ひねりも伸身（抱え込みは実戦ではほぼ使われない。2026-11-16）
+    expect(nextSaltoOptions("b_backlayout")).toContain("b_backlayhalf");
+    expect(nextSaltoOptions("b_backlayout")).not.toContain("b_backhalf");
     expect(nextSaltoOptions("b_backlayout")).not.toContain("c_back15");
     // 側宙はその前宙に続けて実施する
     expect(nextSaltoOptions("b_front")).toContain("b_sidesalto");

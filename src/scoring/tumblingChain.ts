@@ -90,8 +90,9 @@ export const noRollAfter = (id: string): boolean =>
 /**
  * シリーズの最後に実施することが**稀**な技。上級者は後方宙返り半ひねりで終わらず、
  * 大抵その後に前宙か側宙を実施する。Dスコアの低い選手（`basicLevel`）は実施する。
+ * 実戦の後方宙返り半ひねりはほぼ伸身なので、伸身の半ひねりも同じ扱い（2026-11-16）。
  */
-export const RARE_CHAIN_END_SKILLS: string[] = ["b_backhalf"];
+export const RARE_CHAIN_END_SKILLS: string[] = ["b_backhalf", "b_backlayhalf"];
 
 /** つなぎ技のあとに伸身を1本だけ実施して終わる形か（`saltoIds` の n 本ぶんで判定） */
 export const layoutOnlyAfterConnect = (
@@ -179,14 +180,15 @@ export const isBackLayoutHalf = (id: string): boolean => {
  * 後方系を続ける選手もいる。数は少ないので重みは低くし、連続の原則どおり
  * **難度は直前以下**に限る。続けられるのは**後ろ向きに降りる後方伸身（整数ひねり）の後だけ**で、
  * 半ひねり系（前向きに降りる）から後方系に入るにはロンダートが要る＝つなぎの形になる
- * （`nextSaltoOptions`）。抱え込みの半ひねり系は前向きに降りるので、
+ * （`nextSaltoOptions`）。半ひねり系は前向きに降りるので、
  * そのまま前方系に続けて三宙にできる。
  */
 export const AFTER_BACK_LAYOUT_BACKWARD_SALTOS: { id: string; weight: number }[] = [
   // 後ろ向きに降りる後方系のあとのテンポ宙返り（後方2回ひねり→テンポ→ダイビング前宙 を実施する選手がいる）
   { id: "b_tempo", weight: 0.5 },
   { id: "c_back15", weight: 0.5 },
-  { id: "b_backhalf", weight: 0.5 },
+  // 後方系→後方系の後ろ側の半ひねりも伸身（抱え込みは実戦ではほぼ使われない。オーナー 2026-11-16）
+  { id: "b_backlayhalf", weight: 0.5 },
 ];
 
 /**
