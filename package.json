@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:slow": "SLOW_TESTS=1 vitest run",
     "test:watch": "vitest",
-    "probe": "node scripts/probe.mjs"
+    "probe": "node scripts/probe.mjs",
+    "quality": "node scripts/quality.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",
