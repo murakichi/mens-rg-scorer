@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { autoTumblingSpecs, hasBackTempoBack } from "../autoTumblings";
+import { AUTO_TUMBLING_PATTERNS, autoTumblingSpecs, chainEndsOk, endsWithBackTempoBack, hasBackTempoBack } from "../autoTumblings";
 import { canEndWith } from "../tumblingTransitions";
 import { isTempoSalto } from "../tumblingChain";
 import { isBackwardSalto } from "../constants";
@@ -40,4 +40,17 @@ describe("後方系→テンポ→後方系の三宙と4本目", () => {
     expect(four).toBeGreaterThan(0);
     expect(forward / four).toBeGreaterThan(0.7);
   }, 120_000);
+
+  it("三宙の最後が伸身でない宙返りなら、後ろ向きに降りてもそのまま終わってよい（2026-11-20）", () => {
+    const chain = AUTO_TUMBLING_PATTERNS.find((p) => p.id === "chain")!;
+    const draws = { backwardEnd: false, rareEnd: false, layoutAfterConnect: true, backToForwardThrow: false };
+    // 後方宙返り2回ひねり（抱え込み・後ろ向きに降りる）で終わる三宙
+    const ids = ["b_backlayout", "b_tempo", "d_back2twist"];
+    expect(endsWithBackTempoBack(ids, 3)).toBe(true);
+    expect(chainEndsOk(chain, ids, 3, 1, draws)).toBe(true);
+    // 三宙でなければ、後ろ向きに降りる宙返りで終わるのは今までどおり抽選しだい
+    expect(chainEndsOk(chain, ["d_back2twist"], 1, 1, draws)).toBe(false);
+    // 最後が伸身なら稀な終わり方のまま
+    expect(chainEndsOk(chain, ["b_backlayout", "b_tempo", "d_backlay2twist"], 3, 1, draws)).toBe(false);
+  });
 });
