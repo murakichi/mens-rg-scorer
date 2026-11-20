@@ -232,19 +232,17 @@ describe("その受け方から投げに繋げられるか", () => {
     expect(canThrowAfterCatch(style("clubs", `${NO_VIEW_TAG}+${CATCH_USE_APPARATUS}`))).toBe(false);
   });
 
-  it("視野外のキャッチのあとは、視野外以外なら投げられる", () => {
+  it("視野外のキャッチのあとは投げない（視野外の受け→連続投げは現実的ではない。2026-11-20）", () => {
     const style = (apparatus: ApparatusKey, id: string) =>
       autoCatchStyles(apparatus).find((c) => c.id === id)!;
     const noView = style("clubs", NO_VIEW_TAG);
     const throwStyle = (id: string) => autoThrowStyles("clubs").find((t) => t.id === id)!;
     // 視野外で受けて視野外に投げることはできない
     expect(canThrowAfterCatch(noView, throwStyle(NO_VIEW_TAG))).toBe(false);
-    // 普通に見て投げる・二つ投げは実施例がある
-    // （視野外投げ→1シェネ→視野外キャッチ→二つ投げ→そのままキャッチ）
-    expect(canThrowAfterCatch(noView, throwStyle("normal"))).toBe(true);
-    expect(canThrowAfterCatch(noView, throwStyle(TWO_THROW_TAG))).toBe(true);
-    // 次の投げ方が決まっていないうちは外さない（投げ方を引くときに外す）
-    expect(canThrowAfterCatch(noView)).toBe(true);
+    // 普通に見て投げる・二つ投げにも続けない（以前は実施例ありとして残していた）
+    expect(canThrowAfterCatch(noView, throwStyle("normal"))).toBe(false);
+    expect(canThrowAfterCatch(noView, throwStyle(TWO_THROW_TAG))).toBe(false);
+    expect(canThrowAfterCatch(noView)).toBe(false);
   });
 
   it("投げが続く形ではそれらの受け方を配らない", () => {
@@ -315,8 +313,8 @@ describe("あとに投げ受けを1本足す形（連続投げの1回目で難�
       // 無条件に投げに繋げない受け方（手以外・押さえつけ）は外れる
       expect(ids).not.toContain(NON_HAND_TAG);
       expect(ids).not.toContain(CATCH_USE_APPARATUS);
-      // 視野外の受けは残る（視野外に投げなければ続けられる。組み合わせは投げ方の側で外す）
-      expect(ids).toContain(NO_VIEW_TAG);
+      // 視野外の受けも外れる（視野外の受け→連続投げは現実的ではない。2026-11-20）
+      expect(ids).not.toContain(NO_VIEW_TAG);
     });
     // 実際に配られる2回目の投げ方に手以外は出ず、視野外で受けた回は視野外に投げない
     const specs = autoThrowSpecs("rope", { random: seeded(5) }).filter((sp) => sp.pattern.trailPair);
