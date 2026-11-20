@@ -54,3 +54,14 @@ describe("後方系→テンポ→後方系の三宙と4本目", () => {
     expect(chainEndsOk(chain, ["b_backlayout", "b_tempo", "d_backlay2twist"], 3, 1, draws)).toBe(false);
   });
 });
+
+describe("上級者の三宙：後方伸身1回半ひねり→前宙→側宙がいちばん多い（2026-11-20）", () => {
+  it("前宙のあとの側宙を、後方伸身1回半ひねり→前宙のときだけ選ばれやすくする（上限4.4未満には効かせない）", async () => {
+    const { favoredTripleWeight } = await import("../tumblingWeights");
+    expect(favoredTripleWeight("c_backlay15", "b_front", "b_sidesalto")).toBeGreaterThan(1);
+    expect(favoredTripleWeight("c_backlay1full", "b_front", "b_sidesalto")).toBe(1);
+    expect(favoredTripleWeight("c_backlay15", "b_front", "b_kirimomi")).toBe(1);
+    expect(favoredTripleWeight("c_backlay15", "b_front", "b_sidesalto", 3.0)).toBe(1);
+    expect(favoredTripleWeight("c_backlay15", "b_front", "b_sidesalto", 4.5)).toBeGreaterThan(1);
+  });
+});
