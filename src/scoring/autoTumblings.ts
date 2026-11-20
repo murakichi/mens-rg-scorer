@@ -59,6 +59,9 @@ import {
   nextSaltoOptions,
   SIDE_SALTO_ID,
   TENCHU_SKILL_ID,
+  isTempoSalto,
+  isBackLayoutSalto,
+  RARE_CHAIN_END_SKILLS,
 } from "./tumblingChain";
 import {
   BACK_TO_FORWARD_THROW_CHANCE,
@@ -513,6 +516,19 @@ function drawChainEnd(
  * `n` 本の宙返りで連続を終えてよいか。候補を作ったときの抽選（`draws`）に従うので、
  * 本数を変える `withSaltoCount` からも同じ判定を使う。
  */
+/**
+ * 後方系の宙返り→テンポ宙返り→後方系の宙返り の並び（つなぎ技を挟まない三宙）を含むか。
+ * この三宙からは4本目の宙返りを実施してよい（`AutoTumblingPattern.saltos.max` を1本だけ超えてよい。オーナー 2026-11-20）。
+ * `connectAt` はつなぎ技の位置（`ids[connectAt-1]` と `ids[connectAt]` の間）。つなぎをまたぐ並びは数えない。
+ */
+export function hasBackTempoBack(ids: string[], connectAt: number | null = null): boolean {
+  for (let i = 0; i + 2 < ids.length; i++)
+    if (connectAt !== null && i < connectAt && connectAt <= i + 2) continue;
+    else if (isBackwardSalto(ids[i]) && !isTempoSalto(ids[i]) && isTempoSalto(ids[i + 1]) && isBackwardSalto(ids[i + 2]) && !isTempoSalto(ids[i + 2]))
+      return true;
+  return false;
+}
+
 export function chainEndsOk(
   pattern: AutoTumblingPattern,
   saltoIds: string[],
@@ -528,7 +544,9 @@ export function chainEndsOk(
   return (
     // つなぎの後の宙返りは必ず残す（つなぎで終わる形は作らない）
     (!pattern.connect || n > connectAt) &&
-    canEndWith(last, draws) &&
+    // 後方の伸身系で終わるのが稀なのは、宙返りで演技のシリーズを終えるタンブリングだけ。
+    // 投げタン（最後はキャッチ）は、伸身の宙返りのあとに受けて終わってよい
+    canEndWith(last, pattern.throwCatch && isBackLayoutSalto(last) && !RARE_CHAIN_END_SKILLS.includes(last) ? { ...draws, rareEnd: true } : draws) &&
     (draws.layoutAfterConnect || !layoutOnlyAfterConnect(pattern, saltoIds, n, connectAt)) &&
     (!pattern.throwInSkill || canThrowAt(beforeLast, last, draws))
   );
@@ -641,8 +659,11 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
           ids.push(after);
           flow.push(cid, after);
         }
-        // 残りは遷移表のとおりに続ける
-        while (ids.length < pattern.saltos.max) {
+        // 残りは遷移表のとおりに続ける。後方系→テンポ→後方系の三宙は、そこから4本目を実施してよい
+        // （4本目は前方系が多い＝後ろ向きに降りる後方系のあとの遷移表のとおり。オーナー 2026-11-20）
+        // （宙返りで終えるタンブリングだけ。投げタンは投げる位置・本数の決まりが別にあるので伸ばさない）
+        const fourthOk = (list: string[]) => !pattern.throwCatch && hasBackTempoBack(list, pattern.connect ? connectAt : null);
+        while (ids.length < pattern.saltos.max + (fourthOk(ids) ? 1 : 0)) {
           if (!step()) break;
         }
         if (ids.length > saltoIds.length) {

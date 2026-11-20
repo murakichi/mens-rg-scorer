@@ -746,13 +746,14 @@ export function catchStyleWeight({
  * その受け方からは**どんな投げにも繋げられない**技術タグ。
  *  - 手以外のキャッチ → 足や体で受けた手具はすぐには投げられない
  *  - 手具を使ったキャッチ（押さえつけ）→ 押さえた状態からは投げられない
+ *  - 視野外のキャッチ → 視野外で受けてそのまま連続投げに続けるのは現実的ではない（オーナー 2026-11-20。
+ *    以前は「視野外で受けて普通に見て投げる」は実施例ありとして残していたが、自動生成からは外す）
  */
-export const NO_THROW_AFTER_CATCH_TAGS: string[] = [NON_HAND_TAG, CATCH_USE_APPARATUS];
+export const NO_THROW_AFTER_CATCH_TAGS: string[] = [NON_HAND_TAG, CATCH_USE_APPARATUS, NO_VIEW_TAG];
 
 /**
  * **同じ技術では繋げられない**組み合わせ：視野外で受けてそのまま視野外に投げることはできない。
- * 視野外で受けてから**普通に見て投げる**のは実施例がある
- * （視野外投げ→1シェネ→視野外キャッチ→二つ投げ→そのままキャッチ）。
+ * （視野外のキャッチのあとはどの投げにも続けなくなったので、いまは `NO_THROW_AFTER_CATCH_TAGS` に含まれる）
  */
 export const NO_SAME_TAG_AFTER_CATCH_TAGS: string[] = [NO_VIEW_TAG];
 

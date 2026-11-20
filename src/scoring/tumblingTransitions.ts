@@ -28,6 +28,7 @@ import {
   isForwardSalto,
   nextSaltoOptions,
   saltoOptionsAfterConnect,
+  isBackLayoutSalto,
 } from "./tumblingChain";
 import {
   CONNECT_RISE_WEIGHT,
@@ -168,7 +169,9 @@ export function usableSkills(
 const endRule = (id: string) => ({
   endNever: !canEndChain(id, true),
   endNeedsBackwardDraw: !canEndChain(id, false) && canEndChain(id, true),
-  endNeedsRareDraw: RARE_CHAIN_END_SKILLS.includes(id),
+  // 上級者は後方の伸身系の宙返りでそのまま終わることは滅多にない（オーナー 2026-11-20）。
+  // 後方宙返り半ひねりと同じ「稀な終わり方」の抽選に通す（基本的な構成では終わってよい）
+  endNeedsRareDraw: RARE_CHAIN_END_SKILLS.includes(id) || isBackLayoutSalto(id),
 });
 
 /** その位置（直前の技 → この技）で投げてよいか */

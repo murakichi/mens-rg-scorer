@@ -29,6 +29,7 @@ import {
   endsWithFinishCatch,
   evaluateUsed,
   extraTwoThrowSeriesCount,
+  highDifficultyCount,
   hasTwoThrow,
   rangePenalty,
   type Evaluation,
@@ -193,10 +194,49 @@ export function orderSeries(
       tumbling.length >= throws.length ? interleave(tumbling, throws) : interleave(throws, tumbling);
   ordered = finishCatchLast(ordered, opts.apparatus);
   ordered = throwTumblingToFront(ordered, opts.apparatus, junior, future, opts.random ?? Math.random);
+  ordered = highDifficultyTumblingFirst(ordered, junior, future);
   if (ordered === used) return { used, ev: cur };
   const ev = evaluateUsed(ordered, opts);
   return ev.value >= cur.value - 1e-9 ? { used: ordered, ev } : { used, ev: cur };
 }
+
+/**
+ * **単発で高難度（D難度以上）の技を含むタンブリングは、そうでないタンブリングより前で実施する**（オーナー 2026-11-20）。
+ * 投げを含まないタンブリングのシリーズが並ぶ位置だけを使い、高難度を含むものを前に寄せる（それぞれの中の順は保つ）。
+ * 投げタン（技の最中に投げる形を含む）は動かさない：技の最中に投げる投げタンはこの決まりの対象外（オーナー）、
+ * それ以外の投げタンは3〜4つ目に置く決まり（`throwTumblingToFront`）が先にある。
+ * **あくまで優先で、絶対ではない**（オーナー 2026-11-20）：`HIGH_TUMBLING_FIRST_CHANCE` の割合でだけ並べ替える。
+ * 並べ替えるかは乱数を使わず中身から決める（乱数を引くとほかの抽選がずれるため）。
+ */
+export function highDifficultyTumblingFirst(
+  list: SeriesTemplate[],
+  junior: boolean,
+  future: FutureLevel = null,
+): SeriesTemplate[] {
+  const slots = list
+    .map((t, i) => ({ t, i }))
+    .filter(
+      ({ t }) =>
+        isTumblingSeries(t.series, junior, future) &&
+        !t.series.items.some((it) => it.kind === "throw" || (it.kind === "skill" && it.isThrow)),
+    );
+  if (slots.length < 2) return list;
+  // 並べ替えるかを中身から決める（同じ構成なら同じ結果）
+  let h = 0;
+  for (const ch of JSON.stringify(slots.map(({ t }) => t.series.items))) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  if ((h % 100) / 100 >= HIGH_TUMBLING_FIRST_CHANCE) return list;
+  const high = (t: SeriesTemplate) => highDifficultyCount([t.series], junior, future) > 0;
+  const sorted = [...slots.filter(({ t }) => high(t)), ...slots.filter(({ t }) => !high(t))];
+  if (sorted.every((x, k) => x === slots[k])) return list;
+  const out = [...list];
+  slots.forEach(({ i }, k) => {
+    out[i] = sorted[k].t;
+  });
+  return out;
+}
+
+/** 高難度を含むタンブリングを前に寄せる割合（優先であって絶対ではない） */
+export const HIGH_TUMBLING_FIRST_CHANCE = 0.8;
 
 /** 投げタンを置く位置の候補（0始まり。3つ目と4つ目のシリーズ） */
 export const THROW_TUMBLING_POSITIONS = [2, 3];

@@ -621,14 +621,16 @@ describe("つなぎ技", () => {
     expect(THROW_IN_SIDE_SALTO_WEIGHT).toBeLessThan(1);
     let side = 0;
     let other = 0;
-    for (let seed = 0; seed < 40; seed++)
+    for (let seed = 0; seed < 100; seed++)
       autoTumblingSpecs({ random: seeded(seed) })
         .filter((sp) => sp.pattern.throwInSkill)
         .forEach((sp) => {
           if (sp.saltoIds[sp.saltoCount - 1] === "b_sidesalto") side += 1;
           else other += 1;
         });
-    expect(side * 3).toBeLessThan(other);
+    // 実測は側宙：それ以外＝0.32〜0.33（200種）。以前の「3倍未満」はちょうどその値で、乱数の並びが
+    // ずれるだけで落ちた（2026-11-20）ので、100種・0.4未満で見る
+    expect(side / other).toBeLessThan(0.4);
   });
 
   it("後方宙返り半ひねりのあとは前方宙返り1回ひねりに続けられる（難度が上がる例外）", () => {

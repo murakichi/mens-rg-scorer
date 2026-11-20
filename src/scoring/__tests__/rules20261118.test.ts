@@ -173,3 +173,21 @@ describe("ロープのメジャーな受け方は 肩・足・通常・背面 �
     expect(combo / all).toBeLessThan(0.05);
   }, 60_000);
 });
+
+describe("視野外の受け→連続投げは生成しない（2026-11-20）", () => {
+  it("候補に、視野外のキャッチの直後に投げる形が無い", () => {
+    const bad = (s: Series) =>
+      s.items.some(
+        (it, i) =>
+          (it.kind === "catch" || (it.kind === "skill" && !!it.isCatch)) &&
+          (it.catchTypes ?? []).includes("noview") &&
+          (s.items[i + 1]?.kind === "throw" || (s.items[i + 1]?.kind === "skill" && !!(s.items[i + 1] as { isThrow?: boolean }).isThrow)),
+      );
+    (["stick", "clubs", "ring", "rope"] as ApparatusKey[]).forEach((app) => {
+      for (let seed = 1; seed <= 20; seed++) {
+        const opts = { random: seededRandom(seed), demandScore: 5, targetScore: 7 } as never;
+        [...autoThrowTemplates(app, opts), ...autoTumblingTemplates(app, opts)].forEach((t) => expect(bad(t.series)).toBe(false));
+      }
+    });
+  }, 240_000);
+});
