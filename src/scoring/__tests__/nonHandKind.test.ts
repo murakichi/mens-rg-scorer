@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { autoThrowTemplates } from "../autoThrows";
 import { autoTumblingTemplates } from "../autoTumblings";
 import { computeScore } from "../score";
-import { apparatusBlockers, stripForApparatus } from "../analysis";
+import { apparatusBlockers, sideThrowCatchFlags, stripForApparatus } from "../analysis";
 import { commonBlockers } from "../templates";
 import { NON_HAND_CATCH_KINDS, nonHandKindOf } from "../constants";
 import { seededRandom } from "../probe";
@@ -47,14 +47,14 @@ describe("手以外のキャッチの受け方（プルダウン）", () => {
     }
     let nonHand = 0;
     all.forEach((ser) => {
-      let side = false;
-      ser.items.forEach((it) => {
-        if (it.kind === "throw" || (it.kind === "skill" && it.isThrow)) side = (it.throwTypes ?? []).includes("side");
+      // エディタと同じ判定：受ける時点で空中にある手具に横投げがあるか（1つ目の横投げを2つ目のあとに受ける形もある）
+      const sideFlags = sideThrowCatchFlags(ser.items);
+      ser.items.forEach((it, k) => {
         if ((it.kind === "catch" || (it.kind === "skill" && it.isCatch)) && (it.catchTypes ?? []).includes("nonhand")) {
           nonHand++;
           const kind = nonHandKindOf(app, it.nonHandKind);
           if (NON_HAND_CATCH_KINDS[app].length > 0 && app !== "ring") expect(kind).toBeDefined();
-          if (kind?.needsSide) expect(side).toBe(true);
+          if (kind?.needsSide) expect(sideFlags[k]).toBe(true);
         }
       });
     });
