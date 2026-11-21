@@ -1104,6 +1104,20 @@ describe("2つを別々に投げる形（投げ→徒手→投げ→キャッチ
     expect(seen).not.toContain("clubs:body");
   });
 
+  it("後半が高難度の形：2つ目の投げを横投げにして、最後を手具を使ったキャッチで受ける形が出る（オーナー 2026-11-21）", () => {
+    (["clubs", "ring"] as const).forEach((apparatus) => {
+      const hit = overlapSpecs(apparatus, 120)
+        .filter((s) => s.pattern.overlap === "secondHigh")
+        .some((spec) => {
+          const items = buildAutoThrowSeries(spec).items;
+          const throws = items.filter((i) => i.kind === "throw") as Extract<Item, { kind: "throw" }>[];
+          const last = items[items.length - 1] as Extract<Item, { kind: "catch" }>;
+          return (throws[1].throwTypes ?? []).includes("side") && (last.catchTypes ?? []).includes("useapp");
+        });
+      expect(hit).toBe(true);
+    });
+  });
+
   it("採点：投げ→投げ→視野外キャッチ→3動作→キャッチは、視野外の技術加点と次々に投げる加点が付く", () => {
     const series: Series = {
       executionDeduction: 0,
