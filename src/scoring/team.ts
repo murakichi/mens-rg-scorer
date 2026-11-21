@@ -37,6 +37,7 @@ import {
   teamHandDifficulty,
   handElementDef,
 } from "./constants";
+import { isCConnectC } from "./analysis";
 import type { Difficulty, FutureLevel } from "./types";
 
 export const NUM_PLAYERS = 5;
@@ -252,6 +253,8 @@ function calcChunkDifficulty(
     }
     v = Math.max(v, chainValue(merged, future));
   }
+  // 例外：C難度→つなぎ技→C難度 は D 難度（個人と同じ。オーナー 2026-11-21）
+  if (isCConnectC(skillIds, junior, future)) v = DIFF_VALUE.D;
   return v > 0 ? VALUE_DIFF[v] : null;
 }
 

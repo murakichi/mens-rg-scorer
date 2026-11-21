@@ -30,3 +30,18 @@ describe("C→つなぎ→C はD難度", () => {
     expect(r.tumblingScore).toBeCloseTo(0.5, 5);
   });
 });
+
+describe("団体も C→つなぎ→C はD難度（2026-11-21）", () => {
+  it("塊の難度が D（5人同時同技の格上げはその上に別に掛かる）", async () => {
+    const { computeTeamScore, emptySeries } = await import("../team");
+    const chunkDiff = (ids: string[]) => {
+      const ser = emptySeries(ids.length);
+      ser.mode = "allTogether";
+      ser.lanes = [ids.map((id) => ({ type: "skill" as const, skillId: id }))];
+      return computeTeamScore({ series: [ser] } as never).analysis[0].lanes[0][0].diff;
+    };
+    expect(chunkDiff(["a_roundoff", "c_backlay15", "a_roundoff", "c_back15"])).toBe("D");
+    // つなぎなしの C→C は E のまま
+    expect(chunkDiff(["a_roundoff", "c_backlay1full", "c_back15"])).toBe("E");
+  });
+});
