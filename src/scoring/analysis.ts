@@ -93,6 +93,19 @@ export function needsRoundoffBefore(items: Item[], iIdx: number): boolean {
  * タンブリング塊の難度を算出。先頭技の値 + 以降の非A技ごとに +1、投げ含みで +1。
  * 上限は現行規則ならE、十年後モードならその上限（F・G）。
  */
+/**
+ * A難度を除くと C難度の技がちょうど2つで、その間につなぎ技（A難度の転回技）が入る並びか
+ * （例：ロンダート→後方伸身宙返り1回半ひねり→ロンダート→後方宙返り1回半ひねり）。
+ * 計算式（起点＋Σ(後続−1)）では E になるが、この並びだけは例外的に D 難度と判定される（オーナー 2026-11-21）。
+ */
+export function isCConnectC(skillIds: string[], junior = false, future: FutureLevel = null): boolean {
+  const nonA = skillIds
+    .map((_id, i) => ({ i, d: skillDifficultyAt(skillIds, i, junior, future) }))
+    .filter((x) => !!x.d && x.d !== "A");
+  if (nonA.length !== 2 || nonA.some((x) => x.d !== "C")) return false;
+  return skillIds.slice(nonA[0].i + 1, nonA[1].i).some((id) => !!skillDef(id)?.isConnectA);
+}
+
 export function calcTumblingDifficulty(
   skillIds: string[],
   hasThrow: boolean,
@@ -106,6 +119,8 @@ export function calcTumblingDifficulty(
   if (diffs.length === 0) return null;
   let v = DIFF_VALUE[diffs[0]];
   for (let i = 1; i < diffs.length; i++) v += DIFF_VALUE[diffs[i]] - 1;
+  // 例外：C難度→つなぎ技→C難度 の並びは（計算上はEだが）D難度（オーナー 2026-11-21。この並びだけ）
+  if (isCConnectC(skillIds, junior, future)) v = DIFF_VALUE.D;
   if (hasThrow) v += 1;
   return clampDifficulty(v, future);
 }
