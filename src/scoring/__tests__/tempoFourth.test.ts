@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { AUTO_TUMBLING_PATTERNS, autoTumblingSpecs, chainEndsOk, endsWithBackTempoBack, hasBackTempoBack } from "../autoTumblings";
 import { canEndWith } from "../tumblingTransitions";
+import { FOURTH_SALTO_MIN_SCORE, fourthSaltoAllowed } from "../tumblingWeights";
 import { isTempoSalto } from "../tumblingChain";
 import { isBackwardSalto } from "../constants";
 import { seededRandom } from "../probe";
@@ -41,6 +42,17 @@ describe("後方系→テンポ→後方系の三宙と4本目", () => {
     expect(forward / four).toBeGreaterThan(0.7);
   }, 120_000);
 
+  it("4本目は上級者だけ：要求する上限が4.0未満では伸ばさない（2026-11-23）", () => {
+    expect(fourthSaltoAllowed(3.9)).toBe(false);
+    expect(fourthSaltoAllowed(FOURTH_SALTO_MIN_SCORE)).toBe(true);
+    expect(fourthSaltoAllowed(null)).toBe(true);
+    [2.0, 3.0, 3.5].forEach((targetScore) => {
+      for (let seed = 1; seed <= 60; seed++)
+        autoTumblingSpecs({ random: seededRandom(seed), targetScore }).forEach((sp) =>
+          expect(sp.saltoCount).toBeLessThanOrEqual(sp.pattern.saltos.max),
+        );
+    });
+  }, 120_000);
   it("三宙の最後が伸身でない宙返りなら、後ろ向きに降りてもそのまま終わってよい（2026-11-20）", () => {
     const chain = AUTO_TUMBLING_PATTERNS.find((p) => p.id === "chain")!;
     const draws = { backwardEnd: false, rareEnd: false, layoutAfterConnect: true, backToForwardThrow: false };

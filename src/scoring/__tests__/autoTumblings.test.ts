@@ -634,7 +634,9 @@ describe("つなぎ技", () => {
       autoTumblingSpecs({ random: seeded(seed) })
         .filter((sp) => sp.pattern.throwInSkill)
         .forEach((sp) => {
-          if (sp.saltoIds[sp.saltoCount - 1] === "b_sidesalto") side += 1;
+          // 投げる技は最後（`throwThenSide` は側宙・転宙が続くので最後から2本目）
+          const at = sp.saltoCount - (sp.pattern.throwThenSide ? 2 : 1);
+          if (sp.saltoIds[at] === "b_sidesalto") side += 1;
           else other += 1;
         });
     // 実測は側宙：それ以外＝0.32〜0.33（200種）。以前の「3倍未満」はちょうどその値で、乱数の並びが
@@ -1669,6 +1671,7 @@ describe("ランダム生成への組み込み", () => {
       const r = generateRoutine([], { apparatus: "stick", maxScore, random: seeded(17) })!;
       expect(r.dScore).toBeLessThanOrEqual(maxScore + 1e-9);
       r.used.forEach((t) => {
+        // 後方系→テンポ→後方系からの4本目（範囲を1本超える例外）は上級者だけなので、上限2.0・3.0では出ない（2026-11-23）
         if (isAutoTumblingTemplate(t)) expect(saltoCountRange(t.spec.pattern)).toContain(t.spec.saltoCount);
       });
     });

@@ -797,6 +797,34 @@ export const LAYOUT_BEFORE_BACKWARD_CHANCE = 0.85;
 export const LAYOUT_BACK_HALF_CHANCE = 0.9;
 
 /**
+ * 前宙以外の前方系（前方宙返り1回ひねりなど）で投げて側宙／転宙を続ける形（視野外の投げ）を、
+ * 派生元の候補1本ごとに作る確率。前宙(投げ)→側宙より少なくする（オーナー 2026-11-23）
+ */
+export const THROW_THEN_SIDE_OTHER_CHANCE = 0.4;
+
+/**
+ * 前宙・ダイビング前宙の最中の投げを、受け方と関係なく**横投げ**にする確率（手具ごと）。
+ * スティックで実施例がある（オーナー 2026-11-23）。通常の投げより少なくする。
+ * クラブ・リングは押さえつけ・手以外の受けのときに横投げを付ける抽選（`SIDE_THROW_PRESS_CHANCE` など）があるので持たない。
+ */
+export const FRONT_THROW_SIDE_CHANCE: Partial<Record<ApparatusKey, number>> = { stick: 0.3 };
+
+/**
+ * つなぎを挟んで技の最中に投げる形（`connectThrowInSkill`）で、宙返り3本のとき、つなぎを1本目の後に挟み
+ * **つなぎの2本あと**で投げる確率（後方1回半→つなぎ→ハーフ→前宙(投げ)→前転→キャッチ。オーナー 2026-11-23）。
+ * 残りは従来どおり、つなぎの直後の宙返りで投げる。
+ */
+export const CONNECT_THROW_EARLY_CHANCE = 0.4;
+
+/**
+ * 後方系→テンポ→後方系の三宙からの**4本目**は上級者だけ（オーナー 2026-11-23）。
+ * 要求する上限がこれ未満では伸ばさない（上限なしは可）。ほかの上級者の形（`THROW_IN_SKILL_MIN_SCORE` など）と同じ 4.0。
+ */
+export const FOURTH_SALTO_MIN_SCORE = 4.0;
+export const fourthSaltoAllowed = (targetScore?: number | null): boolean =>
+  targetScore == null || targetScore >= FOURTH_SALTO_MIN_SCORE;
+
+/**
  * **上級者（Dスコア4.4〜）の三宙でいちばん多い並び**：後方伸身宙返り1回半ひねり→前宙→側宙（オーナー 2026-11-20）。
  * この並びの3本目（前宙のあとの側宙）を選ばれやすくする。要求の上限が `FAVORED_TRIPLE_MIN_SCORE` 未満の構成には効かせない
  * （上限なしは効かせる）。

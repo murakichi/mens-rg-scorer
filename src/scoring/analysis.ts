@@ -20,6 +20,8 @@ import {
   NO_VIEW_TAG,
   canUseNoRotation,
   nonHandKindOf,
+  nonHandThrowKindOf,
+  NON_HAND_CATCH_KINDS,
   nonHandKindForcesNoView,
   canUseSideThrow,
   requiredThrowName,
@@ -717,7 +719,16 @@ export function catchTwoFlags(items: Item[], apparatus: ApparatusKey): boolean[]
  * 受けるときに、空中にある手具のどれかが**横投げ**で投げられているか（キャッチアイテム・技の最中の受けの位置で true）。
  * 横投げ前提の手以外の受け方（`NonHandCatchKind.needsSide`、リング）をエディタで出すかに使う。
  * 2つとも空中にあるとき、どちらを受けたかは入力から分からないので、どれかが横投げなら出す。
+ * 受けた分を空中から外すときは受け方で決める：横投げ前提の受け方なら横投げの手具を、それ以外なら
+ * 横投げでない手具を先に受けたとみなす（投げ→横投げ→通常キャッチ→上半身に入れる、のように高い横投げを
+ * あとで受ける形も、1つ目の横投げを先に上半身に入れて受ける形も、どちらも2つ目の受けで正しく判定できる）。
  */
+const NEEDS_SIDE_KIND_IDS = new Set(
+  Object.values(NON_HAND_CATCH_KINDS)
+    .flat()
+    .filter((k) => k.needsSide)
+    .map((k) => k.id),
+);
 export function sideThrowCatchFlags(items: Item[]): boolean[] {
   let inAir: boolean[] = [];
   return items.map((item) => {
@@ -730,9 +741,10 @@ export function sideThrowCatchFlags(items: Item[]): boolean[] {
     const isCatch = item.kind === "catch" || (item.kind === "skill" && !!item.isCatch);
     if (!isCatch) return false;
     const flag = inAir.some(Boolean);
-    // 受けた分を空中から外す（横投げの手具を先に受けたとみなす）
+    // 受けた分を空中から外す（横投げ前提の受け方なら横投げの手具、それ以外は横投げでない手具を先に）
+    const takesSide = (item.catchTypes || []).includes("nonhand") && NEEDS_SIDE_KIND_IDS.has(item.nonHandKind ?? "");
     for (let k = 0; k < caughtCount(item) && inAir.length > 0; k++) {
-      const at = inAir.indexOf(true);
+      const at = inAir.indexOf(takesSide);
       inAir = at >= 0 ? inAir.filter((_, i) => i !== at) : inAir.slice(1);
     }
     return flag;
@@ -748,6 +760,7 @@ export const APPARATUS_INPUT_NAMES = {
   side: "横投げ",
   noRotation: "無回転",
   nonHandKind: "手以外のキャッチの受け方",
+  nonHandThrowKind: "手以外の投げの投げ方",
   other: "その他の投げ・キャッチ（削除済みの入力）",
   cartwheelSkill: "タンブリング欄の側転（徒手動作に移す）",
   legsWithoutNoView: "視野外でない投げに残った股下",
@@ -785,6 +798,9 @@ export function apparatusBlockers(list: Series[], apparatus: ApparatusKey): stri
       // 手以外のキャッチの受け方は、その手具の選択肢に無ければ入力できない
       if ((item.kind === "catch" || (item.kind === "skill" && item.isCatch)) && item.nonHandKind && !nonHandKindOf(apparatus, item.nonHandKind))
         reasons.add(APPARATUS_INPUT_NAMES.nonHandKind);
+      // 手以外の投げの投げ方も同じ（スティックの肩に引っ掛けて投げ）
+      if (item.kind === "throw" && item.nonHandThrowKind && !nonHandThrowKindOf(apparatus, item.nonHandThrowKind))
+        reasons.add(APPARATUS_INPUT_NAMES.nonHandThrowKind);
       // 投げている間（手元に手具が無い間）は手具操作ができない
       if (item.kind === "skill" && item.hasApparatus && empty[i])
         reasons.add(APPARATUS_INPUT_NAMES.handsEmptyOp);
@@ -895,13 +911,15 @@ export function stripForApparatus(list: Series[], apparatus: ApparatusKey): Seri
             };
           return item;
         })
-        // その手具に無い手以外のキャッチの受け方は落とす
+        // その手具に無い手以外のキャッチの受け方・手以外の投げの投げ方は落とす
         .map((item) =>
           (item.kind === "catch" || (item.kind === "skill" && item.isCatch)) &&
           item.nonHandKind &&
           !nonHandKindOf(apparatus, item.nonHandKind)
             ? { ...item, nonHandKind: undefined }
-            : item,
+            : item.kind === "throw" && item.nonHandThrowKind && !nonHandThrowKindOf(apparatus, item.nonHandThrowKind)
+              ? { ...item, nonHandThrowKind: undefined }
+              : item,
         ),
     };
   });

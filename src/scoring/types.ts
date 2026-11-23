@@ -29,6 +29,8 @@ export interface ThrowItem {
   throwTypes?: string[];
   /** 手具固有の必須投げ（lefthand / twothrow など） */
   reqTypes?: string[];
+  /** 手以外の投げの投げ方（`NON_HAND_THROW_KINDS` の id。手以外の投げにチェックがあるときだけ有効） */
+  nonHandThrowKind?: string;
 }
 
 export interface CatchItem {

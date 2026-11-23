@@ -7,6 +7,7 @@ import {
   THROW_OPTIONS_NO_ROTATION,
   canUseNoRotation,
   NON_HAND_CATCH_KINDS,
+  NON_HAND_THROW_KINDS,
   NO_VIEW_TAG,
   nonHandKindForcesNoView,
   canUseSideThrow,
@@ -189,14 +190,14 @@ function ThrowChecks({
   reqThrowCounts = {},
   onUpdate,
 }: {
-  item: { throwTypes?: string[]; reqTypes?: string[] };
+  item: { throwTypes?: string[]; reqTypes?: string[]; nonHandThrowKind?: string };
   apparatus: ApparatusKey;
   common?: boolean;
   /** 技の最中の投げか（必須投げは二つ投げだけ出す） */
   inSkill?: boolean;
   /** 演技全体で必須投げを実施した回数（ほかの投げで満たしていれば「必須投げ」から外す） */
   reqThrowCounts?: Record<string, number>;
-  onUpdate: (patch: { throwTypes?: string[]; reqTypes?: string[] }) => void;
+  onUpdate: (patch: { throwTypes?: string[]; reqTypes?: string[]; nonHandThrowKind?: string }) => void;
 }) {
   // 二つ投げ（両方を投げる）と手具を使った投げ（もう一方で押さえる）は排他
   const twoThrow = (item.reqTypes || []).includes(TWO_THROW_TAG);
@@ -225,11 +226,13 @@ function ThrowChecks({
           onChange={(e) => {
             const next = toggle(item.throwTypes, opt.id, e.target.checked);
             // 視野外を外したら、視野外の投げ方（股下・スティックの両手持ち無回転）も外す
+            // 手以外の投げを外したら、その投げ方も外す
             onUpdate({
               throwTypes:
                 opt.id === NO_VIEW_TAG && !e.target.checked
                   ? next.filter((t) => t !== BETWEEN_LEGS_TAG && !(twoHand && t === NO_ROTATION_TAG))
                   : next,
+              ...(opt.id === "nonhand" && !e.target.checked ? { nonHandThrowKind: undefined } : {}),
             });
           }}
         />
@@ -278,6 +281,16 @@ function ThrowChecks({
                 allowSide={sideDirection}
                 allowTwoHand={twoHand}
                 onChange={(throwTypes) => onUpdate({ throwTypes })}
+              />
+            ) : null,
+            // 手以外の投げの投げ方（スティックの肩に引っ掛けて投げ）。手以外の投げのすぐ下に出す
+            o.id === "nonhand" && !inSkill && !common ? (
+              <NonHandThrowKindSelect
+                key="nhk"
+                apparatus={apparatus}
+                types={item.throwTypes}
+                value={item.nonHandThrowKind}
+                onChange={(nonHandThrowKind) => onUpdate({ nonHandThrowKind })}
               />
             ) : null,
           ])}
@@ -456,6 +469,39 @@ function NonHandKindSelect({
         {value && !NON_HAND_CATCH_KINDS[apparatus].some((k) => k.id === value) && (
           <option value={value}>{value}（この手具にない）</option>
         )}
+      </select>
+    </label>
+  );
+}
+
+/**
+ * 手以外の投げの投げ方（手具ごと。いまはスティックの「肩に引っ掛けて投げ」だけ）。
+ * 手以外の投げにチェックが入っていて、その手具に投げ方があるときだけ出す。技術加点は変わらない。
+ */
+function NonHandThrowKindSelect({
+  apparatus,
+  types,
+  value,
+  onChange,
+}: {
+  apparatus: ApparatusKey;
+  types: string[] | undefined;
+  value: string | undefined;
+  onChange: (id: string | undefined) => void;
+}) {
+  const kinds = NON_HAND_THROW_KINDS[apparatus];
+  if (!(types || []).includes("nonhand") || (kinds.length === 0 && !value)) return null;
+  return (
+    <label className="check-req opt-sub" title="投げ方の違いは技術加点を変えないが、投げ方の種類として別に数える（同じ投げ方の2回目は加点なし）">
+      投げ方
+      <select value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
+        <option value="">（未選択）</option>
+        {kinds.map((k) => (
+          <option key={k.id} value={k.id}>
+            {k.name}
+          </option>
+        ))}
+        {value && !kinds.some((k) => k.id === value) && <option value={value}>{value}（この手具にない）</option>}
       </select>
     </label>
   );
