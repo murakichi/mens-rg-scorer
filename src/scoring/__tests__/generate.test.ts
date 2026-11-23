@@ -196,7 +196,7 @@ describe("ランダム生成", () => {
 
     // 生成に通る：下限4.2で、ほとんどの構成が6つ全部E難度になる
     // （実測：スティック20/25・クラブ24/25・リング18/25・ロープ22/25。
-    //   直す前は 14/12/10/9）
+    //   直す前は 14/12/10/9。B難度だけの連続をD止まりにして（2026-11-23）クラブ17/25）
     let allSix = 0, n = 0, shortfall = 0;
     for (let seed = 1; seed <= 25; seed++) {
       const r = generateRoutine([], {
@@ -214,7 +214,7 @@ describe("ランダム生成", () => {
       if (miss === 0) expect(sc.tumblingScore + sc.handScore).toBeGreaterThanOrEqual(allEScore() - 1e-9);
     }
     expect(n).toBeGreaterThan(0);
-    expect(allSix / n).toBeGreaterThan(0.7);
+    expect(allSix / n).toBeGreaterThan(0.6);
     // 届かない構成でも、足りないのはせいぜい1〜2ユニット
     expect(shortfall / n).toBeLessThan(1);
   }, 240_000);
@@ -1032,6 +1032,7 @@ describe("手以外の投げ・手具を使った投げのあと", () => {
 
 describe("転回系の多様性の減点（自動計算）", () => {
   it("A減点には自動では入れない（手動入力の値だけを見る）", () => {
+    // 前宙ばかり＝系統・ひねり・姿勢がすべて偏る
     const repeated = [
       S(skill("a_roundoff"), skill("b_front"), skill("b_front"), skill("b_front")),
     ];

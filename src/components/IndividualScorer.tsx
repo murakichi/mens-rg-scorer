@@ -9,7 +9,9 @@ import {
   BASIC_HAND_ELEMENTS,
   DEEP_MOTION_DEDUCTION,
   DEEP_MOTION_PARTS,
-  HAND_OP_CHECKS,
+  normalizeHandOpCounts,
+  handOpCheckDeduction,
+  HAND_OP_CHECK_MAX,
   handOpChecksFor,
   HAND_OP_CHARACTER_ID,
   HAND_OP_CHECK_DEDUCTION,
@@ -32,7 +34,7 @@ import {
   normalizeFutureLevel,
 } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
-import { apparatusBlockers, hoistRopeJumps, stripForApparatus } from "../scoring/analysis";
+import { apparatusBlockers, hoistRopeJumps, stripForApparatus, TUMBLING_BIAS_AXIS_NAMES } from "../scoring/analysis";
 import type { ApparatusKey, FutureLevel, RopeJumpItem, Series } from "../scoring/types";
 import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
@@ -83,6 +85,7 @@ interface Props {
     artDeductions?: unknown;
     basicHands?: unknown;
     handOps?: unknown;
+    handOpCounts?: unknown;
     offBodyCount?: unknown;
     handElements?: unknown;
     ropeJumps?: unknown;
@@ -122,7 +125,9 @@ export function IndividualScorer({ initialData }: Props = {}) {
   const [artDeductions, setArtDeductions] = useState<Record<string, number>>(() => init?.artDeductions ?? {});
   // A（芸術と多様性）側の入力：基本徒手と手具操作のチェック
   const [basicHands, setBasicHands] = useState<string[]>(() => init?.basicHands ?? []);
-  const [handOps, setHandOps] = useState<string[]>(() => init?.handOps ?? []);
+  const [handOpCounts, setHandOpCounts] = useState<Record<string, number>>(() =>
+    normalizeHandOpCounts(init?.handOpCounts, init?.handOps),
+  );
   const [offBodyCount, setOffBodyCount] = useState<number>(() => init?.offBodyCount ?? 0);
   // 単独で実施した徒手系要素（跳躍・柔軟）。手具操作を伴うものが徒手系難度に入る（§3.5.5.3(1)）
   const [handElements, setHandElements] = useState<string[]>(() => init?.handElements ?? []);
@@ -166,7 +171,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
         future,
         artDeductions,
         basicHands,
-        handOps,
+        handOpCounts,
         offBodyCount,
         handElements,
         ropeJumps,
@@ -181,7 +186,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
       future,
       artDeductions,
       basicHands,
-      handOps,
+      handOpCounts,
       offBodyCount,
       handElements,
       ropeJumps,
@@ -220,7 +225,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     future,
     artDeductions,
     basicHands,
-    handOps,
+    handOpCounts,
     offBodyCount,
     handElements,
     ropeJumps,
@@ -237,7 +242,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setFuture(null);
     setArtDeductions({});
     setBasicHands([]);
-    setHandOps([]);
+    setHandOpCounts({});
     setOffBodyCount(0);
     setHandElements([]);
     setRopeJumps([]);
@@ -266,7 +271,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     future,
     artDeductions,
     basicHands,
-    handOps,
+    handOpCounts,
     offBodyCount,
     handElements,
     ropeJumps,
@@ -300,7 +305,7 @@ export function IndividualScorer({ initialData }: Props = {}) {
     setFuture(normalizeFutureLevel(data.future));
     setArtDeductions(normalizeArtDeductions(data.artDeductions));
     setBasicHands(asStringArray(data.basicHands).filter((id) => BASIC_HAND_ELEMENTS.some((x) => x.id === id)));
-    setHandOps(asStringArray(data.handOps).filter((id) => HAND_OP_CHECKS.some((x) => x.id === id)));
+    setHandOpCounts(normalizeHandOpCounts(data.handOpCounts, data.handOps));
     setOffBodyCount(normalizeOffBodyCount(data.offBodyCount));
     setHandElements(normalizeHandElements(data.handElements));
     // 旧データでシリーズの中にあったロープ跳びは、跳びリストへ移す
@@ -863,22 +868,39 @@ export function IndividualScorer({ initialData }: Props = {}) {
         {handOpChecksFor(apparatus).map((c) => {
           const examples = c.id === HAND_OP_CHARACTER_ID ? APPARATUS_CHARACTER_HINTS[apparatus] : null;
           const note = examples ? `${c.tip}（例：${examples.join("／")}）` : c.tip;
+          const n = handOpCounts[c.id] ?? 0;
+          const setCount = (v: number) =>
+            setHandOpCounts((p) => normalizeHandOpCounts({ ...p, [c.id]: v }));
+          const ded = handOpCheckDeduction(c, n);
           return (
             <div key={c.id}>
-              <label className="check" title={note}>
-                <input
-                  type="checkbox"
-                  checked={handOps.includes(c.id)}
-                  onChange={(e) => setHandOps((p) => toggleId(p, c.id, e.target.checked))}
-                />
-                {c.name}
-                <span className="check-note">{note}</span>
-              </label>
+              {c.required <= 1 ? (
+                <label className="check" title={note}>
+                  <input type="checkbox" checked={n >= 1} onChange={(e) => setCount(e.target.checked ? 1 : 0)} />
+                  {c.name}
+                  <span className="check-note">{note}</span>
+                </label>
+              ) : (
+                <label className="exec-label" title={note}>
+                  {c.name}：
+                  <input
+                    className="exec-input"
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={n}
+                    onChange={(e) => setCount(Number(e.target.value))}
+                  />
+                  {c.id === "tumOpKinds" ? "種類" : "回"}
+                  {ded > 0 && <span className="check-ng">（−{ded.toFixed(1)}）</span>}
+                  <span className="check-note">{note}</span>
+                </label>
+              )}
             </div>
           );
         })}
         <label className="exec-label" title={OFF_BODY_TIP}>
-          身体を離れる手具操作：
+          投げ以外の手離し操作：
           <input
             className="exec-input"
             type="number"
@@ -889,13 +911,16 @@ export function IndividualScorer({ initialData }: Props = {}) {
           />
           回
           {result.offBodyShort > 0 && (
-            <span className="check-ng">（{OFF_BODY_REQUIRED_COUNT}回に{result.offBodyShort}回不足）</span>
+            <span className="check-ng">
+              （{OFF_BODY_REQUIRED_COUNT}回に{result.offBodyShort}回不足 −{(result.offBodyShort * OFF_BODY_DEDUCTION_STEP).toFixed(2)}）
+            </span>
           )}
         </label>
         <p className="hint">
-          実施した操作にチェックします。未チェック1つにつき −{HAND_OP_CHECK_DEDUCTION.toFixed(1)}点（A減点）。
-          身体を離れる手具操作（{OFF_BODY_TIP}）は{OFF_BODY_REQUIRED_COUNT}回必要で、
-          不足1回につき −{OFF_BODY_DEDUCTION_STEP.toFixed(1)}点。
+          §3.5.6.4「さまざまな操作」の細目です。回数の項目は必要回数に足りない1回につき −{HAND_OP_CHECK_DEDUCTION.toFixed(1)}点
+          （細目ごとに −{HAND_OP_CHECK_MAX.toFixed(1)}まで）、チェックの項目は未チェックで −{HAND_OP_CHECK_DEDUCTION.toFixed(1)}点。
+          投げ以外の手離し操作（{OFF_BODY_TIP}）は{OFF_BODY_REQUIRED_COUNT}回必要で、不足1回につき −{OFF_BODY_DEDUCTION_STEP.toFixed(2)}点。
+          「転回中の手具操作の種類」だけは「転回中の操作」の細目（2種類なければ −0.1）です。
         </p>
       </section>
 
@@ -935,15 +960,20 @@ export function IndividualScorer({ initialData }: Props = {}) {
             item.id === TUM_VARIETY_ITEM_ID
               ? {
                   value: result.tumVariety.deduction,
-                  note: `宙返り${result.tumVariety.total}個・${result.tumVariety.distinct}種類`,
-                  title: "実施した宙返りの種類から自動計算します（全部違う技なら減点なし）",
+                  note: `宙返り${result.tumVariety.total}個・偏り：${
+                    result.tumVariety.biased.length > 0
+                      ? result.tumVariety.biased.map((a) => TUMBLING_BIAS_AXIS_NAMES[a]).join("・")
+                      : "なし"
+                  }`,
+                  title:
+                    "宙返り（A難度を除く）の系統（前方・側方・後方）・ひねりの有無・姿勢（抱え込み・屈伸／伸身）の偏りから自動計算します（偏った軸1つにつき −0.1、上限0.2）",
                 }
               : item.id === APP_IN_TUM_ITEM_ID
                 ? {
                     value: result.tumOperation.deduction,
                     note: `操作 ${result.tumOperation.withOp}/${result.tumOperation.total}技`,
                     title:
-                      "手具操作を付けられる技のうち、実際に操作した割合から自動計算します（8割以上で減点なし／2割未満で0.4）",
+                      "手具操作を付けられる技のうち、実際に操作した割合から自動計算します（8割以上で減点なし／2割未満で0.4）。手具操作なしの自動判定とは大きいほうだけを引きます",
                   }
                 : null;
           return (
@@ -959,7 +989,11 @@ export function IndividualScorer({ initialData }: Props = {}) {
                       // 自動判定の減点が同じ項目に属するもの：手入力と合わせて上限で頭打ち
                       const t = result.artItemTotals.find((x) => x.id === item.id);
                       return t && t.auto > 0 ? (
-                        <> ／自動判定 −{t.auto.toFixed(1)}（手入力と合わせて −{t.total.toFixed(1)}）</>
+                        <>
+                          {" "}／自動判定 −{t.auto.toFixed(1)}（
+                          {t.id === APP_IN_TUM_ITEM_ID ? "手具操作なしは手入力と大きいほう、" : "手入力と"}
+                          合わせて −{t.total.toFixed(1)}）
+                        </>
                       ) : null;
                     })()}
                     {junior && JUNIOR_MAX_ART_ITEMS.includes(item.id) && (

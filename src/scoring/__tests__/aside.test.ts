@@ -98,28 +98,58 @@ describe("手具操作の多様性", () => {
   const op = (r: ReturnType<typeof computeScore>, id: string) =>
     r.handOpChecks.find((c) => c.key === `handOp_${id}`);
 
-  it("チェック項目は未実施1つにつき −0.1", () => {
+  it("回数の細目は不足1回につき −0.1、細目ごとに0.2まで（研修資料：2回で減点なし／1回 −0.1／なし −0.2）", () => {
     const none = computeScore([], "stick");
-    const one = computeScore([], "stick", { handOps: ["twoParts"] });
-    expect(op(none, "twoParts")?.passed).toBe(false);
-    expect(op(one, "twoParts")?.passed).toBe(true);
-    expect(none.handOpDeduction - one.handOpDeduction).toBeCloseTo(HAND_OP_CHECK_DEDUCTION, 5);
+    const one = computeScore([], "stick", { handOpCounts: { twoParts: 1 } });
+    const two = computeScore([], "stick", { handOpCounts: { twoParts: 2 } });
+    expect(op(none, "twoParts")?.deduction).toBeCloseTo(0.2, 5);
+    expect(op(one, "twoParts")?.deduction).toBeCloseTo(0.1, 5);
+    expect(op(two, "twoParts")?.passed).toBe(true);
+    expect(none.handOpDeduction - two.handOpDeduction).toBeCloseTo(2 * HAND_OP_CHECK_DEDUCTION, 5);
+    // 上肢以外での操作も同じ
+    expect(op(none, "nonUpperLimb")?.deduction).toBeCloseTo(0.2, 5);
+    expect(op(computeScore([], "stick", { handOpCounts: { nonUpperLimb: 1 } }), "nonUpperLimb")?.deduction).toBeCloseTo(0.1, 5);
+    // 手具の特性はチェック（未実施 −0.1）
+    expect(op(none, "character")?.deduction).toBeCloseTo(0.1, 5);
+  });
+
+  it("旧データのチェック（handOps）は減点なしの回数として読む", () => {
+    const legacy = computeScore([], "stick", { handOps: ["twoParts", "leftHand"] });
+    expect(op(legacy, "twoParts")?.passed).toBe(true);
+    expect(op(legacy, "leftHand")?.passed).toBe(true);
+    expect(legacy.handOpCounts).toEqual({ twoParts: 2, leftHand: 2 });
+  });
+
+  it("2部位を経過する操作はロープでは出さない", () => {
+    expect(handOpChecksFor("rope").map((c) => c.id)).not.toContain("twoParts");
+  });
+
+  it("転回中の手具操作の種類は2種類なければ −0.1（転回中の操作の細目で、さまざまな操作には入れない）", () => {
+    const none = computeScore([], "stick");
+    expect(none.tumOpKindsDeduction).toBeCloseTo(0.1, 5);
+    expect(computeScore([], "stick", { handOpCounts: { tumOpKinds: 1 } }).tumOpKindsDeduction).toBeCloseTo(0.1, 5);
+    expect(computeScore([], "stick", { handOpCounts: { tumOpKinds: 2 } }).tumOpKindsDeduction).toBe(0);
+    expect(computeScore([], "stick", { handOpCounts: { tumOpKinds: 2 } }).handOpDeduction).toBeCloseTo(
+      none.handOpDeduction,
+      5,
+    );
   });
 
   it("スティックだけ左手の手具操作が増える", () => {
-    expect(handOpChecksFor("stick").map((c) => c.id)).toEqual(["twoParts", "character", "leftHand"]);
-    (["ring", "rope", "clubs"] as const).forEach((ap) =>
-      expect(handOpChecksFor(ap).map((c) => c.id)).toEqual(["twoParts", "character"]),
+    expect(handOpChecksFor("stick").map((c) => c.id)).toEqual(["leftHand", "nonUpperLimb", "twoParts", "character", "tumOpKinds"]);
+    (["ring", "clubs"] as const).forEach((ap) =>
+      expect(handOpChecksFor(ap).map((c) => c.id)).toEqual(["nonUpperLimb", "twoParts", "character", "tumOpKinds"]),
     );
-    // 未実施のぶんスティックだけ0.1多い
+    expect(handOpChecksFor("rope").map((c) => c.id)).toEqual(["nonUpperLimb", "character", "tumOpKinds"]);
+    // 未実施のぶんスティックだけ0.2多い（左右のバランス：なし −0.2）
     expect(computeScore([], "stick").handOpDeduction).toBeCloseTo(
-      computeScore([], "clubs").handOpDeduction + HAND_OP_CHECK_DEDUCTION,
+      computeScore([], "clubs").handOpDeduction + 2 * HAND_OP_CHECK_DEDUCTION,
       5,
     );
-    const done = computeScore([], "stick", { handOps: ["leftHand"] });
+    const done = computeScore([], "stick", { handOpCounts: { leftHand: 2 } });
     expect(done.handOpChecks.find((c) => c.key === "handOp_leftHand")?.passed).toBe(true);
     // 他の手具では行そのものが出ない（保存された値はそのまま残す）
-    expect(computeScore([], "clubs", { handOps: ["leftHand"] }).handOpChecks.map((c) => c.key)).not.toContain(
+    expect(computeScore([], "clubs", { handOpCounts: { leftHand: 2 } }).handOpChecks.map((c) => c.key)).not.toContain(
       "handOp_leftHand",
     );
   });
@@ -130,7 +160,7 @@ describe("手具操作の多様性", () => {
     expect(op(r, "offBody")?.passed).toBe(true);
   });
 
-  it("身体を離れる手具操作は4回必要で、不足1回につき −0.1", () => {
+  it("投げ以外の手離し操作は4回必要で、不足1回につき −0.05（研修資料）", () => {
     [0, 1, 2, 3, 4, 5].forEach((n) => {
       const r = computeScore([], "stick", { handOps: HAND_OP_CHECKS.map((c) => c.id), offBodyCount: n });
       const short = Math.max(0, OFF_BODY_REQUIRED_COUNT - n);
@@ -164,17 +194,19 @@ describe("保存データの往復", () => {
       series: [],
       basicHands: ["slantfwd", "nope", ""],
       handOps: ["character", "unknown"],
+      handOpCounts: { twoParts: 1, nope: 3, nonUpperLimb: -1 },
       offBodyCount: "3",
     });
     expect(d?.basicHands).toEqual(["slantfwd"]);
-    expect(d?.handOps).toEqual(["character"]);
+    // 旧形式のチェックは減点なしの回数に、知らない id・0以下は落とす
+    expect(d?.handOpCounts).toEqual({ character: 1, twoParts: 1 });
     expect(d?.offBodyCount).toBe(3);
   });
 
   it("未指定なら空・0", () => {
     const d = normalizeIndividualDraft({ apparatus: "stick", series: [] });
     expect(d?.basicHands).toEqual([]);
-    expect(d?.handOps).toEqual([]);
+    expect(d?.handOpCounts).toEqual({});
     expect(d?.offBodyCount).toBe(0);
   });
 });
@@ -190,10 +222,10 @@ describe("単独の徒手系要素（跳躍・柔軟）", () => {
     expect(soloHandDifficulty("j12")).toBe("B"); // バタフライ1回ひねり
   });
 
-  it("柔軟は前後開脚・左右開脚・ブリッジの3つで、難度には数えない", () => {
+  it("柔軟は前後開脚・左右開脚・ブリッジ＋研修資料の細目の3つで、難度には数えない", () => {
     const flex = SOLO_HAND_ELEMENT_GROUPS.find((g) => g.id === "flex")!;
     expect(flex.scored).toBe(false);
-    expect(flex.items.map((f) => f.name)).toEqual(["前後開脚", "左右開脚", "ブリッジ"]);
+    expect(flex.items.map((f) => f.name)).toEqual(["前後開脚", "左右開脚", "ブリッジ", "バランスでの足上げ", "中立ち", "ローリング"]);
     flex.items.forEach((f) => expect(soloHandElementScored(f.id)).toBe(false));
   });
 

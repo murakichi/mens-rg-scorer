@@ -248,7 +248,9 @@ export interface SaveData {
   artDeductions?: Record<string, number>;
   /** 実施した基本徒手のid（BASIC_HAND_ELEMENTS）。 */
   basicHands?: string[];
-  /** 実施した手具操作のチェック項目id（HAND_OP_CHECKS）。 */
+  /** 手具操作の多様性の実施回数（HAND_OP_CHECKS の id → 回数）。 */
+  handOpCounts?: Record<string, number>;
+  /** 旧形式：実施した手具操作のチェック項目id。読み込み時に減点なしの回数として読む。 */
   handOps?: string[];
   /** 身体を離れる手具操作の回数。 */
   offBodyCount?: number;

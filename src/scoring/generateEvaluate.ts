@@ -424,7 +424,11 @@ export function evaluate(series: Series[], opts: GenerateOptions, autoCount = 0)
   const variety = saltoRepeatCount(series) * SALTO_VARIETY_WEIGHT;
   // 転回系の多様性の減点（§3.5.6.4）は手入力の項目だが、自動計算した値を評価では負う。
   // 上級者（難度の高い構成）になるほど宙返りの種類が増えるので、この減点は自然に小さくなる
-  const tumVariety = r.tumVariety.deduction;
+  // 項目の上限（0.50）には宙返りの連続・つなぎの自動判定も入るので、その残りの分だけ負う
+  const tumItem = r.artItemTotals.find((t) => t.id === "tumVariety");
+  const tumVariety = tumItem
+    ? Math.min(r.tumVariety.deduction, Math.max(0, tumItem.max - tumItem.total))
+    : r.tumVariety.deduction;
   // 同じ難度なら、より実施される組み方（C→B→B など）を選ぶ
   const shape = shapeRankTotal(series, r, !!opts.junior, opts.future ?? null) * SHAPE_PRIORITY_WEIGHT;
   // 連続投げは1回目のほうが難度が高いのが普通（逆の構成も現実にあるので弱く嫌うだけ）

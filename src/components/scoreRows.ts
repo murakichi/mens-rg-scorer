@@ -36,7 +36,7 @@ export function dRows(r: ScoreResult): ScoreRow[] {
  */
 export function aRows(r: ScoreResult): ScoreRow[] {
   const rows: ScoreRow[] = [
-    { label: "手具操作不足（投げなしタンブリング＋つなぎ技）", value: r.noApparatusDeduction },
+    { label: "転回中の手具操作なし（投げなしタンブリング＋つなぎ技のA難度）", value: r.noApparatusDeduction },
     { label: `方向系不足（不足 ${r.missingDirCount} 系統）`, value: r.directionDeduction },
     { label: `投げ回数不足（${r.totalThrowCount}回／必要 ${r.requiredThrowCount}回）`, value: r.throwCountDeduction },
     {
@@ -48,7 +48,9 @@ export function aRows(r: ScoreResult): ScoreRow[] {
       label: `投げ方・受け方の種類不足（投げ${r.throwKindCount}/3・受け${r.catchKindCount}/3）`,
       value: r.varietyDeduction,
     },
-    { label: "必須要素の欠如（つなぎ技・タンブリング本数）", value: r.missingElementDeduction },
+    { label: "つなぎ技なし（転回系の多様性の細目）", value: r.connectMissingDeduction },
+    { label: "転回中の手具操作が2種類未満", value: r.tumOpKindsDeduction },
+    { label: "必須要素の欠如（タンブリング本数）", value: r.missingElementDeduction },
     { label: "深い徒手動作の不足", value: r.deepMotionDeduction },
     { label: "柔軟の徒手の不足", value: r.flexDeduction },
     { label: "手具操作の不足", value: r.handOpDeduction },

@@ -1,13 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { calcTumblingDifficulty, isCConnectC } from "../analysis";
+import { calcTumblingDifficulty } from "../analysis";
 import { computeScore } from "../score";
 
-// C難度→つなぎ技→C難度 は例外的にD難度（オーナー 2026-11-21。この並びだけ）
+// C難度→つなぎ技→C難度 はD難度（2026-11-21 は例外として入れたが、2026-11-23 のつなぎの規則＝前後の高いほうの1つ上 に含まれる）
 describe("C→つなぎ→C はD難度", () => {
   it("C→ロンダート→C はD（計算式ではEになるところ）", () => {
     expect(calcTumblingDifficulty(["a_roundoff", "c_backlay15", "a_roundoff", "c_back15"], false)).toBe("D");
     expect(calcTumblingDifficulty(["c_front1full", "a_roundoff", "c_backlay1full"], false)).toBe("D");
-    expect(isCConnectC(["a_roundoff", "c_backlay15", "a_roundoff", "c_back15"])).toBe(true);
   });
 
   it("この並び以外は計算式どおり", () => {
@@ -17,7 +16,6 @@ describe("C→つなぎ→C はD難度", () => {
     expect(calcTumblingDifficulty(["a_roundoff", "d_backlay25", "a_roundoff", "c_back15"], false)).toBe("E");
     // C→つなぎ→C→B は C・C の2つだけではないので計算式どおり（E）
     expect(calcTumblingDifficulty(["a_roundoff", "c_backlay15", "a_roundoff", "c_back15", "b_front"], false)).toBe("E");
-    expect(isCConnectC(["a_roundoff", "c_backlay1full", "c_back15"])).toBe(false);
   });
 
   it("投げを含む（投げタン）なら D に +1 で E", () => {

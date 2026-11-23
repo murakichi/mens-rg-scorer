@@ -52,7 +52,12 @@ import {
   deepMotionParts,
   handOpChecksFor,
   HAND_OP_CHARACTER_ID,
-  HAND_OP_CHECK_DEDUCTION,
+  handOpCheckDeduction,
+  normalizeHandOpCounts,
+  CONNECT_MISSING_DEDUCTION,
+  APP_IN_TUM_SUBITEM_MAX,
+  APP_IN_TUM_ITEM_ID,
+  APP_VARIETY_ITEM_ID,
   APPARATUS_CHARACTER_HINTS,
   OFF_BODY_TIP,
   OFF_BODY_REQUIRED_COUNT,
@@ -73,7 +78,7 @@ import {
   motionDef,
   motionTimes,
   hasConnect,
-  hasConnectWithoutApparatus,
+  countConnectWithoutApparatus,
   stripForApparatus,
   withForcedNoViewCatches,
   tumblingVariety,
@@ -243,8 +248,10 @@ export interface ScoreResult {
   artDeduction: number;
   /**
    * 欠点テーブルの項目のうち、自動判定の減点が同じ項目に属するもの（§3.5.6.4 と §7.4.1 の整合）。
-   * 「徒手系の種類・組み合わせの多様性」＝深い運動＋柔軟、「さまざまな操作」＝手具操作の多様性チェック（身体を離れる操作を含む）。
-   * 手入力ぶんと自動判定ぶんを合わせて項目の上限（各1.00）で頭打ちにする。
+   * 「徒手系の種類・組み合わせの多様性」＝深い運動＋柔軟、「さまざまな操作」＝手具操作の多様性チェック（手離しを含む）、
+   * 「転回系の種類・組み合わせの多様性」＝宙返りの連続＋つなぎ技の有無、
+   * 「転回中の操作」＝手具操作なし（手入力と大きいほう、上限0.40）＋2種類以上の転回中の手具操作。
+   * 手入力ぶんと自動判定ぶんを合わせて項目の上限で頭打ちにする。
    */
   artItemTotals: { id: string; name: string; manual: number; auto: number; total: number; max: number }[];
   /** 上の頭打ちで A減点から戻した量（自動判定と手入力の合計が項目の上限を超えた分） */
@@ -261,8 +268,17 @@ export interface ScoreResult {
    * こちらも A減点には自動では入れない（自動計算ボタンで手入力欄に入れる値）。
    */
   tumOperation: TumblingOperation;
+  /** 転回中の手具操作なし（投げなしタンブリング＋つなぎ技のA難度、上限0.4）。欠点テーブル「転回中の操作」の自動判定ぶん */
   noApparatusDeduction: number;
   connectNoApparatus: boolean;
+  /** つなぎ技のA難度に手具操作が無い箇所の数（その都度 −0.1） */
+  connectNoApparatusCount: number;
+  /** つなぎ技が無い場合の減点（欠点テーブル「転回系の種類・組み合わせの多様性」の細目、−0.1） */
+  connectMissingDeduction: number;
+  /** 2種類以上の転回中の手具操作に欠ける（欠点テーブル「転回中の操作」の細目、−0.1） */
+  tumOpKindsDeduction: number;
+  /** 手具操作の多様性の実施回数（旧データのチェックも回数に直したもの） */
+  handOpCounts: Record<string, number>;
   missingDirCount: number;
   directionDeduction: number;
   totalThrowCount: number;
@@ -283,7 +299,7 @@ export interface ScoreResult {
   catchKindCount: number;
   /** その他の投げ・その他のキャッチの回数（種類数に足されている分。重複シリーズでも数える） */
   varietyDeduction: number;
-  /** 必須要素チェックのうち投げタン・つなぎ技・タンブリング本数の欠如（各 −0.30） */
+  /** 必須要素チェックのうちタンブリング本数の欠如（−0.30） */
   missingElementDeduction: number;
   aDeduction: number;
   aScore: number;
@@ -324,7 +340,9 @@ export interface ComputeOptions {
   artDeductions?: Record<string, number>;
   /** 実施した基本徒手のid（BASIC_HAND_ELEMENTS）。深い運動の充足を判定する。 */
   basicHands?: string[];
-  /** 実施した手具操作のチェック項目id（HAND_OP_CHECKS）。 */
+  /** 手具操作の多様性の実施回数（HAND_OP_CHECKS の id → 回数）。 */
+  handOpCounts?: Record<string, number>;
+  /** 旧形式：実施した手具操作のチェック項目id。チェックが付いた項目は減点なしの回数として読む。 */
   handOps?: string[];
   /** 身体を離れる手具操作の回数。 */
   offBodyCount?: number;
@@ -408,6 +426,7 @@ export function computeScore(
     artDeductions = {},
     basicHands = [],
     handOps = [],
+    handOpCounts: handOpCountsInput,
     offBodyCount = 0,
     handElements = [],
     ropeJumps: ropeJumpInput = [],
@@ -859,14 +878,17 @@ export function computeScore(
   );
 
   // ---- A（芸術と多様性）----
-  // 手具操作不足：各シリーズ内訳の noApp 総和 + つなぎ技A難度の手具操作なし、上限 NO_APP_CAP
+  // 手具操作不足：各シリーズ内訳の noApp 総和 + つなぎ技A難度の手具操作なし（その都度 −0.1）、上限 NO_APP_CAP。
+  // §3.5.6.4 欠点テーブル「転回中の手具操作に欠ける」（0〜0.40）の自動判定ぶん。
   // 手具操作なしの減点は投げなしタンブリング塊のみが対象
-  const connectNoApparatus = allUnits.some(
-    (u) => u.type === "tumbling" && hasConnectWithoutApparatus(u.skills || []),
+  const connectNoApparatusCount = allUnits.reduce(
+    (n, u) => n + (u.type === "tumbling" ? countConnectWithoutApparatus(u.skills || []) : 0),
+    0,
   );
+  const connectNoApparatus = connectNoApparatusCount > 0;
   let noApparatusDeduction = seriesBreakdowns.reduce((s, b) => s + b.noApp, 0);
-  if (connectNoApparatus) noApparatusDeduction += CONNECT_NO_APP_DEDUCTION;
-  noApparatusDeduction = Math.min(noApparatusDeduction, NO_APP_CAP);
+  noApparatusDeduction += connectNoApparatusCount * CONNECT_NO_APP_DEDUCTION;
+  noApparatusDeduction = Math.round(Math.min(noApparatusDeduction, NO_APP_CAP) * 100) / 100;
 
   // 方向系は転回技の系統で数える。徒手扱いの技（側転）は数えない
   const allTumblingSkills = tumblingUnits.flatMap((u) => u.skills);
@@ -975,8 +997,8 @@ export function computeScore(
       key: "connect",
       label: "1本以上がつなぎ技（宙返り間にA難度を挟む）",
       passed: hasConn,
-      deduction: MISSING_ELEMENT_DEDUCTION,
-      tip: "宙返りと宙返りの間にA難度技を挟む。側転は徒手扱いなのでつなぎ技にならない。手具操作は不要だが、操作が無いと別に −0.2",
+      deduction: CONNECT_MISSING_DEDUCTION,
+      tip: "宙返りと宙返りの間にA難度技を挟む。側転は徒手扱いなのでつなぎ技にならない。無ければ −0.1（欠点テーブル「転回系の種類・組み合わせの多様性」の細目）。手具操作は不要だが、操作が無いとその都度 −0.1（「転回中の操作」の細目）",
     },
     {
       key: "count3",
@@ -1093,11 +1115,13 @@ export function computeScore(
   }
 
   const missing = required.filter((r) => r.passed === false);
-  // つなぎ技・タンブリング本数の欠如（他の項目は固有の減点として既に計上している）。
-  // 投げタンの欠如は手具別必須要素「転回系の投げ受け」と同じ内容なので、そちらで1回だけ引く
-  const missingElementKeys = ["connect", "tumCount"];
+  // タンブリング本数の欠如（他の項目は固有の減点として既に計上している）。
+  // 投げタンの欠如は手具別必須要素「転回系の投げ受け」と同じ内容なので、そちらで1回だけ引く。
+  // つなぎ技の欠如は §3.5.6.4 欠点テーブルの細目（−0.1）なので別に持つ
+  const missingElementKeys = ["tumCount"];
   const missingElementDeduction =
     missing.filter((r) => missingElementKeys.includes(r.key)).length * MISSING_ELEMENT_DEDUCTION;
+  const connectMissingDeduction = hasConn ? 0 : CONNECT_MISSING_DEDUCTION;
 
   // ---- §3.2 手具別必須要素（自動判定＋手動チェック）と §3.5.6.3 要求要素の欠如による A減点 ----
   // 右投げ右受け：左手投げでも手以外の投げでもない通常の投げが1回以上あれば実施とみなす。
@@ -1151,25 +1175,46 @@ export function computeScore(
 
   const offBodyShort = offBodyShortage(offBodyCount);
   const offBodyDeduction = offBodyShort * OFF_BODY_DEDUCTION_STEP;
+  const handOpCounts = normalizeHandOpCounts(handOpCountsInput, handOps);
+  const handOpCheckRows = handOpChecksFor(apparatus).map((c) => {
+    const n = handOpCounts[c.id] ?? 0;
+    const deduction = handOpCheckDeduction(c, n);
+    const tip = c.id === HAND_OP_CHARACTER_ID ? `${c.tip}（例：${APPARATUS_CHARACTER_HINTS[apparatus].join("／")}）` : c.tip;
+    return {
+      item: c.item ?? APP_VARIETY_ITEM_ID,
+      check: {
+        key: `handOp_${c.id}`,
+        label: c.required > 1 ? `${c.name}（${n}/${c.required}）` : c.name,
+        passed: deduction === 0,
+        deduction,
+        tip,
+      } as RequiredCheck,
+    };
+  });
   const handOpChecks: RequiredCheck[] = [
-    ...handOpChecksFor(apparatus).map((c) => ({
-      key: `handOp_${c.id}`,
-      label: c.name,
-      passed: handOps.includes(c.id),
-      deduction: HAND_OP_CHECK_DEDUCTION,
-      tip: c.id === HAND_OP_CHARACTER_ID ? `${c.tip}（例：${APPARATUS_CHARACTER_HINTS[apparatus].join("／")}）` : c.tip,
-    })),
+    ...handOpCheckRows.map((r) => r.check),
     {
       key: "handOp_offBody",
-      label: `身体を離れる手具操作${OFF_BODY_REQUIRED_COUNT}回以上（${Math.max(0, Math.floor(Number(offBodyCount) || 0))}回）`,
+      label: `投げ以外の手離し操作${OFF_BODY_REQUIRED_COUNT}回以上（${Math.max(0, Math.floor(Number(offBodyCount) || 0))}回）`,
       passed: offBodyShort === 0,
       deduction: offBodyDeduction,
       tip: OFF_BODY_TIP,
     },
   ];
+  // 「さまざまな操作」に属する細目（手離しを含む）
   const handOpDeduction =
-    handOpChecks.filter((c) => c.key !== "handOp_offBody" && !c.passed).length * HAND_OP_CHECK_DEDUCTION +
-    offBodyDeduction;
+    Math.round(
+      (handOpCheckRows
+        .filter((r) => r.item === APP_VARIETY_ITEM_ID)
+        .reduce((s, r) => s + (r.check.deduction ?? 0), 0) +
+        offBodyDeduction) *
+        100,
+    ) / 100;
+  // 「転回中の操作」に属する細目（2種類以上の転回中の手具操作）
+  const tumOpKindsDeduction =
+    Math.round(
+      handOpCheckRows.filter((r) => r.item === APP_IN_TUM_ITEM_ID).reduce((s, r) => s + (r.check.deduction ?? 0), 0) * 100,
+    ) / 100;
 
   // passed = 違反・欠如が「ない」状態
   const violationChecks: RequiredCheck[] = VIOLATION_OPTIONS.map((v) => ({
@@ -1201,12 +1246,21 @@ export function computeScore(
   const artAuto: Record<string, number> = {
     handVariety: deepMotionDeduction + flexDeduction,
     appVariety: handOpDeduction,
+    // 転回系の種類（手入力）＋宙返りの連続に欠ける＋つなぎ転回系に欠ける＝上限0.50
+    tumVariety: saltoChainDeduction + connectMissingDeduction,
+    // 転回中の手具操作（手具操作なしの自動判定）＋2種類以上の転回中の手具操作
+    appInTumbling: noApparatusDeduction + tumOpKindsDeduction,
   };
   const artItemTotals = artRows
     .filter((r) => r.id in artAuto)
     .map((r) => {
       const auto = round1(artAuto[r.id]);
-      return { id: r.id, name: r.name, manual: r.value, auto, total: round1(Math.min(r.max, r.value + auto)), max: r.max };
+      // 転回中の手具操作は、自動判定（手具操作なし）と手入力が同じ細目を測るので大きいほうを1つの値にする（上限0.40）
+      const total =
+        r.id === APP_IN_TUM_ITEM_ID
+          ? round1(Math.min(r.max, Math.min(APP_IN_TUM_SUBITEM_MAX, Math.max(r.value, noApparatusDeduction)) + tumOpKindsDeduction))
+          : round1(Math.min(r.max, r.value + auto));
+      return { id: r.id, name: r.name, manual: r.value, auto, total, max: r.max };
     });
   const artCapExcess = round1(artItemTotals.reduce((s, t) => s + (t.manual + t.auto - t.total), 0));
   // 転回系の多様性は自動で計算して返すだけ（A減点に入れるかは入力しだい）
@@ -1222,6 +1276,8 @@ export function computeScore(
     saltoChainDeduction +
     varietyDeduction +
     missingElementDeduction +
+    connectMissingDeduction +
+    tumOpKindsDeduction +
     deepMotionDeduction +
     flexDeduction +
     handOpDeduction +
@@ -1266,6 +1322,10 @@ export function computeScore(
     tumOperation,
     noApparatusDeduction,
     connectNoApparatus,
+    connectNoApparatusCount,
+    connectMissingDeduction,
+    tumOpKindsDeduction,
+    handOpCounts,
     missingDirCount,
     directionDeduction,
     totalThrowCount,

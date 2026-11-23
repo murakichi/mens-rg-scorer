@@ -35,9 +35,10 @@ import {
   leadsBackward,
   ROUNDOFF_SKILL_ID,
   TWO_THROW_TAG,
-  artDeductionItem,
-  TUM_VARIETY_ITEM_ID,
   TUM_VARIETY_DEDUCTION_STEP,
+  TUM_VARIETY_SUBITEM_MAX,
+  CATEGORY,
+  chainDifficultyValue,
   canOperateApparatus,
   appInTumblingDeduction,
 } from "./constants";
@@ -92,37 +93,24 @@ export function needsRoundoffBefore(items: Item[], iIdx: number): boolean {
 }
 
 /**
- * タンブリング塊の難度を算出。先頭技の値 + 以降の非A技ごとに +1、投げ含みで +1。
- * 上限は現行規則ならE、十年後モードならその上限（F・G）。
+ * タンブリング塊の難度を算出（`chainDifficultyValue`：連続の加算・B難度だけはD止まり・つなぎは前後の高いほうの1つ上）、
+ * 投げ含みで +1。上限は現行規則ならE、十年後モードならその上限（F・G）。
+ * 以前あった「C→つなぎ→C だけ D」の例外（2026-11-21）は、つなぎの規則（max(C,C)+1＝D）に含まれる。
  */
-/**
- * A難度を除くと C難度の技がちょうど2つで、その間につなぎ技（A難度の転回技）が入る並びか
- * （例：ロンダート→後方伸身宙返り1回半ひねり→ロンダート→後方宙返り1回半ひねり）。
- * 計算式（起点＋Σ(後続−1)）では E になるが、この並びだけは例外的に D 難度と判定される（オーナー 2026-11-21）。
- */
-export function isCConnectC(skillIds: string[], junior = false, future: FutureLevel = null): boolean {
-  const nonA = skillIds
-    .map((_id, i) => ({ i, d: skillDifficultyAt(skillIds, i, junior, future) }))
-    .filter((x) => !!x.d && x.d !== "A");
-  if (nonA.length !== 2 || nonA.some((x) => x.d !== "C")) return false;
-  return skillIds.slice(nonA[0].i + 1, nonA[1].i).some((id) => !!skillDef(id)?.isConnectA);
-}
-
 export function calcTumblingDifficulty(
   skillIds: string[],
   hasThrow: boolean,
   junior = false,
   future: FutureLevel = null,
 ): Difficulty | null {
-  const diffs = skillIds
+  const values = skillIds
     // 位置で難度が変わる特例（宙返りの直後のダイビングは格上げ）があるので位置つきで引く
     .map((_id, i) => skillDifficultyAt(skillIds, i, junior, future))
-    .filter((d): d is Difficulty => !!d && d !== "A");
-  if (diffs.length === 0) return null;
-  let v = DIFF_VALUE[diffs[0]];
-  for (let i = 1; i < diffs.length; i++) v += DIFF_VALUE[diffs[i]] - 1;
-  // 例外：C難度→つなぎ技→C難度 の並びは（計算上はEだが）D難度（オーナー 2026-11-21。この並びだけ）
-  if (isCConnectC(skillIds, junior, future)) v = DIFF_VALUE.D;
+    .filter((d): d is Difficulty => !!d)
+    .map((d) => DIFF_VALUE[d]);
+  // 宙返りの連続の加算・B難度だけの連続のD止まり・つなぎ（最も高い連続の1つ上）。投げの+1はこのあと
+  let v = chainDifficultyValue(values);
+  if (v === 0) return null;
   if (hasThrow) v += 1;
   return clampDifficulty(v, future);
 }
@@ -259,6 +247,17 @@ export function hasConnect(skills: Unit["skills"]): boolean {
     if (salto[i - 1] && cur?.isConnectA && salto[i + 1]) return true;
   }
   return false;
+}
+
+/** つなぎ技のA難度に手具操作が付いていないものの数（§3.5.6.4：その都度 −0.1） */
+export function countConnectWithoutApparatus(skills: Unit["skills"]): number {
+  const salto = saltoFlags(skills.map((s) => s.skillId));
+  let n = 0;
+  for (let i = 1; i < skills.length - 1; i++) {
+    const cur = skillDef(skills[i].skillId);
+    if (salto[i - 1] && cur?.isConnectA && salto[i + 1] && !skills[i].hasApparatus) n += 1;
+  }
+  return n;
 }
 
 /** つなぎ技のA難度に手具操作が付いていないものがあるか */
@@ -989,20 +988,39 @@ export function checkApparatusFlow(series: Series, apparatusKey: keyof typeof AP
 
 /** 重複シリーズ判定用の正規化シグネチャ */
 /**
- * **転回系の種類・組み合わせの多様性**（§3.5.6.4 の欠点テーブル）の自動判定。
- * A難度の転回技（ロンダート・バク転・側転など）は数えず、**宙返り（B難度以上の転回技）**だけを数える。
- * 全部違う技なら減点なし、同じ技を繰り返したぶん（`repeats`＝実施数−種類数）だけ減点する。
- * ひねり・姿勢が違えば別の技（`skillId` が違う）として数える。
+ * **転回系の種類・組み合わせの多様性**（§3.5.6.4 の欠点テーブル）の細目「転回系の種類に欠ける」の自動判定。
+ * 2026年度研修資料の物差し（「前方系や側方系、ひねり系、姿勢などに偏りがないか」）で、
+ * A難度の転回技（ロンダート・バク転など）と徒手として入れた転回技は数えず、**宙返り（B難度以上）**について
+ * 3つの軸を見る（オーナー選択 2026-11-23）：
+ *   - 系統：前方系・側方系・後方系がすべてあるか
+ *   - ひねり：ひねりのある宙返りと無い宙返りの両方があるか
+ *   - 姿勢：抱え込み・屈伸と伸身の両方があるか（姿勢の決まらない技＝テンポ・転宙・側宙などは見ない）
+ * 偏った軸1つにつき `TUM_VARIETY_DEDUCTION_STEP`（0.1）、細目の上限 `TUM_VARIETY_SUBITEM_MAX`（0.2）まで。
+ * 宙返りが1つも無ければ判定しない（減点は方向系・宙返りの連続の側で引く）。
  */
+export type TumblingBiasAxis = "category" | "twist" | "posture";
+export const TUMBLING_BIAS_AXIS_NAMES: Record<TumblingBiasAxis, string> = {
+  category: "系統（前方・側方・後方）",
+  twist: "ひねりの有無",
+  posture: "姿勢（抱え込み・屈伸／伸身）",
+};
 export interface TumblingVariety {
   /** 実施した宙返り（A難度を除く転回技）の数 */
   total: number;
-  /** そのうち何種類か */
+  /** そのうち何種類か（参考表示） */
   distinct: number;
-  /** 種類が減っているぶん（＝ total − distinct） */
-  repeats: number;
-  /** 自動計算した減点（`TUM_VARIETY_DEDUCTION_STEP` × repeats、項目の上限で丸め） */
+  /** 偏っている軸 */
+  biased: TumblingBiasAxis[];
+  /** 自動計算した減点（偏った軸 × 0.1、上限0.2） */
   deduction: number;
+}
+
+/** ひねりのある宙返りか（技表の `twist`、無ければ名前で判定） */
+function isTwistingSalto(id: string): boolean {
+  const def = skillDef(id);
+  if (!def) return false;
+  if (def.twist) return def.twist.twist > 0;
+  return /ひねり|きりもみ|ムーンサルト|ルドルフ/.test(def.name);
 }
 
 export function tumblingVariety(list: Series[], junior = false): TumblingVariety {
@@ -1016,10 +1034,22 @@ export function tumblingVariety(list: Series[], junior = false): TumblingVariety
   );
   const total = ids.length;
   const distinct = new Set(ids).size;
-  const repeats = Math.max(0, total - distinct);
-  const max = artDeductionItem(TUM_VARIETY_ITEM_ID)?.max ?? 0;
-  const deduction = Math.min(max, Math.round(repeats * TUM_VARIETY_DEDUCTION_STEP * 10) / 10);
-  return { total, distinct, repeats, deduction };
+  if (total === 0) return { total, distinct, biased: [], deduction: 0 };
+  const defs = ids.map((id) => skillDef(id));
+  const cats = new Set(defs.map((d) => d?.category));
+  const twisting = ids.map(isTwistingSalto);
+  const postures = new Set(
+    defs
+      .map((d) => d?.twist?.posture)
+      .filter((p): p is NonNullable<typeof p> => !!p)
+      .map((p) => (p === "layout" ? "layout" : "bent")),
+  );
+  const biased: TumblingBiasAxis[] = [];
+  if (!(cats.has(CATEGORY.FORWARD) && cats.has(CATEGORY.SIDE) && cats.has(CATEGORY.BACKWARD))) biased.push("category");
+  if (!(twisting.includes(true) && twisting.includes(false))) biased.push("twist");
+  if (postures.size < 2) biased.push("posture");
+  const deduction = Math.min(TUM_VARIETY_SUBITEM_MAX, Math.round(biased.length * TUM_VARIETY_DEDUCTION_STEP * 10) / 10);
+  return { total, distinct, biased, deduction };
 }
 
 /**

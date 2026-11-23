@@ -231,7 +231,8 @@ describe("審判が入れたA減点を踏まえる", () => {
     ART_DEDUCTION_ITEMS.forEach((i) => (artDeductions[i.id] = i.max));
     // 必須要素をほとんど満たさない最小構成にして、A減点を10点に張り付かせる。
     // 自動判定と手入力の合計は欠点テーブルの項目上限で頭打ちになるので、必須要素の多いロープで10点を超えさせる
-    const bare: Series[] = [{ executionDeduction: 0, items: [skill(ROUNDOFF_SKILL_ID), skill("b_backsalto")] }];
+    // （研修資料でつなぎ技なしが −0.1 になり減点が減ったので、タンブリングを入れず方向系を全部欠かせて10点を超えさせる）
+    const bare: Series[] = [{ executionDeduction: 0, items: [{ kind: "throw" }, { kind: "catch" }] }];
     const opts = { violations, artDeductions };
     const r = computeScore(bare, "rope", opts);
     expect(r.aScore).toBe(0);
@@ -246,8 +247,8 @@ describe("審判が入れたA減点を踏まえる", () => {
       expect(s.dDelta).toBeGreaterThan(0);
     });
 
-    // 審判入力を渡さないと基準がずれる（この引数を落としてはいけない、という回帰）
-    const ignored = suggestImprovements(bare, "rope", { limit: 50 });
-    expect(ignored.some((s) => s.dDelta === 0 && s.aDelta > 0)).toBe(true);
+    expect(list.length).toBeGreaterThan(0);
+    // A残点が0に張り付いているので、どの案でもA側は増えない
+    expect(list.every((s) => s.aDelta === 0)).toBe(true);
   });
 });

@@ -12,7 +12,7 @@ import {
   APPARATUS,
   ART_DEDUCTION_ITEMS,
   BASIC_HAND_ELEMENTS,
-  HAND_OP_CHECKS,
+  normalizeHandOpCounts,
   soloHandElementDef,
   clampArtDeduction,
   normalizeFutureLevel,
@@ -45,8 +45,10 @@ export interface IndividualDraft {
   artDeductions: Record<string, number>;
   /** 実施した基本徒手のid */
   basicHands: string[];
-  /** 実施した手具操作のチェック項目id */
-  handOps: string[];
+  /** 手具操作の多様性の実施回数（HAND_OP_CHECKS の id → 回数） */
+  handOpCounts: Record<string, number>;
+  /** 旧形式（読み込み時だけ）：実施した手具操作のチェック項目id */
+  handOps?: string[];
   /** 身体を離れる手具操作の回数 */
   offBodyCount: number;
   /** 単独で実施した徒手系要素（跳躍・柔軟）のid */
@@ -160,7 +162,8 @@ export function normalizeIndividualDraft(data: unknown): IndividualDraft | null 
     violations: asStringArray(d.violations),
     artDeductions: normalizeArtDeductions(d.artDeductions),
     basicHands: knownIds(d.basicHands, BASIC_HAND_ELEMENTS),
-    handOps: knownIds(d.handOps, HAND_OP_CHECKS),
+    // 旧形式（handOps＝チェックしたid）は減点なしの回数として読む
+    handOpCounts: normalizeHandOpCounts(d.handOpCounts, d.handOps),
     offBodyCount: normalizeOffBodyCount(d.offBodyCount),
     handElements: normalizeHandElements(d.handElements),
     ropeJumps,
@@ -192,7 +195,7 @@ export function isBlankIndividualDraft(d: IndividualDraft): boolean {
     d.violations.length === 0 &&
     Object.keys(d.artDeductions).length === 0 &&
     !d.basicHands?.length &&
-    !d.handOps?.length &&
+    !Object.keys(d.handOpCounts ?? {}).length &&
     !d.offBodyCount &&
     !d.handElements?.length &&
     !d.ropeJumps?.length
