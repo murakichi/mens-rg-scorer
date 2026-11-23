@@ -18,18 +18,22 @@ describe("computeScore — 空の演技（回帰アンカー）", () => {
     expect(r.dScore).toBe(0);
     expect(r.eScore).toBe(10);
     // 方向系3不足(0.9) + 投げ不足(0.3) + 宙返り連続なし(0.2) + 多様性上限(0.5)
-    //  + 必須要素の欠如2項目(つなぎ技・タンブリング本数 2×0.3=0.6。投げタンは手具別必須要素で計上)
-    //  + 深い運動2部位不足(0.2) + 柔軟なし(0.1) + 手具操作チェック3件(スティックは左手の操作も／0.3)
-    //  + 身体を離れる操作4回不足(0.4) + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 4.7
-    expect(r.aDeduction).toBeCloseTo(4.7, 5);
-    expect(r.aScore).toBeCloseTo(5.3, 5);
-    expect(r.grandTotal).toBeCloseTo(15.3, 5);
+    //  + タンブリング本数(0.3。投げタンは手具別必須要素で計上) + つなぎ技なし(0.1、転回系の多様性の細目)
+    //  + 深い運動2部位不足(0.2) + 柔軟なし(0.1)
+    //  + 手具操作の細目（スティック：左右のバランス0.2・上肢以外0.2・2部位0.2・特性0.1）0.7
+    //  + 転回中の手具操作が2種類未満(0.1) + 手離し4回不足(4×0.05=0.2)
+    //  + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 4.8
+    expect(r.aDeduction).toBeCloseTo(4.8, 5);
+    expect(r.aScore).toBeCloseTo(5.2, 5);
+    expect(r.grandTotal).toBeCloseTo(15.2, 5);
     expect(r.missing.length).toBeGreaterThan(0);
-    expect(r.missingElementDeduction).toBeCloseTo(0.6, 5);
+    expect(r.missingElementDeduction).toBeCloseTo(0.3, 5);
+    expect(r.connectMissingDeduction).toBeCloseTo(0.1, 5);
+    expect(r.tumOpKindsDeduction).toBeCloseTo(0.1, 5);
     // 手具別必須要素は未実施4項目で −1.2
     expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
     expect(r.deepMotionDeduction).toBeCloseTo(0.2, 5);
-    expect(r.handOpDeduction).toBeCloseTo(0.7, 5);
+    expect(r.handOpDeduction).toBeCloseTo(0.9, 5) // 細目0.7 + 手離し4回不足0.2;
   });
 });
 
@@ -432,7 +436,7 @@ describe("computeScore — ロープ跳びリスト（構成全体・徒手・�
 });
 
 describe("computeScore — つなぎ技のA難度に手具操作なし（Q10）", () => {
-  it("後方一回半ひねり(操作なし)〜ロンダート(操作なし)〜ダイビング前宙(操作あり)で −0.2", () => {
+  it("後方一回半ひねり(操作なし)〜ロンダート(操作なし)〜ダイビング前宙(操作あり)で −0.1（その都度0.1、研修資料）", () => {
     const r = computeScore(
       [
         S(
@@ -445,7 +449,8 @@ describe("computeScore — つなぎ技のA難度に手具操作なし（Q10）"
       "clubs",
     );
     expect(r.connectNoApparatus).toBe(true);
-    expect(r.noApparatusDeduction).toBeCloseTo(0.2, 5);
+    expect(r.connectNoApparatusCount).toBe(1);
+    expect(r.noApparatusDeduction).toBeCloseTo(0.1, 5);
   });
 
   it("つなぎのA難度に手具操作があれば減点なし", () => {
@@ -1048,12 +1053,14 @@ describe("computeScore — ロープの跳び要求要素は手具別必須要�
 });
 
 describe("computeScore — 必須要素チェックの不足も減点する", () => {
-  it("つなぎ技・タンブリング本数はそれぞれ −0.30", () => {
+  it("タンブリング本数は −0.30、つなぎ技は欠点テーブルの細目で −0.10", () => {
     const r = computeScore([S({ kind: "throw" }, { kind: "catch" })], "clubs");
     expect(r.required.find((c) => c.key === "throwTum")?.passed).toBe(false);
     expect(r.required.find((c) => c.key === "connect")?.passed).toBe(false);
     expect(r.required.find((c) => c.key === "tumCount")?.passed).toBe(false);
-    expect(r.missingElementDeduction).toBeCloseTo(0.6, 5);
+    expect(r.missingElementDeduction).toBeCloseTo(0.3, 5);
+    expect(r.connectMissingDeduction).toBeCloseTo(0.1, 5);
+    expect(r.required.find((c) => c.key === "connect")?.deduction).toBeCloseTo(0.1, 5);
   });
 
   it("投げタンが無いときの減点は手具別必須要素「転回系の投げ受け」の −0.30 だけ（二重に引かない）", () => {
@@ -1114,11 +1121,14 @@ describe("computeScore — 必須要素チェックの不足も減点する", ()
       r.saltoChainDeduction +
       r.varietyDeduction +
       r.missingElementDeduction +
+      r.connectMissingDeduction +
+      r.tumOpKindsDeduction +
       r.deepMotionDeduction +
       r.flexDeduction +
       r.handOpDeduction +
       r.apparatusElementDeduction +
-      r.violationDeduction;
+      r.violationDeduction -
+      r.artCapExcess;
     expect(sum).toBeCloseTo(r.aDeduction, 5);
   });
 });

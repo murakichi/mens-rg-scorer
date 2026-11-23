@@ -50,6 +50,8 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
     catchKindCount,
     varietyDeduction,
     missingElementDeduction,
+    connectMissingDeduction,
+    tumOpKindsDeduction,
     aDeduction,
     aScore,
     seriesExecutionDeduction,
@@ -185,7 +187,7 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
 
         <div className="category-head">A（芸術と多様性）— 10点満点から減点</div>
         <div className="total-row">
-          <span>手具操作不足減点（投げなしタンブリング＋つなぎ技不足｜上限0.4）</span>
+          <span>転回中の手具操作なし（投げなしタンブリング＋つなぎ技のA難度 その都度0.1｜上限0.4）</span>
           <span>-{noApparatusDeduction.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
@@ -224,7 +226,15 @@ export function ScoreSummary({ result, apparatus }: { result: ScoreResult; appar
           <span>-{varietyDeduction.toFixed(1)} 点</span>
         </div>
         <div className="total-row">
-          <span>必須要素の欠如減点（投げタン・つなぎ技・タンブリング本数／1つにつき0.3）</span>
+          <span>つなぎ技なし減点（転回系の多様性の細目）</span>
+          <span>-{connectMissingDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>転回中の手具操作が2種類未満（転回中の操作の細目）</span>
+          <span>-{tumOpKindsDeduction.toFixed(1)} 点</span>
+        </div>
+        <div className="total-row">
+          <span>必須要素の欠如減点（タンブリング本数／0.3）</span>
           <span>-{missingElementDeduction.toFixed(1)} 点</span>
         </div>
         <div className="total-row">

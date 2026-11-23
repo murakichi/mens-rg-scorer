@@ -678,10 +678,10 @@ describe("その手具では入力できない内容", () => {
     // 同じ技を繰り返したぶんだけ減点する（1つにつき0.1）
     const repeated = tumblingVariety([S2(sk("a_roundoff"), sk("b_front"), sk("b_front"), sk("b_front"))]);
     expect(repeated).toEqual({ total: 3, distinct: 1, repeats: 2, deduction: 0.2 });
-    // 上限（項目の0.50）で止まる
+    // 細目「転回系の種類に欠ける」の上限（0.2）で止まる。項目の0.50は宙返りの連続・つなぎと合わせた枠
     const many = tumblingVariety([S2(...Array.from({ length: 9 }, () => sk("b_front")))]);
     expect(many.repeats).toBe(8);
-    expect(many.deduction).toBe(0.5);
+    expect(many.deduction).toBe(0.2);
     // ひねり・姿勢が違えば別の技として数える
     const twists = tumblingVariety([S2(sk("b_backsalto"), sk("b_backlayout"), sk("b_backhalf"))]);
     expect(twists.distinct).toBe(3);

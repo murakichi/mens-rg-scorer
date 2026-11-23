@@ -218,7 +218,7 @@ const skillItem = (skillId: string, isThrow = false): SkillItem => ({
  * 手具操作を付ける位置。**加点を狙わないタンブリングでは最低限**にする。
  *  - 減点を避けるのに必要なのは、宙返り1本（`NO_APP_SALTO_DEDUCTION`・
  *    `NO_APP_ALL_DEDUCTION` を避ける＝最後の宙返り）と、つなぎ技のA難度
- *    （`connectNoApparatus` の −0.2 を避ける）だけ
+ *    （`connectNoApparatus` の −0.1 を避ける）だけ
  *  - 手具操作加点（§3.5.5.5(3)）が狙えるのはE難度のときだけなので、そのときだけ
  *    宙返り2本（＝1本目にも付ける）にする
  *  - 投げタンは手具操作なしでも減点されない（A減点は投げの無いシリーズだけを見る）ので

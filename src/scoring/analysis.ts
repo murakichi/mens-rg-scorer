@@ -33,9 +33,9 @@ import {
   leadsBackward,
   ROUNDOFF_SKILL_ID,
   TWO_THROW_TAG,
-  artDeductionItem,
-  TUM_VARIETY_ITEM_ID,
   TUM_VARIETY_DEDUCTION_STEP,
+  TUM_VARIETY_SUBITEM_MAX,
+  B_ONLY_CHAIN_MAX,
   canOperateApparatus,
   appInTumblingDeduction,
 } from "./constants";
@@ -106,6 +106,8 @@ export function calcTumblingDifficulty(
   if (diffs.length === 0) return null;
   let v = DIFF_VALUE[diffs[0]];
   for (let i = 1; i < diffs.length; i++) v += DIFF_VALUE[diffs[i]] - 1;
+  // B難度だけの連続は4回以上繰り返してもD止まり（投げの+1はこのあと）
+  if (diffs.every((d) => d === "B")) v = Math.min(v, DIFF_VALUE[B_ONLY_CHAIN_MAX]);
   if (hasThrow) v += 1;
   return clampDifficulty(v, future);
 }
@@ -242,6 +244,17 @@ export function hasConnect(skills: Unit["skills"]): boolean {
     if (salto[i - 1] && cur?.isConnectA && salto[i + 1]) return true;
   }
   return false;
+}
+
+/** つなぎ技のA難度に手具操作が付いていないものの数（§3.5.6.4：その都度 −0.1） */
+export function countConnectWithoutApparatus(skills: Unit["skills"]): number {
+  const salto = saltoFlags(skills.map((s) => s.skillId));
+  let n = 0;
+  for (let i = 1; i < skills.length - 1; i++) {
+    const cur = skillDef(skills[i].skillId);
+    if (salto[i - 1] && cur?.isConnectA && salto[i + 1] && !skills[i].hasApparatus) n += 1;
+  }
+  return n;
 }
 
 /** つなぎ技のA難度に手具操作が付いていないものがあるか */
@@ -968,7 +981,7 @@ export interface TumblingVariety {
   distinct: number;
   /** 種類が減っているぶん（＝ total − distinct） */
   repeats: number;
-  /** 自動計算した減点（`TUM_VARIETY_DEDUCTION_STEP` × repeats、項目の上限で丸め） */
+  /** 自動計算した減点（`TUM_VARIETY_DEDUCTION_STEP` × repeats、細目の上限 `TUM_VARIETY_SUBITEM_MAX` で丸め） */
   deduction: number;
 }
 
@@ -984,8 +997,8 @@ export function tumblingVariety(list: Series[], junior = false): TumblingVariety
   const total = ids.length;
   const distinct = new Set(ids).size;
   const repeats = Math.max(0, total - distinct);
-  const max = artDeductionItem(TUM_VARIETY_ITEM_ID)?.max ?? 0;
-  const deduction = Math.min(max, Math.round(repeats * TUM_VARIETY_DEDUCTION_STEP * 10) / 10);
+  // 「転回系の種類に欠ける」細目の上限（0.2）。項目全体（0.50）には宙返りの連続・つなぎも入る
+  const deduction = Math.min(TUM_VARIETY_SUBITEM_MAX, Math.round(repeats * TUM_VARIETY_DEDUCTION_STEP * 10) / 10);
   return { total, distinct, repeats, deduction };
 }
 

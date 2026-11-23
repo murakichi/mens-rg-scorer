@@ -227,7 +227,9 @@ UIのプルダウンは見出し（`optgroup`）で分類する。タンブリ�
 | 方向系不足 | `DIRECTION_DEDUCTION` | 0.3 | 前方/側方/後方の不足1方向につき（徒手扱いの技＝側転は数えない） |
 | 投げ回数不足 | `THROW_COUNT_DEDUCTION` | 0.3 | 投げが `THROW_COUNT_REQUIRED`（一般3／ジュニア2）未満 |
 | 投げ回数超過 | `THROW_COUNT_OVER_DEDUCTION` | 0.3 | ジュニアのみ。`JUNIOR_THROW_COUNT_MAX`（5回）を超えた1回につき |
-| つなぎ技手具操作なし | `CONNECT_NO_APP_DEDUCTION` | 0.2 | つなぎ技のA難度で手具操作なし（投げなしタンブリング塊のみ・Q&A Q10） |
+| つなぎ技手具操作なし | `CONNECT_NO_APP_DEDUCTION` | 0.1 | つなぎ技のA難度で手具操作なし、**その都度**（投げなしタンブリング塊のみ・2026年度研修資料。`countConnectWithoutApparatus`） |
+| つなぎ技なし | `CONNECT_MISSING_DEDUCTION` | 0.1 | 欠点テーブル「転回系の種類・組み合わせの多様性」の細目（`connectMissingDeduction`） |
+| 転回中の手具操作が2種類未満 | `TUM_OP_KINDS_DEDUCTION` | 0.1 | 欠点テーブル「転回中の操作」の細目。`HAND_OP_CHECKS` の `tumOpKinds`（種類数入力、2で減点なし） |
 | 宙返り2連続止まり | `SALTO_CHAIN_2_DEDUCTION` | 0.1 | 最大連続宙返りが2 |
 | 宙返り連続なし | `SALTO_CHAIN_LOW_DEDUCTION` | 0.2 | 連続宙返りなし |
 
@@ -289,12 +291,12 @@ UIのプルダウンは見出し（`optgroup`）で分類する。タンブリ�
 | 多様性不足の上限 | `VARIETY_CAP` | 0.5 | 投げ方+受け方の合算上限 |
 | 必要種類数 | `VARIETY_REQUIRED` | 3 | 投げ方・受け方それぞれ |
 | 手具別必須要素の欠如 | `REQUIRED_ELEMENT_DEDUCTION` | 0.3 | §3.2 手具操作要求要素の未実施1つにつき（§3.5.6.3） |
-| 必須要素の欠如 | `MISSING_ELEMENT_DEDUCTION` | 0.3 | 投げタン・つなぎ技・タンブリング本数の不足（各） |
+| 必須要素の欠如 | `MISSING_ELEMENT_DEDUCTION` | 0.3 | タンブリング本数の不足（投げタンは手具別必須要素で、つなぎ技は欠点テーブルの細目で引く） |
 | 違反・欠如 | `VIOLATION_DEDUCTION` | 0.3 | 開始/終了/音楽違反・徒手系基礎要素群欠如の各該当（§3.5.6.3） |
 | 芸術と多様性の欠点 | `ART_DEDUCTION_ITEMS` | 0〜各項目の上限 | §3.5.6.4 の欠点テーブル（審判の主観評価・手入力） |
 | 深い運動の不足 | `DEEP_MOTION_DEDUCTION` | 0.1 | 基本徒手から判定。上半身／下半身の深い運動1部位につき |
-| 手具操作チェックの未実施 | `HAND_OP_CHECK_DEDUCTION` | 0.1 | 2部位以上を通る操作／特性を生かした操作の各 |
-| 身体を離れる手具操作の不足 | `OFF_BODY_DEDUCTION_STEP` | 0.1 | `OFF_BODY_REQUIRED_COUNT`（4回）に対し不足1回につき |
+| 手具操作の細目の不足 | `HAND_OP_CHECK_DEDUCTION` / `HAND_OP_CHECK_MAX` | 0.1／細目ごと0.2まで | `HAND_OP_CHECKS` の `required` 回に足りない1回につき（`handOpCheckDeduction`） |
+| 投げ以外の手離し操作の不足 | `OFF_BODY_DEDUCTION_STEP` | 0.05 | `OFF_BODY_REQUIRED_COUNT`（4回）に対し不足1回につき（2026年度研修資料） |
 
 `ART_DEDUCTION_ITEMS` は §3.5.6.4 の欠点テーブルと1対1（`id` / `group` / `name` / `max` / `note`）。
 値は `clampArtDeduction(id, v)` で 0〜`max`（0.1刻み）に丸め、合計を `ScoreResult.artDeduction`、
@@ -308,9 +310,15 @@ UIのプルダウンは見出し（`optgroup`）で分類する。タンブリ�
 
 **自動判定の減点が属する項目は手入力と合わせて上限で頭打ちにする**（§7.4.1 の機械化と §3.5.6.4 の整合）：
 深い運動（`deepMotionDeduction`）＋柔軟（`flexDeduction`）は「徒手系の種類・組み合わせの多様性」、
-手具操作の多様性チェック（`handOpDeduction`、身体を離れる操作を含む）は「さまざまな操作」に属する。
-`ScoreResult.artItemTotals` が項目ごとの手入力・自動・合計（上限1.00）を返し、上限を超えた分は
+手具操作の多様性チェック（`handOpDeduction`、手離しを含む）は「さまざまな操作」、
+宙返りの連続（`saltoChainDeduction`）＋つなぎ技なし（`connectMissingDeduction`）は「転回系の種類・組み合わせの多様性」（0.50）、
+手具操作なし（`noApparatusDeduction`）＋2種類以上の転回中の手具操作（`tumOpKindsDeduction`）は「転回中の操作」（0.50）に属する
+（細目は 2026年度研修資料、`mens-rg-rules.md` の「欠点テーブルの細目」）。
+`ScoreResult.artItemTotals` が項目ごとの手入力・自動・合計を返し、上限を超えた分は
 `artCapExcess` として A減点から戻す（`artCap.test.ts`）。
+**「転回中の操作」だけは足し算ではない**：前の細目「転回中の手具操作に欠ける（0〜0.40）」は手具操作なしの自動判定と
+手入力（自動計算ボタン＝操作した割合）が同じものを測るので、**大きいほう**を1つの値にして0.40で止め、
+そこに2種類未満の0.1を足して0.50で止める。
 
 **ジュニアは「独創性の高い内容と表現」を既定で上限まで引く**（`JUNIOR_MAX_ART_ITEMS` /
 `withJuniorArtDefaults`）。ジュニアの水準では一部のトップクラスしか達成できないため。
@@ -327,7 +335,8 @@ UIのプルダウンは見出し（`optgroup`）で分類する。タンブリ�
 **「転回系の種類・組み合わせの多様性」（`tumVariety`、上限0.50）は裏で自動計算する**（`tumblingVariety`）。
 上級者が必須要素をすべて満たす構成では、ロンダート等のA難度を含めて9〜11個の転回が入り、A難度を除くと
 **6〜8個の宙返り**になる。それが全部違う技なら減点なしで、**同じ技を繰り返したぶん**
-（`repeats`＝実施数−種類数）1つにつき `TUM_VARIETY_DEDUCTION_STEP`（0.1）を引く（上限0.50）。
+（`repeats`＝実施数−種類数）1つにつき `TUM_VARIETY_DEDUCTION_STEP`（0.1）を引く（細目「転回系の種類に欠ける」の上限
+`TUM_VARIETY_SUBITEM_MAX` 0.2。項目の0.50は宙返りの連続・つなぎの自動判定と合わせた枠）。
 A難度の転回技（ロンダート・バク転・側転）は数えず、徒手動作として入れた転回技も数えない。
 ひねり・姿勢が違えば別の技（`skillId` が違う）として数える。
 自動計算した値は `ScoreResult.tumVariety`（`total` / `distinct` / `repeats` / `deduction`）として返すだけで、
@@ -376,7 +385,8 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 区切らず、従来どおり1つの塊のまま評価する。つなぎ技（ロンダート・バク転・ハンドスプリング）は
 転回技なので区切らない。
 
-- 投げなし → `tumbling` ユニット（`calcTumblingDifficulty` で格上げ算出）
+- 投げなし → `tumbling` ユニット（`calcTumblingDifficulty` で格上げ算出。**A難度を除いてB難度だけの連続は
+  D（`B_ONLY_CHAIN_MAX`）で頭打ち**、投げの+1はそのあと。§3.6.3 No.7、オーナー 2026-11-23。個人のみ。`bOnlyChain.test.ts`）
 - 投げあり → `throw` ユニット（`max(handDiff, tumblingDiff)` を採用）
   - skill も含む場合は `isThrowTumbling`（投げタン）→ タンブリング枠に計上
 
@@ -459,8 +469,8 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 | `tumCount` | タンブリング3本以上 | `nonDupTumblingCount >= 3` |
 
 各行は `deduction`（不足時のA減点）を持ち、`SeriesCard`／`ScoreSummary` が金額を表示する。
-うち **つなぎ技・タンブリング本数**の不足は `missingElementDeduction`（各 −0.30）として
-A減点に加算する。方向系・連続宙返り・投げ回数は従来どおり固有の減点項目で計上するので二重計上しない。
+うち **タンブリング本数**の不足は `missingElementDeduction`（−0.30）として A減点に加算する。
+**つなぎ技**の不足は欠点テーブルの細目（`connectMissingDeduction` −0.10、2026年度研修資料）。方向系・連続宙返り・投げ回数は従来どおり固有の減点項目で計上するので二重計上しない。
 投げタンの不足も同じ理由で `missingElementDeduction` には入れず、§3.2 手具別必須要素「転回系の投げ受け」の
 −0.30 だけを引く（以前は両方で −0.60 になっていた）。
 
@@ -529,8 +539,11 @@ A減点に加算する。方向系・連続宙返り・投げ回数は従来ど�
 
 **手具操作の多様性（`HAND_OP_CHECKS` ＋ 身体を離れる手具操作）** … §3.5.6.4「さまざまな操作」の機械化。
 
-- 「2部位以上を通る手具操作」「手具の特性を生かした手具操作」……（全手具）チェック式。未実施1つにつき −0.1。
-  **スティックだけ「左手の手具操作」が増える**（`HandOpCheck.only` / `handOpChecksFor(apparatus)`）。
+- 細目ごとに**実施回数**を入れる（`SaveData.handOpCounts`、旧形式の `handOps`＝チェックしたidは減点なしの回数として読む＝
+  `normalizeHandOpCounts`）。`required` 回に足りない1回につき −0.1、細目ごとに0.2まで（`handOpCheckDeduction`）：
+  左右の手具操作のバランス（スティックのみ、2回）・上肢以外での操作（2回）・体の2部位を経過する操作（**ロープ以外**＝`HandOpCheck.except`、2回）・
+  手具の特性（チェック＝1回、−0.1）・転回中の手具操作の種類（2種類、−0.1。`item: "appInTumbling"` で「転回中の操作」に属する）。
+  **スティックだけ「左右の手具操作のバランス」が増える**（`HandOpCheck.only` / `handOpChecksFor(apparatus)`）。
   他の手具では行そのものを出さないが、保存された値は残す。
   これは**必須要素の左投げ左受けとは別軸の評価**（操作そのものを左手で行っているか）なので、
   §3.2 の左投げ左受けが満たされていても、この項目のチェックが自動で立つことはない。
@@ -540,7 +553,7 @@ A減点に加算する。方向系・連続宙返り・投げ回数は従来ど�
   「特性」は手具ごとに違うので、選択中の手具の例を続けて出す（`APPARATUS_CHARACTER_HINTS`：
   スティック＝様々な位置を持てる／クラブ＝二つある／リング＝二つある・体にはめられる・回せる／
   ロープ＝体に巻き付けられる・変形できる）
-- 「身体を離れる手具操作」…… 回数入力。`OFF_BODY_REQUIRED_COUNT`（4回）に足りない1回につき −0.1
+- 「投げ以外の手離し操作」…… 回数入力。`OFF_BODY_REQUIRED_COUNT`（4回）に足りない1回につき −0.05
   （`offBodyShortage()`）。**規則の「プロペラ回旋2回以上」（スティック⑥・クラブ⑤）はこの項目に置き換え、
   全手具で判定する**（`APPARATUS_REQUIRED_ELEMENTS` からプロペラの行は外した）。
   → `mens-rg-rules.md` の §3.2 とは意図的に食い違っている箇所なので、戻さないこと。
