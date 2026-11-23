@@ -97,6 +97,7 @@ import {
   usedSkillIds,
   withSaltoCount,
   type AutoTumblingSpec,
+  endsWithBackTempoBack,
 } from "../autoTumblings";
 import {
   analyzeSeries,
@@ -178,6 +179,10 @@ const noDraws = (over: Partial<TumblingDraws> = {}): TumblingDraws => ({
   twoThrow: false,
   ...over,
 });
+
+/** 後方系→テンポ→後方系の三宙で終わる候補か（伸身でない最後なら後ろ向きでも終われる例外） */
+const tempoTriple = (sp: { saltoIds: string[]; saltoCount: number; pattern: { connect?: boolean }; connectAt?: number }) =>
+  endsWithBackTempoBack(sp.saltoIds, sp.saltoCount, sp.pattern.connect ? (sp.connectAt ?? 1) : null);
 
 describe("入力画面の制約", () => {
   it("どの技もその位置のプルダウンに出る（一般・ジュニア）", () => {
@@ -577,6 +582,8 @@ describe("つなぎ技", () => {
       for (let seed = 0; seed < 30; seed++)
         autoTumblingSpecs({ random: seeded(seed), targetScore, basicLevel: (targetScore ?? 9) < 2 }).forEach(
           (sp) => {
+            // 後方系→テンポ→後方系の三宙は、伸身でなければ後ろ向きに降りても終わってよい（2026-11-20）
+            if (tempoTriple(sp)) return;
             total += 1;
             if (endsFacingBackward(sp.saltoIds[sp.saltoCount - 1])) backward += 1;
           },
@@ -613,6 +620,8 @@ describe("つなぎ技", () => {
     for (let seed = 0; seed < 30; seed++)
       autoTumblingSpecs({ random: seeded(seed) }).forEach((sp) => {
         const last = sp.saltoIds[sp.saltoCount - 1];
+        // 後方系→テンポ→後方系の三宙の例外（2026-11-20）は除く
+        if (tempoTriple(sp)) return;
         expect(canEndChain(last)).toBe(true);
       });
   });

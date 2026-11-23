@@ -376,7 +376,7 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 区切らず、従来どおり1つの塊のまま評価する。つなぎ技（ロンダート・バク転・ハンドスプリング）は
 転回技なので区切らない。
 
-- 投げなし → `tumbling` ユニット（`calcTumblingDifficulty` で格上げ算出）
+- 投げなし → `tumbling` ユニット（`calcTumblingDifficulty` で格上げ算出。**C→つなぎ→C だけは例外で D**＝`isCConnectC`、`cConnectC.test.ts`、オーナー確認 2026-11-21）
 - 投げあり → `throw` ユニット（`max(handDiff, tumblingDiff)` を採用）
   - skill も含む場合は `isThrowTumbling`（投げタン）→ タンブリング枠に計上
 

@@ -51,6 +51,7 @@ import {
   isBackHalfTwistSalto,
   saltoWeights,
   withJuniorBoost,
+  favoredTripleWeight,
 } from "./tumblingWeights";
 import {
   BASIC_LEVEL_MAX_DIFF,
@@ -313,7 +314,9 @@ export function buildTransitions(ctx: TransitionContext): TumblingTransitions {
           // その技を選ぶこと自体が上の形を確定させる技（前方系の半ひねり）
           backLandingForwardWeight(id) *
           // 直前の技との組み合わせで珍しくなる並び（ダイビング前宙→前宙）
-          saltoPairWeight(prevId, id),
+          saltoPairWeight(prevId, id) *
+          // 上級者の三宙でいちばん多い並び（後方伸身1回半ひねり→前宙→側宙）
+          favoredTripleWeight(beforePrevId, prevId, id, target),
       ),
     );
     nextCache.set(key, edges);

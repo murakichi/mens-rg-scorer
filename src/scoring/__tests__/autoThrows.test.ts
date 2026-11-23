@@ -695,7 +695,7 @@ describe("ランダム生成への組み込み", () => {
     // リング・ロープは徒手の多い投げでも手以外で受ける候補が出る
     // ロープは手以外のキャッチが少ないので、何回か引いて確かめる
     const many = (app: ApparatusKey) =>
-      Array.from({ length: 10 }, () => autoThrowSpecs(app)).flat().some(
+      Array.from({ length: 40 }, (_, k) => autoThrowSpecs(app, { random: seeded(k + 1) })).flat().some(
         (sp) =>
           sp.catchStyle.id === NON_HAND_TAG &&
           patternMotions(sp.pattern, sp.cheneCount) > NON_HAND_CATCH_MAX_MOTIONS,
