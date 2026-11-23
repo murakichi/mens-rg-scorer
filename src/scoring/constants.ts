@@ -425,7 +425,7 @@ export const ART_DEDUCTION_ITEMS: ArtDeductionItem[] = [
     name: "徒手系の種類・組み合わせの多様性",
     max: 1.0,
     note: "0.1 / 0.2",
-    tip: "上半身・下半身の深い運動と柔軟の不足は「基本徒手」「徒手系要素」から自動判定して引いている。ここはそれ以外の主観評価ぶんで、自動判定ぶんと合わせてこの項目の上限1.00まで",
+    tip: "上半身・下半身の深い運動と柔軟がまったく無いもの（明確に欠ける、各 −0.2）は「基本徒手」「徒手系要素」から自動判定して引いている。ここはそれ以外（「欠ける −0.1」の判断や、複合的な連続・全身を伸ばす運動）の主観評価ぶんで、自動判定ぶんと合わせてこの項目の上限1.00まで",
   },
   {
     id: "tumVariety",
@@ -569,8 +569,8 @@ export const BASIC_HAND_ELEMENTS: BasicHandElement[] = [
 export const basicHandDef = (id: string): BasicHandElement | undefined =>
   BASIC_HAND_ELEMENTS.find((x) => x.id === id);
 
-/** 深い運動が1部位不足するごとのA減点（§3.5.6.4 徒手系の種類・組み合わせの多様性） */
-export const DEEP_MOTION_DEDUCTION = 0.1;
+/** 深い運動が1部位まったく無いときのA減点（§3.5.6.4 細目：明確に欠ける −0.2。「欠ける −0.1」は手入力。オーナー 2026-11-23） */
+export const DEEP_MOTION_DEDUCTION = 0.2;
 
 /** 入力された基本徒手が満たす深い運動の部位 */
 export function deepMotionParts(ids: string[]): Set<DeepMotionPart> {
@@ -811,8 +811,8 @@ export const FLEX_EQUIVALENT_JUMPS: string[] = ["j8", "j9"];
 
 /** 柔軟性の実施として数える要素か（柔軟の3つ＋反り身の跳躍） */
 export const countsAsFlex = (id: string): boolean => isFlexElement(id) || FLEX_EQUIVALENT_JUMPS.includes(id);
-/** 柔軟を1つも実施していないときのA減点 */
-export const FLEX_ELEMENT_DEDUCTION = 0.1;
+/** 柔軟を1つも実施していないときのA減点（明確に欠ける −0.2。オーナー 2026-11-23） */
+export const FLEX_ELEMENT_DEDUCTION = 0.2;
 export const SOLO_HAND_ELEMENTS: HandElement[] = SOLO_HAND_ELEMENT_GROUPS.flatMap((g) => g.items);
 export const soloHandElementDef = (id: string): HandElement | undefined =>
   SOLO_HAND_ELEMENTS.find((x) => x.id === id);

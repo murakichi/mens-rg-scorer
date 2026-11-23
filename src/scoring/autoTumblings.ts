@@ -324,6 +324,52 @@ function preferLayoutBackHalf(
   return out;
 }
 const BACK_HALF_TUCK_ID = "b_backhalf";
+
+/**
+ * B難度だけで4本以上続く連続（つなぎ技を挟む形も含め、使う `count` 本の宙返り）に、C難度を1つ混ぜる。
+ * B だけの連続は何本続けてもD止まり（`B_ONLY_CHAIN_MAX`）なので、4本目以降は難度にならない。
+ * 置き換える技は遷移表のとおりに前後とつながり、終わり方の決まり（`endsOk`）も満たすものだけ。
+ * 混ぜられなければ、終われるなら3本に縮める。何もしなければ null（乱数も使わない）。
+ */
+function mixCIntoBOnlyChain(
+  ids: string[],
+  count: number,
+  connectIdx: number | null,
+  ctx: {
+    junior: boolean;
+    future: FutureLevel;
+    tr: ReturnType<typeof buildTransitions>;
+    rand: () => number;
+    endsOk: (ids: string[], n: number) => boolean;
+    minCount: number;
+  },
+): { ids: string[]; count: number } | null {
+  const used = ids.slice(0, count);
+  if (used.length < 4) return null;
+  const diff = (id: string) => skillDifficulty(id, ctx.junior, ctx.future);
+  if (!used.every((id) => diff(id) === "B")) return null;
+  const options: { i: number; id: string }[] = [];
+  for (let i = 0; i < used.length; i++) {
+    // つなぎ技の前後は遷移表が別（つなぎ技の選び方に関わる）なので触らない
+    if (connectIdx !== null && (i === connectIdx || i === connectIdx - 1)) continue;
+    const before = i === 0 ? edgeIds(ctx.tr.first) : edgeIds(ctx.tr.next(ids[i - 1], ids[i - 2]));
+    before.forEach((cand) => {
+      if (diff(cand) !== "C" || ids.includes(cand)) return;
+      if (i + 1 < ids.length && !edgeIds(ctx.tr.next(cand, ids[i - 1])).includes(ids[i + 1])) return;
+      const next = [...ids];
+      next[i] = cand;
+      if (ctx.endsOk(next, count)) options.push({ i, id: cand });
+    });
+  }
+  if (options.length > 0) {
+    const pick = options[Math.floor(ctx.rand() * options.length)];
+    const next = [...ids];
+    next[pick.i] = pick.id;
+    return { ids: next, count };
+  }
+  for (let n = Math.max(3, ctx.minCount); n < count; n++) if (ctx.endsOk(ids, n)) return { ids, count: n };
+  return null;
+}
 const BACK_HALF_LAYOUT_ID = "b_backlayhalf";
 
 export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false): Series {
@@ -692,6 +738,20 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       }
       if (!endsOk(end)) continue;
       saltoCount = end;
+      // B難度だけの4連続以上はD止まり（`B_ONLY_CHAIN_MAX`）なので、C難度を1つ混ぜる（オーナー 2026-11-23）。
+      // 混ぜられなければ3本に縮める（B×3でも同じD）。投げタンはDに投げの+1でEになるので触らない
+      const mixed = !pattern.throwCatch && mixCIntoBOnlyChain(saltoIds, saltoCount, pattern.connect ? connectAt : null, {
+        junior,
+        future: opts.future ?? null,
+        tr,
+        rand,
+        endsOk: (list, n) => chainEndsOk(pattern, list, n, connectAt, ends, connectId),
+        minCount: pattern.saltos.min,
+      });
+      if (mixed) {
+        saltoIds = mixed.ids;
+        saltoCount = mixed.count;
+      }
       // 投げタンのキャッチのあとに連続投げを続けるか（投げてから跳ぶ形のほうが多い）
       const secondThrow =
         pattern.throwCatch && apparatus && rand() < chance(pairAfterChance(pattern))

@@ -13,7 +13,7 @@ describe("欠点テーブルの項目上限と自動判定の整合", () => {
     const r = computeScore(routine, "stick");
     const hv = r.artItemTotals.find((t) => t.id === "handVariety")!;
     const av = r.artItemTotals.find((t) => t.id === "appVariety")!;
-    expect(hv.auto).toBeCloseTo(0.3, 5); // 深い運動2部位 0.2 + 柔軟 0.1
+    expect(hv.auto).toBeCloseTo(0.6, 5); // 深い運動2部位まったく無し 0.4 + 柔軟なし 0.2（明確に欠ける）
     // スティック：左右のバランス0.2・上肢以外0.2・2部位0.2・特性0.1 + 手離し4回不足 4×0.05
     expect(av.auto).toBeCloseTo(0.9, 5);
     expect(r.artCapExcess).toBe(0);
@@ -26,9 +26,9 @@ describe("欠点テーブルの項目上限と自動判定の整合", () => {
     const av = r.artItemTotals.find((t) => t.id === "appVariety")!;
     expect(hv.total).toBeCloseTo(1.0, 5);
     expect(av.total).toBeCloseTo(1.0, 5);
-    expect(r.artCapExcess).toBeCloseTo(0.3 + 0.9, 5);
-    // 手入力で足した 2.0 のうち、上限まで残っていた 0.7＋0.1 だけ A減点が増える
-    expect(r.aDeduction - base.aDeduction).toBeCloseTo(0.8, 5);
+    expect(r.artCapExcess).toBeCloseTo(0.6 + 0.9, 5);
+    // 手入力で足した 2.0 のうち、上限まで残っていた 0.4＋0.1 だけ A減点が増える
+    expect(r.aDeduction - base.aDeduction).toBeCloseTo(0.5, 5);
   });
 
   it("上限ちょうどまでは手入力がそのまま効く", () => {

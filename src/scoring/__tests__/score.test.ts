@@ -19,20 +19,20 @@ describe("computeScore — 空の演技（回帰アンカー）", () => {
     expect(r.eScore).toBe(10);
     // 方向系3不足(0.9) + 投げ不足(0.3) + 宙返り連続なし(0.2) + 多様性上限(0.5)
     //  + タンブリング本数(0.3。投げタンは手具別必須要素で計上) + つなぎ技なし(0.1、転回系の多様性の細目)
-    //  + 深い運動2部位不足(0.2) + 柔軟なし(0.1)
+    //  + 深い運動2部位まったく無し(2×0.2) + 柔軟なし(0.2)
     //  + 手具操作の細目（スティック：左右のバランス0.2・上肢以外0.2・2部位0.2・特性0.1）0.7
     //  + 転回中の手具操作が2種類未満(0.1) + 手離し4回不足(4×0.05=0.2)
-    //  + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 4.8
-    expect(r.aDeduction).toBeCloseTo(4.8, 5);
-    expect(r.aScore).toBeCloseTo(5.2, 5);
-    expect(r.grandTotal).toBeCloseTo(15.2, 5);
+    //  + スティック手具別必須要素4項目未実施(4×0.3=1.2) = 5.1
+    expect(r.aDeduction).toBeCloseTo(5.1, 5);
+    expect(r.aScore).toBeCloseTo(4.9, 5);
+    expect(r.grandTotal).toBeCloseTo(14.9, 5);
     expect(r.missing.length).toBeGreaterThan(0);
     expect(r.missingElementDeduction).toBeCloseTo(0.3, 5);
     expect(r.connectMissingDeduction).toBeCloseTo(0.1, 5);
     expect(r.tumOpKindsDeduction).toBeCloseTo(0.1, 5);
     // 手具別必須要素は未実施4項目で −1.2
     expect(r.apparatusElementDeduction).toBeCloseTo(1.2, 5);
-    expect(r.deepMotionDeduction).toBeCloseTo(0.2, 5);
+    expect(r.deepMotionDeduction).toBeCloseTo(0.4, 5);
     expect(r.handOpDeduction).toBeCloseTo(0.9, 5) // 細目0.7 + 手離し4回不足0.2;
   });
 });

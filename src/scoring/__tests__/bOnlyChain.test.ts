@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { calcTumblingDifficulty } from "../analysis";
 import { computeScore } from "../score";
+import { autoTumblingSpecs } from "../autoTumblings";
+import { skillDifficulty } from "../constants";
+import { seededRandom as seeded } from "../probe";
 import type { Item, Series } from "../types";
 
 const S = (...items: Item[]): Series => ({ executionDeduction: 0, items });
@@ -50,5 +53,26 @@ describe("全く同じ形の投げタンは難度に1回だけ（§3.4.4）", ()
     const b = S({ kind: "throw", throwTypes: ["noview"] }, sk("b_front"), sk("b_front"), { kind: "catch", catchTypes: ["noview"] });
     const r = computeScore([a, b], "clubs");
     expect(computeScore([a], "clubs").tumblingScore).toBeCloseTo(r.tumblingScore, 5);
+  });
+});
+
+describe("生成：B難度だけの4連続以上は作らない（C難度を混ぜる）", () => {
+  it("自動のタンブリング候補（投げなし）で、使う宙返りがBだけで4本以上の連続は無い", () => {
+    let fourPlus = 0;
+    let bOnlyFour = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      (["stick", "clubs", "ring", "rope"] as const).forEach((apparatus) => {
+        autoTumblingSpecs({ apparatus, targetScore: 6, random: seeded(seed * 31 + 7) }).forEach((spec) => {
+          // 投げタンは D＋投げの+1 で E になるので対象外（ダイビング前宙(投げ)→側宙 など）
+          if (spec.pattern.throwCatch) return;
+          const used = spec.saltoIds.slice(0, spec.saltoCount);
+          if (used.length < 4) return;
+          fourPlus += 1;
+          if (used.every((id) => skillDifficulty(id) === "B")) bOnlyFour += 1;
+        });
+      });
+    }
+    expect(fourPlus).toBeGreaterThan(0);
+    expect(bOnlyFour).toBe(0);
   });
 });
