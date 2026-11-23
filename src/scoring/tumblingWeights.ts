@@ -815,3 +815,11 @@ export const FRONT_THROW_SIDE_CHANCE: Partial<Record<ApparatusKey, number>> = { 
  * 残りは従来どおり、つなぎの直後の宙返りで投げる。
  */
 export const CONNECT_THROW_EARLY_CHANCE = 0.4;
+
+/**
+ * 後方系→テンポ→後方系の三宙からの**4本目**は上級者だけ（オーナー 2026-11-23）。
+ * 要求する上限がこれ未満では伸ばさない（上限なしは可）。ほかの上級者の形（`THROW_IN_SKILL_MIN_SCORE` など）と同じ 4.0。
+ */
+export const FOURTH_SALTO_MIN_SCORE = 4.0;
+export const fourthSaltoAllowed = (targetScore?: number | null): boolean =>
+  targetScore == null || targetScore >= FOURTH_SALTO_MIN_SCORE;

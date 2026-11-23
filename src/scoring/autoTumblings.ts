@@ -72,6 +72,7 @@ import {
   THROW_THEN_SIDE_OTHER_CHANCE,
   FRONT_THROW_SIDE_CHANCE,
   CONNECT_THROW_EARLY_CHANCE,
+  fourthSaltoAllowed,
   CONNECT_AT_SECOND_CHANCE,
   LAYOUT_AFTER_CONNECT_CHANCE,
   LIMITED_SKILLS,
@@ -698,7 +699,9 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         // 残りは遷移表のとおりに続ける。後方系→テンポ→後方系の三宙は、そこから4本目を実施してよい
         // （4本目は前方系が多い＝後ろ向きに降りる後方系のあとの遷移表のとおり。オーナー 2026-11-20）
         // （宙返りで終えるタンブリングだけ。投げタンは投げる位置・本数の決まりが別にあるので伸ばさない）
-        const fourthOk = (list: string[]) => !pattern.throwCatch && hasBackTempoBack(list, pattern.connect ? connectAt : null);
+        // 4本目は上級者だけ（要求する上限 `FOURTH_SALTO_MIN_SCORE` 以上、上限なしは可。オーナー 2026-11-23）
+        const fourthOk = (list: string[]) =>
+          fourthSaltoAllowed(opts.targetScore) && !pattern.throwCatch && hasBackTempoBack(list, pattern.connect ? connectAt : null);
         while (ids.length < pattern.saltos.max + (fourthOk(ids) ? 1 : 0)) {
           if (!step()) break;
         }
