@@ -87,7 +87,8 @@ export interface AutoThrowPattern {
    * **1つ目の投げ→徒手→2つ目の投げ→キャッチ→徒手→キャッチ**の形（クラブ・リング。二つ投げではなく
    * 2つを別々に投げる）。`chene` の回数は**高難度にするほう**の徒手で、
    *  - `firstHigh`：前半（1つ目と2つ目の投げの間）を3〜4動作、後半は低難度（1動作＋色々な受け方）
-   *  - `secondHigh`：前半は1シェネ、後半（最初のキャッチのあと）を3〜4動作
+   *  - `secondHigh`：前半は0〜1動作（`OVERLAP_FRONT_COUNTS`）、後半（最初のキャッチのあと）を3〜4動作。
+   *    1つ目のキャッチは通常／視野外／（リング）横投げを上半身に入れる（`OVERLAP_FIRST_CATCH_WEIGHTS`）
    * 前半後半のどちらかは必ず高難度で、両方を高くはしない（空中時間が足りない）。
    */
   overlap?: "firstHigh" | "secondHigh";
@@ -178,6 +179,29 @@ export type OverlapLowHalf = keyof typeof OVERLAP_LOW_HALF_WEIGHTS;
 export const OVERLAP_CLOSE_ROLL_CHANCE = 0.5;
 /** そのときの終わりの徒手（転がり または 前転。半々） */
 export const OVERLAP_CLOSE_ROLL_MOTIONS: string[] = ["roll", "fwd_roll"];
+
+/**
+ * `overlap` の `secondHigh` で、前半（1つ目と2つ目の投げの間）の動作数。
+ * 続けて投げる（0動作）のも1動作挟むのもある（オーナー 2026-11-21）。
+ */
+export const OVERLAP_FRONT_COUNTS: number[] = [0, 1];
+
+/**
+ * `overlap` の `firstHigh` で後半を `plain`（ふつうの受け）にするときの、2つのキャッチの間の動作数。
+ * 1つ目を受けてすぐ2つ目を受ける（0動作）のもある（オーナー 2026-11-21）。
+ */
+export const OVERLAP_LOW_PLAIN_COUNTS: number[] = [0, 1];
+
+/**
+ * `overlap` の `secondHigh` で、**1つ目のキャッチ**（2つ目を投げた直後の受け）の型の重み（オーナー 2026-11-21）。
+ *  - plain：通常のキャッチ
+ *  - noView：視野外のキャッチ（最後の受けが視野外なら使わない＝同じ受け方は加点済みになる）
+ *  - ringBody：リングだけ。1つ目を横投げにして、上半身に入れて受ける（`OVERLAP_RING_BODY_KIND`）
+ */
+export const OVERLAP_FIRST_CATCH_WEIGHTS = { plain: 2, noView: 1, ringBody: 1 } as const;
+export type OverlapFirstCatch = keyof typeof OVERLAP_FIRST_CATCH_WEIGHTS;
+/** `ringBody` の手以外の受け方（横投げが前提） */
+export const OVERLAP_RING_BODY_KIND = "upperBody";
 
 /** 後半を低難度にするときの徒手（シェネ以外に前転でもよい）。ふつうは1動作 */
 export const OVERLAP_LOW_MOTIONS: string[] = ["chene", "fwd_roll"];
@@ -296,6 +320,8 @@ export interface AutoThrowStyle {
   reqTypes?: string[];
   /** 技術タグ（noview / nonhand / other / useapp） */
   throwTypes?: string[];
+  /** 手以外の投げの投げ方（`NON_HAND_THROW_KINDS`。スティックの肩に引っ掛けて投げ） */
+  nonHandThrowKind?: string;
   /** 手具を2つ投げるか（キャッチも2つ同時になる） */
   two?: boolean;
   /**
@@ -352,6 +378,15 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   // 増えてきている**（オーナー、2026-11-13）ので、スティックとクラブで作る
   if (canUseNoRotation(apparatus))
     styles.push({ id: NO_ROTATION_TAG, name: "無回転の横投げ", throwTypes: [NO_ROTATION_TAG, SIDE_THROW_TAG] });
+  // スティックの手以外の投げ「肩に引っ掛けて投げ」（オーナー 2026-11-23）。低難度（0〜1動作）の形だけ、
+  // 横投げにはしない（手以外の投げには横投げを付けない）、受けは通常のキャッチ＞背面キャッチ
+  if (apparatus === "stick")
+    styles.push({
+      id: SHOULDER_HOOK_STYLE_ID,
+      name: "肩に引っ掛けて投げ",
+      throwTypes: [NON_HAND_TAG],
+      nonHandThrowKind: SHOULDER_HOOK_KIND,
+    });
   if (apparatus === "stick")
     styles.push({
       id: NO_ROTATION_BACK_SIDE_STYLE_ID,
@@ -381,6 +416,27 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
 
 /** 手具で押さえつけてキャッチ（手具を使ったキャッチ）のid */
 export const CATCH_USE_APPARATUS = "useapp";
+
+/** 手以外の投げか（投げ方idではなくタグで見る。肩に引っ掛けて投げも含む） */
+export const isNonHandThrowStyle = (t: AutoThrowStyle): boolean => (t.throwTypes || []).includes(NON_HAND_TAG);
+
+/** スティックの手以外の投げ「肩に引っ掛けて投げ」の投げ方id（`NON_HAND_THROW_KINDS`）と、生成の投げ方id */
+export const SHOULDER_HOOK_KIND = "shoulderHook";
+export const SHOULDER_HOOK_STYLE_ID = "nonhand+shoulderHook";
+/**
+ * 肩に引っ掛けて投げを**優先して**使う形：低難度（0〜1動作）の最低限の形。
+ * それ以外の形（高難度）にも候補として入れるが確率を下げる。背面投げなどが加点済みで、
+ * Dの要求を満たすのに要るときは評価で選ばれる（オーナー 2026-11-23）
+ */
+export const SHOULDER_HOOK_PATTERNS: string[] = ["minimalChene", "minimalRoll", "minimalNone"];
+/**
+ * 肩に引っ掛けて投げを候補に入れる確率（形と投げ方の組み合わせ1つごと）。背面投げ（視野外の投げ。毎回入る）より低く、
+ * 低難度の形 ＞ 高難度の形
+ */
+export const SHOULDER_HOOK_LOW_CHANCE = 0.5;
+export const SHOULDER_HOOK_HIGH_CHANCE = 0.15;
+/** 肩に引っ掛けて投げの受け方の重み：通常のキャッチ＞背面キャッチ、ほかの受け方はしない */
+export const SHOULDER_HOOK_CATCH_WEIGHTS: Record<string, number> = { normal: 1, noview: 0.5 };
 
 /** その手具で使える受け方（2つ同時キャッチは二つ投げに付くので選択肢には出さない） */
 export function autoCatchStyles(apparatus: ApparatusKey): AutoCatchStyle[] {
@@ -683,6 +739,11 @@ export function catchStyleWeight({
   demandScore?: number | null;
 }): number {
   const has = (tag: string) => catchHasTag(catchStyle, tag);
+  // 肩に引っ掛けて投げは通常のキャッチ＞背面キャッチだけ（前転のあとに背面キャッチはしない）
+  if (throwStyle.id === SHOULDER_HOOK_STYLE_ID) {
+    if (has(NO_VIEW_TAG) && rollFinishShape(pattern)) return 0;
+    return SHOULDER_HOOK_CATCH_WEIGHTS[catchStyle.id] ?? 0;
+  }
   // 無回転の投げは手以外のキャッチ（無回転が要る）のためだけ。ほかの受け方では無回転にしない
   if ((throwStyle.throwTypes || []).includes(NO_ROTATION_TAG) && !has(NON_HAND_TAG)) return 0;
   // スティックの手以外のキャッチは、無回転で投げたときだけ実施する
@@ -794,7 +855,7 @@ export function catchStylesForPattern(
 export const trailThrowStylesAfter = (
   styles: AutoThrowStyle[],
   mainCatch: AutoCatchStyle,
-): AutoThrowStyle[] => styles.filter((t) => t.id !== NON_HAND_TAG && canThrowAfterCatch(mainCatch, t));
+): AutoThrowStyle[] => styles.filter((t) => !isNonHandThrowStyle(t) && canThrowAfterCatch(mainCatch, t));
 
 /**
  * その形で使える投げ方。先に投げ受けを1本置く形（`leadPair`）の本体の投げは
@@ -821,13 +882,13 @@ export function throwStylesForPattern(
   // 二つ投げ→キャッチ→押さえつけてキャッチの形は二つ投げだけ（手具が二つの種目）
   if (pattern.splitCatch) return styles.filter((t) => t.two);
   // 2つを別々に投げる形：二つ投げ（1つの投げ）・手以外の投げ・実施例の無い投げ方は使わない
-  if (pattern.overlap) return styles.filter((t) => !t.two && !t.rare && t.id !== NON_HAND_TAG && !isNoRotationStyle(t));
+  if (pattern.overlap) return styles.filter((t) => !t.two && !t.rare && !isNonHandThrowStyle(t) && !isNoRotationStyle(t));
   // 2つとも空中にある形：2つ目は横投げ（通常の投げに横投げを付ける）。投げ方は1つに絞る
   if (pattern.airPair) return styles.filter((t) => t.id === "normal");
   return pattern.leadPair
     ? styles.filter(
         (t) =>
-          t.id !== NON_HAND_TAG &&
+          !isNonHandThrowStyle(t) &&
           !t.two &&
           // スティックの連続投げの2回目を左手で投げるときは横投げで、背面（視野外）にはしない
           !(LEAD_PAIR_LEFT_HAND_SIDE_APPARATUS.includes(apparatus) && isLeftHandStyle(t) && (t.throwTypes || []).includes(NO_VIEW_TAG)),
@@ -919,6 +980,14 @@ export interface AutoThrowSpec {
   overlapLow?: OverlapLowHalf;
   /** `pattern.overlap === "firstHigh"` のときの、後半の低難度の徒手（`OVERLAP_LOW_MOTIONS` または転がり） */
   lowMotionId?: string;
+  /** `pattern.overlap === "firstHigh"` で後半が `plain` のときの動作数（`OVERLAP_LOW_PLAIN_COUNTS`。未指定は1） */
+  overlapLowCount?: number;
+  /** `pattern.overlap === "secondHigh"` のときの前半の動作数（`OVERLAP_FRONT_COUNTS`。未指定は1） */
+  overlapFrontCount?: number;
+  /** `pattern.overlap` のときの1つ目のキャッチの受け方（未指定は通常のキャッチ） */
+  firstCatchStyle?: AutoCatchStyle;
+  /** そのキャッチの手以外の受け方（`OVERLAP_RING_BODY_KIND`） */
+  firstCatchNonHandKind?: string;
 }
 
 /** 自動生成の内容からシリーズを組み立てる */
@@ -992,14 +1061,20 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
       spec.closeRollId
         ? [mainChene(spec.cheneCount - 1), { kind: "motion", motionId: spec.closeRollId, count: 1 }]
         : [mainChene(spec.cheneCount)];
-    items.push(...(firstHigh ? highItems() : [{ kind: "motion", motionId: CHENE, count: LEAD_THROW_CHENE_COUNT, hands: false } as Item]));
+    const front = spec.overlapFrontCount ?? LEAD_THROW_CHENE_COUNT;
+    const lowFront: Item[] = front > 0 ? [{ kind: "motion", motionId: CHENE, count: front, hands: false }] : [];
+    items.push(...(firstHigh ? highItems() : lowFront));
     items.push({
       kind: "throw",
       ...(throwStyle.reqTypes ? { reqTypes: [...throwStyle.reqTypes] } : {}),
       ...(throwStyle.throwTypes ? { throwTypes: [...throwStyle.throwTypes] } : {}),
     });
-    items.push({ kind: "catch" });
-    items.push(...(firstHigh ? [lowMotion()] : highItems()));
+    items.push({
+      kind: "catch",
+      ...(spec.firstCatchStyle?.catchTypes ? { catchTypes: [...spec.firstCatchStyle.catchTypes] } : {}),
+      ...(spec.firstCatchNonHandKind ? { nonHandKind: spec.firstCatchNonHandKind } : {}),
+    });
+    items.push(...(firstHigh ? (spec.overlapLowCount === 0 ? [] : [lowMotion()]) : highItems()));
     items.push({
       kind: "catch",
       ...(catchStyle.catchTypes ? { catchTypes: [...catchStyle.catchTypes] } : {}),
@@ -1010,6 +1085,7 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
     kind: "throw",
     ...(throwStyle.reqTypes ? { reqTypes: [...throwStyle.reqTypes] } : {}),
     ...(throwStyle.throwTypes ? { throwTypes: [...throwStyle.throwTypes] } : {}),
+    ...(throwStyle.nonHandThrowKind ? { nonHandThrowKind: throwStyle.nonHandThrowKind } : {}),
   });
   if (pattern.splitCatch) {
     // 低いほうを先に（通常のキャッチ）、高いほう（横投げ）を押さえつけてキャッチ。
@@ -1132,7 +1208,13 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       .flatMap((pattern) =>
         throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
       )
-      .filter(({ throwStyle }) => !throwStyle.rare || rand() < rareChance),
+      .filter(({ throwStyle }) => !throwStyle.rare || rand() < rareChance)
+      // 肩に引っ掛けて投げは背面投げより少なく、低難度の形を優先（高難度の形はさらに低い確率で）
+      .filter(
+        ({ pattern, throwStyle }) =>
+          throwStyle.id !== SHOULDER_HOOK_STYLE_ID ||
+          rand() < chance(SHOULDER_HOOK_PATTERNS.includes(pattern.id) ? SHOULDER_HOOK_LOW_CHANCE : SHOULDER_HOOK_HIGH_CHANCE),
+      ),
     rand,
   );
   const limit = Math.max(0, opts.limit ?? combos.length);
@@ -1172,12 +1254,13 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     pickWeighted(autoHandsVariants(), rand, (h) => handsWeight(h) * cheneCountWeight(h, cheneCount), exp);
   // 先に足す投げ受けの投げ方。二つ投げは2つ同時キャッチで受ける形になるので使わない
   const nextLeadThrow = cycler(
-    throwStyles.filter((t) => !t.two && !t.rare && !isNoRotationStyle(t)),
+    // 肩に引っ掛けて投げは最低限の形（`SHOULDER_HOOK_PATTERNS`）の本体だけで使う
+    throwStyles.filter((t) => !t.two && !t.rare && !isNoRotationStyle(t) && t.id !== SHOULDER_HOOK_STYLE_ID),
     rand,
   );
   // 2つを別々に投げる形の1つ目の投げ（手以外の投げは続けて投げられないので使わない）
   const firstThrowPool = throwStyles.filter(
-    (t) => !t.two && !t.rare && t.id !== NON_HAND_TAG && !isNoRotationStyle(t),
+    (t) => !t.two && !t.rare && !isNonHandThrowStyle(t) && !isNoRotationStyle(t),
   );
   const nextFirstThrow = cycler(firstThrowPool, rand);
   // あとに足す投げ受けの投げ方（連続投げの2回目）。使える投げ方が直前の受け方で変わるので
@@ -1243,13 +1326,36 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       const closeProp = closeRollId ? { closeRollId } : {};
       if (pattern.overlap === "secondHigh") {
         const catchStyle = nextCatchFor(pattern, throwStyle, cheneCount);
+        const overlapFrontCount = OVERLAP_FRONT_COUNTS[Math.min(OVERLAP_FRONT_COUNTS.length - 1, Math.floor(rand() * OVERLAP_FRONT_COUNTS.length))];
+        // 1つ目のキャッチ：通常／視野外／リングは横投げを上半身に入れる。
+        // 最後の受けと同じ技術（視野外・手以外）は重ねない（同じ受け方は加点済みになり得る）
+        const all = autoCatchStyles(apparatus);
+        const noViewCatch = all.find((c) => c.id === NO_VIEW_TAG);
+        const nonHandCatch = all.find((c) => c.id === NON_HAND_TAG);
+        const sideBase = firstThrowPool.find((t) => t.id === "normal");
+        const firstKinds = (Object.keys(OVERLAP_FIRST_CATCH_WEIGHTS) as OverlapFirstCatch[]).filter(
+          (k) =>
+            (k !== "noView" || (!!noViewCatch && !catchHasTag(catchStyle, NO_VIEW_TAG))) &&
+            (k !== "ringBody" ||
+              (apparatus === "ring" &&
+                !!nonHandCatch &&
+                !!sideBase &&
+                canUseSideThrow(apparatus) &&
+                !catchHasTag(catchStyle, NON_HAND_TAG))),
+        );
+        const firstKind = pickWeighted(firstKinds, rand, (k) => OVERLAP_FIRST_CATCH_WEIGHTS[k], () => 1);
+        const ringBody = firstKind === "ringBody" && !!sideBase && !!nonHandCatch;
         return {
           pattern,
           cheneCount,
           hands,
           // 転がり・前転のあとに背面（視野外）キャッチはしない
           ...(catchHasTag(catchStyle, NO_VIEW_TAG) ? {} : closeProp),
-          firstThrowStyle: nextFirstThrow(),
+          overlapFrontCount,
+          ...(firstKind === "noView" && noViewCatch ? { firstCatchStyle: noViewCatch } : {}),
+          ...(ringBody ? { firstCatchStyle: nonHandCatch, firstCatchNonHandKind: OVERLAP_RING_BODY_KIND } : {}),
+          // リングで上半身に入れて受けるときは1つ目を横投げにする
+          firstThrowStyle: ringBody ? withSideThrow(sideBase) : nextFirstThrow(),
           // 2つを別々に投げる形の2つ目は連続投げの2回目
           throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, cheneCount, rand, chance, true),
           catchStyle,
@@ -1299,16 +1405,18 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
           lowMotionId: ROLL,
         };
       }
-      const catchStyle = nextCatchFor(pattern, throwStyle, 1);
+      const overlapLowCount = OVERLAP_LOW_PLAIN_COUNTS[Math.min(OVERLAP_LOW_PLAIN_COUNTS.length - 1, Math.floor(rand() * OVERLAP_LOW_PLAIN_COUNTS.length))];
+      const catchStyle = nextCatchFor(pattern, throwStyle, overlapLowCount);
       return {
         pattern,
         cheneCount,
         hands,
         ...closeProp,
         firstThrowStyle: nextFirstThrow(),
-        throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, 1, rand, chance, true),
+        throwStyle: maybeSideThrow(apparatus, throwStyle, catchStyle, overlapLowCount, rand, chance, true),
         catchStyle,
         overlapLow: "plain",
+        overlapLowCount,
         lowMotionId: catchHasTag(catchStyle, NO_VIEW_TAG) ? CHENE : pickLowMotion(),
       };
     }

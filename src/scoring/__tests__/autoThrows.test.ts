@@ -42,7 +42,7 @@ import {
   CATCH_USE_APPARATUS,
   type AutoThrowSpec,
 } from "../autoThrows";
-import { analyzeSeries, checkApparatusFlow } from "../analysis";
+import { analyzeSeries, checkApparatusFlow, sideThrowCatchFlags } from "../analysis";
 import { DEFAULT_MAX_AUTO_THROWS, generateRoutine } from "../generate";
 import { computeScore } from "../score";
 import { newTemplateId, type SeriesTemplate, type TemplateApparatus } from "../templates";
@@ -695,7 +695,7 @@ describe("ランダム生成への組み込み", () => {
     // リング・ロープは徒手の多い投げでも手以外で受ける候補が出る
     // ロープは手以外のキャッチが少ないので、何回か引いて確かめる
     const many = (app: ApparatusKey) =>
-      Array.from({ length: 10 }, () => autoThrowSpecs(app)).flat().some(
+      Array.from({ length: 40 }, (_, k) => autoThrowSpecs(app, { random: seeded(k + 1) })).flat().some(
         (sp) =>
           sp.catchStyle.id === NON_HAND_TAG &&
           patternMotions(sp.pattern, sp.cheneCount) > NON_HAND_CATCH_MAX_MOTIONS,
@@ -952,10 +952,13 @@ describe("2つを別々に投げる形（投げ→徒手→投げ→キャッチ
         // 高難度のほうを「シェネ＋転がり／前転」で終える形では、そのぶん徒手が1つ増える
         const extra = spec.closeRollId ? 1 : 0;
         const kinds = series.items.map((i) => i.kind);
+        // 低難度のほうは0動作（続けて投げる／続けて受ける）のこともある
+        const front = spec.overlapFrontCount === 0 ? [] : ["motion"];
+        const low = spec.overlapLowCount === 0 ? [] : ["motion"];
         expect(kinds).toEqual(
           spec.pattern.overlap === "firstHigh"
-            ? ["throw", "motion", "throw", "catch", "motion", "catch"]
-            : ["throw", "motion", "throw", "catch", ...Array(1 + extra).fill("motion"), "catch"],
+            ? ["throw", "motion", "throw", "catch", ...low, "catch"]
+            : ["throw", ...front, "throw", "catch", ...Array(1 + extra).fill("motion"), "catch"],
         );
         expect(checkApparatusFlow(series, apparatus)).toEqual([]);
         const motions = (from: number, to: number) => series.items.slice(from, to).reduce((n, i) => n + motionCount(i), 0);
@@ -1005,7 +1008,7 @@ describe("2つを別々に投げる形（投げ→徒手→投げ→キャッチ
     const seen = new Set<string>();
     (["clubs", "ring"] as const).forEach((apparatus) => {
       overlapSpecs(apparatus, 120)
-        .filter((s) => s.pattern.overlap === "firstHigh")
+        .filter((s) => s.pattern.overlap === "firstHigh" && s.overlapLowCount !== 0)
         .forEach((spec) => {
           const items = buildAutoThrowSeries(spec).items;
           // 前半が「シェネ＋転がり／前転」で終わる形では前半の徒手が1つ増えるので、位置は後ろから数える
@@ -1040,10 +1043,109 @@ describe("2つを別々に投げる形（投げ→徒手→投げ→キャッチ
   });
 
   it("採点では2つの徒手ユニットになり、高難度のほうの徒手が難度を決める", () => {
-    const spec = overlapSpecs("clubs", 60).find((s) => s.pattern.overlap === "firstHigh")!;
+    const spec = overlapSpecs("clubs", 60).find((s) => s.pattern.overlap === "firstHigh" && s.overlapLowCount !== 0)!;
     const units = analyzeSeries(buildAutoThrowSeries(spec)).units;
     expect(units).toHaveLength(2);
     expect(units[0].throwCount).toBe(2);
     expect(DIFF_VALUE[units[0].finalDiff]).toBeGreaterThan(DIFF_VALUE[units[1].finalDiff]);
+  });
+
+  // オーナー 2026-11-21：投げ→（0〜1動作）→投げ→キャッチ→n動作→キャッチ。1つ目のキャッチは視野外でもよく、
+  // リングは1つ目を横投げにして上半身に入れて受けてもよい。投げ→高難度→投げ→キャッチ→（0〜1動作）→キャッチも可
+  it("後半が高難度の形：前半は0動作（続けて投げる）も1動作もある", () => {
+    (["clubs", "ring"] as const).forEach((apparatus) => {
+      const fronts = new Set(
+        overlapSpecs(apparatus, 120)
+          .filter((s) => s.pattern.overlap === "secondHigh")
+          .map((s) => s.overlapFrontCount),
+      );
+      expect(fronts).toEqual(new Set([0, 1]));
+    });
+  });
+
+  it("前半が高難度の形：2つのキャッチの間が0動作（続けて受ける）もある", () => {
+    (["clubs", "ring"] as const).forEach((apparatus) => {
+      const spec = overlapSpecs(apparatus, 120).find((s) => s.pattern.overlap === "firstHigh" && s.overlapLowCount === 0);
+      expect(spec).toBeDefined();
+      const items = buildAutoThrowSeries(spec!).items;
+      expect(items.slice(-2).map((i) => i.kind)).toEqual(["catch", "catch"]);
+      expect(checkApparatusFlow(buildAutoThrowSeries(spec!), apparatus)).toEqual([]);
+    });
+  });
+
+  it("後半が高難度の形の1つ目のキャッチ：視野外（クラブ・リング）／リングは横投げ→上半身に入れる", () => {
+    const seen = new Set<string>();
+    (["clubs", "ring"] as const).forEach((apparatus) =>
+      overlapSpecs(apparatus, 200)
+        .filter((s) => s.pattern.overlap === "secondHigh")
+        .forEach((spec) => {
+          const items = buildAutoThrowSeries(spec).items;
+          const catches = items.filter((i) => i.kind === "catch") as Extract<Item, { kind: "catch" }>[];
+          const firstThrow = items[0] as Extract<Item, { kind: "throw" }>;
+          const [c1, c2] = catches;
+          const t1 = c1.catchTypes ?? [];
+          if (t1.includes("noview")) {
+            // 最後の受けと同じ視野外は重ねない
+            expect(c2.catchTypes ?? []).not.toContain("noview");
+            seen.add(`${apparatus}:noview`);
+          }
+          if (t1.includes("nonhand")) {
+            expect(apparatus).toBe("ring");
+            expect(c1.nonHandKind).toBe("upperBody");
+            expect(firstThrow.throwTypes).toContain("side");
+            expect(c2.catchTypes ?? []).not.toContain("nonhand");
+            seen.add(`${apparatus}:body`);
+          }
+          if (t1.length === 0) seen.add(`${apparatus}:plain`);
+          expect(checkApparatusFlow({ executionDeduction: 0, items }, apparatus)).toEqual([]);
+        }),
+    );
+    ["clubs:plain", "clubs:noview", "ring:plain", "ring:noview", "ring:body"].forEach((k) => expect(seen).toContain(k));
+    expect(seen).not.toContain("clubs:body");
+  });
+
+  it("後半が高難度の形：2つ目の投げを横投げにして、最後を手具を使ったキャッチで受ける形が出る（オーナー 2026-11-21）", () => {
+    (["clubs", "ring"] as const).forEach((apparatus) => {
+      const hit = overlapSpecs(apparatus, 120)
+        .filter((s) => s.pattern.overlap === "secondHigh")
+        .some((spec) => {
+          const items = buildAutoThrowSeries(spec).items;
+          const throws = items.filter((i) => i.kind === "throw") as Extract<Item, { kind: "throw" }>[];
+          const last = items[items.length - 1] as Extract<Item, { kind: "catch" }>;
+          return (throws[1].throwTypes ?? []).includes("side") && (last.catchTypes ?? []).includes("useapp");
+        });
+      expect(hit).toBe(true);
+    });
+  });
+
+  it("採点：投げ→投げ→視野外キャッチ→3動作→キャッチは、視野外の技術加点と次々に投げる加点が付く", () => {
+    const series: Series = {
+      executionDeduction: 0,
+      items: [
+        { kind: "throw" },
+        { kind: "throw" },
+        { kind: "catch", catchTypes: ["noview"] },
+        { kind: "motion", motionId: "chene", count: 3, hands: false },
+        { kind: "catch" },
+      ],
+    };
+    const r = computeScore([series], "clubs");
+    expect(r.seriesBonus).toBeCloseTo(0.1);
+    expect(r.techniqueBonus).toBeCloseTo(0.1);
+  });
+
+  it("採点：リングの横投げを上半身に入れて受けるのは、エディタでも選べる（横投げ前提の受け方）", () => {
+    const items: Item[] = [
+      { kind: "throw", throwTypes: ["side"] },
+      { kind: "motion", motionId: "chene", count: 1, hands: false },
+      { kind: "throw" },
+      { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "upperBody" },
+      { kind: "motion", motionId: "chene", count: 3, hands: false },
+      { kind: "catch" },
+    ];
+    expect(sideThrowCatchFlags(items)[3]).toBe(true);
+    const r = computeScore([{ executionDeduction: 0, items }], "ring");
+    expect(r.techniqueBonus).toBeCloseTo(0.1);
+    expect(r.seriesBonus).toBeCloseTo(0.1);
   });
 });

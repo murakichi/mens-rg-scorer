@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { autoTumblingSpecs, hasBackTempoBack } from "../autoTumblings";
+import { AUTO_TUMBLING_PATTERNS, autoTumblingSpecs, chainEndsOk, endsWithBackTempoBack, hasBackTempoBack } from "../autoTumblings";
 import { canEndWith } from "../tumblingTransitions";
+import { FOURTH_SALTO_MIN_SCORE, fourthSaltoAllowed } from "../tumblingWeights";
 import { isTempoSalto } from "../tumblingChain";
 import { isBackwardSalto } from "../constants";
 import { seededRandom } from "../probe";
@@ -40,4 +41,39 @@ describe("後方系→テンポ→後方系の三宙と4本目", () => {
     expect(four).toBeGreaterThan(0);
     expect(forward / four).toBeGreaterThan(0.7);
   }, 120_000);
+
+  it("4本目は上級者だけ：要求する上限が4.0未満では伸ばさない（2026-11-23）", () => {
+    expect(fourthSaltoAllowed(3.9)).toBe(false);
+    expect(fourthSaltoAllowed(FOURTH_SALTO_MIN_SCORE)).toBe(true);
+    expect(fourthSaltoAllowed(null)).toBe(true);
+    [2.0, 3.0, 3.5].forEach((targetScore) => {
+      for (let seed = 1; seed <= 60; seed++)
+        autoTumblingSpecs({ random: seededRandom(seed), targetScore }).forEach((sp) =>
+          expect(sp.saltoCount).toBeLessThanOrEqual(sp.pattern.saltos.max),
+        );
+    });
+  }, 120_000);
+  it("三宙の最後が伸身でない宙返りなら、後ろ向きに降りてもそのまま終わってよい（2026-11-20）", () => {
+    const chain = AUTO_TUMBLING_PATTERNS.find((p) => p.id === "chain")!;
+    const draws = { backwardEnd: false, rareEnd: false, layoutAfterConnect: true, backToForwardThrow: false };
+    // 後方宙返り2回ひねり（抱え込み・後ろ向きに降りる）で終わる三宙
+    const ids = ["b_backlayout", "b_tempo", "d_back2twist"];
+    expect(endsWithBackTempoBack(ids, 3)).toBe(true);
+    expect(chainEndsOk(chain, ids, 3, 1, draws)).toBe(true);
+    // 三宙でなければ、後ろ向きに降りる宙返りで終わるのは今までどおり抽選しだい
+    expect(chainEndsOk(chain, ["d_back2twist"], 1, 1, draws)).toBe(false);
+    // 最後が伸身なら稀な終わり方のまま
+    expect(chainEndsOk(chain, ["b_backlayout", "b_tempo", "d_backlay2twist"], 3, 1, draws)).toBe(false);
+  });
+});
+
+describe("上級者の三宙：後方伸身1回半ひねり→前宙→側宙がいちばん多い（2026-11-20）", () => {
+  it("前宙のあとの側宙を、後方伸身1回半ひねり→前宙のときだけ選ばれやすくする（上限4.4未満には効かせない）", async () => {
+    const { favoredTripleWeight } = await import("../tumblingWeights");
+    expect(favoredTripleWeight("c_backlay15", "b_front", "b_sidesalto")).toBeGreaterThan(1);
+    expect(favoredTripleWeight("c_backlay1full", "b_front", "b_sidesalto")).toBe(1);
+    expect(favoredTripleWeight("c_backlay15", "b_front", "b_kirimomi")).toBe(1);
+    expect(favoredTripleWeight("c_backlay15", "b_front", "b_sidesalto", 3.0)).toBe(1);
+    expect(favoredTripleWeight("c_backlay15", "b_front", "b_sidesalto", 4.5)).toBeGreaterThan(1);
+  });
 });

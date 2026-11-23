@@ -177,6 +177,24 @@ export const nonHandKindOf = (apparatus: ApparatusKey, id: string | undefined): 
   id ? NON_HAND_CATCH_KINDS[apparatus].find((k) => k.id === id) : undefined;
 
 /**
+ * 手以外の投げの投げ方（手具ごと）。手以外の投げにチェックを入れたときのプルダウン（投げアイテムだけ）。
+ * 技術加点は手以外の投げの0.1のままで、投げ方の種類としては投げ方ごとに別に数える（受け方と同じ扱い）。
+ * スティックの「肩に引っ掛けて投げ」（オーナー 2026-11-23）。
+ */
+export interface NonHandThrowKind {
+  id: string;
+  name: string;
+}
+export const NON_HAND_THROW_KINDS: Record<ApparatusKey, NonHandThrowKind[]> = {
+  stick: [{ id: "shoulderHook", name: "肩に引っ掛けて投げ" }],
+  clubs: [],
+  rope: [],
+  ring: [],
+};
+export const nonHandThrowKindOf = (apparatus: ApparatusKey, id: string | undefined): NonHandThrowKind | undefined =>
+  id ? NON_HAND_THROW_KINDS[apparatus].find((k) => k.id === id) : undefined;
+
+/**
  * 視野外のキャッチを伴う手以外の受け方（首と肩に挟む＝頭の後ろで受ける）。
  * 選ぶとエディタは視野外のキャッチにチェックを入れて変えられなくし、生成も視野外を付ける（オーナー 2026-11-16）。
  */

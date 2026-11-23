@@ -30,7 +30,27 @@ describe("リングの横投げ前提の受け方（2026-11-18）", () => {
       { kind: "catch" },
       { kind: "catch" },
     ];
-    expect(sideThrowCatchFlags(s)).toEqual([false, true, false, false, false, false, true, false]);
+    // 1つ目を通常のキャッチで受けたら、残る（横投げの）手具の受けでも出す（2026-11-21。以前は false）
+    expect(sideThrowCatchFlags(s)).toEqual([false, true, false, false, false, false, true, true]);
+  });
+  it("sideThrowCatchFlags：横投げ前提の受け方で受けたら横投げの手具を受けたとみなす（2026-11-21）", () => {
+    // 横投げ（1つ目）→投げ→上半身に入れる（横投げの手具）→通常キャッチ（横投げでない手具）
+    const s: Series["items"] = [
+      { kind: "throw", throwTypes: ["side"] },
+      { kind: "throw" },
+      { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "upperBody" },
+      { kind: "motion", motionId: "chene", count: 3, hands: false },
+      { kind: "catch" },
+    ];
+    expect(sideThrowCatchFlags(s)).toEqual([false, false, true, false, false]);
+    // 投げ→横投げ→通常キャッチ→上半身に入れる（airPair の形）：2つ目の受けで横投げ前提を選べる
+    const t: Series["items"] = [
+      { kind: "throw" },
+      { kind: "throw", throwTypes: ["side"] },
+      { kind: "catch" },
+      { kind: "catch", catchTypes: ["nonhand"], nonHandKind: "upperBody" },
+    ];
+    expect(sideThrowCatchFlags(t)).toEqual([false, false, true, true]);
   });
 });
 

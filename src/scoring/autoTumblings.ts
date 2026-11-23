@@ -62,9 +62,17 @@ import {
   isTempoSalto,
   isBackLayoutSalto,
   RARE_CHAIN_END_SKILLS,
+  isForwardSalto,
+  endsFacingBackward,
+  endsChain,
 } from "./tumblingChain";
 import {
   BACK_TO_FORWARD_THROW_CHANCE,
+  FRONT_SALTO_ID,
+  THROW_THEN_SIDE_OTHER_CHANCE,
+  FRONT_THROW_SIDE_CHANCE,
+  CONNECT_THROW_EARLY_CHANCE,
+  fourthSaltoAllowed,
   CONNECT_AT_SECOND_CHANCE,
   LAYOUT_AFTER_CONNECT_CHANCE,
   LIMITED_SKILLS,
@@ -121,6 +129,19 @@ import type { ApparatusKey, FutureLevel, Item, Series } from "./types";
 export * from "./tumblingPatterns";
 export * from "./tumblingChain";
 export * from "./tumblingWeights";
+
+/**
+ * 技の最中に投げたあとに側宙／転宙を続ける形（`throwThenSide`）で、投げてよい技か。
+ *  - diving：ダイビング前宙（従来どおり。続きは側宙・転宙）
+ *  - front：前宙（続きはその技のあとに続けられるもの）
+ *  - otherNoView：前宙以外の前方系（後ろ向きに降りる前宙半ひねり・あとに続かない技を除く）。投げは視野外、前宙より少なく
+ */
+export const throwThenSideKind = (id: string): "diving" | "front" | "otherNoView" | null => {
+  if (id === DIVING_FRONT_SALTO_ID) return "diving";
+  if (id === FRONT_SALTO_ID) return "front";
+  if (isForwardSalto(id) && skillDef(id)?.isSalto && !endsFacingBackward(id) && !endsChain(id)) return "otherNoView";
+  return null;
+};
 export * from "./tumblingShape";
 export * from "./tumblingTransitions";
 
@@ -166,6 +187,11 @@ export interface TumblingDraws {
   nonHandSide?: boolean;
   /** 技の最中の投げに手具を使った投げを付けるか（`THROW_IN_SKILL_USE_APPARATUS_CHANCE`。クラブだけ） */
   useAppThrow?: boolean;
+  /**
+   * 前宙・ダイビング前宙の最中の投げを、受け方と関係なく**横投げ**にするか（`FRONT_THROW_SIDE_CHANCE`。スティックだけ。
+   * 実施例あり、通常の投げより少なく。オーナー 2026-11-23）
+   */
+  frontSide?: boolean;
   /** 投げタンの投げを二つ投げにするか（クラブ・リングで、投げてから跳ぶ形だけ） */
   twoThrow: boolean;
   /**
@@ -408,10 +434,17 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       // 直前の技は並びから取る（つなぎ技が間に入るとそこで向きが変わる）
       const types = throwInSkillTypes(prevSkillId(items, items.length), id);
       if (types) next.throwTypes = [...types];
+      // 前宙以外の前方系で投げて側宙／転宙に続ける形は視野外の投げ（オーナー 2026-11-23）
+      if (pattern.throwThenSideNoView && !(next.throwTypes || []).includes(NO_VIEW_TAG))
+        next.throwTypes = [...(next.throwTypes || []), NO_VIEW_TAG];
       // 手具を使った投げ（低確率。視野外の投げには付けない）
       // （手具を使った投げと横投げはセットではない。横投げは押さえつけて受けるときの抽選で別に付く）
       if (draws.useAppThrow && !(next.throwTypes || []).includes(NO_VIEW_TAG))
         next.throwTypes = [...(next.throwTypes || []), USE_APPARATUS_TAG];
+      // 前宙・ダイビング前宙の最中の横投げ（スティック。視野外の投げとは組まない。
+      // 前宙でできる投げはだいたいダイビング前宙でもできる — オーナー 2026-11-23）
+      if (draws.frontSide && (id === FRONT_SALTO_ID || id === DIVING_FRONT_SALTO_ID) && !(next.throwTypes || []).some((t) => t === NO_VIEW_TAG || t === SIDE_THROW_TAG))
+        next.throwTypes = [...(next.throwTypes || []), SIDE_THROW_TAG];
     }
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
     items.push(next);
@@ -575,6 +608,14 @@ export function hasBackTempoBack(ids: string[], connectAt: number | null = null)
   return false;
 }
 
+/** 最初の n 本が「後方系→テンポ→後方系」の三宙で終わっているか（つなぎ技をまたがない） */
+export function endsWithBackTempoBack(ids: string[], n: number, connectAt: number | null = null): boolean {
+  if (n < 3) return false;
+  const i = n - 3;
+  if (connectAt !== null && i < connectAt && connectAt <= i + 2) return false;
+  return hasBackTempoBack(ids.slice(i, n));
+}
+
 export function chainEndsOk(
   pattern: AutoTumblingPattern,
   saltoIds: string[],
@@ -584,6 +625,15 @@ export function chainEndsOk(
   connectId = "",
 ): boolean {
   const last = saltoIds[n - 1];
+  // 後方系→テンポ→後方系の三宙は、最後が伸身でない宙返りならそのまま終わってよい
+  // （後ろ向きに降りる宙返りでも。オーナー 2026-11-20）
+  const tempoFinish = !pattern.throwCatch && endsWithBackTempoBack(saltoIds, n, pattern.connect ? connectAt : null);
+  const endDraws =
+    tempoFinish && !isBackLayoutSalto(last)
+      ? { ...draws, backwardEnd: true }
+      : pattern.throwCatch && isBackLayoutSalto(last) && !RARE_CHAIN_END_SKILLS.includes(last)
+        ? { ...draws, rareEnd: true }
+        : draws;
   // 投げる位置の直前の技。つなぎ技が間に入るとそこで向きが変わるので、つなぎを見る
   const beforeLast =
     pattern.connect && connectId && connectAt === n - 1 ? connectId : saltoIds[n - 2];
@@ -592,7 +642,7 @@ export function chainEndsOk(
     (!pattern.connect || n > connectAt) &&
     // 後方の伸身系で終わるのが稀なのは、宙返りで演技のシリーズを終えるタンブリングだけ。
     // 投げタン（最後はキャッチ）は、伸身の宙返りのあとに受けて終わってよい
-    canEndWith(last, pattern.throwCatch && isBackLayoutSalto(last) && !RARE_CHAIN_END_SKILLS.includes(last) ? { ...draws, rareEnd: true } : draws) &&
+    canEndWith(last, endDraws) &&
     (draws.layoutAfterConnect || !layoutOnlyAfterConnect(pattern, saltoIds, n, connectAt)) &&
     (!pattern.throwInSkill || canThrowAt(beforeLast, last, draws))
   );
@@ -662,8 +712,12 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       // （「前向きで終わる後方系→前宙→つなぎ→宙返り」はよくあるシリーズ）。
       // 2本目の後に挟むには宙返りが3本必要なので、その本数を取れる形だけ
       // つなぎの後の宙返りで投げる形は、投げるのが最後の宙返り＝つなぎの直後になるように挟む
+      // ただし3本の形では、つなぎを1本目の後に挟み、つなぎの2本あとで投げることもある
+      // （後方1回半→つなぎ→ハーフ→前宙(投げ)→前転→キャッチ。`CONNECT_THROW_EARLY_CHANCE`、オーナー 2026-11-23）
       const connectAt = pattern.throwInSkill
-        ? count - 1
+        ? pattern.connect && count >= 3 && rand() < chance(CONNECT_THROW_EARLY_CHANCE)
+          ? DEFAULT_CONNECT_AT
+          : count - 1
         : pattern.connect &&
             pattern.saltos.max >= 3 &&
             count >= 3 &&
@@ -708,7 +762,9 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         // 残りは遷移表のとおりに続ける。後方系→テンポ→後方系の三宙は、そこから4本目を実施してよい
         // （4本目は前方系が多い＝後ろ向きに降りる後方系のあとの遷移表のとおり。オーナー 2026-11-20）
         // （宙返りで終えるタンブリングだけ。投げタンは投げる位置・本数の決まりが別にあるので伸ばさない）
-        const fourthOk = (list: string[]) => !pattern.throwCatch && hasBackTempoBack(list, pattern.connect ? connectAt : null);
+        // 4本目は上級者だけ（要求する上限 `FOURTH_SALTO_MIN_SCORE` 以上、上限なしは可。オーナー 2026-11-23）
+        const fourthOk = (list: string[]) =>
+          fourthSaltoAllowed(opts.targetScore) && !pattern.throwCatch && hasBackTempoBack(list, pattern.connect ? connectAt : null);
         while (ids.length < pattern.saltos.max + (fourthOk(ids) ? 1 : 0)) {
           if (!step()) break;
         }
@@ -773,6 +829,8 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         plainThrowTum && rand() < chance(unseenShapeChance("throwTumBackCatch", opts.demandScore));
       const useAppThrowChance =
         pattern.throwInSkill && apparatus ? chance(THROW_IN_SKILL_USE_APPARATUS_CHANCE[apparatus] ?? 0) : 0;
+      const frontSideChance =
+        pattern.throwInSkill && apparatus ? chance(FRONT_THROW_SIDE_CHANCE[apparatus] ?? 0) : 0;
       specs.push({
         pattern,
         saltoCount,
@@ -788,6 +846,8 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
             : {}),
           ...(apparatus && rand() < chance(SIDE_THROW_PRESS_CHANCE[apparatus] ?? 0) ? { sideThrow: true } : {}),
           ...(useAppThrowChance > 0 && rand() < useAppThrowChance ? { useAppThrow: true } : {}),
+          // 前宙の最中の横投げ（引くのは技の最中に投げる形で、確率を持つ手具だけ。それ以外は乱数を使わない）
+          ...(frontSideChance > 0 && rand() < frontSideChance ? { frontSide: true } : {}),
           // 二つ投げの投げタンの横投げ（引くのは二つ投げでリングのときだけ。それ以外は乱数を使わない）
           ...(twoThrow && apparatus && (SIDE_THROW_TWO_THROW_CHANCE[apparatus] ?? 0) > 0 &&
           rand() < chance(SIDE_THROW_TWO_THROW_CHANCE[apparatus] ?? 0)
@@ -845,7 +905,10 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
   // **ダイビング前宙(投げ)→側宙／転宙→キャッチ**：技の最中に投げる候補のうち、投げる技がダイビング前宙の
   // ものから、側宙か転宙を1本足して派生させる（ロンダート→テンポ→ダイビング前宙(投げ)→側宙、
   // テンポを使わずつなぎの後半でダイビング前宙(投げ)→側宙、のどちらも元の候補の連鎖のまま。
-  // 投げる技はダイビング前宙だけ。転宙は実施が少ない技なので `LIMITED_SKILLS` の重みが評価に効く）
+  // 転宙は実施が少ない技なので `LIMITED_SKILLS` の重みが評価に効く）。
+  // **前宙(投げ)→側宙／転宙→キャッチ**も同じ（例：伸身1回半→前宙(投げ)→側宙→キャッチ。オーナー 2026-11-23）。
+  // **前宙以外の前方系**（前方宙返り1回ひねりなど）で投げる形は、投げを**視野外**にして、前宙より少なく
+  // （候補1本ごとに `THROW_THEN_SIDE_OTHER_CHANCE`）。続ける技はその技のあとに続けられるものだけ（`nextSaltoOptions`）
   const finishers = [SIDE_SALTO_ID, TENCHU_SKILL_ID].filter(
     (id) => usableSkills(ctxBase)([id]).length === 1,
   );
@@ -853,14 +916,21 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
     const sideDerived = specs.flatMap((spec) => {
       if (!spec.pattern.throwInSkill || spec.pattern.catchInSkill || spec.pattern.throwThenSide) return [];
       const ids = spec.saltoIds.slice(0, spec.saltoCount);
-      if (ids[ids.length - 1] !== DIVING_FRONT_SALTO_ID) return [];
+      const thrower = ids[ids.length - 1];
+      const kind = throwThenSideKind(thrower);
+      if (!kind) return [];
+      const allowed =
+        kind === "diving" ? finishers : finishers.filter((id) => nextSaltoOptions(thrower, junior, opts.future ?? null).includes(id));
+      if (allowed.length === 0) return [];
+      if (kind === "otherNoView" && !(rand() < chance(THROW_THEN_SIDE_OTHER_CHANCE))) return [];
       const n = ids.length + 1;
-      return finishers.map((finish) => ({
+      return allowed.map((finish) => ({
         ...spec,
         pattern: {
           ...spec.pattern,
           id: `${spec.pattern.id}Then${finish === SIDE_SALTO_ID ? "Side" : "Tenchu"}`,
           throwThenSide: true,
+          ...(kind === "otherNoView" ? { throwThenSideNoView: true } : {}),
           rollFinish: false,
           saltos: { min: n, max: n },
         },

@@ -673,8 +673,11 @@ export function computeScore(
   const techSeen = new Set<string>();
   const twoMotSeen = new Set<string>();
   const sortedJoin = (xs: string[] | undefined) => [...(xs || [])].sort().join(",");
-  const throwTechKey = (item: { throwTypes?: string[] }, skillId: string) =>
-    `T|${skillId}|${sortedJoin(item.throwTypes)}`;
+  const throwTechKey = (item: { throwTypes?: string[]; nonHandThrowKind?: string }, skillId: string) => {
+    // 手以外の投げは投げ方（肩に引っ掛けて投げなど）ごとに別の投げ
+    const kind = (item.throwTypes || []).includes("nonhand") ? item.nonHandThrowKind || "" : "";
+    return `T|${skillId}|${sortedJoin(item.throwTypes)}${kind ? `|${kind}` : ""}`;
+  };
   const catchTechKey = (item: { catchTypes?: string[]; nonHandKind?: string }, skillId: string) => {
     const kind = (item.catchTypes || []).includes("nonhand") ? item.nonHandKind || "" : "";
     return `C|${skillId}|${sortedJoin(item.catchTypes)}|${kind}`;
@@ -921,8 +924,11 @@ export function computeScore(
       if (itemOver[i][j]) return; // 上限超過の投げ受けは種類にも数えない
       if (item.kind === "throw") {
         if (isDup) return;
-        // 1回の投げは1種類（チェックの組み合わせ全体）として数える
-        throwKinds.add(kindKey(item.throwTypes || []));
+        // 1回の投げは1種類（チェックの組み合わせ全体）として数える。
+        // 手以外の投げは投げ方（肩に引っ掛けて投げなど）ごとに別の種類（手以外の受け方と同じ）
+        const types = item.throwTypes || [];
+        const kind = types.includes("nonhand") ? item.nonHandThrowKind : undefined;
+        throwKinds.add(kindKey(kind ? [...types, `nonhand:${kind}`] : types));
       } else if (item.kind === "skill" && item.isThrow) {
         const types = item.throwTypes || [];
         if (isDup) return;

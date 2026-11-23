@@ -51,3 +51,4 @@
 - 転回系の種類の物差し：オーナーが「偏りの軸だけ」を選択。`tumblingVariety` を系統（前方・側方・後方）・ひねりの有無・姿勢（抱え込み・屈伸／伸身）の3軸で見るようにし、偏った軸1つ −0.1（上限0.2）。同じ技の繰り返しは数えない。`TumblingVariety.repeats` は `biased` に置き換え。`npm run quality` は悪化なし（クラブの全部E 70→77%）、`test:slow` 成功。
 - 団体にもB難度だけの連続のD止まりを反映（オーナー「団体も同じ扱いで」）。`capBOnlyChain` を `chainValue` と5人同時の格上げ後の再計算に掛けた。既存の例「A×4を5人同時→B×4＝E」（`mens-rg-rules.md` §6.2 の例・`team.test.ts`）は D に変わったので、両方を直してオーナーに確認を依頼。交差グループの合計は連続ではないので対象外。
 - つなぎの難度（オーナー）：A難度を無視して加算するのではなく、A難度で区切った各連続を先に判定し、前後の高いほうの1つ上、複数なら前から結合。`chainDifficultyValue`（`constants.ts`）にまとめ、個人の `calcTumblingDifficulty`・団体の `chainValue`・5人同時の再計算で使う。CABB が E→D に変わる。既存テスト「B A BBB は D」は新しい規則で E（BBB＝D と B をつなぐ）になるので直した。
+- main を取り込んだ（PR #173 の生成変更）。main の「C→つなぎ→C だけ D」の例外（`isCConnectC`、2026-11-21）は今回のつなぎの規則（max(C,C)+1＝D）に含まれるので外し、`cConnectC.test.ts` は一般の規則の確認として残した（期待値はすべてそのまま通る）。品質の基準値は取り込み後に測り直して更新（A平均の一律低下のみ）。`npm test`・`test:slow`（1199件）・`build` 成功。
