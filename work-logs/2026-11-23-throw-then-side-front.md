@@ -23,7 +23,7 @@
 
 - `npx tsc -b`：通過。`throwThenSide.test.ts`：7件通過。
 - probe --reach（200種、上限なし）：伸身1回半→前宙(投げ)→側宙→キャッチ 0→21〜30回、前方宙返り1回ひねり(投げ)[noview]→側宙→キャッチ 0→3〜7回。
-- `npm test`／`npm run build`／`npm run quality`／`npm run test:slow`：実行中（結果は追記）。
+- `npm test`／`npm run build`／`npm run quality`／`npm run test:slow`：同日の最終版（`2026-11-23-stick-shoulder-hook-throw.md` の変更まで含む）でまとめて通過。quality は許容幅の内。
 
 - 追加（同日）：スティックの前宙の最中の横投げ。オーナーが実施例を確認、通常の投げより低めに。
   `draws.frontSide`（`FRONT_THROW_SIDE_CHANCE` stick 0.3）。技の最中に投げる形でスティックのときだけ乱数を1回使う。
