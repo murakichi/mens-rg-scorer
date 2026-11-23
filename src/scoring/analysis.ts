@@ -36,7 +36,7 @@ import {
   TUM_VARIETY_DEDUCTION_STEP,
   TUM_VARIETY_SUBITEM_MAX,
   CATEGORY,
-  B_ONLY_CHAIN_MAX,
+  capBOnlyChain,
   canOperateApparatus,
   appInTumblingDeduction,
 } from "./constants";
@@ -108,7 +108,7 @@ export function calcTumblingDifficulty(
   let v = DIFF_VALUE[diffs[0]];
   for (let i = 1; i < diffs.length; i++) v += DIFF_VALUE[diffs[i]] - 1;
   // B難度だけの連続は4回以上繰り返してもD止まり（投げの+1はこのあと）
-  if (diffs.every((d) => d === "B")) v = Math.min(v, DIFF_VALUE[B_ONLY_CHAIN_MAX]);
+  v = capBOnlyChain(diffs.map((d) => DIFF_VALUE[d]), v);
   if (hasThrow) v += 1;
   return clampDifficulty(v, future);
 }

@@ -300,9 +300,16 @@ export function clampDifficulty(value: number, future: FutureLevel = null): Diff
 
 /**
  * B難度だけの連続は、4回以上繰り返してもD難度まで（オーナー 2026-11-23。B×3＝D が上限）。
- * 連続の加算（+1/技）に対する頭打ちで、投げの+1はこのあとに足す（B×4の投げタンはE）。個人のみ。
+ * 連続の加算（+1/技）に対する頭打ちで、投げの+1はこのあとに足す（B×4の投げタンはE）。団体も同じ（`capBOnlyChain`）。
  */
 export const B_ONLY_CHAIN_MAX: Difficulty = "D";
+/**
+ * 連続の加算値に B難度だけの連続の頭打ちを掛ける（個人・団体共通）。
+ * `values` は A難度を除いた各技の難度値（団体は5人同時の格上げ後の値）。
+ */
+export function capBOnlyChain(values: number[], v: number): number {
+  return values.length > 0 && values.every((x) => x === DIFF_VALUE.B) ? Math.min(v, DIFF_VALUE[B_ONLY_CHAIN_MAX]) : v;
+}
 
 export const SERIES_BONUS = 0.1;
 export const TECHNIQUE_BONUS = 0.1;

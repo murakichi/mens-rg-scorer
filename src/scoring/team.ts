@@ -17,6 +17,7 @@
 // =====================================================================
 
 import {
+  capBOnlyChain,
   DIFF_VALUE,
   VALUE_DIFF,
   maxDiff,
@@ -218,6 +219,8 @@ function chainValue(diffs: Difficulty[], future: FutureLevel = null): number {
   if (ds.length === 0) return 0;
   let v = DIFF_VALUE[ds[0]];
   for (let i = 1; i < ds.length; i++) v += DIFF_VALUE[ds[i]] - 1;
+  // B難度だけの連続は4回以上でもD止まり（個人と同じ。オーナー 2026-11-23）
+  v = capBOnlyChain(ds.map((d) => DIFF_VALUE[d]), v);
   return Math.min(v, maxDiff(future));
 }
 
@@ -382,7 +385,8 @@ function analyzeTeamSeries(ser: TeamSeries, junior = false, future: FutureLevel 
       if (effVals.length > 0) {
         bumpedVal = effVals[0];
         for (let i = 1; i < effVals.length; i++) bumpedVal += effVals[i] - 1;
-        bumpedVal = Math.min(bumpedVal, maxDiff(future));
+        // 格上げ後もB難度だけ（A難度が格上げでBになったものを含む）ならD止まり
+        bumpedVal = Math.min(capBOnlyChain(effVals, bumpedVal), maxDiff(future));
       }
       // 徒手のみの塊は §3.6.1 の団体列がすでに5名実施の値なので格上げしない
       const adj = c.hasSkill ? Math.max(contVal, bumpedVal) : contVal;

@@ -32,10 +32,28 @@ describe("団体 §6.2 5人同時同技の格上げ（格上げ後の実効難�
     expect(seriesDiff(normalAll5("b_backsalto"))).toBe("C");
   });
 
-  it("A難度の同時連続技も格上げして算入（ロンダート→バク転→ハンドスプリング→とび前転＝E）", () => {
-    // 各A→B、B×4連続 = 2+1+1+1 = 5 = E
-    expect(seriesDiff(allTogether("a_roundoff", "a_flicflac", "a_handspring", "a_frontroll"))).toBe("E");
-    expect(seriesDiff(normalAll5("a_roundoff", "a_flicflac", "a_handspring", "a_frontroll"))).toBe("E");
+  it("A難度の同時連続技も格上げして算入（ロンダート→バク転→ハンドスプリング→とび前転＝D）", () => {
+    // 各A→B、B×4連続 = 2+1+1+1 = 5 だが、B難度だけの連続はD止まり（個人と同じ。オーナー 2026-11-23）
+    expect(seriesDiff(allTogether("a_roundoff", "a_flicflac", "a_handspring", "a_frontroll"))).toBe("D");
+    expect(seriesDiff(normalAll5("a_roundoff", "a_flicflac", "a_handspring", "a_frontroll"))).toBe("D");
+    // 3本なら B×3 = D、2本なら C
+    expect(seriesDiff(allTogether("a_roundoff", "a_flicflac", "a_handspring"))).toBe("D");
+    expect(seriesDiff(allTogether("a_roundoff", "a_flicflac"))).toBe("C");
+  });
+
+  it("B難度だけの連続（格上げなし）は4回以上でもD止まり、C以上が入れば従来どおり", () => {
+    const one = (ids: string[]) => {
+      const ser = emptySeries(ids.length);
+      ids.forEach((id, s) => (ser.lanes[0][s] = skill(id)));
+      return computeTeamScore({ series: [ser] }).analysis[0].lanes[0][0].adjDiff;
+    };
+    expect(one(["b_backsalto", "b_tempo", "b_tempo", "b_backsalto"])).toBe("D");
+    expect(one(["b_backsalto", "b_tempo", "b_tempo", "b_tempo", "b_backsalto"])).toBe("D");
+    expect(one(["c_back15", "b_tempo", "b_tempo", "b_backsalto"])).toBe("E");
+  });
+
+  it("B×4を5人同時にすると各C（B難度だけではない）なのでE", () => {
+    expect(seriesDiff(allTogether("b_backsalto", "b_tempo", "b_tempo", "b_backsalto"))).toBe("E");
   });
 
   it("B難度×3の同時連続は格上げ後(C×3)で再計算＝E", () => {
