@@ -359,3 +359,9 @@
 - 実装：`OVERLAP_FRONT_COUNTS`（`secondHigh` の前半 0/1）、`OVERLAP_LOW_PLAIN_COUNTS`（`firstHigh` の plain の後半 0/1）、`OVERLAP_FIRST_CATCH_WEIGHTS`（`secondHigh` の1つ目のキャッチ 通常2：視野外1：リングの上半身1。最後の受けと同じ視野外・手以外は重ねない）。乱数は overlap の候補を作るときだけ1〜2回増える。
 - 候補（300 seed）：クラブ secondHigh 231（前半0＝123／1＝108、1つ目 通常176／視野外55）、firstHigh plain 後半0＝64／1＝48。リング secondHigh 231（前半0＝112／1＝119、1つ目 通常133／視野外43／上半身55）、plain 後半0＝62／1＝52。
 - エディタの `sideThrowCatchFlags` を、2つとも空中のときは受け方からどちらを受けたかを決めるように直した（横投げ→投げ→上半身に入れる、と 投げ→横投げ→通常→上半身に入れる の両方を正しく判定）。
+
+## 2026-11-23 前方系(投げ)→側宙／転宙→キャッチ
+
+- オーナー：伸身1回半→前宙(投げ)→側宙→キャッチ は実施される。転宙もok。前宙以外の前方系でもよいが視野外付きで、前宙より少なく。
+- 実装：`throwThenSide` の派生元をダイビング前宙だけから、前宙・前宙以外の前方系（`throwThenSideKind`。前宙半ひねり・あとに続かない技は除く）に広げた。前宙以外は投げを視野外にし（`throwThenSideNoView`）、派生元1本ごとに `THROW_THEN_SIDE_OTHER_CHANCE`（0.4）で作る。続ける技は `nextSaltoOptions` で続けられる側宙・転宙だけ（ダイビング前宙は従来どおり）。投げてよい位置は派生元のまま（切り返しの前宙では投げない）。
+- 候補（`npm run probe --reach`、200種、上限なし）：伸身1回半→前宙(投げ)→側宙→キャッチ 0→stick 23／clubs 30／ring 24／rope 21 回、前方宙返り1回ひねり(投げ)[noview]→側宙→キャッチ 0→3〜7 回。

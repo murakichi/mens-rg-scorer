@@ -53,10 +53,12 @@ export interface AutoTumblingPattern {
   airThrowAtKirimomi?: boolean;
   /**
    * 技の最中の投げのあとに**側宙か転宙を1本続けて**キャッチする形（ダイビング前宙(投げ)→側宙→キャッチ）。
-   * 投げる技はダイビング前宙だけ（オーナー指定。前宙などへの拡張は未）。
+   * 投げる技はダイビング前宙・前宙、前宙以外の前方系（視野外の投げ。`throwThenSideKind`）。
    * 投げるのは最後から2本目の技。`throwInSkill` の候補から派生させる。
    */
   throwThenSide?: boolean;
+  /** `throwThenSide` で、投げる技が前宙以外の前方系のとき（投げを視野外にする） */
+  throwThenSideNoView?: boolean;
 }
 
 export const AUTO_TUMBLING_PATTERNS: AutoTumblingPattern[] = [

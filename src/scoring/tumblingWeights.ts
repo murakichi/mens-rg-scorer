@@ -795,3 +795,9 @@ export const LAYOUT_BEFORE_BACKWARD_CHANCE = 0.85;
  * 伸身がつながらない位置（後方伸身2回ひねり→抱え込みの半ひねり→前方系 など）は抱え込みのまま残る。
  */
 export const LAYOUT_BACK_HALF_CHANCE = 0.9;
+
+/**
+ * 前宙以外の前方系（前方宙返り1回ひねりなど）で投げて側宙／転宙を続ける形（視野外の投げ）を、
+ * 派生元の候補1本ごとに作る確率。前宙(投げ)→側宙より少なくする（オーナー 2026-11-23）
+ */
+export const THROW_THEN_SIDE_OTHER_CHANCE = 0.4;
