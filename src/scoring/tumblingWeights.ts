@@ -803,8 +803,15 @@ export const LAYOUT_BACK_HALF_CHANCE = 0.9;
 export const THROW_THEN_SIDE_OTHER_CHANCE = 0.4;
 
 /**
- * 前宙の最中の投げを、受け方と関係なく**横投げ**にする確率（手具ごと）。
+ * 前宙・ダイビング前宙の最中の投げを、受け方と関係なく**横投げ**にする確率（手具ごと）。
  * スティックで実施例がある（オーナー 2026-11-23）。通常の投げより少なくする。
  * クラブ・リングは押さえつけ・手以外の受けのときに横投げを付ける抽選（`SIDE_THROW_PRESS_CHANCE` など）があるので持たない。
  */
 export const FRONT_THROW_SIDE_CHANCE: Partial<Record<ApparatusKey, number>> = { stick: 0.3 };
+
+/**
+ * つなぎを挟んで技の最中に投げる形（`connectThrowInSkill`）で、宙返り3本のとき、つなぎを1本目の後に挟み
+ * **つなぎの2本あと**で投げる確率（後方1回半→つなぎ→ハーフ→前宙(投げ)→前転→キャッチ。オーナー 2026-11-23）。
+ * 残りは従来どおり、つなぎの直後の宙返りで投げる。
+ */
+export const CONNECT_THROW_EARLY_CHANCE = 0.4;

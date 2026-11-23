@@ -71,6 +71,7 @@ import {
   FRONT_SALTO_ID,
   THROW_THEN_SIDE_OTHER_CHANCE,
   FRONT_THROW_SIDE_CHANCE,
+  CONNECT_THROW_EARLY_CHANCE,
   CONNECT_AT_SECOND_CHANCE,
   LAYOUT_AFTER_CONNECT_CHANCE,
   LIMITED_SKILLS,
@@ -186,7 +187,7 @@ export interface TumblingDraws {
   /** 技の最中の投げに手具を使った投げを付けるか（`THROW_IN_SKILL_USE_APPARATUS_CHANCE`。クラブだけ） */
   useAppThrow?: boolean;
   /**
-   * 前宙の最中の投げを、受け方と関係なく**横投げ**にするか（`FRONT_THROW_SIDE_CHANCE`。スティックだけ。
+   * 前宙・ダイビング前宙の最中の投げを、受け方と関係なく**横投げ**にするか（`FRONT_THROW_SIDE_CHANCE`。スティックだけ。
    * 実施例あり、通常の投げより少なく。オーナー 2026-11-23）
    */
   frontSide?: boolean;
@@ -393,8 +394,9 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       // （手具を使った投げと横投げはセットではない。横投げは押さえつけて受けるときの抽選で別に付く）
       if (draws.useAppThrow && !(next.throwTypes || []).includes(NO_VIEW_TAG))
         next.throwTypes = [...(next.throwTypes || []), USE_APPARATUS_TAG];
-      // 前宙の最中の横投げ（スティック。視野外の投げとは組まない）
-      if (draws.frontSide && id === FRONT_SALTO_ID && !(next.throwTypes || []).some((t) => t === NO_VIEW_TAG || t === SIDE_THROW_TAG))
+      // 前宙・ダイビング前宙の最中の横投げ（スティック。視野外の投げとは組まない。
+      // 前宙でできる投げはだいたいダイビング前宙でもできる — オーナー 2026-11-23）
+      if (draws.frontSide && (id === FRONT_SALTO_ID || id === DIVING_FRONT_SALTO_ID) && !(next.throwTypes || []).some((t) => t === NO_VIEW_TAG || t === SIDE_THROW_TAG))
         next.throwTypes = [...(next.throwTypes || []), SIDE_THROW_TAG];
     }
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
@@ -646,8 +648,12 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       // （「前向きで終わる後方系→前宙→つなぎ→宙返り」はよくあるシリーズ）。
       // 2本目の後に挟むには宙返りが3本必要なので、その本数を取れる形だけ
       // つなぎの後の宙返りで投げる形は、投げるのが最後の宙返り＝つなぎの直後になるように挟む
+      // ただし3本の形では、つなぎを1本目の後に挟み、つなぎの2本あとで投げることもある
+      // （後方1回半→つなぎ→ハーフ→前宙(投げ)→前転→キャッチ。`CONNECT_THROW_EARLY_CHANCE`、オーナー 2026-11-23）
       const connectAt = pattern.throwInSkill
-        ? count - 1
+        ? pattern.connect && count >= 3 && rand() < chance(CONNECT_THROW_EARLY_CHANCE)
+          ? DEFAULT_CONNECT_AT
+          : count - 1
         : pattern.connect &&
             pattern.saltos.max >= 3 &&
             count >= 3 &&

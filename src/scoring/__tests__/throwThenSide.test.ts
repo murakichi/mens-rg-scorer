@@ -95,7 +95,7 @@ describe("スティックの前宙の最中の横投げ（2026-11-23）", () => 
     for (let seed = 1; seed <= seeds; seed++)
       autoTumblingTemplates(app, { random: seededRandom(seed), apparatus: app, targetScore: null }).forEach((t) =>
         t.series.items.forEach((i) => {
-          if (i.kind !== "skill" || !i.isThrow || i.skillId !== "b_front") return;
+          if (i.kind !== "skill" || !i.isThrow || !["b_front", "b_divefront"].includes(i.skillId)) return;
           const types = i.throwTypes ?? [];
           if (types.includes("noview")) return;
           if (types.includes("side")) side++;
@@ -105,7 +105,7 @@ describe("スティックの前宙の最中の横投げ（2026-11-23）", () => 
     return { side, plain };
   };
 
-  it("スティックで前宙の最中に横投げする形が出て、通常の投げより少ない", () => {
+  it("スティックで前宙・ダイビング前宙の最中に横投げする形が出て、通常の投げより少ない", () => {
     const { side, plain } = throwsAtFront("stick", 80);
     expect(side).toBeGreaterThan(0);
     expect(side).toBeLessThan(plain);
@@ -113,5 +113,20 @@ describe("スティックの前宙の最中の横投げ（2026-11-23）", () => 
 
   it("横投げを付ける抽選はスティックだけ（ロープは横投げをしない）", () => {
     expect(throwsAtFront("rope", 40).side).toBe(0);
+  });
+});
+
+describe("つなぎの2本あとで投げる形（2026-11-23）", () => {
+  it("後方1回半→つなぎ→ハーフ→前宙(投げ) のように、つなぎを1本目の後に挟んで3本目で投げる形が出る", () => {
+    let early = 0;
+    for (let seed = 1; seed <= 200; seed++)
+      autoTumblingTemplates("stick", { random: seededRandom(seed), apparatus: "stick", targetScore: null }).forEach((t) => {
+        if (!t.spec.pattern.throwInSkill || !t.spec.pattern.connect) return;
+        const skills = t.series.items.flatMap((i) => (i.kind === "skill" ? [i] : []));
+        const connectAt = skills.findIndex((s, k) => k > 0 && s.skillId === "a_roundoff");
+        const throwAt = skills.findIndex((s) => s.isThrow);
+        if (connectAt >= 0 && throwAt - connectAt === 2) early++;
+      });
+    expect(early).toBeGreaterThan(0);
   });
 });
