@@ -50,6 +50,7 @@ import {
   isTempoSalto,
   nextSaltoOptions,
   saltoCountRange,
+  hasBackTempoBack,
   SALTO_DIFFICULTY_WEIGHT,
   TOP_SINGLE_WEIGHT,
   saltoDifficultyWeight,
@@ -1662,7 +1663,13 @@ describe("ランダム生成への組み込み", () => {
       const r = generateRoutine([], { apparatus: "stick", maxScore, random: seeded(17) })!;
       expect(r.dScore).toBeLessThanOrEqual(maxScore + 1e-9);
       r.used.forEach((t) => {
-        if (isAutoTumblingTemplate(t)) expect(saltoCountRange(t.spec.pattern)).toContain(t.spec.saltoCount);
+        if (!isAutoTumblingTemplate(t)) return;
+        // 後方系→テンポ→後方系の三宙からは4本目を実施してよい（範囲を1本だけ超える例外、2026-11-20）
+        const ids = t.spec.saltoIds.slice(0, t.spec.saltoCount);
+        const extra = hasBackTempoBack(ids.slice(0, -1), t.spec.pattern.connect ? (t.spec.connectAt ?? 1) : null) ? 1 : 0;
+        const range = saltoCountRange(t.spec.pattern);
+        expect(t.spec.saltoCount).toBeGreaterThanOrEqual(range[0]);
+        expect(t.spec.saltoCount).toBeLessThanOrEqual(range[range.length - 1] + extra);
       });
     });
   });
