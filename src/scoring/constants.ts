@@ -316,7 +316,7 @@ export function capBOnlyChain(values: number[], v: number): number {
  * - 宙返りの連続（A難度を挟まない並び）は 起点 ＋ Σ(後続 − 1)、B難度だけならD止まり（`capBOnlyChain`）。
  * - **つなぎ**（宙返りと宙返りの間にA難度を挟む）は、前後の連続のうち**高いほうの難度の1つ上**
  *   （BAB→C、BABB→BAC→D、CABB→CAC→D、DAB→E）。つなぎが2回以上あれば**前から結合していく**
- *   （CABAB→DAB→E）。オーナー 2026-11-23。
+ *   （CABAB→DAB→E）。A難度が続いても（ロンダート→バク転）つなぎは1回。オーナー 2026-11-23。
  * - 先頭・末尾のA難度（入りのロンダートなど）は区切りにならず、数えない。
  */
 export function chainDifficultyValue(values: number[]): number {

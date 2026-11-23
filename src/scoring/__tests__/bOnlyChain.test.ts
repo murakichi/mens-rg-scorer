@@ -96,6 +96,12 @@ describe("つなぎ（A難度を挟む）の難度", () => {
   it("連続を先に判定する（CACABB→CACAC→DAC→E）", () => {
     expect(D("c_back15", "a_roundoff", "c_back1full", "a_roundoff", "b_backlayout", "b_tempo")).toBe("E");
   });
+  it("A難度が続いてもつなぎは1回（オーナー 2026-11-23）", () => {
+    // B → ロンダート → バク転 → B ＝ BAB と同じ C（A難度の数だけ +1 にはしない）
+    expect(D("b_front", "a_roundoff", "a_flicflac", "b_backsalto")).toBe("C");
+    // C → ロンダート → バク転 → BB ＝ CAC → D
+    expect(D("c_back15", "a_roundoff", "a_flicflac", "b_backlayout", "b_tempo")).toBe("D");
+  });
   it("入りのロンダート（先頭のA難度）は区切りにならない", () => {
     expect(D("a_roundoff", "c_back15", "b_front")).toBe("D");
     expect(D("a_roundoff", "b_backsalto")).toBe("B");
