@@ -625,7 +625,9 @@ describe("つなぎ技", () => {
       autoTumblingSpecs({ random: seeded(seed) })
         .filter((sp) => sp.pattern.throwInSkill)
         .forEach((sp) => {
-          if (sp.saltoIds[sp.saltoCount - 1] === "b_sidesalto") side += 1;
+          // 投げる技は最後（`throwThenSide` は側宙・転宙が続くので最後から2本目）
+          const at = sp.saltoCount - (sp.pattern.throwThenSide ? 2 : 1);
+          if (sp.saltoIds[at] === "b_sidesalto") side += 1;
           else other += 1;
         });
     // 実測は側宙：それ以外＝0.32〜0.33（200種）。以前の「3倍未満」はちょうどその値で、乱数の並びが
