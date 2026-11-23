@@ -18,8 +18,10 @@ describe("B難度だけの連続はD止まり", () => {
     expect(calcTumblingDifficulty(Array(5).fill("b_tempo"), false)).toBe("D");
   });
 
-  it("A難度を挟んでもBだけならD止まり（A難度は数えない）", () => {
-    expect(calcTumblingDifficulty(["b_backsalto", "a_roundoff", "b_backsalto", "b_tempo", "b_backsalto"], false)).toBe("D");
+  it("つなぎの後ろがBだけの連続ならそこだけD止まり、つなぎで1つ上がる（B A BBB → max(B,D)+1 = E）", () => {
+    expect(calcTumblingDifficulty(["b_backsalto", "a_roundoff", "b_backsalto", "b_tempo", "b_backsalto"], false)).toBe("E");
+    // つなぎの後ろが B×4 でも D止まりなので同じ E（B×4の4本目は効かない）
+    expect(calcTumblingDifficulty(["b_front", "a_roundoff", "b_backsalto", "b_tempo", "b_tempo", "b_backsalto"], false)).toBe("E");
   });
 
   it("C以上が1つでも入れば従来どおり加算する", () => {
@@ -74,5 +76,31 @@ describe("生成：B難度だけの4連続以上は作らない（C難度を混�
     }
     expect(fourPlus).toBeGreaterThan(0);
     expect(bOnlyFour).toBe(0);
+  });
+});
+
+// オーナー 2026-11-23：つなぎは「前後の連続の高いほうの1つ上」。連続を先に判定し、つなぎが複数なら前から結合する
+describe("つなぎ（A難度を挟む）の難度", () => {
+  const D = (...ids: string[]) => calcTumblingDifficulty(ids, false);
+  it("BAB→C、BABB→BAC→D、CABB→CAC→D、DAB→E", () => {
+    expect(D("b_front", "a_roundoff", "b_backsalto")).toBe("C");
+    expect(D("b_front", "a_roundoff", "b_backlayout", "b_tempo")).toBe("D");
+    expect(D("c_back15", "a_roundoff", "b_backlayout", "b_tempo")).toBe("D");
+    expect(D("d_back2twist", "a_roundoff", "b_backsalto")).toBe("E");
+  });
+  it("つなぎ2回は前から結合（CABAB→DAB→E）", () => {
+    expect(D("c_back15", "a_roundoff", "b_backsalto", "a_roundoff", "b_backlayout")).toBe("E");
+    // BABAB → CAB → D
+    expect(D("b_front", "a_roundoff", "b_backsalto", "a_roundoff", "b_backlayout")).toBe("D");
+  });
+  it("連続を先に判定する（CACABB→CACAC→DAC→E）", () => {
+    expect(D("c_back15", "a_roundoff", "c_back1full", "a_roundoff", "b_backlayout", "b_tempo")).toBe("E");
+  });
+  it("入りのロンダート（先頭のA難度）は区切りにならない", () => {
+    expect(D("a_roundoff", "c_back15", "b_front")).toBe("D");
+    expect(D("a_roundoff", "b_backsalto")).toBe("B");
+  });
+  it("投げの+1はつなぎの結合のあと", () => {
+    expect(calcTumblingDifficulty(["b_front", "a_roundoff", "b_backsalto"], true)).toBe("D");
   });
 });

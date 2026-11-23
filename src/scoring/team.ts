@@ -17,7 +17,7 @@
 // =====================================================================
 
 import {
-  capBOnlyChain,
+  chainDifficultyValue,
   DIFF_VALUE,
   VALUE_DIFF,
   maxDiff,
@@ -215,17 +215,12 @@ export const initialTeamState = (): TeamState => ({
 
 /** 連続する難度列を団体の連続加算でまとめる（A難度は無視）。 */
 function chainValue(diffs: Difficulty[], future: FutureLevel = null): number {
-  const ds = diffs.filter((d) => d !== "A");
-  if (ds.length === 0) return 0;
-  let v = DIFF_VALUE[ds[0]];
-  for (let i = 1; i < ds.length; i++) v += DIFF_VALUE[ds[i]] - 1;
-  // B難度だけの連続は4回以上でもD止まり（個人と同じ。オーナー 2026-11-23）
-  v = capBOnlyChain(ds.map((d) => DIFF_VALUE[d]), v);
-  return Math.min(v, maxDiff(future));
+  // 個人と同じ：宙返りの連続の加算・B難度だけの連続はD止まり・つなぎは最も高い連続の1つ上（オーナー 2026-11-23）
+  return Math.min(chainDifficultyValue(diffs.map((d) => DIFF_VALUE[d])), maxDiff(future));
 }
 
 /**
- * 団体の塊難度：個人と異なり投げ加点(+1)はない。A難度は連続加算で無視。
+ * 団体の塊難度：個人と異なり投げ加点(+1)はない。連続の加算・つなぎ（高いほうの1つ上、前から結合）は個人と同じ `chainDifficultyValue`。
  * ジュニアは技ごとの難度認定（JUNIOR_SKILL_DIFFICULTY）に加え、連続技の認定
  * （JUNIOR_SKILL_COMBOS：バク転→後方伸身宙返り＝C）を1つの技として扱い、
  * まとめなかった場合の連続難度と高い方を採る。
@@ -377,17 +372,10 @@ function analyzeTeamSeries(ser: TeamSeries, junior = false, future: FutureLevel 
           const isFive = ser.mode === "allTogether" || fivePerson.has(cell.slot);
           if (isFive) hadFive = true;
           return isFive ? Math.min(base + 1, maxDiff(future)) : base;
-        })
-        // A難度(値1)は連続難度に算入しない。格上げでB以上になったものは算入する。
-        .filter((v) => v >= DIFF_VALUE.B);
-      // 格上げ後の実効難度で塊の連続難度を再計算
-      let bumpedVal = 0;
-      if (effVals.length > 0) {
-        bumpedVal = effVals[0];
-        for (let i = 1; i < effVals.length; i++) bumpedVal += effVals[i] - 1;
-        // 格上げ後もB難度だけ（A難度が格上げでBになったものを含む）ならD止まり
-        bumpedVal = Math.min(capBOnlyChain(effVals, bumpedVal), maxDiff(future));
-      }
+        });
+      // 格上げ後の実効難度で塊の連続難度を再計算。格上げでB以上になったA難度は連続に算入し、
+      // 格上げされないA難度（値1）はつなぎの区切りとして扱う（`chainDifficultyValue`）
+      const bumpedVal = Math.min(chainDifficultyValue(effVals), maxDiff(future));
       // 徒手のみの塊は §3.6.1 の団体列がすでに5名実施の値なので格上げしない
       const adj = c.hasSkill ? Math.max(contVal, bumpedVal) : contVal;
       c.adjValue = adj;

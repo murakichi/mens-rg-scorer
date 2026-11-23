@@ -52,6 +52,16 @@ describe("団体 §6.2 5人同時同技の格上げ（格上げ後の実効難�
     expect(one(["c_back15", "b_tempo", "b_tempo", "b_backsalto"])).toBe("E");
   });
 
+  it("つなぎは前後の連続の高いほうの1つ上（個人と同じ。CABB→CAC→D、CABAB→DAB→E）", () => {
+    const one = (ids: string[]) => {
+      const ser = emptySeries(ids.length);
+      ids.forEach((id, s) => (ser.lanes[0][s] = skill(id)));
+      return computeTeamScore({ series: [ser] }).analysis[0].lanes[0][0].adjDiff;
+    };
+    expect(one(["c_back15", "a_roundoff", "b_backlayout", "b_tempo"])).toBe("D");
+    expect(one(["c_back15", "a_roundoff", "b_backsalto", "a_roundoff", "b_backlayout"])).toBe("E");
+  });
+
   it("B×4を5人同時にすると各C（B難度だけではない）なのでE", () => {
     expect(seriesDiff(allTogether("b_backsalto", "b_tempo", "b_tempo", "b_backsalto"))).toBe("E");
   });

@@ -385,7 +385,7 @@ items を左→右に走査し、`catch` が来たら buffer を flush して**�
 区切らず、従来どおり1つの塊のまま評価する。つなぎ技（ロンダート・バク転・ハンドスプリング）は
 転回技なので区切らない。
 
-- 投げなし → `tumbling` ユニット（`calcTumblingDifficulty` で格上げ算出。**A難度を除いてB難度だけの連続は
+- 投げなし → `tumbling` ユニット（`calcTumblingDifficulty`→`chainDifficultyValue` で格上げ算出。**つなぎはA難度で区切った各連続を先に判定し、前後の高いほうの1つ上**、複数なら前から結合（オーナー 2026-11-23、団体の `chainValue`・5人同時の再計算も同じ）。**A難度を除いてB難度だけの連続は
   D（`B_ONLY_CHAIN_MAX`）で頭打ち**、投げの+1はそのあと。§3.6.3 No.7、オーナー 2026-11-23。`bOnlyChain.test.ts`。団体も同じ（`capBOnlyChain` を `chainValue` と5人同時の格上げ後の再計算に掛ける。A×4を5人同時→B×4＝D、B×4を5人同時→C×4＝E。交差は対象外。`team.test.ts`））
 - 投げあり → `throw` ユニット（`max(handDiff, tumblingDiff)` を採用）
   - skill も含む場合は `isThrowTumbling`（投げタン）→ タンブリング枠に計上

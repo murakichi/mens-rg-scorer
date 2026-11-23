@@ -36,7 +36,7 @@ import {
   TUM_VARIETY_DEDUCTION_STEP,
   TUM_VARIETY_SUBITEM_MAX,
   CATEGORY,
-  capBOnlyChain,
+  chainDifficultyValue,
   canOperateApparatus,
   appInTumblingDeduction,
 } from "./constants";
@@ -100,15 +100,14 @@ export function calcTumblingDifficulty(
   junior = false,
   future: FutureLevel = null,
 ): Difficulty | null {
-  const diffs = skillIds
+  const values = skillIds
     // 位置で難度が変わる特例（宙返りの直後のダイビングは格上げ）があるので位置つきで引く
     .map((_id, i) => skillDifficultyAt(skillIds, i, junior, future))
-    .filter((d): d is Difficulty => !!d && d !== "A");
-  if (diffs.length === 0) return null;
-  let v = DIFF_VALUE[diffs[0]];
-  for (let i = 1; i < diffs.length; i++) v += DIFF_VALUE[diffs[i]] - 1;
-  // B難度だけの連続は4回以上繰り返してもD止まり（投げの+1はこのあと）
-  v = capBOnlyChain(diffs.map((d) => DIFF_VALUE[d]), v);
+    .filter((d): d is Difficulty => !!d)
+    .map((d) => DIFF_VALUE[d]);
+  // 宙返りの連続の加算・B難度だけの連続のD止まり・つなぎ（最も高い連続の1つ上）。投げの+1はこのあと
+  let v = chainDifficultyValue(values);
+  if (v === 0) return null;
   if (hasThrow) v += 1;
   return clampDifficulty(v, future);
 }

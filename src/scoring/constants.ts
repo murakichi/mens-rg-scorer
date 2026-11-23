@@ -311,6 +311,38 @@ export function capBOnlyChain(values: number[], v: number): number {
   return values.length > 0 && values.every((x) => x === DIFF_VALUE.B) ? Math.min(v, DIFF_VALUE[B_ONLY_CHAIN_MAX]) : v;
 }
 
+/**
+ * 連続した転回の難度値（上限で丸める前。個人・団体共通）。`values` は並び順の各技の難度値（A＝1）。
+ * - 宙返りの連続（A難度を挟まない並び）は 起点 ＋ Σ(後続 − 1)、B難度だけならD止まり（`capBOnlyChain`）。
+ * - **つなぎ**（宙返りと宙返りの間にA難度を挟む）は、前後の連続のうち**高いほうの難度の1つ上**
+ *   （BAB→C、BABB→BAC→D、CABB→CAC→D、DAB→E）。つなぎが2回以上あれば**前から結合していく**
+ *   （CABAB→DAB→E）。オーナー 2026-11-23。
+ * - 先頭・末尾のA難度（入りのロンダートなど）は区切りにならず、数えない。
+ */
+export function chainDifficultyValue(values: number[]): number {
+  const segments: number[][] = [];
+  let cur: number[] = [];
+  let gap = false;
+  values.forEach((v) => {
+    if (v <= DIFF_VALUE.A) {
+      if (cur.length > 0) gap = true;
+      return;
+    }
+    if (gap) {
+      segments.push(cur);
+      cur = [];
+      gap = false;
+    }
+    cur.push(v);
+  });
+  if (cur.length > 0) segments.push(cur);
+  if (segments.length === 0) return 0;
+  const segValue = (seg: number[]) =>
+    capBOnlyChain(seg, seg.slice(1).reduce((s, v) => s + v - 1, seg[0]));
+  // 前から結合：つなぎ1回ごとに「高いほう＋1」
+  return segments.slice(1).reduce((acc, seg) => Math.max(acc, segValue(seg)) + 1, segValue(segments[0]));
+}
+
 export const SERIES_BONUS = 0.1;
 export const TECHNIQUE_BONUS = 0.1;
 export const APPARATUS_OP_BONUS = 0.1;
