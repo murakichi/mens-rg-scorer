@@ -661,31 +661,40 @@ describe("その手具では入力できない内容", () => {
     expect(handsEmptyFlags(inSkill, "stick")).toEqual([false, true, false]);
   });
 
-  it("転回系の多様性は宙返りの種類数から自動計算する", () => {
+  it("転回系の種類は系統・ひねり・姿勢の偏りから自動計算する（研修資料）", () => {
     const sk = (id: string): Item => ({ kind: "skill", skillId: id, hasApparatus: true, isThrow: false });
     const S2 = (...items: Item[]): Series => ({ executionDeduction: 0, items });
-    // A難度の転回技（ロンダート・バク転・側転）は数えない
+    // A難度の転回技（ロンダート・バク転・側転）は数えず、宙返りが無ければ判定しない
     const onlyA = tumblingVariety([S2(sk("a_roundoff"), sk("a_flicflac"), sk("a_cartwheel"))]);
-    expect(onlyA).toEqual({ total: 0, distinct: 0, repeats: 0, deduction: 0 });
-    // 全部違う技なら減点なし
-    const varied = tumblingVariety([
+    expect(onlyA).toEqual({ total: 0, distinct: 0, biased: [], deduction: 0 });
+    // 前方・側方・後方がそろい、ひねりあり・なし、抱え込み・伸身の両方 → 偏りなし
+    const balanced = tumblingVariety([
       S2(sk("a_roundoff"), sk("c_back15"), sk("b_front")),
       S2(sk("a_roundoff"), sk("b_backlayout"), sk("b_sidesalto")),
     ]);
-    expect(varied.total).toBe(4);
-    expect(varied.distinct).toBe(4);
-    expect(varied.deduction).toBe(0);
-    // 同じ技を繰り返したぶんだけ減点する（1つにつき0.1）
-    const repeated = tumblingVariety([S2(sk("a_roundoff"), sk("b_front"), sk("b_front"), sk("b_front"))]);
-    expect(repeated).toEqual({ total: 3, distinct: 1, repeats: 2, deduction: 0.2 });
-    // 細目「転回系の種類に欠ける」の上限（0.2）で止まる。項目の0.50は宙返りの連続・つなぎと合わせた枠
-    const many = tumblingVariety([S2(...Array.from({ length: 9 }, () => sk("b_front")))]);
-    expect(many.repeats).toBe(8);
-    expect(many.deduction).toBe(0.2);
-    // ひねり・姿勢が違えば別の技として数える
-    const twists = tumblingVariety([S2(sk("b_backsalto"), sk("b_backlayout"), sk("b_backhalf"))]);
-    expect(twists.distinct).toBe(3);
-    expect(twists.deduction).toBe(0);
+    expect(balanced.biased).toEqual([]);
+    expect(balanced.deduction).toBe(0);
+    // 後方の伸身ばかり（ひねりはある）→ 系統と姿勢の2軸 → −0.2
+    const backLayout = tumblingVariety([S2(sk("c_backlay1full"), sk("b_tempo"), sk("d_backlay2twist"), sk("b_backlayout"))]);
+    expect(backLayout.biased).toEqual(["category", "posture"]);
+    expect(backLayout.deduction).toBe(0.2);
+    // ひねりが1つも無い（系統・姿勢はそろう）→ −0.1
+    const noTwist = tumblingVariety([S2(sk("b_backlayout"), sk("b_front"), sk("b_sidesalto"))]);
+    expect(noTwist.biased).toEqual(["twist"]);
+    expect(noTwist.deduction).toBe(0.1);
+    // 3軸とも偏っても上限0.2（項目の0.50は宙返りの連続・つなぎと合わせた枠）
+    const allBiased = tumblingVariety([S2(sk("b_front"), sk("b_front"), sk("b_front"))]);
+    expect(allBiased.biased).toHaveLength(3);
+    expect(allBiased.deduction).toBe(0.2);
+    // 同じ技の繰り返しそのものは見ない（偏りが無ければ減点なし）
+    const repeated = tumblingVariety([
+      S2(sk("c_back15"), sk("b_front"), sk("b_sidesalto"), sk("b_backlayout")),
+      S2(sk("c_back15"), sk("b_front"), sk("b_sidesalto"), sk("b_backlayout")),
+    ]);
+    expect(repeated.distinct).toBe(4);
+    expect(repeated.deduction).toBe(0);
+    // ひねりの判定は技表の twist が無い技も名前で見る（テンポひねり・きりもみ）
+    expect(tumblingVariety([S2(sk("c_tempotwist"), sk("b_tempo"))]).biased).not.toContain("twist");
     // 徒手動作として入れた転回技は数えない（転回系ではない）
     const asMotion = tumblingVariety([
       S2(sk("b_front"), { kind: "motion", motionId: "b_kirimomi", count: 1 }),

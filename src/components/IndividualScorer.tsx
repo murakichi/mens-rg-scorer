@@ -34,7 +34,7 @@ import {
   normalizeFutureLevel,
 } from "../scoring/constants";
 import { computeScore } from "../scoring/score";
-import { apparatusBlockers, hoistRopeJumps, stripForApparatus } from "../scoring/analysis";
+import { apparatusBlockers, hoistRopeJumps, stripForApparatus, TUMBLING_BIAS_AXIS_NAMES } from "../scoring/analysis";
 import type { ApparatusKey, FutureLevel, RopeJumpItem, Series } from "../scoring/types";
 import { buildShareUrl } from "../scoring/share";
 import { JsonModal, type JsonModalMode } from "./JsonModal";
@@ -960,8 +960,13 @@ export function IndividualScorer({ initialData }: Props = {}) {
             item.id === TUM_VARIETY_ITEM_ID
               ? {
                   value: result.tumVariety.deduction,
-                  note: `宙返り${result.tumVariety.total}個・${result.tumVariety.distinct}種類`,
-                  title: "実施した宙返りの種類から自動計算します（全部違う技なら減点なし、細目の上限0.2）",
+                  note: `宙返り${result.tumVariety.total}個・偏り：${
+                    result.tumVariety.biased.length > 0
+                      ? result.tumVariety.biased.map((a) => TUMBLING_BIAS_AXIS_NAMES[a]).join("・")
+                      : "なし"
+                  }`,
+                  title:
+                    "宙返り（A難度を除く）の系統（前方・側方・後方）・ひねりの有無・姿勢（抱え込み・屈伸／伸身）の偏りから自動計算します（偏った軸1つにつき −0.1、上限0.2）",
                 }
               : item.id === APP_IN_TUM_ITEM_ID
                 ? {

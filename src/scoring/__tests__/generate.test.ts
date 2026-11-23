@@ -1032,6 +1032,7 @@ describe("手以外の投げ・手具を使った投げのあと", () => {
 
 describe("転回系の多様性の減点（自動計算）", () => {
   it("A減点には自動では入れない（手動入力の値だけを見る）", () => {
+    // 前宙ばかり＝系統・ひねり・姿勢がすべて偏る
     const repeated = [
       S(skill("a_roundoff"), skill("b_front"), skill("b_front"), skill("b_front")),
     ];

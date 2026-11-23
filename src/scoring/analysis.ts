@@ -35,6 +35,7 @@ import {
   TWO_THROW_TAG,
   TUM_VARIETY_DEDUCTION_STEP,
   TUM_VARIETY_SUBITEM_MAX,
+  CATEGORY,
   B_ONLY_CHAIN_MAX,
   canOperateApparatus,
   appInTumblingDeduction,
@@ -969,20 +970,39 @@ export function checkApparatusFlow(series: Series, apparatusKey: keyof typeof AP
 
 /** 重複シリーズ判定用の正規化シグネチャ */
 /**
- * **転回系の種類・組み合わせの多様性**（§3.5.6.4 の欠点テーブル）の自動判定。
- * A難度の転回技（ロンダート・バク転・側転など）は数えず、**宙返り（B難度以上の転回技）**だけを数える。
- * 全部違う技なら減点なし、同じ技を繰り返したぶん（`repeats`＝実施数−種類数）だけ減点する。
- * ひねり・姿勢が違えば別の技（`skillId` が違う）として数える。
+ * **転回系の種類・組み合わせの多様性**（§3.5.6.4 の欠点テーブル）の細目「転回系の種類に欠ける」の自動判定。
+ * 2026年度研修資料の物差し（「前方系や側方系、ひねり系、姿勢などに偏りがないか」）で、
+ * A難度の転回技（ロンダート・バク転など）と徒手として入れた転回技は数えず、**宙返り（B難度以上）**について
+ * 3つの軸を見る（オーナー選択 2026-11-23）：
+ *   - 系統：前方系・側方系・後方系がすべてあるか
+ *   - ひねり：ひねりのある宙返りと無い宙返りの両方があるか
+ *   - 姿勢：抱え込み・屈伸と伸身の両方があるか（姿勢の決まらない技＝テンポ・転宙・側宙などは見ない）
+ * 偏った軸1つにつき `TUM_VARIETY_DEDUCTION_STEP`（0.1）、細目の上限 `TUM_VARIETY_SUBITEM_MAX`（0.2）まで。
+ * 宙返りが1つも無ければ判定しない（減点は方向系・宙返りの連続の側で引く）。
  */
+export type TumblingBiasAxis = "category" | "twist" | "posture";
+export const TUMBLING_BIAS_AXIS_NAMES: Record<TumblingBiasAxis, string> = {
+  category: "系統（前方・側方・後方）",
+  twist: "ひねりの有無",
+  posture: "姿勢（抱え込み・屈伸／伸身）",
+};
 export interface TumblingVariety {
   /** 実施した宙返り（A難度を除く転回技）の数 */
   total: number;
-  /** そのうち何種類か */
+  /** そのうち何種類か（参考表示） */
   distinct: number;
-  /** 種類が減っているぶん（＝ total − distinct） */
-  repeats: number;
-  /** 自動計算した減点（`TUM_VARIETY_DEDUCTION_STEP` × repeats、細目の上限 `TUM_VARIETY_SUBITEM_MAX` で丸め） */
+  /** 偏っている軸 */
+  biased: TumblingBiasAxis[];
+  /** 自動計算した減点（偏った軸 × 0.1、上限0.2） */
   deduction: number;
+}
+
+/** ひねりのある宙返りか（技表の `twist`、無ければ名前で判定） */
+function isTwistingSalto(id: string): boolean {
+  const def = skillDef(id);
+  if (!def) return false;
+  if (def.twist) return def.twist.twist > 0;
+  return /ひねり|きりもみ|ムーンサルト|ルドルフ/.test(def.name);
 }
 
 export function tumblingVariety(list: Series[], junior = false): TumblingVariety {
@@ -996,10 +1016,22 @@ export function tumblingVariety(list: Series[], junior = false): TumblingVariety
   );
   const total = ids.length;
   const distinct = new Set(ids).size;
-  const repeats = Math.max(0, total - distinct);
-  // 「転回系の種類に欠ける」細目の上限（0.2）。項目全体（0.50）には宙返りの連続・つなぎも入る
-  const deduction = Math.min(TUM_VARIETY_SUBITEM_MAX, Math.round(repeats * TUM_VARIETY_DEDUCTION_STEP * 10) / 10);
-  return { total, distinct, repeats, deduction };
+  if (total === 0) return { total, distinct, biased: [], deduction: 0 };
+  const defs = ids.map((id) => skillDef(id));
+  const cats = new Set(defs.map((d) => d?.category));
+  const twisting = ids.map(isTwistingSalto);
+  const postures = new Set(
+    defs
+      .map((d) => d?.twist?.posture)
+      .filter((p): p is NonNullable<typeof p> => !!p)
+      .map((p) => (p === "layout" ? "layout" : "bent")),
+  );
+  const biased: TumblingBiasAxis[] = [];
+  if (!(cats.has(CATEGORY.FORWARD) && cats.has(CATEGORY.SIDE) && cats.has(CATEGORY.BACKWARD))) biased.push("category");
+  if (!(twisting.includes(true) && twisting.includes(false))) biased.push("twist");
+  if (postures.size < 2) biased.push("posture");
+  const deduction = Math.min(TUM_VARIETY_SUBITEM_MAX, Math.round(biased.length * TUM_VARIETY_DEDUCTION_STEP * 10) / 10);
+  return { total, distinct, biased, deduction };
 }
 
 /**
