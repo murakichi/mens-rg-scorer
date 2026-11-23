@@ -111,7 +111,7 @@ export const canTwoThrowTumbling = (
 export function secondThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   // 無回転の投げは手以外のキャッチ（0〜1動作）のためだけなので、投げタンのあとに足す投げには使わない
   return autoThrowStyles(apparatus).filter(
-    (t) => t.id !== NON_HAND_TAG && !t.rare && !(t.throwTypes || []).includes(NO_ROTATION_TAG),
+    (t) => !(t.throwTypes || []).includes(NON_HAND_TAG) && !t.rare && !(t.throwTypes || []).includes(NO_ROTATION_TAG),
   );
 }
 

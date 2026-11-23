@@ -47,6 +47,7 @@ export function commonBlockers(list: Series[]): string[] {
         reasons.add("無回転");
       if ((item.kind === "catch" || (item.kind === "skill" && item.isCatch)) && item.nonHandKind)
         reasons.add("手以外のキャッチの受け方");
+      if (item.kind === "throw" && item.nonHandThrowKind) reasons.add("手以外の投げの投げ方");
       if (item.kind === "throw" && (item.throwTypes || []).includes("useapp"))
         reasons.add("手具を使った投げ");
       if (item.kind === "skill" && (item.throwTypes || []).includes("useapp")) reasons.add("手具を使った投げ");

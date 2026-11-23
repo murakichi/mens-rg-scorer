@@ -320,6 +320,8 @@ export interface AutoThrowStyle {
   reqTypes?: string[];
   /** 技術タグ（noview / nonhand / other / useapp） */
   throwTypes?: string[];
+  /** 手以外の投げの投げ方（`NON_HAND_THROW_KINDS`。スティックの肩に引っ掛けて投げ） */
+  nonHandThrowKind?: string;
   /** 手具を2つ投げるか（キャッチも2つ同時になる） */
   two?: boolean;
   /**
@@ -376,6 +378,15 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   // 増えてきている**（オーナー、2026-11-13）ので、スティックとクラブで作る
   if (canUseNoRotation(apparatus))
     styles.push({ id: NO_ROTATION_TAG, name: "無回転の横投げ", throwTypes: [NO_ROTATION_TAG, SIDE_THROW_TAG] });
+  // スティックの手以外の投げ「肩に引っ掛けて投げ」（オーナー 2026-11-23）。低難度（0〜1動作）の形だけ、
+  // 横投げにはしない（手以外の投げには横投げを付けない）、受けは通常のキャッチ＞背面キャッチ
+  if (apparatus === "stick")
+    styles.push({
+      id: SHOULDER_HOOK_STYLE_ID,
+      name: "肩に引っ掛けて投げ",
+      throwTypes: [NON_HAND_TAG],
+      nonHandThrowKind: SHOULDER_HOOK_KIND,
+    });
   if (apparatus === "stick")
     styles.push({
       id: NO_ROTATION_BACK_SIDE_STYLE_ID,
@@ -405,6 +416,27 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
 
 /** 手具で押さえつけてキャッチ（手具を使ったキャッチ）のid */
 export const CATCH_USE_APPARATUS = "useapp";
+
+/** 手以外の投げか（投げ方idではなくタグで見る。肩に引っ掛けて投げも含む） */
+export const isNonHandThrowStyle = (t: AutoThrowStyle): boolean => (t.throwTypes || []).includes(NON_HAND_TAG);
+
+/** スティックの手以外の投げ「肩に引っ掛けて投げ」の投げ方id（`NON_HAND_THROW_KINDS`）と、生成の投げ方id */
+export const SHOULDER_HOOK_KIND = "shoulderHook";
+export const SHOULDER_HOOK_STYLE_ID = "nonhand+shoulderHook";
+/**
+ * 肩に引っ掛けて投げを**優先して**使う形：低難度（0〜1動作）の最低限の形。
+ * それ以外の形（高難度）にも候補として入れるが確率を下げる。背面投げなどが加点済みで、
+ * Dの要求を満たすのに要るときは評価で選ばれる（オーナー 2026-11-23）
+ */
+export const SHOULDER_HOOK_PATTERNS: string[] = ["minimalChene", "minimalRoll", "minimalNone"];
+/**
+ * 肩に引っ掛けて投げを候補に入れる確率（形と投げ方の組み合わせ1つごと）。背面投げ（視野外の投げ。毎回入る）より低く、
+ * 低難度の形 ＞ 高難度の形
+ */
+export const SHOULDER_HOOK_LOW_CHANCE = 0.5;
+export const SHOULDER_HOOK_HIGH_CHANCE = 0.15;
+/** 肩に引っ掛けて投げの受け方の重み：通常のキャッチ＞背面キャッチ、ほかの受け方はしない */
+export const SHOULDER_HOOK_CATCH_WEIGHTS: Record<string, number> = { normal: 1, noview: 0.5 };
 
 /** その手具で使える受け方（2つ同時キャッチは二つ投げに付くので選択肢には出さない） */
 export function autoCatchStyles(apparatus: ApparatusKey): AutoCatchStyle[] {
@@ -707,6 +739,11 @@ export function catchStyleWeight({
   demandScore?: number | null;
 }): number {
   const has = (tag: string) => catchHasTag(catchStyle, tag);
+  // 肩に引っ掛けて投げは通常のキャッチ＞背面キャッチだけ（前転のあとに背面キャッチはしない）
+  if (throwStyle.id === SHOULDER_HOOK_STYLE_ID) {
+    if (has(NO_VIEW_TAG) && rollFinishShape(pattern)) return 0;
+    return SHOULDER_HOOK_CATCH_WEIGHTS[catchStyle.id] ?? 0;
+  }
   // 無回転の投げは手以外のキャッチ（無回転が要る）のためだけ。ほかの受け方では無回転にしない
   if ((throwStyle.throwTypes || []).includes(NO_ROTATION_TAG) && !has(NON_HAND_TAG)) return 0;
   // スティックの手以外のキャッチは、無回転で投げたときだけ実施する
@@ -818,7 +855,7 @@ export function catchStylesForPattern(
 export const trailThrowStylesAfter = (
   styles: AutoThrowStyle[],
   mainCatch: AutoCatchStyle,
-): AutoThrowStyle[] => styles.filter((t) => t.id !== NON_HAND_TAG && canThrowAfterCatch(mainCatch, t));
+): AutoThrowStyle[] => styles.filter((t) => !isNonHandThrowStyle(t) && canThrowAfterCatch(mainCatch, t));
 
 /**
  * その形で使える投げ方。先に投げ受けを1本置く形（`leadPair`）の本体の投げは
@@ -845,13 +882,13 @@ export function throwStylesForPattern(
   // 二つ投げ→キャッチ→押さえつけてキャッチの形は二つ投げだけ（手具が二つの種目）
   if (pattern.splitCatch) return styles.filter((t) => t.two);
   // 2つを別々に投げる形：二つ投げ（1つの投げ）・手以外の投げ・実施例の無い投げ方は使わない
-  if (pattern.overlap) return styles.filter((t) => !t.two && !t.rare && t.id !== NON_HAND_TAG && !isNoRotationStyle(t));
+  if (pattern.overlap) return styles.filter((t) => !t.two && !t.rare && !isNonHandThrowStyle(t) && !isNoRotationStyle(t));
   // 2つとも空中にある形：2つ目は横投げ（通常の投げに横投げを付ける）。投げ方は1つに絞る
   if (pattern.airPair) return styles.filter((t) => t.id === "normal");
   return pattern.leadPair
     ? styles.filter(
         (t) =>
-          t.id !== NON_HAND_TAG &&
+          !isNonHandThrowStyle(t) &&
           !t.two &&
           // スティックの連続投げの2回目を左手で投げるときは横投げで、背面（視野外）にはしない
           !(LEAD_PAIR_LEFT_HAND_SIDE_APPARATUS.includes(apparatus) && isLeftHandStyle(t) && (t.throwTypes || []).includes(NO_VIEW_TAG)),
@@ -1048,6 +1085,7 @@ export function buildAutoThrowSeries(spec: AutoThrowSpec): Series {
     kind: "throw",
     ...(throwStyle.reqTypes ? { reqTypes: [...throwStyle.reqTypes] } : {}),
     ...(throwStyle.throwTypes ? { throwTypes: [...throwStyle.throwTypes] } : {}),
+    ...(throwStyle.nonHandThrowKind ? { nonHandThrowKind: throwStyle.nonHandThrowKind } : {}),
   });
   if (pattern.splitCatch) {
     // 低いほうを先に（通常のキャッチ）、高いほう（横投げ）を押さえつけてキャッチ。
@@ -1170,7 +1208,13 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       .flatMap((pattern) =>
         throwStylesForPattern(apparatus, pattern).map((throwStyle) => ({ pattern, throwStyle })),
       )
-      .filter(({ throwStyle }) => !throwStyle.rare || rand() < rareChance),
+      .filter(({ throwStyle }) => !throwStyle.rare || rand() < rareChance)
+      // 肩に引っ掛けて投げは背面投げより少なく、低難度の形を優先（高難度の形はさらに低い確率で）
+      .filter(
+        ({ pattern, throwStyle }) =>
+          throwStyle.id !== SHOULDER_HOOK_STYLE_ID ||
+          rand() < chance(SHOULDER_HOOK_PATTERNS.includes(pattern.id) ? SHOULDER_HOOK_LOW_CHANCE : SHOULDER_HOOK_HIGH_CHANCE),
+      ),
     rand,
   );
   const limit = Math.max(0, opts.limit ?? combos.length);
@@ -1210,12 +1254,13 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
     pickWeighted(autoHandsVariants(), rand, (h) => handsWeight(h) * cheneCountWeight(h, cheneCount), exp);
   // 先に足す投げ受けの投げ方。二つ投げは2つ同時キャッチで受ける形になるので使わない
   const nextLeadThrow = cycler(
-    throwStyles.filter((t) => !t.two && !t.rare && !isNoRotationStyle(t)),
+    // 肩に引っ掛けて投げは最低限の形（`SHOULDER_HOOK_PATTERNS`）の本体だけで使う
+    throwStyles.filter((t) => !t.two && !t.rare && !isNoRotationStyle(t) && t.id !== SHOULDER_HOOK_STYLE_ID),
     rand,
   );
   // 2つを別々に投げる形の1つ目の投げ（手以外の投げは続けて投げられないので使わない）
   const firstThrowPool = throwStyles.filter(
-    (t) => !t.two && !t.rare && t.id !== NON_HAND_TAG && !isNoRotationStyle(t),
+    (t) => !t.two && !t.rare && !isNonHandThrowStyle(t) && !isNoRotationStyle(t),
   );
   const nextFirstThrow = cycler(firstThrowPool, rand);
   // あとに足す投げ受けの投げ方（連続投げの2回目）。使える投げ方が直前の受け方で変わるので
