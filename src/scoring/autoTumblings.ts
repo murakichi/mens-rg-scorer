@@ -562,6 +562,14 @@ export function hasBackTempoBack(ids: string[], connectAt: number | null = null)
   return false;
 }
 
+/** 最初の n 本が「後方系→テンポ→後方系」の三宙で終わっているか（つなぎ技をまたがない） */
+export function endsWithBackTempoBack(ids: string[], n: number, connectAt: number | null = null): boolean {
+  if (n < 3) return false;
+  const i = n - 3;
+  if (connectAt !== null && i < connectAt && connectAt <= i + 2) return false;
+  return hasBackTempoBack(ids.slice(i, n));
+}
+
 export function chainEndsOk(
   pattern: AutoTumblingPattern,
   saltoIds: string[],
@@ -571,6 +579,15 @@ export function chainEndsOk(
   connectId = "",
 ): boolean {
   const last = saltoIds[n - 1];
+  // 後方系→テンポ→後方系の三宙は、最後が伸身でない宙返りならそのまま終わってよい
+  // （後ろ向きに降りる宙返りでも。オーナー 2026-11-20）
+  const tempoFinish = !pattern.throwCatch && endsWithBackTempoBack(saltoIds, n, pattern.connect ? connectAt : null);
+  const endDraws =
+    tempoFinish && !isBackLayoutSalto(last)
+      ? { ...draws, backwardEnd: true }
+      : pattern.throwCatch && isBackLayoutSalto(last) && !RARE_CHAIN_END_SKILLS.includes(last)
+        ? { ...draws, rareEnd: true }
+        : draws;
   // 投げる位置の直前の技。つなぎ技が間に入るとそこで向きが変わるので、つなぎを見る
   const beforeLast =
     pattern.connect && connectId && connectAt === n - 1 ? connectId : saltoIds[n - 2];
@@ -579,7 +596,7 @@ export function chainEndsOk(
     (!pattern.connect || n > connectAt) &&
     // 後方の伸身系で終わるのが稀なのは、宙返りで演技のシリーズを終えるタンブリングだけ。
     // 投げタン（最後はキャッチ）は、伸身の宙返りのあとに受けて終わってよい
-    canEndWith(last, pattern.throwCatch && isBackLayoutSalto(last) && !RARE_CHAIN_END_SKILLS.includes(last) ? { ...draws, rareEnd: true } : draws) &&
+    canEndWith(last, endDraws) &&
     (draws.layoutAfterConnect || !layoutOnlyAfterConnect(pattern, saltoIds, n, connectAt)) &&
     (!pattern.throwInSkill || canThrowAt(beforeLast, last, draws))
   );

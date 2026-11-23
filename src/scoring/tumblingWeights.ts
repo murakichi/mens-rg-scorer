@@ -823,3 +823,23 @@ export const CONNECT_THROW_EARLY_CHANCE = 0.4;
 export const FOURTH_SALTO_MIN_SCORE = 4.0;
 export const fourthSaltoAllowed = (targetScore?: number | null): boolean =>
   targetScore == null || targetScore >= FOURTH_SALTO_MIN_SCORE;
+
+/**
+ * **上級者（Dスコア4.4〜）の三宙でいちばん多い並び**：後方伸身宙返り1回半ひねり→前宙→側宙（オーナー 2026-11-20）。
+ * この並びの3本目（前宙のあとの側宙）を選ばれやすくする。要求の上限が `FAVORED_TRIPLE_MIN_SCORE` 未満の構成には効かせない
+ * （上限なしは効かせる）。
+ */
+export const FAVORED_TRIPLES: { ids: [string, string, string]; weight: number }[] = [
+  { ids: ["c_backlay15", "b_front", "b_sidesalto"], weight: 3 },
+];
+export const FAVORED_TRIPLE_MIN_SCORE = 4.4;
+export function favoredTripleWeight(
+  beforePrevId: string | undefined,
+  prevId: string,
+  id: string,
+  targetScore?: number | null,
+): number {
+  if (targetScore != null && targetScore < FAVORED_TRIPLE_MIN_SCORE) return 1;
+  const hit = FAVORED_TRIPLES.find((t) => t.ids[0] === beforePrevId && t.ids[1] === prevId && t.ids[2] === id);
+  return hit ? hit.weight : 1;
+}
