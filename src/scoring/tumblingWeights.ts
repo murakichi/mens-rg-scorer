@@ -801,3 +801,10 @@ export const LAYOUT_BACK_HALF_CHANCE = 0.9;
  * 派生元の候補1本ごとに作る確率。前宙(投げ)→側宙より少なくする（オーナー 2026-11-23）
  */
 export const THROW_THEN_SIDE_OTHER_CHANCE = 0.4;
+
+/**
+ * 前宙の最中の投げを、受け方と関係なく**横投げ**にする確率（手具ごと）。
+ * スティックで実施例がある（オーナー 2026-11-23）。通常の投げより少なくする。
+ * クラブ・リングは押さえつけ・手以外の受けのときに横投げを付ける抽選（`SIDE_THROW_PRESS_CHANCE` など）があるので持たない。
+ */
+export const FRONT_THROW_SIDE_CHANCE: Partial<Record<ApparatusKey, number>> = { stick: 0.3 };

@@ -87,3 +87,31 @@ describe("前宙(投げ)→側宙／転宙と、前宙以外の前方系（2026-
     expect(throwThenSideKind("c_backlay15")).toBeNull();
   });
 });
+
+describe("スティックの前宙の最中の横投げ（2026-11-23）", () => {
+  const throwsAtFront = (app: ApparatusKey, seeds: number) => {
+    let side = 0;
+    let plain = 0;
+    for (let seed = 1; seed <= seeds; seed++)
+      autoTumblingTemplates(app, { random: seededRandom(seed), apparatus: app, targetScore: null }).forEach((t) =>
+        t.series.items.forEach((i) => {
+          if (i.kind !== "skill" || !i.isThrow || i.skillId !== "b_front") return;
+          const types = i.throwTypes ?? [];
+          if (types.includes("noview")) return;
+          if (types.includes("side")) side++;
+          else plain++;
+        }),
+      );
+    return { side, plain };
+  };
+
+  it("スティックで前宙の最中に横投げする形が出て、通常の投げより少ない", () => {
+    const { side, plain } = throwsAtFront("stick", 80);
+    expect(side).toBeGreaterThan(0);
+    expect(side).toBeLessThan(plain);
+  });
+
+  it("横投げを付ける抽選はスティックだけ（ロープは横投げをしない）", () => {
+    expect(throwsAtFront("rope", 40).side).toBe(0);
+  });
+});

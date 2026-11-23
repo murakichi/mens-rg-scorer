@@ -70,6 +70,7 @@ import {
   BACK_TO_FORWARD_THROW_CHANCE,
   FRONT_SALTO_ID,
   THROW_THEN_SIDE_OTHER_CHANCE,
+  FRONT_THROW_SIDE_CHANCE,
   CONNECT_AT_SECOND_CHANCE,
   LAYOUT_AFTER_CONNECT_CHANCE,
   LIMITED_SKILLS,
@@ -184,6 +185,11 @@ export interface TumblingDraws {
   nonHandSide?: boolean;
   /** 技の最中の投げに手具を使った投げを付けるか（`THROW_IN_SKILL_USE_APPARATUS_CHANCE`。クラブだけ） */
   useAppThrow?: boolean;
+  /**
+   * 前宙の最中の投げを、受け方と関係なく**横投げ**にするか（`FRONT_THROW_SIDE_CHANCE`。スティックだけ。
+   * 実施例あり、通常の投げより少なく。オーナー 2026-11-23）
+   */
+  frontSide?: boolean;
   /** 投げタンの投げを二つ投げにするか（クラブ・リングで、投げてから跳ぶ形だけ） */
   twoThrow: boolean;
   /**
@@ -387,6 +393,9 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
       // （手具を使った投げと横投げはセットではない。横投げは押さえつけて受けるときの抽選で別に付く）
       if (draws.useAppThrow && !(next.throwTypes || []).includes(NO_VIEW_TAG))
         next.throwTypes = [...(next.throwTypes || []), USE_APPARATUS_TAG];
+      // 前宙の最中の横投げ（スティック。視野外の投げとは組まない）
+      if (draws.frontSide && id === FRONT_SALTO_ID && !(next.throwTypes || []).some((t) => t === NO_VIEW_TAG || t === SIDE_THROW_TAG))
+        next.throwTypes = [...(next.throwTypes || []), SIDE_THROW_TAG];
     }
     if (needsRoundoffBefore([...items, next], items.length)) items.push(skillItem(ROUNDOFF_SKILL_ID));
     items.push(next);
@@ -734,6 +743,8 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
         plainThrowTum && rand() < chance(unseenShapeChance("throwTumBackCatch", opts.demandScore));
       const useAppThrowChance =
         pattern.throwInSkill && apparatus ? chance(THROW_IN_SKILL_USE_APPARATUS_CHANCE[apparatus] ?? 0) : 0;
+      const frontSideChance =
+        pattern.throwInSkill && apparatus ? chance(FRONT_THROW_SIDE_CHANCE[apparatus] ?? 0) : 0;
       specs.push({
         pattern,
         saltoCount,
@@ -749,6 +760,8 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
             : {}),
           ...(apparatus && rand() < chance(SIDE_THROW_PRESS_CHANCE[apparatus] ?? 0) ? { sideThrow: true } : {}),
           ...(useAppThrowChance > 0 && rand() < useAppThrowChance ? { useAppThrow: true } : {}),
+          // 前宙の最中の横投げ（引くのは技の最中に投げる形で、確率を持つ手具だけ。それ以外は乱数を使わない）
+          ...(frontSideChance > 0 && rand() < frontSideChance ? { frontSide: true } : {}),
           // 二つ投げの投げタンの横投げ（引くのは二つ投げでリングのときだけ。それ以外は乱数を使わない）
           ...(twoThrow && apparatus && (SIDE_THROW_TWO_THROW_CHANCE[apparatus] ?? 0) > 0 &&
           rand() < chance(SIDE_THROW_TWO_THROW_CHANCE[apparatus] ?? 0)

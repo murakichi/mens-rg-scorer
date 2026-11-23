@@ -365,3 +365,4 @@
 - オーナー：伸身1回半→前宙(投げ)→側宙→キャッチ は実施される。転宙もok。前宙以外の前方系でもよいが視野外付きで、前宙より少なく。
 - 実装：`throwThenSide` の派生元をダイビング前宙だけから、前宙・前宙以外の前方系（`throwThenSideKind`。前宙半ひねり・あとに続かない技は除く）に広げた。前宙以外は投げを視野外にし（`throwThenSideNoView`）、派生元1本ごとに `THROW_THEN_SIDE_OTHER_CHANCE`（0.4）で作る。続ける技は `nextSaltoOptions` で続けられる側宙・転宙だけ（ダイビング前宙は従来どおり）。投げてよい位置は派生元のまま（切り返しの前宙では投げない）。
 - 候補（`npm run probe --reach`、200種、上限なし）：伸身1回半→前宙(投げ)→側宙→キャッチ 0→stick 23／clubs 30／ring 24／rope 21 回、前方宙返り1回ひねり(投げ)[noview]→側宙→キャッチ 0→3〜7 回。
+- 追加：スティックの前宙の最中の横投げ（受け方と関係なく、`FRONT_THROW_SIDE_CHANCE` stick 0.3）。probe --reach（stick、200種）で 前宙(投げ)[side] 0→抽選19回。
