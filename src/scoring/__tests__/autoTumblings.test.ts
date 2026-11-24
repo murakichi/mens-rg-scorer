@@ -1081,7 +1081,8 @@ describe("つなぎ技", () => {
     // ロンダート→ダイビング前宙）
     const built = [18, 20, 43, 45]
       .flatMap((seed) => autoTumblingTemplates("ring", { random: seeded(seed), targetScore: 4.5 }))
-      .filter((t) => t.spec.pattern.catchInSkill);
+      // 投げ→ロンダート→ダイビング前宙（受け）の形は2本目で受ける（`catchOnDiveFront.test.ts`）
+      .filter((t) => t.spec.pattern.catchInSkill && !t.spec.draws.catchOnSecond);
     expect(built.length).toBeGreaterThan(0);
     built.forEach((t) => {
       const items = t.series.items;

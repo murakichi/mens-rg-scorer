@@ -87,6 +87,7 @@ import {
   CATCH_IN_SKILL_PRESS_CHANCE,
   THROW_IN_SKILL_USE_APPARATUS_CHANCE,
   CATCH_IN_SKILL_SKILLS,
+  DIVE_FRONT_SKILL_ID,
   CATCH_IN_ROUNDOFF_APPARATUS,
   catchInSkillChance,
   throwInSkillChance,
@@ -185,6 +186,11 @@ export interface TumblingDraws {
   nonHandCatch?: boolean;
   /** 手以外のキャッチのとき、投げを横投げにするか（`nonHandCatch` と同時に引く） */
   nonHandSide?: boolean;
+  /**
+   * 技の最中に受ける形（`catchInSkill`）で、受ける技を**2本目**にするか。
+   * 投げ→ロンダート→ダイビング前宙（ここで受け）→… の形（`CATCH_ON_DIVE_FRONT`、オーナー 2026-11-24）。
+   */
+  catchOnSecond?: boolean;
   /** 技の最中の投げに手具を使った投げを付けるか（`THROW_IN_SKILL_USE_APPARATUS_CHANCE`。クラブだけ） */
   useAppThrow?: boolean;
   /**
@@ -546,7 +552,8 @@ export function buildAutoTumblingSeries(spec: AutoTumblingSpec, junior = false):
   // **付ける受け方は手具を使ったキャッチだけ**（オーナー指定。技の最中に視野外・手以外で
   // 受けるのは現実的でないので自動生成では提案しない）
   if (pattern.catchInSkill) {
-    const first = items.find((it) => it.kind === "skill");
+    // 投げ→ロンダート→ダイビング前宙（受け）→… は2本目の技で受ける（`catchOnSecond`）
+    const first = items.filter((it) => it.kind === "skill")[draws.catchOnSecond ? 1 : 0];
     if (first?.kind === "skill") {
       first.isCatch = true;
       if (draws.pressCatch) {
@@ -946,6 +953,26 @@ export function autoTumblingSpecs(opts: AutoTumblingOptions = {}): AutoTumblingS
       // 投げタンの候補からは作らない（投げは1本。受けてから投げる形はここでは提案しない）
       if (spec.pattern.throwCatch) return [];
       const firstSkill = spec.entry[0] ?? spec.saltoIds[0];
+      // 投げ→ロンダート→ダイビング前宙（ここで受け）→何か（オーナー 2026-11-24。手具を問わない）。
+      // ロンダートの最中は空中なので受けず、ダイビング前宙で受けてそのまま続ける（受けたあとに技が1本以上要る）
+      const skills = [...spec.entry, ...spec.saltoIds.slice(0, spec.saltoCount)];
+      if (skills[0] === ROUNDOFF_SKILL_ID && skills[1] === DIVE_FRONT_SKILL_ID && skills.length >= 3)
+        return [
+          {
+            ...spec,
+            pattern: { ...spec.pattern, id: `${spec.pattern.id}CatchOnDiveFront`, catchInSkill: true },
+            draws: {
+              ...spec.draws,
+              catchOnSecond: true,
+              pressCatch: false,
+              twoThrow: false,
+              leftHandThrow: false,
+              backCatch: false,
+              nonHandCatch: false,
+              secondThrow: undefined,
+            },
+          },
+        ];
       if (!CATCH_IN_SKILL_SKILLS.includes(firstSkill)) return [];
       // 投げ→ロンダートで受ける形はリングだけ
       if (firstSkill === ROUNDOFF_SKILL_ID && !(apparatus && CATCH_IN_ROUNDOFF_APPARATUS.includes(apparatus))) return [];
