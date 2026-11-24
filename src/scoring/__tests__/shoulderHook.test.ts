@@ -13,7 +13,8 @@ const hook: Item = { kind: "throw", throwTypes: ["nonhand"], nonHandThrowKind: "
 
 describe("肩に引っ掛けて投げ：入力と採点", () => {
   it("スティックの手以外の投げの投げ方にだけある", () => {
-    expect(NON_HAND_THROW_KINDS.stick.map((k) => k.id)).toEqual([SHOULDER_HOOK_KIND]);
+    expect(NON_HAND_THROW_KINDS.stick.map((k) => k.id)).toEqual([SHOULDER_HOOK_KIND, "kneeHook", "footLift"]);
+    expect(NON_HAND_THROW_KINDS.stick.map((k) => k.name)).toEqual(["肩に引っ掛けて投げ", "膝に引っ掛けて投げ", "足で持ち上げて投げ"]);
     expect(NON_HAND_THROW_KINDS.clubs).toEqual([]);
     expect(NON_HAND_THROW_KINDS.ring).toEqual([]);
     expect(NON_HAND_THROW_KINDS.rope).toEqual([]);
@@ -27,6 +28,21 @@ describe("肩に引っ掛けて投げ：入力と採点", () => {
     expect(stripped.nonHandThrowKind).toBeUndefined();
     expect(stripped.throwTypes).toEqual(["nonhand"]);
     expect(commonBlockers(ser)).toContain("手以外の投げの投げ方");
+  });
+
+  it("膝に引っ掛けて投げ・足で持ち上げて投げも投げ方ごとに別の投げ（加点・種類）", () => {
+    const chene: Item = { kind: "motion", motionId: "chene", count: 1, hands: false };
+    const roll: Item = { kind: "motion", motionId: "fwd_roll", count: 1 };
+    const k = (id: string): Item => ({ kind: "throw", throwTypes: ["nonhand"], nonHandThrowKind: id });
+    const r = computeScore(
+      [S(k("shoulderHook"), { kind: "catch" }), S(k("kneeHook"), chene, { kind: "catch" }), S(k("footLift"), roll, { kind: "catch" })],
+      "stick",
+    );
+    const one = computeScore([S(hook, { kind: "catch" })], "stick");
+    expect(r.techniqueBonus).toBeCloseTo(one.techniqueBonus * 3);
+    expect(r.throwKindCount).toBe(3);
+    // ほかの手具では入力できないので落とす
+    expect(apparatusBlockers([S(k("kneeHook"), { kind: "catch" })], "ring")).toContain("手以外の投げの投げ方");
   });
 
   it("技術加点は手以外の投げの0.1のまま。投げ方が違えば別の投げとして加点・種類に数える", () => {
@@ -52,12 +68,13 @@ describe("肩に引っ掛けて投げ：入力と採点", () => {
   });
 });
 
-describe("肩に引っ掛けて投げ：生成", () => {
+// 膝に引っ掛けて投げ・足で持ち上げて投げ（2026-11-24）は頻度もそのあとの形も肩に引っ掛けて投げと同じ
+describe.each(NON_HAND_THROW_KINDS.stick.map((k) => [k.name, k.id]))("%s：生成", (_name, KIND) => {
   const found = () => {
     const out: Series[] = [];
     for (let seed = 1; seed <= 60; seed++)
       autoThrowTemplates("stick", { random: seededRandom(seed) }).forEach((t) => {
-        if (t.series.items.some((i) => i.kind === "throw" && i.nonHandThrowKind === SHOULDER_HOOK_KIND)) out.push(t.series);
+        if (t.series.items.some((i) => i.kind === "throw" && i.nonHandThrowKind === KIND)) out.push(t.series);
       });
     return out;
   };
@@ -69,7 +86,7 @@ describe("肩に引っ掛けて投げ：生成", () => {
     let low = 0;
     list.forEach((ser) => {
       const items = ser.items;
-      const t = items.findIndex((i) => i.kind === "throw" && i.nonHandThrowKind === SHOULDER_HOOK_KIND);
+      const t = items.findIndex((i) => i.kind === "throw" && i.nonHandThrowKind === KIND);
       const throwItem = items[t] as Extract<Item, { kind: "throw" }>;
       expect(throwItem.throwTypes).toEqual(["nonhand"]);
       const c = items.findIndex((i, k) => k > t && i.kind === "catch");
@@ -93,7 +110,7 @@ describe("肩に引っ掛けて投げ：生成", () => {
       autoThrowTemplates("stick", { random: seededRandom(seed) }).forEach((t) => {
         const main = t.series.items.find((i) => i.kind === "throw") as Extract<Item, { kind: "throw" }> | undefined;
         if (!main) return;
-        if (main.nonHandThrowKind === SHOULDER_HOOK_KIND) hook++;
+        if (main.nonHandThrowKind === KIND) hook++;
         else if ((main.throwTypes ?? []).join() === "noview") noView++;
       });
     expect(hook).toBeGreaterThan(0);
@@ -122,7 +139,7 @@ describe("生成の手以外の投げは投げ方を持つ", () => {
             if (item.kind !== "throw" || !(item.throwTypes || []).includes("nonhand")) return;
             if (app === "stick") {
               stickNonHand += 1;
-              expect(item.nonHandThrowKind).toBe(SHOULDER_HOOK_KIND);
+              expect(NON_HAND_THROW_KINDS.stick.map((k) => k.id)).toContain(item.nonHandThrowKind);
             } else expect(item.nonHandThrowKind).toBeUndefined();
           }),
         ),
