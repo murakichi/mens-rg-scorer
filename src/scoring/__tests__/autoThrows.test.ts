@@ -578,11 +578,13 @@ describe("ランダム生成への組み込み", () => {
     // 手以外のキャッチから次の投げには繋げない
     expect(catchStylesForPattern("stick", false, paired).map((c) => c.id)).not.toContain(NON_HAND_TAG);
     // 連続投げの2回目（先に1本置く形の本体の投げ）は手以外にしない
-    expect(throwStylesForPattern("stick", lead).map((t) => t.id)).not.toContain(NON_HAND_TAG);
+    // （スティックの手以外の投げは投げ方つき＝id が "nonhand+shoulderHook" なので、タグで見る）
+    const nonHandIds = (list: { throwTypes?: string[] }[]) => list.some((t) => (t.throwTypes || []).includes(NON_HAND_TAG));
+    expect(nonHandIds(throwStylesForPattern("stick", lead))).toBe(false);
     // 1本だけの形では手以外の投げ受けも使う
     const plain = AUTO_THROW_PATTERNS.find((x) => !x.noViewPair && !x.leadPair)!;
     expect(catchStylesForPattern("stick", false, plain).map((c) => c.id)).toContain(NON_HAND_TAG);
-    expect(throwStylesForPattern("stick", plain).map((t) => t.id)).toContain(NON_HAND_TAG);
+    expect(nonHandIds(throwStylesForPattern("stick", plain))).toBe(true);
     // 組み立てた候補にも並びが現れない（先に置く1本目の投げが手以外なのは可）
     (["stick", "clubs", "ring", "rope"] as ApparatusKey[]).forEach((app) =>
       autoThrowTemplates(app).forEach((t) => {

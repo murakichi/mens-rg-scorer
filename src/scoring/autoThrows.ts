@@ -35,6 +35,7 @@ import {
   hasLeftHandThrow,
   hasTwoThrow,
   nonHandKindForcesNoView,
+  NON_HAND_THROW_KINDS,
 } from "./constants";
 
 /** 視野外の投げ・キャッチの技術タグ（`constants.ts` が持ち主。ここからも参照できるよう再輸出する） */
@@ -369,7 +370,11 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
       two: o.id === "twothrow",
     })),
     { id: "noview", name: "視野外の投げ", throwTypes: ["noview"] },
-    { id: "nonhand", name: "手以外の投げ", throwTypes: ["nonhand"] },
+    // 投げ方（`NON_HAND_THROW_KINDS`）がある手具では、投げ方の無い「手以外の投げ」は作らない
+    // （エディタでは投げ方が未選択に見える。スティックは「肩に引っ掛けて投げ」だけ。2026-11-24）
+    ...(NON_HAND_THROW_KINDS[apparatus].length === 0
+      ? [{ id: "nonhand", name: "手以外の投げ", throwTypes: ["nonhand"] }]
+      : []),
   ];
   if (APPARATUS_USE[apparatus]) styles.push({ id: "useapp", name: "手具を使った投げ", throwTypes: ["useapp"] });
   // 無回転の投げ（投げ方の一種類。スティックの手以外のキャッチはこの投げのときだけ実施する）
