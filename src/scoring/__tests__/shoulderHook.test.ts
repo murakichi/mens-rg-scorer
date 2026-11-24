@@ -109,3 +109,25 @@ describe("肩に引っ掛けて投げ：生成", () => {
       );
   });
 });
+
+// 2026-11-24：生成で手以外の投げにチェックが入っているのに投げ方が未選択の投げが出ていた
+// （投げ方の無い汎用の「手以外の投げ」がスティックにも残っていたため）
+describe("生成の手以外の投げは投げ方を持つ", () => {
+  it("スティックの自動の投げ候補で、手以外の投げはすべて投げ方つき（ほかの手具は投げ方が無いので未設定のまま）", () => {
+    let stickNonHand = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      (["stick", "clubs", "ring", "rope"] as const).forEach((app) =>
+        autoThrowTemplates(app, { random: seededRandom(seed) }).forEach((t) =>
+          t.series.items.forEach((item) => {
+            if (item.kind !== "throw" || !(item.throwTypes || []).includes("nonhand")) return;
+            if (app === "stick") {
+              stickNonHand += 1;
+              expect(item.nonHandThrowKind).toBe(SHOULDER_HOOK_KIND);
+            } else expect(item.nonHandThrowKind).toBeUndefined();
+          }),
+        ),
+      );
+    }
+    expect(stickNonHand).toBeGreaterThan(0);
+  });
+});

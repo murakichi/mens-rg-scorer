@@ -792,11 +792,17 @@ describe("並び順", () => {
     analyzeSeries(ser).units.some((u) => u.type === "tumbling" || u.isThrowTumbling);
   const kinds = (list: Series[]) => list.map((s) => (isTum(s) ? "T" : "H")).join("");
 
-  it("投げとタンブリングが交互に並ぶ（投げが続かない）", () => {
+  it("投げとタンブリングが交互に並ぶ（投げが続かない。投げがタンブリングより2本以上多いときは避けられない）", () => {
+    let checked = 0;
     [3, 7, 11, 19, 23].forEach((seed) => {
       const r = generateRoutine(pool(), { apparatus: "stick", random: seeded(seed) })!;
-      expect(kinds(r.series)).not.toMatch(/HH/);
+      const k = kinds(r.series);
+      const h = (k.match(/H/g) || []).length;
+      if (h > k.length - h + 1) return;
+      checked += 1;
+      expect(k).not.toMatch(/HH/);
     });
+    expect(checked).toBeGreaterThan(0);
   });
 
   it("並べ替えても返す点数は実際の採点と一致する（ジュニアも）", () => {
