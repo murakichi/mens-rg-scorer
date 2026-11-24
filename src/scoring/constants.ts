@@ -179,14 +179,18 @@ export const nonHandKindOf = (apparatus: ApparatusKey, id: string | undefined): 
 /**
  * 手以外の投げの投げ方（手具ごと）。手以外の投げにチェックを入れたときのプルダウン（投げアイテムだけ）。
  * 技術加点は手以外の投げの0.1のままで、投げ方の種類としては投げ方ごとに別に数える（受け方と同じ扱い）。
- * スティックの「肩に引っ掛けて投げ」（オーナー 2026-11-23）。
+ * スティックの「肩に引っ掛けて投げ」（オーナー 2026-11-23）、「膝に引っ掛けて投げ」「足で持ち上げて投げ」（2026-11-24）。
  */
 export interface NonHandThrowKind {
   id: string;
   name: string;
 }
 export const NON_HAND_THROW_KINDS: Record<ApparatusKey, NonHandThrowKind[]> = {
-  stick: [{ id: "shoulderHook", name: "肩に引っ掛けて投げ" }],
+  stick: [
+    { id: "shoulderHook", name: "肩に引っ掛けて投げ" },
+    { id: "kneeHook", name: "膝に引っ掛けて投げ" },
+    { id: "footLift", name: "足で持ち上げて投げ" },
+  ],
   clubs: [],
   rope: [],
   ring: [],

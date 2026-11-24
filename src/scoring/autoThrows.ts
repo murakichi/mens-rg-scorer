@@ -383,15 +383,16 @@ export function autoThrowStyles(apparatus: ApparatusKey): AutoThrowStyle[] {
   // 増えてきている**（オーナー、2026-11-13）ので、スティックとクラブで作る
   if (canUseNoRotation(apparatus))
     styles.push({ id: NO_ROTATION_TAG, name: "無回転の横投げ", throwTypes: [NO_ROTATION_TAG, SIDE_THROW_TAG] });
-  // スティックの手以外の投げ「肩に引っ掛けて投げ」（オーナー 2026-11-23）。低難度（0〜1動作）の形だけ、
-  // 横投げにはしない（手以外の投げには横投げを付けない）、受けは通常のキャッチ＞背面キャッチ
-  if (apparatus === "stick")
+  // 手以外の投げの投げ方（スティック：肩に引っ掛けて投げ〔2026-11-23〕・膝に引っ掛けて投げ・足で持ち上げて投げ
+  // 〔2026-11-24〕）。どれも同じ扱い：低難度（0〜1動作）の形を優先、横投げにはしない、受けは通常のキャッチ＞背面キャッチ
+  NON_HAND_THROW_KINDS[apparatus].forEach((k) =>
     styles.push({
-      id: SHOULDER_HOOK_STYLE_ID,
-      name: "肩に引っ掛けて投げ",
+      id: nonHandKindStyleId(k.id),
+      name: k.name,
       throwTypes: [NON_HAND_TAG],
-      nonHandThrowKind: SHOULDER_HOOK_KIND,
-    });
+      nonHandThrowKind: k.id,
+    }),
+  );
   if (apparatus === "stick")
     styles.push({
       id: NO_ROTATION_BACK_SIDE_STYLE_ID,
@@ -427,7 +428,14 @@ export const isNonHandThrowStyle = (t: AutoThrowStyle): boolean => (t.throwTypes
 
 /** スティックの手以外の投げ「肩に引っ掛けて投げ」の投げ方id（`NON_HAND_THROW_KINDS`）と、生成の投げ方id */
 export const SHOULDER_HOOK_KIND = "shoulderHook";
-export const SHOULDER_HOOK_STYLE_ID = "nonhand+shoulderHook";
+/** 手以外の投げの投げ方ごとの生成の投げ方id */
+export const nonHandKindStyleId = (kind: string): string => `nonhand+${kind}`;
+export const SHOULDER_HOOK_STYLE_ID = nonHandKindStyleId(SHOULDER_HOOK_KIND);
+/**
+ * 投げ方つきの手以外の投げ（肩・膝に引っ掛けて投げ／足で持ち上げて投げ）か。
+ * 頻度・そのあとの形・受け方はどれも同じ（`SHOULDER_HOOK_*`。オーナー 2026-11-24「型と同じ」）
+ */
+export const isNonHandKindStyle = (t: AutoThrowStyle): boolean => !!t.nonHandThrowKind;
 /**
  * 肩に引っ掛けて投げを**優先して**使う形：低難度（0〜1動作）の最低限の形。
  * それ以外の形（高難度）にも候補として入れるが確率を下げる。背面投げなどが加点済みで、
@@ -745,7 +753,7 @@ export function catchStyleWeight({
 }): number {
   const has = (tag: string) => catchHasTag(catchStyle, tag);
   // 肩に引っ掛けて投げは通常のキャッチ＞背面キャッチだけ（前転のあとに背面キャッチはしない）
-  if (throwStyle.id === SHOULDER_HOOK_STYLE_ID) {
+  if (isNonHandKindStyle(throwStyle)) {
     if (has(NO_VIEW_TAG) && rollFinishShape(pattern)) return 0;
     return SHOULDER_HOOK_CATCH_WEIGHTS[catchStyle.id] ?? 0;
   }
@@ -1217,7 +1225,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
       // 肩に引っ掛けて投げは背面投げより少なく、低難度の形を優先（高難度の形はさらに低い確率で）
       .filter(
         ({ pattern, throwStyle }) =>
-          throwStyle.id !== SHOULDER_HOOK_STYLE_ID ||
+          !isNonHandKindStyle(throwStyle) ||
           rand() < chance(SHOULDER_HOOK_PATTERNS.includes(pattern.id) ? SHOULDER_HOOK_LOW_CHANCE : SHOULDER_HOOK_HIGH_CHANCE),
       ),
     rand,
@@ -1260,7 +1268,7 @@ export function autoThrowSpecs(apparatus: ApparatusKey, opts: AutoThrowOptions =
   // 先に足す投げ受けの投げ方。二つ投げは2つ同時キャッチで受ける形になるので使わない
   const nextLeadThrow = cycler(
     // 肩に引っ掛けて投げは最低限の形（`SHOULDER_HOOK_PATTERNS`）の本体だけで使う
-    throwStyles.filter((t) => !t.two && !t.rare && !isNoRotationStyle(t) && t.id !== SHOULDER_HOOK_STYLE_ID),
+    throwStyles.filter((t) => !t.two && !t.rare && !isNoRotationStyle(t) && !isNonHandKindStyle(t)),
     rand,
   );
   // 2つを別々に投げる形の1つ目の投げ（手以外の投げは続けて投げられないので使わない）
