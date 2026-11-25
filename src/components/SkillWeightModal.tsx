@@ -2,32 +2,31 @@ import { useState } from "react";
 import { X, RotateCcw } from "lucide-react";
 import { SKILL_CATEGORY_ORDER, skillDifficulty } from "../scoring/constants";
 import {
-  SKILL_WEIGHT_DEFAULT,
-  SKILL_WEIGHT_MAX,
-  SKILL_WEIGHT_MIN,
-  SKILL_WEIGHT_STEP,
+  SKILL_VALUE_MAX,
+  SKILL_VALUE_MIN,
+  SKILL_VALUE_STEP,
   changedSkillCount,
-  resetSkillWeight,
-  resetSkillWeights,
-  setSkillWeight,
-  userSkillWeight,
+  defaultSkillPickValue,
+  setSkillValue,
+  skillValue,
   weightableSkills,
-  type SkillWeightStore,
+  type SkillValueStore,
 } from "../scoring/skillWeights";
 import type { FutureLevel } from "../scoring/types";
 
 interface Props {
   open: boolean;
-  store: SkillWeightStore;
+  store: SkillValueStore;
   junior: boolean;
   future: FutureLevel;
-  onChange: (store: SkillWeightStore) => void;
+  onChange: (store: SkillValueStore) => void;
   onClose: () => void;
 }
 
 /**
  * 技ごとの「選ばれやすさ」をユーザーが決める画面。
- * 既定（実測どおり＝1）からの**倍率**だけを持つので、リセットは保存した分を捨てるだけ。
+ * 倍率ではなく**その技の出やすさの値そのもの**（用意済みの値＝`defaultSkillPickValue`）を見せて変える。
+ * 用意済みの値から変えた技だけを持つので、リセットは保存した分を捨てるだけ。
  * 採点には影響せず、ランダム生成の候補づくりにだけ効く。
  */
 export default function SkillWeightModal({ open, store, junior, future, onChange, onClose }: Props) {
@@ -55,7 +54,8 @@ export default function SkillWeightModal({ open, store, junior, future, onChange
 
         <div className="gen-body">
           <p className="hint">
-            ランダム生成でその技が選ばれる<b>倍率</b>です（1＝実際の演技での多さどおり、0＝使わない）。
+            ランダム生成でその技が選ばれる<b>出やすさの値</b>です。初めは実際の演技での多さどおりの値（既定）が入っています。
+            値どうしの比で選ばれやすさが決まり、0にするとその技は使いません。難度（D以上は少なめ）や位置（後方伸身のあとのきりもみなど）による重みは、この値にさらに掛かります。
             採点には影響しません。変更した技だけが端末に保存されます。
           </p>
           <div className="weight-head">
@@ -66,7 +66,7 @@ export default function SkillWeightModal({ open, store, junior, future, onChange
               placeholder="技名で絞り込み"
               onChange={(e) => setFilter(e.target.value)}
             />
-            <button className="io-btn" onClick={() => onChange(resetSkillWeights())} disabled={changed === 0}>
+            <button className="io-btn" onClick={() => onChange({})} disabled={changed === 0}>
               <RotateCcw size={14} /> すべて既定に戻す{changed > 0 ? `（${changed}件）` : ""}
             </button>
           </div>
@@ -75,7 +75,9 @@ export default function SkillWeightModal({ open, store, junior, future, onChange
             <div key={g.category}>
               <div className="line-head">{g.category}</div>
               {g.list.map((s) => {
-                const w = userSkillWeight(store, s.id);
+                const v = skillValue(store, s.id);
+                const def = defaultSkillPickValue(s.id);
+                const changedOne = v !== def;
                 const d = skillDifficulty(s.id, junior, future);
                 return (
                   <div key={s.id} className="weight-row">
@@ -86,20 +88,32 @@ export default function SkillWeightModal({ open, store, junior, future, onChange
                     <input
                       className="gen-ratio-range"
                       type="range"
-                      min={SKILL_WEIGHT_MIN}
-                      max={SKILL_WEIGHT_MAX}
-                      step={SKILL_WEIGHT_STEP}
-                      value={w}
-                      onChange={(e) => onChange(setSkillWeight(store, s.id, parseFloat(e.target.value)))}
+                      min={SKILL_VALUE_MIN}
+                      max={SKILL_VALUE_MAX}
+                      step={SKILL_VALUE_STEP}
+                      value={v}
+                      onChange={(e) => onChange(setSkillValue(store, s.id, parseFloat(e.target.value)))}
                       aria-label={`${s.name}の出やすさ`}
                     />
-                    <span className={w === SKILL_WEIGHT_DEFAULT ? "weight-value" : "weight-value is-changed"}>
-                      ×{w.toFixed(1)}
-                    </span>
+                    <input
+                      className={changedOne ? "weight-value weight-input is-changed" : "weight-value weight-input"}
+                      type="number"
+                      min={SKILL_VALUE_MIN}
+                      max={SKILL_VALUE_MAX}
+                      step={SKILL_VALUE_STEP}
+                      value={v}
+                      title={`既定 ${def.toFixed(2)}`}
+                      onChange={(e) => {
+                        const n = parseFloat(e.target.value);
+                        if (Number.isFinite(n)) onChange(setSkillValue(store, s.id, n));
+                      }}
+                      aria-label={`${s.name}の出やすさの値`}
+                    />
+                    <span className="weight-default">既定 {def.toFixed(2)}</span>
                     <button
                       className="remove-btn-xs"
-                      onClick={() => onChange(resetSkillWeight(store, s.id))}
-                      disabled={w === SKILL_WEIGHT_DEFAULT}
+                      onClick={() => onChange(setSkillValue(store, s.id, def))}
+                      disabled={!changedOne}
                       aria-label={`${s.name}を既定に戻す`}
                     >
                       <RotateCcw size={14} />
