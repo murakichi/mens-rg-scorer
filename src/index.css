@@ -1771,9 +1771,29 @@ input[type="radio"] {
   color: var(--accent);
   font-weight: 600;
 }
+/* 出やすさの値（直接入力） */
+.weight-input {
+  flex: 0 0 4.5rem;
+  width: 4.5rem;
+  padding: 4px 6px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  color: var(--ink);
+  font: inherit;
+}
+.weight-default {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
 @media (max-width: 720px) {
   .weight-name {
     flex-basis: 8rem;
+  }
+  .weight-row {
+    flex-wrap: wrap;
   }
 }
 

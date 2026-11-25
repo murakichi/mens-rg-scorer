@@ -10,6 +10,12 @@ import {
   resetSkillWeights,
   setSkillWeight,
   userSkillWeight,
+  defaultSkillPickValue,
+  normalizeSkillValues,
+  setSkillValue,
+  skillValue,
+  skillValuesToWeights,
+  skillWeightsToValues,
 } from "../skillWeights";
 import { autoTumblingTemplates } from "../autoTumblings";
 import { baseSkillWeights, saltoWeights } from "../tumblingWeights";
@@ -97,5 +103,39 @@ describe("技ごとの出やすさ（ユーザー設定）", () => {
     expect(userSkillWeight(undefined, "b_front")).toBe(SKILL_WEIGHT_DEFAULT);
     expect(userSkillWeight({}, "b_front")).toBe(SKILL_WEIGHT_DEFAULT);
     expect(userSkillWeight({ b_front: 0.3 }, "b_front")).toBe(0.3);
+  });
+});
+
+// 2026-11-25：倍率ではなく出やすさの値そのものを変える
+describe("技ごとの出やすさの値（パラメータそのもの）", () => {
+  it("用意済みの値は 実施の多さ × 実施が少ない技 × 表記より難しい技", () => {
+    expect(defaultSkillPickValue("b_front")).toBe(1);
+    expect(defaultSkillPickValue("a_flicflac")).toBe(0.5);
+    // ハンドスプリング：0.5 × 実施が少ない 0.2
+    expect(defaultSkillPickValue("a_handspring")).toBe(0.1);
+    // 転宙：実施が少ない 0.2 × 表記より難しい 0.6
+    expect(defaultSkillPickValue("b_tenchu")).toBe(0.12);
+    // きりもみ：表記より難しい 0.6、きりもみ転回：0.3 × 0.6
+    expect(defaultSkillPickValue("b_kirimomi")).toBe(0.6);
+    expect(defaultSkillPickValue("c_kirimomiten")).toBe(0.18);
+  });
+
+  it("値を変えると、生成には 新しい値 ÷ 用意済みの値 の倍率で渡る", () => {
+    const store = setSkillValue({}, "b_kirimomi", 1.2);
+    expect(store).toEqual({ b_kirimomi: 1.2 });
+    expect(skillValue(store, "b_kirimomi")).toBe(1.2);
+    expect(skillValuesToWeights(store).b_kirimomi).toBeCloseTo(2, 6);
+    // 用意済みの値に戻すと消える
+    expect(setSkillValue(store, "b_kirimomi", 0.6)).toEqual({});
+    // 0は使わない（倍率0）
+    expect(skillValuesToWeights(setSkillValue({}, "b_front", 0)).b_front).toBe(0);
+    // 生成の重み：きりもみの値を2倍にすると、後方伸身のあと（位置ごとの重み）でも2倍
+    const after = saltoWeights("b_backlayout", false, undefined, null, skillValuesToWeights(store));
+    expect(after["b_kirimomi"]).toBeCloseTo(saltoWeights("b_backlayout")["b_kirimomi"] * 2, 6);
+  });
+
+  it("旧形式（倍率）は値に直して読む。範囲外・知らないidは捨てる", () => {
+    expect(skillWeightsToValues({ b_kirimomi: 2, b_front: 0.5 })).toEqual({ b_kirimomi: 1.2, b_front: 0.5 });
+    expect(normalizeSkillValues({ b_front: 99, nope: 1, b_sidesalto: "x", b_tenchu: 0.12 })).toEqual({ b_front: 3 });
   });
 });

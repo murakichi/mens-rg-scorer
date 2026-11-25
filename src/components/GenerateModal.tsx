@@ -19,9 +19,10 @@ import {
 import { apparatusName, describeSeries, type SeriesTemplate } from "../scoring/templates";
 import {
   changedSkillCount,
-  loadSkillWeights,
-  saveSkillWeights,
-  type SkillWeightStore,
+  loadSkillValues,
+  saveSkillValues,
+  skillValuesToWeights,
+  type SkillValueStore,
 } from "../scoring/skillWeights";
 import SkillWeightModal from "./SkillWeightModal";
 import type { ApparatusKey, FutureLevel } from "../scoring/types";
@@ -65,12 +66,12 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
   /** 生成する形の珍しさ（0＝ありふれた形だけ／50＝実測どおり／100＝珍しい形を優先） */
   const [rarity, setRarity] = useState(DEFAULT_RARITY);
   const [tumblingBalance, setTumblingBalance] = useState(DEFAULT_TUMBLING_BALANCE);
-  /** 技ごとの出やすさ（端末に保存。既定から変えた技だけ入っている） */
-  const [skillWeights, setSkillWeights] = useState<SkillWeightStore>(() => loadSkillWeights());
+  /** 技ごとの出やすさの値（端末に保存。用意済みの値から変えた技だけ入っている） */
+  const [skillValues, setSkillValues] = useState<SkillValueStore>(() => loadSkillValues());
   const [weightOpen, setWeightOpen] = useState(false);
-  const changeWeights = (next: SkillWeightStore) => {
-    setSkillWeights(next);
-    saveSkillWeights(next);
+  const changeValues = (next: SkillValueStore) => {
+    setSkillValues(next);
+    saveSkillValues(next);
   };
   const [result, setResult] = useState<(GenerateResult & { apparatus: ApparatusKey }) | null>(null);
   const [note, setNote] = useState("");
@@ -90,7 +91,8 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
       autoRatio: autoPercent / 100,
       rarity,
       tumblingBalance,
-      skillWeights,
+      // 生成には「新しい値 ÷ 用意済みの値」の倍率で渡す
+      skillWeights: skillValuesToWeights(skillValues),
       minScore: minScore ? parseFloat(minScore) : null,
       maxScore: maxScore ? parseFloat(maxScore) : null,
     });
@@ -198,7 +200,7 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
           <div className="weight-head">
             <button className="io-btn" onClick={() => setWeightOpen(true)}>
               技ごとの出やすさ
-              {changedSkillCount(skillWeights) > 0 ? `（${changedSkillCount(skillWeights)}件変更）` : ""}
+              {changedSkillCount(skillValues) > 0 ? `（${changedSkillCount(skillValues)}件変更）` : ""}
             </button>
           </div>
           <p className="hint">
@@ -321,10 +323,10 @@ export function GenerateModal({ open, templates, apparatus, junior, future = nul
     </div>
       <SkillWeightModal
         open={weightOpen}
-        store={skillWeights}
+        store={skillValues}
         junior={junior}
         future={future}
-        onChange={changeWeights}
+        onChange={changeValues}
         onClose={() => setWeightOpen(false)}
       />
     </>
