@@ -715,6 +715,25 @@ export function catchTwoFlags(items: Item[], apparatus: ApparatusKey): boolean[]
 }
 
 /**
+ * **手具を使った投げ**ができない投げか（投げアイテム・技の最中の投げの位置で true）。
+ * 手具を使った投げはもう1つの手具で打って投げるので、クラブ・リングで**もう1つが空中にある**
+ * （1つ目をキャッチする前に2つ目を投げる＝次々に投げる）ときはできない（オーナー 2026-11-26）。
+ * エディタはこの位置で手具を使った投げを非活性にし（付いていれば外せるよう残す）、生成も付けない。
+ */
+export function useAppThrowBlockedFlags(items: Item[], apparatus: ApparatusKey): boolean[] {
+  const total = APPARATUS_COUNT[apparatus];
+  let inHand = total;
+  return items.map((item) => {
+    const throwing = item.kind === "throw" || (item.kind === "skill" && !!item.isThrow);
+    const blocked = throwing && total > 1 && inHand < total;
+    if (throwing) inHand = Math.max(0, inHand - thrownCount(item));
+    if (item.kind === "catch" || (item.kind === "skill" && item.isCatch))
+      inHand = Math.min(total, inHand + caughtCount(item));
+    return blocked;
+  });
+}
+
+/**
  * 受けるときに、空中にある手具のどれかが**横投げ**で投げられているか（キャッチアイテム・技の最中の受けの位置で true）。
  * 横投げ前提の手以外の受け方（`NonHandCatchKind.needsSide`、リング）をエディタで出すかに使う。
  * 2つとも空中にあるとき、どちらを受けたかは入力から分からないので、どれかが横投げなら出す。
