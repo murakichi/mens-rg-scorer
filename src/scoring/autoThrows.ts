@@ -894,8 +894,17 @@ export function throwStylesForPattern(
   //  ように、2回目の二つ投げをすぐ受ける形＝`trailPair` のほう）
   // 二つ投げ→キャッチ→押さえつけてキャッチの形は二つ投げだけ（手具が二つの種目）
   if (pattern.splitCatch) return styles.filter((t) => t.two);
-  // 2つを別々に投げる形：二つ投げ（1つの投げ）・手以外の投げ・実施例の無い投げ方は使わない
-  if (pattern.overlap) return styles.filter((t) => !t.two && !t.rare && !isNonHandThrowStyle(t) && !isNoRotationStyle(t));
+  // 2つを別々に投げる形：二つ投げ（1つの投げ）・手以外の投げ・実施例の無い投げ方は使わない。
+  // この投げは**2つ目**（1つ目が空中にある）なので、もう1つの手具で打つ手具を使った投げもできない（オーナー 2026-11-26）
+  if (pattern.overlap)
+    return styles.filter(
+      (t) =>
+        !t.two &&
+        !t.rare &&
+        !isNonHandThrowStyle(t) &&
+        !isNoRotationStyle(t) &&
+        !(t.throwTypes || []).includes(USE_APPARATUS_TAG),
+    );
   // 2つとも空中にある形：2つ目は横投げ（通常の投げに横投げを付ける）。投げ方は1つに絞る
   if (pattern.airPair) return styles.filter((t) => t.id === "normal");
   return pattern.leadPair

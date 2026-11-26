@@ -51,6 +51,7 @@ import {
   checkApparatusFlow,
   handsEmptyFlags,
   catchTwoFlags,
+  useAppThrowBlockedFlags,
   sideThrowCatchFlags,
   maxSaltoChain,
   needsRoundoffBefore,
@@ -188,6 +189,7 @@ function ThrowChecks({
   common,
   inSkill,
   reqThrowCounts = {},
+  useAppBlocked = false,
   onUpdate,
 }: {
   item: { throwTypes?: string[]; reqTypes?: string[]; nonHandThrowKind?: string };
@@ -197,6 +199,8 @@ function ThrowChecks({
   inSkill?: boolean;
   /** 演技全体で必須投げを実施した回数（ほかの投げで満たしていれば「必須投げ」から外す） */
   reqThrowCounts?: Record<string, number>;
+  /** もう1つの手具が空中にある投げ（次々に投げる2つ目）か。手具を使った投げは押す手具が無いので非活性 */
+  useAppBlocked?: boolean;
   onUpdate: (patch: { throwTypes?: string[]; reqTypes?: string[]; nonHandThrowKind?: string }) => void;
 }) {
   // 二つ投げ（両方を投げる）と手具を使った投げ（もう一方で押さえる）は排他
@@ -216,7 +220,9 @@ function ThrowChecks({
   const check = (opt: { id: string; name: string }) => {
     const on = (item.throwTypes || []).includes(opt.id);
     // 二つ投げと手具を使った投げは同時に実施できない（押さえる手具が手元に無い）
-    const blocked = opt.id === USE_APPARATUS_TAG && !on && twoThrow;
+    // 1つ目が空中にあるうちに2つ目を投げるときも、もう1つの手具が手元に無いので手具を使った投げはできない
+    // （すでに付いていれば外せるように残す）
+    const blocked = opt.id === USE_APPARATUS_TAG && !on && (twoThrow || useAppBlocked);
     return (
       <label key={opt.id} className={blocked ? "check is-disabled" : "check"}>
         <input
@@ -521,6 +527,7 @@ function ItemEditor({
   handsEmpty,
   catchTwoAllowed,
   sideThrown,
+  useAppThrowBlocked,
   tech,
   reqThrowCounts = {},
   twoThrowMotionTotal = null,
@@ -548,6 +555,8 @@ function ItemEditor({
   catchTwoAllowed?: boolean;
   /** 受ける手具が横投げで投げられているか（横投げが前提の受け方を出すか） */
   sideThrown?: boolean;
+  /** もう1つの手具が空中にある投げか（手具を使った投げを非活性にする） */
+  useAppThrowBlocked?: boolean;
   /** この投げ・受けの技術加点の状況（投げ・受けでなければ null） */
   tech?: TechStatus | null;
   /** 演技全体で必須投げを実施した回数 */
@@ -561,7 +570,14 @@ function ItemEditor({
       <>
         <div className="throw-tag">投げ</div>
         <TechStatusLine tech={tech} what="投げ" />
-        <ThrowChecks item={item} apparatus={apparatus} common={common} reqThrowCounts={reqThrowCounts} onUpdate={onUpdate} />
+        <ThrowChecks
+          item={item}
+          apparatus={apparatus}
+          common={common}
+          reqThrowCounts={reqThrowCounts}
+          useAppBlocked={useAppThrowBlocked}
+          onUpdate={onUpdate}
+        />
       </>
     );
   }
@@ -745,6 +761,7 @@ function ItemEditor({
             common={common}
             inSkill
             reqThrowCounts={reqThrowCounts}
+            useAppBlocked={useAppThrowBlocked}
             onUpdate={onUpdate}
           />
         )}
@@ -899,6 +916,8 @@ export function SeriesCard({
   const catchTwoAllowed = catchTwoFlags(ser.items, apparatus);
   // 横投げが前提の手以外の受け方（リング）は、横投げで投げた手具を受けるときだけ出す
   const sideThrown = sideThrowCatchFlags(ser.items);
+  // もう1つの手具が空中にある投げ（クラブ・リングで次々に投げる2つ目）は手具を使った投げにできない
+  const useAppBlocked = useAppThrowBlockedFlags(ser.items, apparatus);
   // 二つ投げで投げてから受けるまでの徒手には「4動作以上で加点」と、その間の動作数を出す
   const twoThrowMotions = twoThrowMotionTotals(ser.items, junior, future);
   // タンブリング技の入力パターン（一覧／手動入力）。既定は一覧で、
@@ -1100,6 +1119,7 @@ export function SeriesCard({
               handsEmpty={handsEmpty[iIdx]}
               catchTwoAllowed={catchTwoAllowed[iIdx]}
               sideThrown={sideThrown[iIdx]}
+              useAppThrowBlocked={useAppBlocked[iIdx]}
               tech={b.techItems[iIdx]}
               reqThrowCounts={reqThrowCounts}
               twoThrowMotionTotal={twoThrowMotions[iIdx]}
