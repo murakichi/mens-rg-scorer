@@ -195,6 +195,7 @@ export function orderSeries(
   ordered = finishCatchLast(ordered, opts.apparatus);
   ordered = throwTumblingToFront(ordered, opts.apparatus, junior, future, opts.random ?? Math.random);
   ordered = highDifficultyTumblingFirst(ordered, junior, future);
+  ordered = lastTumblingNearEnd(ordered, junior, future);
   if (ordered === used) return { used, ev: cur };
   const ev = evaluateUsed(ordered, opts);
   return ev.value >= cur.value - 1e-9 ? { used: ordered, ev } : { used, ev: cur };
@@ -232,6 +233,33 @@ export function highDifficultyTumblingFirst(
   slots.forEach(({ i }, k) => {
     out[i] = sorted[k].t;
   });
+  return out;
+}
+
+/**
+ * **最後のタンブリングは演技の最後か、最後の投げの前あたりで実施する**（オーナー 2026-11-26）。
+ * 並べ終えたあとで、最後のタンブリングが「最後」か「最後から2つ目」になければ、最後から2つ目のシリーズと入れ替える
+ * （最後のシリーズ＝締めのキャッチなどには触れない）。投げタンは3〜4つ目に置く決まり（`throwTumblingToFront`）があるので、
+ * 動かすのは投げを含まないタンブリングを優先し、無ければ最後のタンブリングをそのまま動かす。
+ */
+export function lastTumblingNearEnd(
+  list: SeriesTemplate[],
+  junior: boolean,
+  future: FutureLevel = null,
+): SeriesTemplate[] {
+  const n = list.length;
+  if (n < 3) return list;
+  const isTum = list.map((t) => isTumblingSeries(t.series, junior, future));
+  const lastT = isTum.lastIndexOf(true);
+  if (lastT < 0 || lastT >= n - 2) return list;
+  const hasThrow = (t: SeriesTemplate) =>
+    t.series.items.some((it) => it.kind === "throw" || (it.kind === "skill" && it.isThrow));
+  // 動かすタンブリング：投げを含まないもののうちいちばん後ろ、無ければ最後のタンブリング
+  let pick = -1;
+  for (let i = n - 1; i >= 0; i--) if (isTum[i] && !hasThrow(list[i])) { pick = i; break; }
+  if (pick < 0) pick = lastT;
+  const out = [...list];
+  [out[pick], out[n - 2]] = [out[n - 2], out[pick]];
   return out;
 }
 
